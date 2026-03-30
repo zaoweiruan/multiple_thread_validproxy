@@ -41,33 +41,11 @@ bool XrayApi::runCommand(const std::string& args, std::string& output) {
 }
 
 bool XrayApi::addOutbound(const std::string& outboundJson, const std::string& tag) {
-    std::string cleanTag;
-    for (char c : tag) {
-        if (c >= 'a' && c <= 'z') cleanTag += c;
-        else if (c >= 'A' && c <= 'Z') cleanTag += c;
-        else if (c >= '0' && c <= '9') cleanTag += c;
-        else if (c == '_' || c == '-') cleanTag += c;
-    }
-    if (cleanTag.empty()) cleanTag = "proxy";
-
-    char cwd[MAX_PATH];
-    GetCurrentDirectoryA(MAX_PATH, cwd);
-    std::string tempFile = std::string(cwd) + "\\temp_outbound_" + cleanTag + ".json";
-
-    std::ofstream outFile(tempFile);
-    if (!outFile.is_open()) {
-        lastError_ = "Failed to create temp file: " + tempFile;
-        return false;
-    }
-    outFile << outboundJson;
-    outFile.close();
-
-    std::string cmd = "powershell -Command \"$host.UI.RawUI.BackgroundColor='Black';$host.UI.RawUI.ForegroundColor='White';& '" + xrayPath_ + "' api ado --server " + serverAddr_ + " '" + tempFile + "'\"";
+    std::string cmd = "echo " + outboundJson + " | \"" + xrayPath_ + "\" api ado --server " + serverAddr_;
 
     char buffer[4096];
     FILE* pipe = _popen(cmd.c_str(), "r");
     if (!pipe) {
-        std::remove(tempFile.c_str());
         lastError_ = "Failed to run xray api ado command";
         return false;
     }
@@ -77,8 +55,6 @@ bool XrayApi::addOutbound(const std::string& outboundJson, const std::string& ta
         output += buffer;
     }
     int exitCode = _pclose(pipe);
-
-    std::remove(tempFile.c_str());
 
     if (exitCode != 0) {
         lastError_ = "xray api ado failed with code: " + std::to_string(exitCode) + " output: " + output;

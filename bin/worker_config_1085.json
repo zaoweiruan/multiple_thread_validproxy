@@ -1,0 +1,41 @@
+{
+            "log": {"loglevel": "warning"},
+            "api": {
+                "tag": "api",
+                "services": [
+                    "HandlerService",
+                    "LoggerService",
+                    "StatsService"
+                ]
+            },
+            "stats": {},
+            "policy": {
+                "levels": {"0": {"statsUserUplink": true, "statsUserDownlink": true}},
+                "system": {"statsInboundUplink": true, "statsInboundDownlink": true, "statsOutboundUplink": true, "statsOutboundDownlink": true}
+            },
+            "inbounds": [
+                {
+                    "tag": "api",
+                    "listen": "127.0.0.1",
+                    "port": 10087,
+                    "protocol": "dokodemo-door",
+                    "settings": {"address": "127.0.0.1"}
+                },
+                {
+                    "tag": "socks",
+                    "listen": "127.0.0.1",
+                    "port": 1085,
+                    "protocol": "socks",
+                    "settings": {"auth": "noauth", "udp": true}
+                }
+            ],
+            "outbounds": [
+                {"tag": "direct", "protocol": "freedom"}
+            ],
+            "routing": {
+                "domainStrategy": "AsIs",
+                "rules": [
+                    {"type": "field", "inboundTag": ["api"], "outboundTag": "api"}
+                ]
+            }
+        }

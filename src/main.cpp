@@ -8,6 +8,9 @@
 #include <thread>
 #include <atomic>
 #include <filesystem>
+#include <vector>
+#include <queue>
+#include <mutex>
 #include <windows.h>
 
 #include "Profileitem.h"
@@ -17,6 +20,12 @@
 #include "XrayApi.h"
 
 namespace {
+
+std::vector<db::models::Profileitem> g_profiles;
+std::queue<int> g_profilesQueue;
+std::atomic<int> g_processedCount{0};
+int g_totalProxies = 0;
+std::mutex g_queueMutex;
 
 void printConfigTypeHelp() {
     std::cout << "ConfigType values:" << std::endl;
@@ -86,6 +95,94 @@ bool testProxy(int socksPort, const std::string& testUrl, int timeoutMs, long& l
     return res == CURLE_OK && (responseCode == 200 || responseCode == 204);
 }
 
+struct WorkerContext {
+    int workerId;
+    int socksPort;
+    int apiPort;
+    std::string xrayPath;
+    std::string configPath;
+    std::string testUrl;
+    int timeoutMs;
+    sqlite3* db;
+    std::atomic<int>* successCount;
+    std::mutex* printMutex;
+    std::mutex* dbMutex;
+};
+
+void workerThreadFunc(const WorkerContext& ctx) {
+    std::string xrayApiAddr = "127.0.0.1:" + std::to_string(ctx.apiPort);
+    xray::XrayApi xrayApi(ctx.xrayPath, xrayApiAddr);
+    db::models::ProfileexitemDAO exItemDao(ctx.db);
+    
+    while (true) {
+        int profileIdx = -1;
+        {
+            std::lock_guard<std::mutex> lock(g_queueMutex);
+            if (g_profilesQueue.empty()) break;
+            profileIdx = g_profilesQueue.front();
+            g_profilesQueue.pop();
+        }
+        
+        if (profileIdx < 0 || profileIdx >= static_cast<int>(g_profiles.size())) continue;
+        
+        const auto& profile = g_profiles[profileIdx];
+        int currentIdx = ++g_processedCount;
+        
+        {
+            std::lock_guard<std::mutex> lock(*ctx.printMutex);
+            std::cout << "[Worker-" << ctx.workerId << "] [" << currentIdx << "/" << g_totalProxies << "] Testing: " 
+                      << profile.address << ":" << profile.port << " (" << profile.remarks << ")" << std::endl;
+        }
+        
+        try {
+            config::ConfigGenerator configGen(ctx.db);
+            auto config = configGen.generateConfig(profile);
+            
+            std::string tag = "proxy";
+            xrayApi.removeOutbound(tag);
+            
+            if (!xrayApi.addOutbound(config.outbound_json, tag)) {
+                std::lock_guard<std::mutex> lock(*ctx.printMutex);
+                std::cerr << "[Worker-" << ctx.workerId << "] Failed to add outbound: " << xrayApi.getLastError() << std::endl;
+            {
+                std::lock_guard<std::mutex> lock(*ctx.dbMutex);
+                exItemDao.updateTestResult(profile.indexid, -1, false, xrayApi.getLastError());
+            }
+                continue;
+            }
+            
+            std::this_thread::sleep_for(std::chrono::milliseconds(300));
+            
+            long latencyMs = -1;
+            std::string errorMsg;
+            bool connected = testProxy(ctx.socksPort, ctx.testUrl, ctx.timeoutMs, latencyMs, errorMsg);
+            
+            if (connected) {
+                (*ctx.successCount)++;
+                std::lock_guard<std::mutex> lock(*ctx.printMutex);
+                std::cout << "[Worker-" << ctx.workerId << "] SUCCESS (latency: " << latencyMs << "ms)" << std::endl;
+            } else {
+                std::lock_guard<std::mutex> lock(*ctx.printMutex);
+                std::cout << "[Worker-" << ctx.workerId << "] FAILED (" << errorMsg << ")" << std::endl;
+            }
+            
+            {
+            std::lock_guard<std::mutex> lock(*ctx.dbMutex);
+            exItemDao.updateTestResult(profile.indexid, latencyMs, connected, errorMsg);
+        }
+            xrayApi.removeOutbound(tag);
+            
+        } catch (const std::exception& e) {
+            std::lock_guard<std::mutex> lock(*ctx.printMutex);
+            std::cerr << "[Worker-" << ctx.workerId << "] Exception: " << e.what() << std::endl;
+            {
+                std::lock_guard<std::mutex> lock(*ctx.dbMutex);
+                exItemDao.updateTestResult(profile.indexid, -1, false, e.what());
+            }
+        }
+    }
+}
+
 } // namespace
 
 int main(int argc, char* argv[]) {
@@ -102,11 +199,17 @@ int main(int argc, char* argv[]) {
         return 1;
     }
     
+    int numWorkers = appConfig->test_threads;
+    int startPort = appConfig->xray_start_port;
+    int baseApiPort = appConfig->xray_api_port;
+    
     std::cout << "Config loaded from: " << configPath << std::endl;
     std::cout << "Database path: " << appConfig->database_path << std::endl;
     std::cout << "SQL query: " << appConfig->sql_query << std::endl;
     std::cout << "Xray executable: " << appConfig->xray_executable << std::endl;
-    std::cout << "Xray config: " << appConfig->xray_config << std::endl;
+    std::cout << "Workers: " << numWorkers << std::endl;
+    std::cout << "Start port: " << startPort << std::endl;
+    std::cout << "Base API port: " << baseApiPort << std::endl;
 
     sqlite3* db = nullptr;
     curl_global_init(CURL_GLOBAL_DEFAULT);
@@ -115,77 +218,125 @@ int main(int argc, char* argv[]) {
         std::cerr << "Failed to open database: " << sqlite3_errmsg(db) << std::endl;
         return 1;
     }
+    sqlite3_busy_timeout(db, 5000);
+    sqlite3_exec(db, "PRAGMA journal_mode=WAL", nullptr, nullptr, nullptr);
     std::cout << "Database opened: " << appConfig->database_path << std::endl;
 
-    std::string xrayApiAddr = "127.0.0.1:" + std::to_string(appConfig->xray_api_port);
-    xray::XrayApi xrayApi(appConfig->xray_executable, xrayApiAddr);
-
-    std::cout << "Starting xray with config: " << appConfig->xray_config << std::endl;
-    if (!startXray(appConfig->xray_executable, appConfig->xray_config)) {
-        std::cerr << "Failed to start xray" << std::endl;
-        return 1;
+    std::vector<std::pair<int, int>> workerPorts;
+    for (int i = 0; i < numWorkers; ++i) {
+        int socksPort = startPort + i;
+        int apiPort = baseApiPort + i;
+        workerPorts.push_back({socksPort, apiPort});
+        std::cout << "Worker " << i << ": socks=" << socksPort << " api=" << apiPort << std::endl;
     }
-    std::cout << "Xray started successfully" << std::endl;
+
+    std::vector<std::string> xrayConfigs;
+    std::string baseDir = appConfig->xray_config.substr(0, appConfig->xray_config.find_last_of("/\\"));
+    
+    for (int i = 0; i < numWorkers; ++i) {
+        int socksPort = workerPorts[i].first;
+        int apiPort = workerPorts[i].second;
+        
+        std::string configContent = R"({
+            "log": {"loglevel": "warning"},
+            "api": {
+                "tag": "api",
+                "services": [
+                    "HandlerService",
+                    "LoggerService",
+                    "StatsService"
+                ]
+            },
+            "stats": {},
+            "policy": {
+                "levels": {"0": {"statsUserUplink": true, "statsUserDownlink": true}},
+                "system": {"statsInboundUplink": true, "statsInboundDownlink": true, "statsOutboundUplink": true, "statsOutboundDownlink": true}
+            },
+            "inbounds": [
+                {
+                    "tag": "api",
+                    "listen": "127.0.0.1",
+                    "port": )" + std::to_string(apiPort) + R"(,
+                    "protocol": "dokodemo-door",
+                    "settings": {"address": "127.0.0.1"}
+                },
+                {
+                    "tag": "socks",
+                    "listen": "127.0.0.1",
+                    "port": )" + std::to_string(socksPort) + R"(,
+                    "protocol": "socks",
+                    "settings": {"auth": "noauth", "udp": true}
+                }
+            ],
+            "outbounds": [
+                {"tag": "direct", "protocol": "freedom"}
+            ],
+            "routing": {
+                "domainStrategy": "AsIs",
+                "rules": [
+                    {"type": "field", "inboundTag": ["api"], "outboundTag": "api"}
+                ]
+            }
+        })";
+        
+        std::string configPath = baseDir + "/worker_config_" + std::to_string(socksPort) + ".json";
+        std::ofstream outFile(configPath);
+        outFile << configContent;
+        outFile.close();
+        xrayConfigs.push_back(configPath);
+    }
+
+    std::vector<std::thread> workerThreads;
+    std::atomic<int> successCount{0};
+    std::mutex printMutex;
+    std::mutex dbMutex;
+
+    for (int i = 0; i < numWorkers; ++i) {
+        if (!startXray(appConfig->xray_executable, xrayConfigs[i])) {
+            std::cerr << "Failed to start xray worker " << i << std::endl;
+        } else {
+            std::cout << "Worker " << i << " xray started" << std::endl;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    }
+
+    std::this_thread::sleep_for(std::chrono::seconds(2));
 
     config::ConfigGenerator configGen(db);
-    db::models::ProfileexitemDAO exItemDao(db);
+    g_profiles = configGen.loadProfiles(appConfig->sql_query);
+    g_totalProxies = g_profiles.size();
     
-    auto profiles = configGen.loadProfiles(appConfig->sql_query);
-    std::cout << "Loaded " << profiles.size() << " profiles from ProfileItem" << std::endl;
-
-    auto exItems = configGen.loadProfileExItems();
-    std::cout << "Loaded " << exItems.size() << " items from ProfileExItem" << std::endl;
+    std::cout << "Loaded " << g_profiles.size() << " profiles from ProfileItem" << std::endl;
 
     printConfigTypeHelp();
+    std::cout << "Total proxies to test: " << g_totalProxies << std::endl;
 
-    int totalProxies = profiles.size();
-    int testCount = 0;
-    int successCount = 0;
-    
-    std::cout << "Total proxies to test: " << totalProxies << std::endl;
-    
-    for (const auto& profile : profiles) {
-        // if (testCount >= 25) break;
-        
-        std::cout << "[" << (testCount + 1) << "/" << totalProxies << "] Testing Profile[" << profile.indexid << "]: " << profile.configtype << " " 
-                  << profile.address << ":" << profile.port << " (" << profile.remarks << ")" << std::endl;
-        
-        auto config = configGen.generateConfig(profile);
-        
-        std::string tag = "proxy";
-
-        std::cout << "  Removing existing proxy..." << std::endl;
-        xrayApi.removeOutbound(tag);
-        
-        std::cout << "  Adding outbound: " << config.outbound_json << std::endl;
-        bool added = xrayApi.addOutbound(config.outbound_json, tag);
-        if (!added) {
-            std::cerr << "  Failed to add outbound: " << xrayApi.getLastError() << std::endl;
-            continue;
-        }
-        std::cout << "  Outbound added successfully" << std::endl;
-        
-        std::this_thread::sleep_for(std::chrono::milliseconds(500));
-        
-        long latencyMs = -1;
-        std::string errorMsg;
-        bool connected = testProxy(appConfig->xray_socks_port, appConfig->test_url, appConfig->test_timeout_ms, latencyMs, errorMsg);
-        
-        if (connected) {
-            std::cout << "  Proxy test: SUCCESS (latency: " << latencyMs << "ms)" << std::endl;
-            successCount++;
-        } else {
-            std::cout << "  Proxy test: FAILED (" << errorMsg << ")" << std::endl;
-        }
-        
-        exItemDao.updateTestResult(profile.indexid, latencyMs, connected, errorMsg);
-        
-        xrayApi.removeOutbound(tag);
-        
-        testCount++;
+    for (int i = 0; i < g_totalProxies; ++i) {
+        g_profilesQueue.push(i);
     }
 
-    std::cout << "Tested " << testCount << " proxies, " << successCount << " successful" << std::endl;
+    for (int i = 0; i < numWorkers; ++i) {
+        WorkerContext ctx;
+        ctx.workerId = i;
+        ctx.socksPort = workerPorts[i].first;
+        ctx.apiPort = workerPorts[i].second;
+        ctx.xrayPath = appConfig->xray_executable;
+        ctx.configPath = xrayConfigs[i];
+        ctx.testUrl = appConfig->test_url;
+        ctx.timeoutMs = appConfig->test_timeout_ms;
+        ctx.db = db;
+        ctx.successCount = &successCount;
+        ctx.printMutex = &printMutex;
+        ctx.dbMutex = &dbMutex;
+        
+        workerThreads.emplace_back(workerThreadFunc, ctx);
+    }
+
+    for (auto& t : workerThreads) {
+        t.join();
+    }
+
+    std::cout << "Tested " << g_processedCount << " proxies, " << successCount << " successful" << std::endl;
 
     sqlite3_close(db);
     curl_global_cleanup();
