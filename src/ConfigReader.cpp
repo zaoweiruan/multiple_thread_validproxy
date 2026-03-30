@@ -46,6 +46,16 @@ std::optional<AppConfig> ConfigReader::load(const std::string& configPath) {
                 if (xray.contains("config")) {
                     config.xray_config = xray["config"].as_string().c_str();
                 }
+                if (xray.contains("workers")) {
+                    config.xray_workers = static_cast<int>(xray["workers"].as_int64());
+                } else {
+                    config.xray_workers = 1;
+                }
+                if (xray.contains("start_port")) {
+                    config.xray_start_port = static_cast<int>(xray["start_port"].as_int64());
+                } else {
+                    config.xray_start_port = 1083;
+                }
                 if (xray.contains("api_port")) {
                     config.xray_api_port = static_cast<int>(xray["api_port"].as_int64());
                 }
@@ -61,6 +71,11 @@ std::optional<AppConfig> ConfigReader::load(const std::string& configPath) {
                 }
                 if (test.contains("timeout_ms")) {
                     config.test_timeout_ms = static_cast<int>(test["timeout_ms"].as_int64());
+                }
+                if (test.contains("threads")) {
+                    config.test_threads = static_cast<int>(test["threads"].as_int64());
+                } else {
+                    config.test_threads = 1;
                 }
             }
         }
