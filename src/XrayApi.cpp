@@ -62,7 +62,7 @@ bool XrayApi::addOutbound(const std::string& outboundJson, const std::string& ta
     outFile << outboundJson;
     outFile.close();
 
-    std::string cmd = "powershell -Command \"& '" + xrayPath_ + "' api ado --server " + serverAddr_ + " '" + tempFile + "'\"";
+    std::string cmd = "powershell -Command \"$host.UI.RawUI.BackgroundColor='Black';$host.UI.RawUI.ForegroundColor='White';& '" + xrayPath_ + "' api ado --server " + serverAddr_ + " '" + tempFile + "'\"";
 
     char buffer[4096];
     FILE* pipe = _popen(cmd.c_str(), "r");
