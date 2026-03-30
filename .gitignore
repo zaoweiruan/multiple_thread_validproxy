@@ -1,0 +1,8 @@
+build/
+bin/*.exe
+bin/*.bat
+.vscode/
+*.log
+*.tmp
+temp_*.txt
+node_modules/
