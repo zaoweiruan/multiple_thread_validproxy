@@ -210,6 +210,7 @@ void workerThreadFunc(const WorkerContext& ctx) {
                 std::lock_guard<std::mutex> lock(*ctx.printMutex);
                 std::cerr << "[Worker-" << ctx.workerId << "] Xray API error: " << xrayApi.getLastError() << std::endl;
                 logToFile("XRAY_ERROR: " + profile.indexid + " - " + xrayApi.getLastError());
+                logToFile("  Xray output: " + addResult);
                 logToFile("  Outbound JSON: " + config.outbound_json);
                 {
                     std::lock_guard<std::mutex> lock2(*ctx.dbMutex);
