@@ -29,11 +29,19 @@ std::optional<AppConfig> ConfigReader::load(const std::string& configPath) {
             auto& obj = jv.as_object();
             
             if (obj.contains("database")) {
-                config.database_path = obj["database"].as_string().c_str();
+                if (obj["database"].is_string()) {
+                    config.database_path = obj["database"].as_string().c_str();
+                } else if (obj["database"].is_object()) {
+                    auto& db = obj["database"].as_object();
+                    if (db.contains("path")) {
+                        config.database_path = db["path"].as_string().c_str();
+                    }
+                    if (db.contains("sql")) {
+                        config.sql_query = db["sql"].as_string().c_str();
+                    }
+                }
             }
-            if (obj.contains("sql")) {
-                config.sql_query = obj["sql"].as_string().c_str();
-            }
+
             
             if (obj.contains("xray") && obj["xray"].is_object()) {
                 auto& xray = obj["xray"].as_object();

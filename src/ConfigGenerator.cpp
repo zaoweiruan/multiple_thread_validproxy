@@ -20,12 +20,11 @@ std::vector<db::models::Profileitem> ConfigGenerator::loadProfiles(const std::st
     
     std::vector<db::models::Profileitem> validProfiles;
     for (auto& p : profiles) {
-        if (p.network.empty() && p.configtype == "3") {
+        if (p.network.empty()&&p.configtype == "3") {
             p.network = "tcp";
         }
         
         if (!isValidNetwork(p.network)) {
-            std::cerr << "跳过无效网络类型: " << p.network << " (" << p.remarks << ")" << std::endl;
             continue;
         }
         
