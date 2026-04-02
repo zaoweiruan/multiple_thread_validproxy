@@ -28,23 +28,17 @@ std::optional<AppConfig> ConfigReader::load(const std::string& configPath) {
         if (jv.is_object()) {
             auto& obj = jv.as_object();
             
-            if (obj.contains("database") && obj["database"].is_object()) {
-                auto& db = obj["database"].as_object();
-                if (db.contains("path")) {
-                    config.database_path = db["path"].as_string().c_str();
-                }
-                if (db.contains("sql")) {
-                    config.sql_query = db["sql"].as_string().c_str();
-                }
+            if (obj.contains("database")) {
+                config.database_path = obj["database"].as_string().c_str();
+            }
+            if (obj.contains("sql")) {
+                config.sql_query = obj["sql"].as_string().c_str();
             }
             
             if (obj.contains("xray") && obj["xray"].is_object()) {
                 auto& xray = obj["xray"].as_object();
                 if (xray.contains("executable")) {
                     config.xray_executable = xray["executable"].as_string().c_str();
-                }
-                if (xray.contains("config")) {
-                    config.xray_config = xray["config"].as_string().c_str();
                 }
                 if (xray.contains("workers")) {
                     config.xray_workers = static_cast<int>(xray["workers"].as_int64());
@@ -59,9 +53,6 @@ std::optional<AppConfig> ConfigReader::load(const std::string& configPath) {
                 if (xray.contains("api_port")) {
                     config.xray_api_port = static_cast<int>(xray["api_port"].as_int64());
                 }
-                if (xray.contains("socks_port")) {
-                    config.xray_socks_port = static_cast<int>(xray["socks_port"].as_int64());
-                }
             }
             
             if (obj.contains("test") && obj["test"].is_object()) {
@@ -71,12 +62,20 @@ std::optional<AppConfig> ConfigReader::load(const std::string& configPath) {
                 }
                 if (test.contains("timeout_ms")) {
                     config.test_timeout_ms = static_cast<int>(test["timeout_ms"].as_int64());
-                }
-                if (test.contains("threads")) {
-                    config.test_threads = static_cast<int>(test["threads"].as_int64());
                 } else {
-                    config.test_threads = 1;
+                    config.test_timeout_ms = 5000;
                 }
+            }
+            
+            if (obj.contains("log") && obj["log"].is_object()) {
+                auto& log = obj["log"].as_object();
+                if (log.contains("enabled")) {
+                    config.log_enabled = log["enabled"].as_bool();
+                } else {
+                    config.log_enabled = true;
+                }
+            } else {
+                config.log_enabled = true;
             }
         }
         

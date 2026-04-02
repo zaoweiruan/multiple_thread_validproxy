@@ -58,6 +58,29 @@ struct Profileitem {
   std::string kcpHeaderType = "none";
   int muxEnabled;
   Profileitem() = default;
+  
+  void checkRequired() const {
+    if (address.empty()) {
+      throw std::runtime_error("Address is empty");
+    }
+    if (port.empty() || std::stoi(port) <= 0 || std::stoi(port) > 65535) {
+      throw std::runtime_error("Invalid port: " + port);
+    }
+    if (id.empty()) {
+      throw std::runtime_error("ID/Password is empty");
+    }
+    if (configtype.empty()) {
+      throw std::runtime_error("ConfigType is empty");
+    }
+    if (streamsecurity == "reality") {
+      if (publickey.empty()) {
+        throw std::runtime_error("REALITY requires publicKey");
+      }
+      if (sni.empty()) {
+        throw std::runtime_error("REALITY requires sni");
+      }
+    }
+  }
 
   static Profileitem fromStmt(sqlite3_stmt* stmt) {
     Profileitem obj;
@@ -77,78 +100,78 @@ struct Profileitem {
     // Port
     text = (const char*)sqlite3_column_text(stmt, 4);
     obj.port = text ? text : "";
-    // Id
+    // Ports (column 5 - before Id in SQL)
     text = (const char*)sqlite3_column_text(stmt, 5);
+    obj.ports = text ? text : "";
+    // Id (column 6 in SQL query)
+    text = (const char*)sqlite3_column_text(stmt, 6);
     obj.id = text ? text : "";
     // AlterId
-    text = (const char*)sqlite3_column_text(stmt, 6);
+    text = (const char*)sqlite3_column_text(stmt, 7);
     obj.alterid = text ? text : "";
     // Security
-    text = (const char*)sqlite3_column_text(stmt, 7);
+    text = (const char*)sqlite3_column_text(stmt, 8);
     obj.security = text ? text : "";
     // Network
-    text = (const char*)sqlite3_column_text(stmt, 8);
+    text = (const char*)sqlite3_column_text(stmt, 9);
     obj.network = text ? text : "";
     // Remarks
-    text = (const char*)sqlite3_column_text(stmt, 9);
+    text = (const char*)sqlite3_column_text(stmt, 10);
     obj.remarks = text ? text : "";
     // HeaderType
-    text = (const char*)sqlite3_column_text(stmt, 10);
+    text = (const char*)sqlite3_column_text(stmt, 11);
     obj.headertype = text ? text : "";
     // RequestHost
-    text = (const char*)sqlite3_column_text(stmt, 11);
+    text = (const char*)sqlite3_column_text(stmt, 12);
     obj.requesthost = text ? text : "";
     // Path
-    text = (const char*)sqlite3_column_text(stmt, 12);
+    text = (const char*)sqlite3_column_text(stmt, 13);
     obj.path = text ? text : "";
     // StreamSecurity
-    text = (const char*)sqlite3_column_text(stmt, 13);
+    text = (const char*)sqlite3_column_text(stmt, 14);
     obj.streamsecurity = text ? text : "";
     // AllowInsecure
-    text = (const char*)sqlite3_column_text(stmt, 14);
+    text = (const char*)sqlite3_column_text(stmt, 15);
     obj.allowinsecure = text ? text : "";
     // Subid
-    text = (const char*)sqlite3_column_text(stmt, 15);
+    text = (const char*)sqlite3_column_text(stmt, 16);
     obj.subid = text ? text : "";
     // IsSub
-    text = (const char*)sqlite3_column_text(stmt, 16);
+    text = (const char*)sqlite3_column_text(stmt, 17);
     obj.issub = text ? text : "";
     // Flow
-    text = (const char*)sqlite3_column_text(stmt, 17);
+    text = (const char*)sqlite3_column_text(stmt, 18);
     obj.flow = text ? text : "";
     // Sni
-    text = (const char*)sqlite3_column_text(stmt, 18);
+    text = (const char*)sqlite3_column_text(stmt, 19);
     obj.sni = text ? text : "";
     // Alpn
-    text = (const char*)sqlite3_column_text(stmt, 19);
+    text = (const char*)sqlite3_column_text(stmt, 20);
     obj.alpn = text ? text : "";
     // CoreType
-    text = (const char*)sqlite3_column_text(stmt, 20);
+    text = (const char*)sqlite3_column_text(stmt, 21);
     obj.coretype = text ? text : "";
     // PreSocksPort
-    text = (const char*)sqlite3_column_text(stmt, 21);
+    text = (const char*)sqlite3_column_text(stmt, 22);
     obj.presocksport = text ? text : "";
     // Fingerprint
-    text = (const char*)sqlite3_column_text(stmt, 22);
+    text = (const char*)sqlite3_column_text(stmt, 23);
     obj.fingerprint = text ? text : "";
     // DisplayLog
-    text = (const char*)sqlite3_column_text(stmt, 23);
+    text = (const char*)sqlite3_column_text(stmt, 24);
     obj.displaylog = text ? text : "";
     // PublicKey
-    text = (const char*)sqlite3_column_text(stmt, 24);
+    text = (const char*)sqlite3_column_text(stmt, 25);
     obj.publickey = text ? text : "";
     // ShortId
-    text = (const char*)sqlite3_column_text(stmt, 25);
+    text = (const char*)sqlite3_column_text(stmt, 26);
     obj.shortid = text ? text : "";
     // SpiderX
-    text = (const char*)sqlite3_column_text(stmt, 26);
+    text = (const char*)sqlite3_column_text(stmt, 27);
     obj.spiderx = text ? text : "";
     // Extra
-    text = (const char*)sqlite3_column_text(stmt, 27);
-    obj.extra = text ? text : "";
-    // Ports
     text = (const char*)sqlite3_column_text(stmt, 28);
-    obj.ports = text ? text : "";
+    obj.extra = text ? text : "";
     // Mldsa65Verify
     text = (const char*)sqlite3_column_text(stmt, 29);
     obj.mldsa65verify = text ? text : "";

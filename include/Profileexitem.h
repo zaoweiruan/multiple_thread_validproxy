@@ -91,15 +91,15 @@ public:
   bool updateTestResult(const std::string& indexid, long latencyMs, bool success, const std::string& curlMsg) {
     std::string message;
     if (success) {
-      message = "OK:" + curlMsg;
+      message = "OK";
     } else {
-      message = "FAILED:" + curlMsg;
+      message = "FAILED";
     }
     
     std::ostringstream oss;
     oss << "INSERT OR REPLACE INTO ProfileExItem (indexid, delay, message) VALUES (";
     oss << "'" << indexid << "', ";
-    oss << "'" << (success && latencyMs >= 0 ? std::to_string(latencyMs) : "-1") << "', ";
+    oss << "'" << (success && latencyMs >= 0 ? std::to_string(latencyMs / 10) : "-1") << "', ";
     oss << "'" << message << "')";
     
     std::string sql = oss.str();

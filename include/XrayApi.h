@@ -9,9 +9,10 @@ namespace xray {
 class XrayApi {
 public:
     XrayApi(const std::string& xrayPath, const std::string& serverAddr);
-    bool addOutbound(const std::string& outboundJson, const std::string& tag);
+    bool addOutbound(const std::string& outboundJson, const std::string& tag, std::string& resultOutput);
     bool removeOutbound(const std::string& tag);
     bool listOutbounds();
+    bool ping(std::string& resultOutput);
     std::string getLastError() const;
 
 private:
