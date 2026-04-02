@@ -5,7 +5,11 @@ bin/validproxy.exe
 bin/*.exe
 bin/*.bat
 bin/*.json
+bin/config.json
 build/
 *.txt
 *.log
 *.tmp
+*.pyc
+__pycache/
+tests/
