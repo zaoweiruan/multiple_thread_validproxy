@@ -10,14 +10,12 @@ struct AppConfig {
     std::string database_path;
     std::string sql_query;
     std::string xray_executable;
-    std::string xray_config;
     int xray_workers;
     int xray_start_port;
     int xray_api_port;
-    int xray_socks_port;
     std::string test_url;
     int test_timeout_ms;
-    int test_threads;
+    bool log_enabled;
 };
 
 class ConfigReader {

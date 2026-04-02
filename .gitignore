@@ -1,8 +1,3 @@
-build/
-bin/*.exe
-bin/*.bat
-.vscode/
-*.log
-*.tmp
-temp_*.txt
-node_modules/
+bin/test_log_*.txt
+xray_outbound.json
+bin/worker_config_*.json

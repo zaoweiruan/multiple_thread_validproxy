@@ -5,6 +5,7 @@
 #include <string>
 #include <thread>
 #include <chrono>
+#include <filesystem>
 #include <windows.h>
 #include "XrayApi.h"
 
@@ -40,8 +41,18 @@ bool XrayApi::runCommand(const std::string& args, std::string& output) {
     return exitCode == 0;
 }
 
-bool XrayApi::addOutbound(const std::string& outboundJson, const std::string& tag) {
-    std::string cmd = "echo " + outboundJson + " | \"" + xrayPath_ + "\" api ado --server " + serverAddr_;
+bool XrayApi::addOutbound(const std::string& outboundJson, const std::string& tag, std::string& resultOutput) {
+    std::string normalizedXray = xrayPath_;
+    for (char& c : normalizedXray) {
+        if (c == '/') c = '\\';
+    }
+    
+    std::string normalizedServer = serverAddr_;
+    for (char& c : normalizedServer) {
+        if (c == '/') c = '\\';
+    }
+    
+    std::string cmd = "cmd /c echo " + outboundJson + " | " + normalizedXray + " api ado --server=" + normalizedServer + " stdin:";
 
     char buffer[4096];
     FILE* pipe = _popen(cmd.c_str(), "r");
@@ -55,13 +66,29 @@ bool XrayApi::addOutbound(const std::string& outboundJson, const std::string& ta
         output += buffer;
     }
     int exitCode = _pclose(pipe);
+    
+    resultOutput = output;
 
-    if (exitCode != 0) {
+    bool success = (exitCode == 0) || (output.find("adding") != std::string::npos);
+    
+    if (!success) {
         lastError_ = "xray api ado failed with code: " + std::to_string(exitCode) + " output: " + output;
         return false;
     }
 
     std::this_thread::sleep_for(std::chrono::milliseconds(200));
+
+    std::string lsoCmd = "\"" + xrayPath_ + "\" api lso --server=" + serverAddr_;
+    FILE* lsoPipe = _popen(lsoCmd.c_str(), "r");
+    if (lsoPipe) {
+        char lsoBuffer[4096];
+        std::string lsoOutput;
+        while (fgets(lsoBuffer, sizeof(lsoBuffer), lsoPipe) != nullptr) {
+            lsoOutput += lsoBuffer;
+        }
+        _pclose(lsoPipe);
+        resultOutput += "\n[Outbounds]:\n" + lsoOutput;
+    }
 
     return true;
 }
@@ -115,6 +142,26 @@ bool XrayApi::listOutbounds() {
     }
     int exitCode = _pclose(pipe);
 
+    return exitCode == 0;
+}
+
+bool XrayApi::ping(std::string& resultOutput) {
+    std::string cmd = "\"" + xrayPath_ + "\" api lsi --server " + serverAddr_;
+
+    char buffer[4096];
+    FILE* pipe = _popen(cmd.c_str(), "r");
+    if (!pipe) {
+        lastError_ = "Failed to run xray api lsi command";
+        return false;
+    }
+
+    std::string output;
+    while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
+        output += buffer;
+    }
+    int exitCode = _pclose(pipe);
+    
+    resultOutput = output;
     return exitCode == 0;
 }
 

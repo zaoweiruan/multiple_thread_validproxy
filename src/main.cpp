@@ -26,6 +26,15 @@ std::queue<int> g_profilesQueue;
 std::atomic<int> g_processedCount{0};
 int g_totalProxies = 0;
 std::mutex g_queueMutex;
+std::ofstream* g_logOut = nullptr;
+bool g_logEnabled = false;
+HANDLE g_xrayJob = nullptr;
+
+void logToFile(const std::string& msg) {
+    if (g_logOut && g_logOut->is_open() && g_logEnabled) {
+        *g_logOut << msg << std::endl;
+    }
+}
 
 void printConfigTypeHelp() {
     std::cout << "ConfigType values:" << std::endl;
@@ -33,6 +42,27 @@ void printConfigTypeHelp() {
     std::cout << "  3 = Shadowsocks" << std::endl;
     std::cout << "  5 = VLESS" << std::endl;
     std::cout << "  6 = Trojan" << std::endl;
+}
+
+bool initXrayJob() {
+    g_xrayJob = CreateJobObjectA(NULL, NULL);
+    if (!g_xrayJob) {
+        std::cerr << "Failed to create job object: " << GetLastError() << std::endl;
+        return false;
+    }
+    
+    JOBOBJECT_EXTENDED_LIMIT_INFORMATION jobLimit = {};
+    jobLimit.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+    if (!SetInformationJobObject(g_xrayJob, JobObjectExtendedLimitInformation, &jobLimit, sizeof(jobLimit))) {
+        DWORD err = GetLastError();
+        std::cerr << "Failed to set job limit: " << err << std::endl;
+        CloseHandle(g_xrayJob);
+        g_xrayJob = nullptr;
+        return false;
+    }
+    
+    std::cout << "Job object initialized" << std::endl;
+    return true;
 }
 
 bool startXray(const std::string& xrayPath, const std::string& configPath) {
@@ -47,16 +77,34 @@ bool startXray(const std::string& xrayPath, const std::string& configPath) {
     
     std::string cmd = "\"" + xrayPath + "\" run -c \"" + normalizedPath + "\"";
     
-    if (!CreateProcessA(NULL, (LPSTR)cmd.c_str(), NULL, NULL, FALSE, CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
+    DWORD createFlags = CREATE_SUSPENDED | CREATE_NO_WINDOW;
+    
+    if (!CreateProcessA(NULL, (LPSTR)cmd.c_str(), NULL, NULL, FALSE, createFlags, NULL, NULL, &si, &pi)) {
         std::cerr << "Failed to start xray: " << GetLastError() << std::endl;
         return false;
     }
     
+    if (g_xrayJob) {
+        if (!AssignProcessToJobObject(g_xrayJob, pi.hProcess)) {
+            std::cerr << "Failed to assign process to job: " << GetLastError() << std::endl;
+        }
+    }
+    
+    ResumeThread(pi.hThread);
     CloseHandle(pi.hProcess);
     CloseHandle(pi.hThread);
     
     std::this_thread::sleep_for(std::chrono::seconds(2));
     return true;
+}
+
+void stopXray() {
+    std::cout << "Closing job object (xray processes will be terminated)..." << std::endl;
+    if (g_xrayJob) {
+        TerminateJobObject(g_xrayJob, 0);
+        CloseHandle(g_xrayJob);
+        g_xrayJob = nullptr;
+    }
 }
 
 bool testProxy(int socksPort, const std::string& testUrl, int timeoutMs, long& latencyMs, std::string& errorMsg) {
@@ -69,7 +117,7 @@ bool testProxy(int socksPort, const std::string& testUrl, int timeoutMs, long& l
         return false;
     }
     
-    std::string proxyUrl = "socks5://127.0.0.1:" + std::to_string(socksPort);
+    std::string proxyUrl = "http://127.0.0.1:" + std::to_string(socksPort);
     curl_easy_setopt(curl, CURLOPT_PROXY, proxyUrl.c_str());
     curl_easy_setopt(curl, CURLOPT_URL, testUrl.c_str());
     curl_easy_setopt(curl, CURLOPT_NOBODY, 1L);
@@ -134,20 +182,39 @@ void workerThreadFunc(const WorkerContext& ctx) {
                       << profile.address << ":" << profile.port << " (" << profile.remarks << ")" << std::endl;
         }
         
+        config::ConfigGenerator configGen(ctx.db);
+        db::models::Profileitem configProfile = profile;
+        
         try {
-            config::ConfigGenerator configGen(ctx.db);
+            configProfile.checkRequired();
+        } catch (const std::exception& e) {
+            std::lock_guard<std::mutex> lock(*ctx.printMutex);
+            std::cerr << "[Worker-" << ctx.workerId << "] Config error: " << e.what() << std::endl;
+            std::string errorDetail = profile.address + ":" + profile.port + " (" + profile.configtype + ") - " + e.what();
+            logToFile("CONFIG_ERROR: " + profile.indexid + " - " + errorDetail);
+            {
+                std::lock_guard<std::mutex> lock2(*ctx.dbMutex);
+                exItemDao.updateTestResult(profile.indexid, -1, false, "CONFIG_ERROR");
+            }
+            continue;
+        }
+        
+        try {
             auto config = configGen.generateConfig(profile);
-            
             std::string tag = "proxy";
             xrayApi.removeOutbound(tag);
+            std::this_thread::sleep_for(std::chrono::milliseconds(500));
             
-            if (!xrayApi.addOutbound(config.outbound_json, tag)) {
+            std::string addResult;
+            if (!xrayApi.addOutbound(config.outbound_json, tag, addResult)) {
                 std::lock_guard<std::mutex> lock(*ctx.printMutex);
-                std::cerr << "[Worker-" << ctx.workerId << "] Failed to add outbound: " << xrayApi.getLastError() << std::endl;
-            {
-                std::lock_guard<std::mutex> lock(*ctx.dbMutex);
-                exItemDao.updateTestResult(profile.indexid, -1, false, xrayApi.getLastError());
-            }
+                std::cerr << "[Worker-" << ctx.workerId << "] Xray API error: " << xrayApi.getLastError() << std::endl;
+                logToFile("XRAY_ERROR: " + profile.indexid + " - " + xrayApi.getLastError());
+                logToFile("  Outbound JSON: " + config.outbound_json);
+                {
+                    std::lock_guard<std::mutex> lock2(*ctx.dbMutex);
+                    exItemDao.updateTestResult(profile.indexid, -1, false, "XRAY_ERROR");
+                }
                 continue;
             }
             
@@ -160,17 +227,16 @@ void workerThreadFunc(const WorkerContext& ctx) {
             if (connected) {
                 (*ctx.successCount)++;
                 std::lock_guard<std::mutex> lock(*ctx.printMutex);
-                std::cout << "[Worker-" << ctx.workerId << "] SUCCESS (latency: " << latencyMs << "ms)" << std::endl;
+                std::cout << "[Worker-" << ctx.workerId << "] Test SUCCESS - URL: " << ctx.testUrl << " | Latency: " << latencyMs << "ms" << std::endl;
             } else {
                 std::lock_guard<std::mutex> lock(*ctx.printMutex);
-                std::cout << "[Worker-" << ctx.workerId << "] FAILED (" << errorMsg << ")" << std::endl;
+                std::cout << "[Worker-" << ctx.workerId << "] Test FAILED - URL: " << ctx.testUrl << " | Error: " << errorMsg << std::endl;
             }
             
             {
-            std::lock_guard<std::mutex> lock(*ctx.dbMutex);
-            exItemDao.updateTestResult(profile.indexid, latencyMs, connected, errorMsg);
-        }
-            xrayApi.removeOutbound(tag);
+                std::lock_guard<std::mutex> lock(*ctx.dbMutex);
+                exItemDao.updateTestResult(profile.indexid, latencyMs, connected, "TEST_FAILED");
+            }
             
         } catch (const std::exception& e) {
             std::lock_guard<std::mutex> lock(*ctx.printMutex);
@@ -185,12 +251,26 @@ void workerThreadFunc(const WorkerContext& ctx) {
 
 } // namespace
 
+#include <windows.h>
+
+std::string getExecutableDir() {
+    char buffer[MAX_PATH];
+    GetModuleFileNameA(NULL, buffer, MAX_PATH);
+    return std::filesystem::path(buffer).parent_path().string();
+}
+
 int main(int argc, char* argv[]) {
     std::cout << "validproxy starting..." << std::endl;
 
+    std::string exeDir = getExecutableDir();
+    
     std::string configPath = config::ConfigReader::getDefaultConfigPath();
     if (argc > 1) {
-        configPath = argv[1];
+        std::filesystem::path p(argv[1]);
+        if (p.is_relative()) {
+            p = std::filesystem::path(exeDir) / p;
+        }
+        configPath = p.lexically_normal().string();
     }
     
     auto appConfig = config::ConfigReader::load(configPath);
@@ -199,9 +279,11 @@ int main(int argc, char* argv[]) {
         return 1;
     }
     
-    int numWorkers = appConfig->test_threads;
+    int numWorkers = appConfig->xray_workers;
     int startPort = appConfig->xray_start_port;
     int baseApiPort = appConfig->xray_api_port;
+    bool logEnabled = appConfig->log_enabled;
+    g_logEnabled = logEnabled;
     
     std::cout << "Config loaded from: " << configPath << std::endl;
     std::cout << "Database path: " << appConfig->database_path << std::endl;
@@ -210,6 +292,39 @@ int main(int argc, char* argv[]) {
     std::cout << "Workers: " << numWorkers << std::endl;
     std::cout << "Start port: " << startPort << std::endl;
     std::cout << "Base API port: " << baseApiPort << std::endl;
+
+    auto startTime = std::chrono::system_clock::now();
+    time_t startTimeT = std::chrono::system_clock::to_time_t(startTime);
+    char startTimeStr[32];
+    strftime(startTimeStr, sizeof(startTimeStr), "%Y-%m-%d %H:%M:%S", localtime(&startTimeT));
+    
+    char timestamp[32];
+    strftime(timestamp, sizeof(timestamp), "%Y%m%d_%H%M%S", localtime(&startTimeT));
+    
+    std::filesystem::path binDir = std::filesystem::current_path();
+    if (binDir.filename() == "bin") {
+    } else {
+        binDir = binDir / "bin";
+    }
+    if (!std::filesystem::exists(binDir)) {
+        std::filesystem::create_directory(binDir);
+    }
+    std::string logFile = (binDir / ("test_log_" + std::string(timestamp) + ".txt")).string();
+    std::ofstream logOut;
+    if (logEnabled) {
+        logOut.open(logFile);
+        if (!logOut.is_open()) {
+            std::cerr << "Failed to open log file: " << logFile << std::endl;
+        } else {
+            g_logOut = &logOut;
+            logOut << "Test started at: " << startTimeStr << std::endl;
+            logOut << "Workers: " << numWorkers << std::endl;
+            logOut << "Start port: " << startPort << std::endl;
+            logOut << "Test URL: " << appConfig->test_url << std::endl;
+            logOut << "Test timeout: " << appConfig->test_timeout_ms << "ms" << std::endl;
+        }
+    }
+    std::cout << "Log file: " << logFile << " (enabled: " << logEnabled << ")" << std::endl;
 
     sqlite3* db = nullptr;
     curl_global_init(CURL_GLOBAL_DEFAULT);
@@ -231,7 +346,7 @@ int main(int argc, char* argv[]) {
     }
 
     std::vector<std::string> xrayConfigs;
-    std::string baseDir = appConfig->xray_config.substr(0, appConfig->xray_config.find_last_of("/\\"));
+    std::string baseDir = "bin";
     
     for (int i = 0; i < numWorkers; ++i) {
         int socksPort = workerPorts[i].first;
@@ -261,10 +376,10 @@ int main(int argc, char* argv[]) {
                     "settings": {"address": "127.0.0.1"}
                 },
                 {
-                    "tag": "socks",
+                    "tag": "socks-in",
                     "listen": "127.0.0.1",
                     "port": )" + std::to_string(socksPort) + R"(,
-                    "protocol": "socks",
+                    "protocol": "mixed",
                     "settings": {"auth": "noauth", "udp": true}
                 }
             ],
@@ -274,15 +389,22 @@ int main(int argc, char* argv[]) {
             "routing": {
                 "domainStrategy": "AsIs",
                 "rules": [
-                    {"type": "field", "inboundTag": ["api"], "outboundTag": "api"}
+                    {"type": "field", "inboundTag": ["api"], "outboundTag": "api"},
+                    {"type": "field", "outboundTag": "proxy", "network": "tcp"}
                 ]
             }
         })";
         
-        std::string configPath = baseDir + "/worker_config_" + std::to_string(socksPort) + ".json";
+        std::filesystem::path binDir = std::filesystem::current_path();
+        if (binDir.filename() == "bin") {
+        } else {
+            binDir = binDir / "bin";
+        }
+        std::string configPath = (binDir / ("worker_config_" + std::to_string(socksPort) + ".json")).string();
         std::ofstream outFile(configPath);
         outFile << configContent;
         outFile.close();
+        std::cout << "Worker " << i << " config: " << configPath << std::endl;
         xrayConfigs.push_back(configPath);
     }
 
@@ -290,6 +412,10 @@ int main(int argc, char* argv[]) {
     std::atomic<int> successCount{0};
     std::mutex printMutex;
     std::mutex dbMutex;
+
+    if (!initXrayJob()) {
+        std::cerr << "Warning: Failed to init job object, xray processes may not be cleaned up properly" << std::endl;
+    }
 
     for (int i = 0; i < numWorkers; ++i) {
         if (!startXray(appConfig->xray_executable, xrayConfigs[i])) {
@@ -302,12 +428,22 @@ int main(int argc, char* argv[]) {
 
     std::this_thread::sleep_for(std::chrono::seconds(2));
 
+    for (int i = 0; i < numWorkers; ++i) {
+        int apiPort = baseApiPort + i;
+        std::string xrayApiAddr = "127.0.0.1:" + std::to_string(apiPort);
+        xray::XrayApi xrayApi(appConfig->xray_executable, xrayApiAddr);
+        std::string pingResult;
+        if (!xrayApi.ping(pingResult)) {
+            std::cerr << "Warning: Worker " << i << " API port " << apiPort << " not responding" << std::endl;
+        } else {
+            std::cout << "Worker " << i << " API port " << apiPort << " ready" << std::endl;
+        }
+    }
+
     config::ConfigGenerator configGen(db);
     g_profiles = configGen.loadProfiles(appConfig->sql_query);
     g_totalProxies = g_profiles.size();
     
-    std::cout << "Loaded " << g_profiles.size() << " profiles from ProfileItem" << std::endl;
-
     printConfigTypeHelp();
     std::cout << "Total proxies to test: " << g_totalProxies << std::endl;
 
@@ -336,7 +472,28 @@ int main(int argc, char* argv[]) {
         t.join();
     }
 
+    auto endTime = std::chrono::system_clock::now();
+    time_t endTimeT = std::chrono::system_clock::to_time_t(endTime);
+    char endTimeStr[32];
+    strftime(endTimeStr, sizeof(endTimeStr), "%Y-%m-%d %H:%M:%S", localtime(&endTimeT));
+    
+    auto duration = std::chrono::duration_cast<std::chrono::seconds>(endTime - startTime);
+    
+    if (logEnabled && logOut.is_open()) {
+        logOut << std::endl;
+        logOut << "Test finished at: " << endTimeStr << std::endl;
+        logOut << "Total proxies: " << g_processedCount << std::endl;
+        logOut << "Successful: " << successCount << std::endl;
+        logOut << "Failed: " << (g_processedCount - successCount) << std::endl;
+        logOut << "Duration: " << duration.count() << " seconds" << std::endl;
+        logOut.flush();
+        logOut.close();
+        g_logOut = nullptr;
+    }
+    
     std::cout << "Tested " << g_processedCount << " proxies, " << successCount << " successful" << std::endl;
+
+    stopXray();
 
     sqlite3_close(db);
     curl_global_cleanup();
