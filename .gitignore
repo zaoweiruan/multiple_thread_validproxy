@@ -1,3 +1,11 @@
 bin/test_log_*.txt
 xray_outbound.json
 bin/worker_config_*.json
+bin/validproxy.exe
+bin/*.exe
+bin/*.bat
+bin/*.json
+build/
+*.txt
+*.log
+*.tmp
