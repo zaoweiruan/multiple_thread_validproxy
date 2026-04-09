@@ -14,8 +14,9 @@ static std::string generateUniqueId() {
     return std::to_string(val);
 }
 
-SubitemUpdater::SubitemUpdater(sqlite3* db, std::ofstream* logOut)
-    : db_(db), logOut_(logOut), fallbackSubId_("5544178410297751350") {}
+SubitemUpdater::SubitemUpdater(sqlite3* db, std::ofstream* logOut, const std::string& xrayPath, int xrayApiPort, int testTimeoutMs)
+    : db_(db), logOut_(logOut), fallbackSubId_("5544178410297751350"),
+      xrayPath_(xrayPath), xrayApiPort_(xrayApiPort), test_timeout_ms_(testTimeoutMs) {}
 
 void SubitemUpdater::log(const std::string& msg) {
     auto now = std::chrono::system_clock::now();
@@ -165,7 +166,6 @@ std::string SubitemUpdater::fetchUrlViaProxy(const std::string& url, int socksPo
         return "";
     }
     
-    log("INFO: fetchUrlViaProxy success for " + url + " (" + std::to_string(readBuffer.size()) + " bytes)");
     return readBuffer;
 }
 
@@ -733,8 +733,7 @@ bool SubitemUpdater::run() {
             log("INFO: Successfully updated: " + sub.remarks);
         } else {
             failCount++;
-            log("ERROR: Failed to update profiles for: " + sub.remarks);
-        }
+    log("ERROR: Failed to update profiles for: " + sub.remarks);
     }
     
     log("========================================");
@@ -772,28 +771,47 @@ bool SubitemUpdater::runSingle(const std::string& subId) {
     log("INFO: URL: " + sub.url);
     
     std::string content;
-    int maxRetries = 3;
     
-    for (int retry = 0; retry < maxRetries && content.empty(); retry++) {
-        if (retry > 0) {
-            log("WARN: Retry " + std::to_string(retry) + "/" + std::to_string(maxRetries) + " after 3 seconds...");
-            std::this_thread::sleep_for(std::chrono::seconds(3));
-        }
-        content = fetchUrl(sub.url);
-    }
+    content = fetchUrl(sub.url);
     
     if (content.empty()) {
-        log("WARN: Direct fetch failed, trying fallback proxy...");
+        log("WARN: Direct fetch failed, trying fallback proxies...");
         
-        int socksPort = findBestFallbackProxy();
-        if (socksPort > 0) {
-            for (int retry = 0; retry < maxRetries && content.empty(); retry++) {
-                if (retry > 0) {
-                    log("WARN: Proxy retry " + std::to_string(retry) + "/" + std::to_string(maxRetries) + " after 3 seconds...");
-                    std::this_thread::sleep_for(std::chrono::seconds(3));
-                }
-                content = fetchUrlViaProxy(sub.url, socksPort);
+        std::vector<FallbackProxy> fallbackProxies = getAllFallbackProxies(5);
+        
+        if (fallbackProxies.empty()) {
+            log("ERROR: No fallback proxies available");
+            return false;
+        }
+        
+        log("INFO: Found " + std::to_string(fallbackProxies.size()) + " fallback proxies");
+        
+        if (!startXrayForSubscription()) {
+            log("ERROR: Failed to start xray for subscription testing");
+            return false;
+        }
+        
+        bool success = false;
+        for (size_t i = 0; i < fallbackProxies.size(); i++) {
+            log("INFO: Testing fallback proxy " + std::to_string(i + 1) + "/" + std::to_string(fallbackProxies.size()) + 
+                " (socksPort=" + std::to_string(fallbackProxies[i].socksPort) + ", delay=" + 
+                std::to_string(fallbackProxies[i].delay) + ")");
+            
+            if (testSubscriptionViaXray(fallbackProxies[i].socksPort, sub.url)) {
+                log("INFO: Fallback proxy " + std::to_string(i + 1) + " succeeded");
+                content = fetchUrlViaProxy(sub.url, fallbackProxies[i].socksPort);
+                success = true;
+                break;
+            } else {
+                log("INFO: Fallback proxy " + std::to_string(i + 1) + " failed");
             }
+        }
+        
+        cleanupXray();
+        
+        if (!success) {
+            log("ERROR: All fallback proxies failed");
+            return false;
         }
     }
     
