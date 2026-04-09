@@ -18,6 +18,7 @@
 #include "ConfigGenerator.h"
 #include "ConfigReader.h"
 #include "XrayApi.h"
+#include "SubitemUpdater.h"
 
 namespace {
 
@@ -266,12 +267,95 @@ int main(int argc, char* argv[]) {
     std::string exeDir = getExecutableDir();
     
     std::string configPath = config::ConfigReader::getDefaultConfigPath();
-    if (argc > 1) {
-        std::filesystem::path p(argv[1]);
-        if (p.is_relative()) {
-            p = std::filesystem::path(exeDir) / p;
+    std::string singleSubId;
+    std::string commandMode;
+    
+    for (int i = 1; i < argc; ++i) {
+        std::string arg = argv[i];
+        if (arg == "-c" || arg == "--config") {
+            if (i + 1 < argc) {
+                std::string p = argv[++i];
+                std::filesystem::path fp(p);
+                if (fp.is_relative()) {
+                    fp = std::filesystem::path(exeDir) / fp;
+                }
+                configPath = fp.lexically_normal().string();
+            }
+        } else if (arg == "--update" || arg == "--update-sub") {
+            if (i + 1 < argc) {
+                singleSubId = argv[++i];
+                commandMode = "update";
+            }
+        } else if (arg == "--test") {
+            if (i + 1 < argc) {
+                singleSubId = argv[++i];
+                commandMode = "test";
+            }
+        } else if (arg == "--update-all") {
+            singleSubId = "__all__";
+            commandMode = "update";
+        } else if (arg == "-h" || arg == "--help") {
+            std::cout << "Usage: validproxy [options]\n"
+                      << "Options:\n"
+                      << "  -c, --config <path>    Config file path (default: config.json)\n"
+                      << "  --update <id>         Update single subscription by ID\n"
+                      << "  --update-all           Update all enabled subscriptions\n"
+                      << "  --test <id>           Test proxies from subscription by ID\n"
+                      << "  -h, --help            Show this help\n";
+            return 0;
+        } else if (arg.find(".json") != std::string::npos) {
+            std::filesystem::path p(arg);
+            if (p.is_relative()) {
+                p = std::filesystem::path(exeDir) / p;
+            }
+            configPath = p.lexically_normal().string();
         }
-        configPath = p.lexically_normal().string();
+    }
+    
+    if (!singleSubId.empty()) {
+        auto appConfig = config::ConfigReader::load(configPath);
+        if (!appConfig) {
+            std::cerr << "Failed to load config from: " << configPath << std::endl;
+            return 1;
+        }
+        
+        sqlite3* db = nullptr;
+        curl_global_init(CURL_GLOBAL_DEFAULT);
+        
+        if (sqlite3_open(appConfig->database_path.c_str(), &db) != SQLITE_OK) {
+            std::cerr << "Failed to open database: " << sqlite3_errmsg(db) << std::endl;
+            return 1;
+        }
+        
+        char timestamp[32];
+        time_t now = time(nullptr);
+        strftime(timestamp, sizeof(timestamp), "%Y%m%d_%H%M%S", localtime(&now));
+        
+        if (commandMode == "test") {
+            std::cout << "Running TEST mode for subscription: " << singleSubId << std::endl;
+            std::cout << "Use --sub parameter to test. Note: For testing, please run without --update or --test to use the main test mode." << std::endl;
+            sqlite3_close(db);
+            curl_global_cleanup();
+            return 0;
+        }
+        
+        std::string logFile = "sub_update_" + std::string(timestamp) + ".log";
+        std::ofstream logOut(logFile);
+        
+        std::cout << "Updating subscription: " << singleSubId << std::endl;
+        
+        SubitemUpdater subUpdater(db, logOut.is_open() ? &logOut : nullptr);
+        bool result = subUpdater.runSingle(singleSubId);
+        
+        if (logOut.is_open()) {
+            logOut.close();
+        }
+        
+        sqlite3_close(db);
+        curl_global_cleanup();
+        
+        std::cout << "Subscription update " << (result ? "completed" : "failed") << std::endl;
+        return result ? 0 : 1;
     }
     
     auto appConfig = config::ConfigReader::load(configPath);

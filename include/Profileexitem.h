@@ -93,13 +93,18 @@ public:
     if (success) {
       message = "OK";
     } else {
-      message = "FAILED";
+      if (!curlMsg.empty()) {
+        message = curlMsg;
+      } else {
+        message = "FAILED";
+      }
     }
     
     std::ostringstream oss;
-    oss << "INSERT OR REPLACE INTO ProfileExItem (indexid, delay, message) VALUES (";
+    oss << "INSERT OR REPLACE INTO ProfileExItem (indexid, delay, speed, sort, message) VALUES (";
     oss << "'" << indexid << "', ";
     oss << "'" << (success && latencyMs >= 0 ? std::to_string(latencyMs / 10) : "-1") << "', ";
+    oss << "'0', '0', ";
     oss << "'" << message << "')";
     
     std::string sql = oss.str();
