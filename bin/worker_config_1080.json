@@ -22,10 +22,10 @@
                     "settings": {"address": "127.0.0.1"}
                 },
                 {
-                    "tag": "socks",
+                    "tag": "socks-in",
                     "listen": "127.0.0.1",
                     "port": 1080,
-                    "protocol": "socks",
+                    "protocol": "mixed",
                     "settings": {"auth": "noauth", "udp": true}
                 }
             ],
@@ -35,7 +35,8 @@
             "routing": {
                 "domainStrategy": "AsIs",
                 "rules": [
-                    {"type": "field", "inboundTag": ["api"], "outboundTag": "api"}
+                    {"type": "field", "inboundTag": ["api"], "outboundTag": "api"},
+                    {"type": "field", "outboundTag": "proxy", "network": "tcp"}
                 ]
             }
         }

@@ -31,6 +31,7 @@ add_executable(validproxy
     src/ConfigGenerator.cpp
     src/ConfigReader.cpp
     src/XrayApi.cpp
+    src/SubitemUpdater.cpp
 )
 
 target_link_libraries(validproxy PRIVATE

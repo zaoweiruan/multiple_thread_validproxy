@@ -157,6 +157,24 @@ public:
     sqlite3_finalize(stmt);
     return result;
   }
+
+  std::vector<Subitem> getEnabledSubscriptions() {
+    std::vector<Subitem> result;
+    const char* sql = "SELECT * FROM SubItem WHERE Enabled = 'true' AND Url != '' AND Url IS NOT NULL;";
+
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+      std::cerr << "SQL错误: " << sqlite3_errmsg(db_) << std::endl;
+      return result;
+    }
+
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+      result.push_back(Subitem::fromStmt(stmt));
+    }
+
+    sqlite3_finalize(stmt);
+    return result;
+  }
 };
 
 } // namespace models
