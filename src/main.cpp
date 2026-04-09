@@ -344,7 +344,10 @@ int main(int argc, char* argv[]) {
         
         std::cout << "Updating subscription: " << singleSubId << std::endl;
         
-        SubitemUpdater subUpdater(db, logOut.is_open() ? &logOut : nullptr);
+        SubitemUpdater subUpdater(db, logOut.is_open() ? &logOut : nullptr,
+                                   appConfig->xray_executable,
+                                   10086,
+                                   appConfig->test_timeout_ms);
         bool result = subUpdater.runSingle(singleSubId);
         
         if (logOut.is_open()) {

@@ -14,10 +14,13 @@
 #include <ctime>
 #include <thread>
 #include <functional>
+#include <memory>
 
 #include "Subitem.h"
 #include "Profileitem.h"
 #include "Profileexitem.h"
+#include "ConfigGenerator.h"
+#include "XrayApi.h"
 
 class SubitemUpdater {
 public:
@@ -28,9 +31,18 @@ public:
     bool runSingleWithProxy(const std::string& subId, int socksPort);
 
 private:
+    struct FallbackProxy {
+        int socksPort;
+        int delay;
+        std::string indexId;
+    };
+    
     sqlite3* db_;
     std::ofstream* logOut_;
     std::string fallbackSubId_;
+    std::string xrayPath_;
+    int xrayApiPort_;
+    int test_timeout_ms_;
 
     void log(const std::string& msg);
     std::string fetchUrl(const std::string& url);
@@ -40,6 +52,11 @@ private:
     int findBestFallbackProxy();
     std::string decodeBase64(const std::string& input);
     std::string urlDecode(const std::string& input);
+    
+    std::vector<FallbackProxy> getAllFallbackProxies(int maxCount);
+    bool startXrayForSubscription();
+    bool testSubscriptionViaXray(int socksPort, const std::string& subUrl);
+    void cleanupXray();
 };
 
 #endif // SUBITEM_UPDATER_H
