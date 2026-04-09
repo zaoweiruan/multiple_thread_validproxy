@@ -349,7 +349,13 @@ int main(int argc, char* argv[]) {
                                    appConfig->xray_executable,
                                    10086,
                                    appConfig->test_timeout_ms);
-        bool result = subUpdater.runSingle(singleSubId);
+        
+        bool result;
+        if (singleSubId == "__all__") {
+            result = subUpdater.run();
+        } else {
+            result = subUpdater.runSingle(singleSubId);
+        }
         
         if (logOut.is_open()) {
             logOut.close();
