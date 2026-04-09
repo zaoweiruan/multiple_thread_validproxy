@@ -24,7 +24,10 @@
 
 class SubitemUpdater {
 public:
-    explicit SubitemUpdater(sqlite3* db, std::ofstream* logOut = nullptr);
+    explicit SubitemUpdater(sqlite3* db, std::ofstream* logOut = nullptr,
+                           const std::string& xrayPath = "",
+                           int xrayApiPort = 10086,
+                           int testTimeoutMs = 3000);
 
     bool run();
     bool runSingle(const std::string& subId);
