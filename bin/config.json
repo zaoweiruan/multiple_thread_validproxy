@@ -1,8 +1,12 @@
 {
-    "database": "E:/v2rayN-windows-64/guiConfigs/guiNDB.db",
-    "sql": "SELECT IndexId, ConfigType, ConfigVersion, Address, Port, Ports, Id, AlterId, Security, Network, Remarks, HeaderType, RequestHost, Path, StreamSecurity, AllowInsecure, Subid, IsSub, Flow, Sni, Alpn, CoreType, PreSocksPort, Fingerprint, DisplayLog, PublicKey, ShortId, SpiderX, Mldsa65Verify, Extra, MuxEnabled, Cert from (select *,ROW_NUMBER() OVER (ORDER BY IndexId) AS linenum from ProfileItem where Subid not in  ('5544178410297751350','5126987642659995691')) where linenum between 1 and 10000;",
+    "database": {
+        "path": "E:/v2rayN-windows-64/guiConfigs/guiNDB.db",
+                "sql": "SELECT IndexId, ConfigType, ConfigVersion, Address, Port, Id, AlterId, Security, Network, Remarks, HeaderType, RequestHost, Path, StreamSecurity, AllowInsecure, Subid, IsSub, Flow, Sni, Alpn, CoreType, PreSocksPort, Fingerprint, DisplayLog, PublicKey, ShortId, SpiderX, Extra, Ports, Mldsa65Verify, MuxEnabled, Cert  from (select *,ROW_NUMBER() OVER (ORDER BY IndexId) AS linenum from ProfileItem where Subid in  ('4793493882399264076')) where linenum between 1 and 10000;",
+        "sql1": "SELECT IndexId, ConfigType, ConfigVersion, Address, Port, Id, AlterId, Security, Network, Remarks, HeaderType, RequestHost, Path, StreamSecurity, AllowInsecure, Subid, IsSub, Flow, Sni, Alpn, CoreType, PreSocksPort, Fingerprint, DisplayLog, PublicKey, ShortId, SpiderX, Extra, Ports, Mldsa65Verify, MuxEnabled, Cert FROM ProfileItem WHERE Subid not in  ('5544178410297751350','5126987642659995691')   AND ConfigType IN ('1', '3', '5', '6') ;"
+    },
+
     "xray": {
-        "executable": "E:/soft/v2rayN-windows-64/bin/xray/xray.exe",
+        "executable": "E:/v2rayN-windows-64/bin/xray/xray.exe",
         "workers": 4,
         "start_port": 1080,
         "api_port": 10080
@@ -11,7 +15,7 @@
         "url": "https://www.google.com/generate_204",
         "timeout_ms": 5000
     },
-    "log": {
-        "enabled": true
+    "subscription": {
+        "update_enabled": true
     }
 }

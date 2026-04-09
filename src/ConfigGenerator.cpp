@@ -20,7 +20,7 @@ std::vector<db::models::Profileitem> ConfigGenerator::loadProfiles(const std::st
     
     std::vector<db::models::Profileitem> validProfiles;
     for (auto& p : profiles) {
-        if (p.network.empty()&&p.configtype == "3") {
+        if (p.network.empty() && p.configtype == "3") {
             p.network = "tcp";
         }
         
@@ -133,67 +133,6 @@ boost::json::object ConfigGenerator::buildStreamSettings(const db::models::Profi
         }
     }
     
-    if (!p.streamsecurity.empty()) {
-        streamSettings["security"] = p.streamsecurity;
-        
-        if (p.streamsecurity == "tls") {
-        boost::json::object tlsSettings;
-        tlsSettings["allowInsecure"] = (p.allowinsecure == "1");
-        if (!p.sni.empty()) {
-            tlsSettings["serverName"] = p.sni;
-        }
-        if (!p.alpn.empty()) {
-            std::vector<std::string> alpnList;
-            std::stringstream ss(p.alpn);
-            std::string item;
-            while (std::getline(ss, item, ',')) {
-                alpnList.push_back(item);
-            }
-            boost::json::array alpnArr;
-            for (const auto& a : alpnList) {
-                alpnArr.push_back(boost::json::value(a));
-            }
-            tlsSettings["alpn"] = alpnArr;
-        }
-        if (!p.fingerprint.empty()) {
-            tlsSettings["fingerprint"] = p.fingerprint;
-        }
-        streamSettings["tlsSettings"] = tlsSettings;
-        }
-        if (p.streamsecurity == "reality") {
-            boost::json::object realitySettings;
-            if (p.publickey.empty()) {
-                throw std::runtime_error("REALITY配置错误：publicKey不能为空");
-            }
-            if (p.sni.empty()) {
-                throw std::runtime_error("REALITY配置错误：sni(serverName)不能为空");
-            }
-
-            realitySettings["publicKey"] = p.publickey;
-            realitySettings["serverName"] = p.sni;
-
-            if (!p.shortid.empty()) {
-                realitySettings["shortId"] = p.shortid;
-            } else {
-                realitySettings["shortId"] = "";
-            }
-            
-            if (!p.spiderx.empty()) {
-                realitySettings["spiderX"] = p.spiderx;
-            } else {
-                realitySettings["spiderX"] = "";
-            }
-
-            if (!p.fingerprint.empty()) {
-                realitySettings["fingerprint"] = p.fingerprint;
-            } else {
-                realitySettings["fingerprint"] = "chrome";
-            }
-
-            streamSettings["realitySettings"] = realitySettings;
-        }
-    }
-
     if (p.network == "grpc") {
         boost::json::object grpcSettings;
         grpcSettings["serviceName"] = p.path;
@@ -273,12 +212,18 @@ boost::json::object ConfigGenerator::buildVLESSOutbound(const db::models::Profil
     user["email"] = "t@t.tt";
     user["encryption"] = "none";
 
-    if (!p.flow.empty()) {
-        user["flow"] = p.flow;
+    std::string flowValue = p.flow;
+    if (!flowValue.empty()) {
+        if (flowValue.find("xtls") != std::string::npos || flowValue.find("vision") != std::string::npos) {
+            if (p.streamsecurity != "reality" && !p.publickey.empty()) {
+                flowValue = "";
+            }
+        }
+        user["flow"] = flowValue;
     }
 
-    if (!p.security.empty()) {
-        user["security"] = "auto";
+    if (!p.security.empty() && p.security != "none") {
+        user["security"] = p.security;
     }
     usersArr.push_back(user);
 

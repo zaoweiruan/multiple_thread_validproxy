@@ -370,6 +370,7 @@ int main(int argc, char* argv[]) {
         if (logOut.is_open()) {
             logOut.close();
         }
+    }
     
     auto appConfig = config::ConfigReader::load(configPath);
     if (!appConfig) {

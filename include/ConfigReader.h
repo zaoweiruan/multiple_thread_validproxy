@@ -16,6 +16,7 @@ struct AppConfig {
     std::string test_url;
     int test_timeout_ms;
     bool log_enabled;
+    bool update_subscription;
 };
 
 class ConfigReader {
