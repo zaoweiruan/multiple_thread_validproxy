@@ -339,10 +339,11 @@ int main(int argc, char* argv[]) {
             return 0;
         }
         
-        std::string logFile = "sub_update_" + std::string(timestamp) + ".log";
-        std::ofstream logOut(logFile);
+        std::string logFile = "sub_update.log";
+        std::ofstream logOut(logFile, std::ios::out | std::ios::trunc);
         
         std::cout << "Updating subscription: " << singleSubId << std::endl;
+        logOut << "[" << timestamp << "] Starting subscription update for subId: " << singleSubId << std::endl;
         
         SubitemUpdater subUpdater(db, logOut.is_open() ? &logOut : nullptr,
                                    appConfig->xray_executable,
@@ -358,8 +359,11 @@ int main(int argc, char* argv[]) {
         curl_global_cleanup();
         
         std::cout << "Subscription update " << (result ? "completed" : "failed") << std::endl;
-        return result ? 0 : 1;
-    }
+        logOut << "[" << timestamp << "] Subscription update " << (result ? "completed" : "failed") << std::endl;
+        
+        if (logOut.is_open()) {
+            logOut.close();
+        }
     
     auto appConfig = config::ConfigReader::load(configPath);
     if (!appConfig) {
