@@ -707,6 +707,89 @@ bool SubitemUpdater::run() {
         std::string content = fetchUrl(sub.url);
         
         if (content.empty()) {
+            log("WARN: Direct fetch failed, trying fallback proxies...");
+            
+            std::vector<FallbackProxy> fallbackProxies = getAllFallbackProxies(5);
+            
+            if (fallbackProxies.empty()) {
+                log("ERROR: No fallback proxies available");
+                failCount++;
+                continue;
+            }
+            
+            log("INFO: Found " + std::to_string(fallbackProxies.size()) + " fallback proxies");
+            
+            if (!xrayPath_.empty()) {
+                if (!startXrayForSubscription()) {
+                    log("ERROR: Failed to start xray for subscription testing");
+                    failCount++;
+                    continue;
+                }
+                
+                bool success = false;
+                for (size_t i = 0; i < fallbackProxies.size(); i++) {
+                    log("INFO: Testing fallback proxy " + std::to_string(i + 1) + "/" + std::to_string(fallbackProxies.size()));
+                    
+                    if (testSubscriptionViaXray(fallbackProxies[i].socksPort, sub.url)) {
+                        log("INFO: Fallback proxy " + std::to_string(i + 1) + " succeeded");
+                        content = fetchUrlViaProxy(sub.url, fallbackProxies[i].socksPort);
+                        success = true;
+                        break;
+                    }
+                }
+                
+                cleanupXray();
+                
+                if (!success) {
+                    log("ERROR: All fallback proxies failed");
+                    failCount++;
+                    continue;
+                }
+            }
+        }
+        
+        if (content.empty()) {
+            log("ERROR: Failed to fetch subscription: " + sub.remarks);
+            failCount++;
+            continue;
+        }
+        
+        auto profiles = parseSubscription(content, sub.id);
+        if (profiles.empty()) {
+            log("WARN: No valid profiles parsed from: " + sub.remarks);
+            failCount++;
+            continue;
+        }
+        
+        if (updateProfileItems(sub.id, profiles)) {
+            successCount++;
+            log("INFO: Successfully updated: " + sub.remarks);
+        } else {
+            failCount++;
+            log("ERROR: Failed to update profiles for: " + sub.remarks);
+        }
+    }
+    
+    log("========================================");
+    log("INFO: Subscription update complete");
+    log("INFO: Success: " + std::to_string(successCount) + ", Failed: " + std::to_string(failCount));
+    log("========================================");
+    
+    return successCount > 0;
+}
+    
+    log("INFO: Found " + std::to_string(enabledSubs.size()) + " enabled subscriptions");
+    
+    int successCount = 0;
+    int failCount = 0;
+    
+    for (const auto& sub : enabledSubs) {
+        log("--- Processing: " + sub.remarks + " (id: " + sub.id + ") ---");
+        log("INFO: URL: " + sub.url);
+        
+        std::string content = fetchUrl(sub.url);
+        
+        if (content.empty()) {
             log("WARN: Direct fetch failed, trying fallback proxy...");
             
             int socksPort = findBestFallbackProxy();
