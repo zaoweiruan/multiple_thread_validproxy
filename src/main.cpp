@@ -12,6 +12,7 @@
 #include <queue>
 #include <mutex>
 #include <windows.h>
+#include <random>
 
 #include "Profileitem.h"
 #include "Profileexitem.h"
@@ -30,6 +31,41 @@ std::mutex g_queueMutex;
 std::ofstream* g_logOut = nullptr;
 bool g_logEnabled = false;
 HANDLE g_xrayJob = nullptr;
+
+bool isPortInUse(int port) {
+    SOCKET sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (sock == INVALID_SOCKET) return false;
+    
+    struct sockaddr_in addr;
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(static_cast<u_short>(port));
+    addr.sin_addr.s_addr = inet_addr("127.0.0.1");
+    
+    int result = bind(sock, (struct sockaddr*)&addr, sizeof(addr));
+    closesocket(sock);
+    
+    return result == SOCKET_ERROR;
+}
+
+int findAvailablePort(int startPort, int maxAttempts = 100, const std::vector<int>& usedPorts = std::vector<int>()) {
+    for (int i = 0; i < maxAttempts; ++i) {
+        int port = startPort + i;
+        if (port > 65535) port = 10000 + (port - 10000) % 50000;
+        
+        bool isUsed = false;
+        for (int used : usedPorts) {
+            if (used == port) {
+                isUsed = true;
+                break;
+            }
+        }
+        
+        if (!isUsed && !isPortInUse(port)) {
+            return port;
+        }
+    }
+    return -1;
+}
 
 void logToFile(const std::string& msg) {
     if (g_logOut && g_logOut->is_open() && g_logEnabled) {
@@ -181,6 +217,7 @@ void workerThreadFunc(const WorkerContext& ctx) {
             std::lock_guard<std::mutex> lock(*ctx.printMutex);
             std::cout << "[Worker-" << ctx.workerId << "] [" << currentIdx << "/" << g_totalProxies << "] Testing: " 
                       << profile.address << ":" << profile.port << " (" << profile.remarks << ")" << std::endl;
+            logToFile("[Worker-" + std::to_string(ctx.workerId) + "] Testing " + profile.address + ":" + profile.port + " (" + profile.remarks + ")");
         }
         
         config::ConfigGenerator configGen(ctx.db);
@@ -203,14 +240,31 @@ void workerThreadFunc(const WorkerContext& ctx) {
         try {
             auto config = configGen.generateConfig(profile);
             std::string tag = "proxy";
+            
             xrayApi.removeOutbound(tag);
-            std::this_thread::sleep_for(std::chrono::milliseconds(500));
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            xrayApi.removeOutbound(tag);
+            std::this_thread::sleep_for(std::chrono::milliseconds(400));
             
             std::string addResult;
-            if (!xrayApi.addOutbound(config.outbound_json, tag, addResult)) {
+            int retryCount = 0;
+            bool addSuccess = false;
+            while (retryCount < 3) {
+                if (xrayApi.addOutbound(config.outbound_json, tag, addResult)) {
+                    addSuccess = true;
+                    break;
+                }
+                retryCount++;
+                if (retryCount < 3) {
+                    xrayApi.removeOutbound(tag);
+                    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+                }
+            }
+            
+            if (!addSuccess) {
                 std::lock_guard<std::mutex> lock(*ctx.printMutex);
                 std::cerr << "[Worker-" << ctx.workerId << "] Xray API error: " << xrayApi.getLastError() << std::endl;
-                logToFile("XRAY_ERROR: " + profile.indexid + " - " + xrayApi.getLastError());
+                logToFile("[Worker-" + std::to_string(ctx.workerId) + "] XRAY_ERROR - " + profile.indexid + " - " + xrayApi.getLastError());
                 logToFile("  Xray output: " + addResult);
                 logToFile("  Outbound JSON: " + config.outbound_json);
                 {
@@ -230,9 +284,11 @@ void workerThreadFunc(const WorkerContext& ctx) {
                 (*ctx.successCount)++;
                 std::lock_guard<std::mutex> lock(*ctx.printMutex);
                 std::cout << "[Worker-" << ctx.workerId << "] Test SUCCESS - URL: " << ctx.testUrl << " | Latency: " << latencyMs << "ms" << std::endl;
+                logToFile("[Worker-" + std::to_string(ctx.workerId) + "] Test SUCCESS - " + profile.indexid + " | Latency: " + std::to_string(latencyMs) + "ms");
             } else {
                 std::lock_guard<std::mutex> lock(*ctx.printMutex);
                 std::cout << "[Worker-" << ctx.workerId << "] Test FAILED - URL: " << ctx.testUrl << " | Error: " << errorMsg << std::endl;
+                logToFile("[Worker-" + std::to_string(ctx.workerId) + "] Test FAILED - " + profile.indexid + " | Error: " + errorMsg);
             }
             
             {
@@ -339,7 +395,7 @@ int main(int argc, char* argv[]) {
             return 0;
         }
         
-        std::string logFile = "sub_update.log";
+        std::string logFile = "sub_update_" + std::string(timestamp) + ".log";
         std::ofstream logOut(logFile, std::ios::out | std::ios::trunc);
         
         std::cout << "Updating subscription: " << singleSubId << std::endl;
@@ -348,7 +404,9 @@ int main(int argc, char* argv[]) {
         SubitemUpdater subUpdater(db, logOut.is_open() ? &logOut : nullptr,
                                    appConfig->xray_executable,
                                    10086,
-                                   appConfig->test_timeout_ms);
+                                   appConfig->test_timeout_ms,
+                                   appConfig->xray_start_port,
+                                   appConfig->priority_proxy_enabled);
         
         bool result;
         if (singleSubId == "__all__") {
@@ -365,11 +423,8 @@ int main(int argc, char* argv[]) {
         curl_global_cleanup();
         
         std::cout << "Subscription update " << (result ? "completed" : "failed") << std::endl;
-        logOut << "[" << timestamp << "] Subscription update " << (result ? "completed" : "failed") << std::endl;
         
-        if (logOut.is_open()) {
-            logOut.close();
-        }
+        return result ? 0 : 1;
     }
     
     auto appConfig = config::ConfigReader::load(configPath);
@@ -437,11 +492,39 @@ int main(int argc, char* argv[]) {
     std::cout << "Database opened: " << appConfig->database_path << std::endl;
 
     std::vector<std::pair<int, int>> workerPorts;
+    std::vector<int> usedPorts;
     for (int i = 0; i < numWorkers; ++i) {
-        int socksPort = startPort + i;
-        int apiPort = baseApiPort + i;
+        int socksPort = findAvailablePort(startPort + i, 1000, usedPorts);
+        int apiPort = findAvailablePort(baseApiPort + i, 1000, usedPorts);
+        
+        if (socksPort == -1) {
+            socksPort = startPort + i;
+        }
+        if (apiPort == -1) {
+            apiPort = baseApiPort + i;
+        }
+        
+        usedPorts.push_back(socksPort);
+        usedPorts.push_back(apiPort);
+        
+        if (socksPort != startPort + i) {
+            std::cout << "Port " << (startPort + i) << " in use, using " << socksPort << std::endl;
+            if (logEnabled && logOut.is_open()) {
+                logOut << "Port " << (startPort + i) << " in use, using " << socksPort << std::endl;
+            }
+        }
+        if (apiPort != baseApiPort + i) {
+            std::cout << "Port " << (baseApiPort + i) << " in use, using " << apiPort << std::endl;
+            if (logEnabled && logOut.is_open()) {
+                logOut << "Port " << (baseApiPort + i) << " in use, using " << apiPort << std::endl;
+            }
+        }
+        
         workerPorts.push_back({socksPort, apiPort});
         std::cout << "Worker " << i << ": socks=" << socksPort << " api=" << apiPort << std::endl;
+        if (logEnabled && logOut.is_open()) {
+            logOut << "Worker " << i << ": socks=" << socksPort << " api=" << apiPort << std::endl;
+        }
     }
 
     std::vector<std::string> xrayConfigs;
@@ -516,7 +599,7 @@ int main(int argc, char* argv[]) {
         std::cerr << "Warning: Failed to init job object, xray processes may not be cleaned up properly" << std::endl;
     }
 
-    for (int i = 0; i < numWorkers; ++i) {
+for (int i = 0; i < numWorkers; ++i) {
         if (!startXray(appConfig->xray_executable, xrayConfigs[i])) {
             std::cerr << "Failed to start xray worker " << i << std::endl;
         } else {
@@ -524,21 +607,23 @@ int main(int argc, char* argv[]) {
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(500));
     }
-
-    std::this_thread::sleep_for(std::chrono::seconds(2));
-
-    for (int i = 0; i < numWorkers; ++i) {
-        int apiPort = baseApiPort + i;
-        std::string xrayApiAddr = "127.0.0.1:" + std::to_string(apiPort);
-        xray::XrayApi xrayApi(appConfig->xray_executable, xrayApiAddr);
-        std::string pingResult;
-        if (!xrayApi.ping(pingResult)) {
-            std::cerr << "Warning: Worker " << i << " API port " << apiPort << " not responding" << std::endl;
-        } else {
-            std::cout << "Worker " << i << " API port " << apiPort << " ready" << std::endl;
+    
+int testApiPort = workerPorts[0].second;
+    std::string testApiAddr = "127.0.0.1:" + std::to_string(testApiPort);
+    xray::XrayApi xrayApi(appConfig->xray_executable, testApiAddr);
+    std::string pingResult;
+    if (!xrayApi.ping(pingResult)) {
+        std::cerr << "Warning: API port " << testApiPort << " not responding" << std::endl;
+        if (logEnabled && logOut.is_open()) {
+            logOut << "Warning: API port " << testApiPort << " not responding" << std::endl;
+        }
+    } else {
+        std::cout << "API port " << testApiPort << " ready" << std::endl;
+        if (logEnabled && logOut.is_open()) {
+            logOut << "API port " << testApiPort << " ready" << std::endl;
         }
     }
-
+    
     config::ConfigGenerator configGen(db);
     g_profiles = configGen.loadProfiles(appConfig->sql_query);
     g_totalProxies = g_profiles.size();

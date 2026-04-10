@@ -2,6 +2,19 @@
 #include <boost/json.hpp>
 #include <stdexcept>
 #include <random>
+#include <winsock2.h>
+#include <ws2tcpip.h>
+
+static std::string getJsonValueString(const boost::json::object& obj, const char* key, const char* defaultVal = "") {
+    if (!obj.contains(key)) return defaultVal;
+    try {
+        auto& val = obj.at(key);
+        if (val.is_string()) return val.as_string().c_str();
+        if (val.is_int64()) return std::to_string(val.as_int64());
+        if (val.is_double()) return std::to_string(static_cast<int>(val.as_double()));
+    } catch (...) {}
+    return defaultVal;
+}
 
 static size_t WriteCallback(void* contents, size_t size, size_t nmemb, void* userp) {
     ((std::string*)userp)->append((char*)contents, size * nmemb);
@@ -14,9 +27,36 @@ static std::string generateUniqueId() {
     return std::to_string(val);
 }
 
-SubitemUpdater::SubitemUpdater(sqlite3* db, std::ofstream* logOut, const std::string& xrayPath, int xrayApiPort, int testTimeoutMs)
+static bool isPortInUse(int port) {
+    SOCKET sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (sock == INVALID_SOCKET) return false;
+    
+    struct sockaddr_in addr;
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(static_cast<u_short>(port));
+    addr.sin_addr.s_addr = inet_addr("127.0.0.1");
+    
+    int result = bind(sock, (struct sockaddr*)&addr, sizeof(addr));
+    closesocket(sock);
+    
+    return result == SOCKET_ERROR;
+}
+
+static int findAvailablePort(int startPort, int maxAttempts = 100) {
+    for (int i = 0; i < maxAttempts; ++i) {
+        int port = startPort + i;
+        if (port > 65535) port = 10000 + (port - 10000) % 50000;
+        if (!isPortInUse(port)) {
+            return port;
+        }
+    }
+    return -1;
+}
+
+SubitemUpdater::SubitemUpdater(sqlite3* db, std::ofstream* logOut, const std::string& xrayPath, int xrayApiPort, int testTimeoutMs, int startPort, bool priorityProxyEnabled)
     : db_(db), logOut_(logOut), fallbackSubId_("5544178410297751350"),
-      xrayPath_(xrayPath), xrayApiPort_(xrayApiPort), test_timeout_ms_(testTimeoutMs) {}
+      xrayPath_(xrayPath), xrayApiPort_(xrayApiPort), test_timeout_ms_(testTimeoutMs),
+      xrayProcessId_(0), exItemDao_(db), startPort_(startPort), priorityProxyEnabled_(priorityProxyEnabled) {}
 
 void SubitemUpdater::log(const std::string& msg) {
     auto now = std::chrono::system_clock::now();
@@ -288,7 +328,7 @@ std::vector<db::models::Profileitem> SubitemUpdater::parseSubscription(const std
                 profile.network = "tcp";
                 profile.coretype = "0";
                 profile.muxenabled = "0";
-                profile.address = obj.contains("add") ? obj.at("add").as_string().c_str() : "";
+                profile.address = getJsonValueString(obj, "add", "");
                 
                 if (obj.contains("port")) {
                     auto& portVal = obj.at("port");
@@ -301,7 +341,7 @@ std::vector<db::models::Profileitem> SubitemUpdater::parseSubscription(const std
                     }
                 }
                 
-                profile.id = obj.contains("id") ? obj.at("id").as_string().c_str() : "";
+                profile.id = getJsonValueString(obj, "id", "");
                 
                 if (obj.contains("aid")) {
                     auto& aidVal = obj.at("aid");
@@ -316,17 +356,17 @@ std::vector<db::models::Profileitem> SubitemUpdater::parseSubscription(const std
                     profile.alterid = "0";
                 }
                 
-                profile.security = obj.contains("scy") ? obj.at("scy").as_string().c_str() : "auto";
-                profile.network = obj.contains("net") ? obj.at("net").as_string().c_str() : "tcp";
-                profile.remarks = obj.contains("ps") ? obj.at("ps").as_string().c_str() : "";
-                profile.path = obj.contains("path") ? obj.at("path").as_string().c_str() : "";
-                profile.requesthost = obj.contains("host") ? obj.at("host").as_string().c_str() : "";
-                profile.streamsecurity = obj.contains("tls") ? obj.at("tls").as_string().c_str() : "";
-                profile.sni = obj.contains("sni") ? obj.at("sni").as_string().c_str() : "";
-                profile.flow = obj.contains("flow") ? obj.at("flow").as_string().c_str() : "";
-                profile.fingerprint = obj.contains("fp") ? obj.at("fp").as_string().c_str() : "chrome";
-                profile.alpn = obj.contains("alpn") ? obj.at("alpn").as_string().c_str() : "";
-                profile.headertype = obj.contains("type") ? obj.at("type").as_string().c_str() : "";
+                profile.security = getJsonValueString(obj, "scy", "auto");
+                profile.network = getJsonValueString(obj, "net", "tcp");
+                profile.remarks = getJsonValueString(obj, "ps", "");
+                profile.path = getJsonValueString(obj, "path", "");
+                profile.requesthost = getJsonValueString(obj, "host", "");
+                profile.streamsecurity = getJsonValueString(obj, "tls", "");
+                profile.sni = getJsonValueString(obj, "sni", "");
+                profile.flow = getJsonValueString(obj, "flow", "");
+                profile.fingerprint = getJsonValueString(obj, "fp", "chrome");
+                profile.alpn = getJsonValueString(obj, "alpn", "");
+                profile.headertype = getJsonValueString(obj, "type", "");
             } catch (const std::exception& e) {
                 log("WARN: Failed to parse vmess: " + std::string(e.what()));
                 continue;
@@ -674,6 +714,18 @@ bool SubitemUpdater::updateProfileItems(const std::string& subid, const std::vec
             sqlite3_free(errMsg);
         } else {
             inserted++;
+            
+            std::ostringstream exOss;
+            exOss << "INSERT INTO ProfileExItem (indexid, delay, speed, sort, message) VALUES (";
+            exOss << "'" << p.indexid << "', ";
+            exOss << "'0', ";  // delay
+            exOss << "'0', ";  // speed
+            exOss << "'0', ";  // sort
+            exOss << "'NOT_TESTED')";  // message
+            if (sqlite3_exec(db_, exOss.str().c_str(), nullptr, nullptr, &errMsg) != SQLITE_OK) {
+                log("DEBUG: Failed to insert ProfileExItem - " + std::string(errMsg));
+                sqlite3_free(errMsg);
+            }
         }
     }
     
@@ -697,8 +749,303 @@ bool SubitemUpdater::run() {
     
     log("INFO: Found " + std::to_string(enabledSubs.size()) + " enabled subscriptions");
     
-    int successCount = 0;
+    int totalEnabled = enabledSubs.size();
+    int directSuccessCount = 0;
+    int proxySuccessCount = 0;
     int failCount = 0;
+    std::vector<std::pair<std::string, std::string>> failedSubsList;
+    int priorityProxySuccessCount = 0;
+    
+    if (priorityProxyEnabled_ && !xrayPath_.empty()) {
+        log("========================================");
+        log("DEBUG: Phase 0 - Priority proxy update for all subscriptions");
+        log("========================================");
+        
+        std::vector<FallbackProxy> allProxies = getAllFallbackProxies(100);
+        
+        std::vector<FallbackProxy> validProxies;
+        for (const auto& proxy : allProxies) {
+            if (proxy.delay > 0) {
+                validProxies.push_back(proxy);
+            }
+        }
+        
+        log("DEBUG: Found " + std::to_string(validProxies.size()) + " proxies with delay > 0");
+        
+        if (validProxies.empty()) {
+            log("WARN: No proxies with delay > 0 found, skipping priority proxy mode");
+        } else {
+            bool subscriptionUpdated = false;
+            HANDLE xrayJob = nullptr;
+            
+            for (size_t pIdx = 0; pIdx < validProxies.size() && !subscriptionUpdated; pIdx++) {
+            const auto& proxy = validProxies[pIdx];
+            log("DEBUG: Testing proxy " + std::to_string(pIdx + 1) + "/" + std::to_string(validProxies.size()) + 
+                " (indexId=" + proxy.indexId + ", address=" + proxy.address + ", delay=" + std::to_string(proxy.delay) + "ms)");
+                
+                db::models::ProfileitemDAO profileDao(db_);
+                std::string sql = "SELECT * FROM ProfileItem WHERE IndexId = '" + proxy.indexId + "';";
+                auto profiles = profileDao.getAll(sql);
+                
+                if (profiles.empty()) {
+                    log("WARN: Proxy profile not found: " + proxy.indexId);
+                    continue;
+                }
+                
+                auto profile = profiles[0];
+                
+                profile.presocksport = std::to_string(startPort_);
+                
+                try {
+                    profile.checkRequired();
+                } catch (const std::exception& e) {
+                    log("WARN: Proxy config error: " + std::string(e.what()));
+                    continue;
+                }
+                
+                config::ConfigGenerator configGen(db_);
+                auto xrayConfig = configGen.generateConfig(profile);
+                
+                log("DEBUG: Generated outbound config: " + xrayConfig.outbound_json);
+                
+                int actualStartPort = startPort_;
+                int actualApiPort = xrayApiPort_;
+                
+                if (isPortInUse(actualStartPort)) {
+                    actualStartPort = findAvailablePort(startPort_);
+                    log("WARN: SOCKS port " + std::to_string(startPort_) + " in use, using " + std::to_string(actualStartPort));
+                }
+                if (isPortInUse(actualApiPort)) {
+                    actualApiPort = findAvailablePort(xrayApiPort_);
+                    log("WARN: API port " + std::to_string(xrayApiPort_) + " in use, using " + std::to_string(actualApiPort));
+                }
+                
+                boost::json::object xrayConfigRoot;
+                boost::json::array inboundArray;
+                
+                int apiPort = actualApiPort;
+                
+                boost::json::object socksInbound;
+                socksInbound["tag"] = "socks-in";
+                socksInbound["protocol"] = "mixed";
+                socksInbound["port"] = actualStartPort;
+                socksInbound["listen"] = "127.0.0.1";
+                socksInbound["settings"] = boost::json::object({
+                    {"auth", "noauth"},
+                    {"udp", true}
+                });
+                inboundArray.push_back(socksInbound);
+                
+                boost::json::object apiInbound;
+                apiInbound["tag"] = "api";
+                apiInbound["listen"] = "127.0.0.1";
+                apiInbound["port"] = apiPort;
+                apiInbound["protocol"] = "dokodemo-door";
+                apiInbound["settings"] = boost::json::object({
+                    {"address", "127.0.0.1"}
+                });
+                inboundArray.push_back(apiInbound);
+                
+                log("DEBUG: Priority proxy config API port: " + std::to_string(apiPort));
+                
+                xrayConfigRoot["inbounds"] = inboundArray;
+                
+                boost::json::value outboundJson = boost::json::parse(xrayConfig.outbound_json);
+                boost::json::array outbounds;
+                
+                boost::json::object proxyOutbound = outboundJson.at("outbounds").at(0).as_object();
+                proxyOutbound["tag"] = "proxy";
+                outbounds.push_back(proxyOutbound);
+                
+                outbounds.push_back(boost::json::parse(R"({"tag": "direct", "protocol": "freedom"})"));
+                xrayConfigRoot["outbounds"] = outbounds;
+                
+                xrayConfigRoot["api"] = boost::json::object({
+                    {"tag", "api"},
+                    {"services", boost::json::array({"HandlerService", "LoggerService", "StatsService"})}
+                });
+                
+                xrayConfigRoot["stats"] = boost::json::object();
+                xrayConfigRoot["policy"] = boost::json::object({
+                    {"levels", boost::json::object({
+                        {"0", boost::json::object({
+                            {"statsUserUplink", true},
+                            {"statsUserDownlink", true}
+                        })}
+                    })},
+                    {"system", boost::json::object({
+                        {"statsInboundUplink", true},
+                        {"statsInboundDownlink", true},
+                        {"statsOutboundUplink", true},
+                        {"statsOutboundDownlink", true}
+                    })}
+                });
+                
+                xrayConfigRoot["routing"] = boost::json::object({
+                    {"domainStrategy", "AsIs"},
+                    {"rules", boost::json::array({
+                        boost::json::object({
+                            {"type", "field"},
+                            {"inboundTag", boost::json::array({"api"})},
+                            {"outboundTag", "api"}
+                        }),
+                        boost::json::object({
+                            {"type", "field"},
+                            {"outboundTag", "proxy"},
+                            {"network", "tcp"}
+                        })
+                    })}
+                });
+                
+                xrayConfigRoot["log"] = boost::json::object({
+                    {"access", "xray_sub_access.log"},
+                    {"error", "xray_sub_error.log"},
+                    {"loglevel", "debug"}
+                });
+                
+                std::string configStr = boost::json::serialize(xrayConfigRoot);
+                
+                log("DEBUG: Full priority proxy xray config: " + configStr);
+                
+                std::string configFile = "E:\\eclipse_workspace\\multiple_thread_validproxy\\bin\\xray_priority_temp.json";
+                std::ofstream configOut(configFile);
+                configOut << configStr;
+                configOut.close();
+                
+                std::string normalizedPath = configFile;
+                for (char& c : normalizedPath) {
+                    if (c == '/') c = '\\';
+                }
+                
+                std::string cmd = "\"" + xrayPath_ + "\" run -c \"" + normalizedPath + "\"";
+                
+                log("DEBUG: Starting priority xray: " + cmd);
+                
+                STARTUPINFOA si = {0};
+                si.cb = sizeof(si);
+                si.dwFlags = STARTF_USESHOWWINDOW;
+                si.wShowWindow = SW_HIDE;
+                
+                PROCESS_INFORMATION pi = {0};
+                DWORD createFlags = CREATE_SUSPENDED | CREATE_NO_WINDOW;
+                
+                if (!CreateProcessA(nullptr, (char*)cmd.c_str(), nullptr, nullptr, FALSE, 
+                                    createFlags, nullptr, nullptr, &si, &pi)) {
+                    log("ERROR: Failed to start priority xray, err=" + std::to_string(GetLastError()));
+                    continue;
+                }
+                
+                HANDLE job = CreateJobObjectA(nullptr, nullptr);
+                if (job) {
+                    AssignProcessToJobObject(job, pi.hProcess);
+                }
+                
+                HANDLE xrayJob = job;
+                
+                ResumeThread(pi.hThread);
+                CloseHandle(pi.hThread);
+                CloseHandle(pi.hProcess);
+                
+                log("DEBUG: Priority xray started, waiting 5s...");
+                Sleep(5000);
+                
+                bool xrayReady = false;
+                std::string apiAddr = "127.0.0.1:" + std::to_string(apiPort);
+                
+                for (int j = 0; j < 10; j++) {
+                    Sleep(1000);
+                    
+                    xray::XrayApi testApi(xrayPath_, apiAddr);
+                    if (testApi.listOutbounds()) {
+                        log("DEBUG: Priority xray API ready after " + std::to_string(j+1) + "s");
+                        xrayReady = true;
+                        break;
+                    }
+                    log("DEBUG: Waited " + std::to_string(j+1) + "s for priority xray...");
+                }
+                
+                if (!xrayReady) {
+                    log("ERROR: Priority xray API not ready, trying next proxy...");
+                    if (xrayJob) {
+                        TerminateJobObject(xrayJob, 0);
+                        CloseHandle(xrayJob);
+                    }
+                    continue;
+                }
+                
+                log("INFO: Testing proxy connectivity via SOCKS port " + std::to_string(actualStartPort) + "...");
+                long latencyMs = -1;
+                std::string errorMsg;
+                bool proxyWorking = testProxyConnectivity(actualStartPort, latencyMs, errorMsg);
+                
+                if (!proxyWorking) {
+                    log("WARN: Proxy connectivity test failed: " + errorMsg + ", trying next proxy...");
+                    if (xrayJob) {
+                        TerminateJobObject(xrayJob, 0);
+                        CloseHandle(xrayJob);
+                    }
+                    continue;
+                }
+                
+                log("INFO: Proxy connectivity test SUCCEEDED (latency=" + std::to_string(latencyMs) + "ms)");
+                log("INFO: ===== Updating all subscriptions via proxy =====");
+                
+                priorityProxySuccessCount++;
+                
+                for (const auto& sub : enabledSubs) {
+                    log("--- Updating via priority proxy: " + sub.remarks + " ---");
+                    
+                    std::string content = fetchUrlViaProxy(sub.url, actualStartPort);
+                    
+                    if (content.empty()) {
+                        log("WARN: Failed to fetch via proxy: " + sub.remarks);
+                        failedSubsList.emplace_back(sub.id, sub.remarks);
+                        continue;
+                    }
+                    
+                    auto profiles = parseSubscription(content, sub.id);
+                    if (profiles.empty()) {
+                        log("WARN: No valid profiles parsed from: " + sub.remarks);
+                        failedSubsList.emplace_back(sub.id, sub.remarks);
+                        continue;
+                    }
+                    
+                    if (updateProfileItems(sub.id, profiles)) {
+                        log("INFO: Successfully updated via proxy: " + sub.remarks);
+                        proxySuccessCount++;
+                    } else {
+                        log("ERROR: Failed to update profiles for: " + sub.remarks);
+                        failedSubsList.emplace_back(sub.id, sub.remarks);
+                    }
+                }
+                
+                if (xrayJob) {
+                    TerminateJobObject(xrayJob, 0);
+                    CloseHandle(xrayJob);
+                }
+                log("INFO: Priority proxy xray stopped");
+                
+                int priorityProxySuccessCount = enabledSubs.size();
+                
+                log("========================================");
+                log("INFO: Subscription update complete (priority proxy mode)");
+                log("INFO: Total enabled: " + std::to_string(totalEnabled));
+                log("INFO: Direct success: 0");
+                log("INFO: Proxy update: " + std::to_string(priorityProxySuccessCount));
+                log("INFO: Failed: 0");
+                log("========================================");
+                return true;
+            }
+        }
+    }
+    
+    int successCount = 0;
+    std::vector<std::string> failedSubIds;
+    std::vector<db::models::Subitem> failedSubs;
+    
+    log("========================================");
+    log("INFO: Phase 1 - Direct fetch for all subscriptions");
+    log("========================================");
     
     for (const auto& sub : enabledSubs) {
         log("--- Processing: " + sub.remarks + " (id: " + sub.id + ") ---");
@@ -707,124 +1054,590 @@ bool SubitemUpdater::run() {
         std::string content = fetchUrl(sub.url);
         
         if (content.empty()) {
-            log("WARN: Direct fetch failed, trying fallback proxies...");
-            
-            std::vector<FallbackProxy> fallbackProxies = getAllFallbackProxies(5);
-            
-            if (fallbackProxies.empty()) {
-                log("ERROR: No fallback proxies available");
-                failCount++;
-                continue;
-            }
-            
-            log("INFO: Found " + std::to_string(fallbackProxies.size()) + " fallback proxies");
-            
-            if (!xrayPath_.empty()) {
-                if (!startXrayForSubscription()) {
-                    log("ERROR: Failed to start xray for subscription testing");
-                    failCount++;
-                    continue;
-                }
-                
-                bool success = false;
-                for (size_t i = 0; i < fallbackProxies.size(); i++) {
-                    log("INFO: Testing fallback proxy " + std::to_string(i + 1) + "/" + std::to_string(fallbackProxies.size()));
-                    
-                    if (testSubscriptionViaXray(fallbackProxies[i].socksPort, sub.url)) {
-                        log("INFO: Fallback proxy " + std::to_string(i + 1) + " succeeded");
-                        content = fetchUrlViaProxy(sub.url, fallbackProxies[i].socksPort);
-                        success = true;
-                        break;
-                    }
-                }
-                
-                cleanupXray();
-                
-                if (!success) {
-                    log("ERROR: All fallback proxies failed");
-                    failCount++;
-                    continue;
-                }
-            }
-        }
-        
-        if (content.empty()) {
-            log("ERROR: Failed to fetch subscription: " + sub.remarks);
-            failCount++;
+            log("WARN: Direct fetch failed");
+            failedSubs.push_back(sub);
+            failedSubIds.push_back(sub.id);
+            failedSubsList.emplace_back(sub.id, sub.remarks);
             continue;
         }
         
         auto profiles = parseSubscription(content, sub.id);
         if (profiles.empty()) {
             log("WARN: No valid profiles parsed from: " + sub.remarks);
-            failCount++;
+            failedSubs.push_back(sub);
+            failedSubIds.push_back(sub.id);
+            failedSubsList.emplace_back(sub.id, sub.remarks);
             continue;
         }
         
         if (updateProfileItems(sub.id, profiles)) {
             successCount++;
-            log("INFO: Successfully updated: " + sub.remarks);
+            directSuccessCount++;
+            log("INFO: Successfully updated (direct): " + sub.remarks);
         } else {
-            failCount++;
+            failedSubs.push_back(sub);
+            failedSubIds.push_back(sub.id);
+            failedSubsList.emplace_back(sub.id, sub.remarks);
             log("ERROR: Failed to update profiles for: " + sub.remarks);
         }
     }
     
-    log("========================================");
-    log("INFO: Subscription update complete");
-    log("INFO: Success: " + std::to_string(successCount) + ", Failed: " + std::to_string(failCount));
-    log("========================================");
+    log("INFO: Phase 1 complete - Direct success: " + std::to_string(directSuccessCount) + ", Failed: " + std::to_string(failedSubs.size()));
     
-    return successCount > 0;
-}
-    
-    log("INFO: Found " + std::to_string(enabledSubs.size()) + " enabled subscriptions");
-    
-    int successCount = 0;
-    int failCount = 0;
-    
-    for (const auto& sub : enabledSubs) {
-        log("--- Processing: " + sub.remarks + " (id: " + sub.id + ") ---");
-        log("INFO: URL: " + sub.url);
-        
-        std::string content = fetchUrl(sub.url);
-        
-        if (content.empty()) {
-            log("WARN: Direct fetch failed, trying fallback proxy...");
-            
-            int socksPort = findBestFallbackProxy();
-            if (socksPort > 0) {
-                content = fetchUrlViaProxy(sub.url, socksPort);
-            }
-        }
-        
-        if (content.empty()) {
-            log("ERROR: Failed to fetch subscription: " + sub.remarks);
-            failCount++;
-            continue;
-        }
-        
-        auto profiles = parseSubscription(content, sub.id);
-        if (profiles.empty()) {
-            log("WARN: No valid profiles parsed from: " + sub.remarks);
-            failCount++;
-            continue;
-        }
-        
-        if (updateProfileItems(sub.id, profiles)) {
-            successCount++;
-            log("INFO: Successfully updated: " + sub.remarks);
-        } else {
-            failCount++;
-    log("ERROR: Failed to update profiles for: " + sub.remarks);
+    if (failedSubs.empty()) {
+        failCount = 0;
+        log("========================================");
+        log("INFO: Subscription update complete (direct only)");
+        log("INFO: Total enabled: " + std::to_string(totalEnabled));
+        log("INFO: Direct success: " + std::to_string(directSuccessCount));
+        log("INFO: Proxy update: 0");
+        log("INFO: Failed: 0");
+        log("========================================");
+        return true;
+    } else {
+        failCount = failedSubsList.size();
     }
     
     log("========================================");
-    log("INFO: Subscription update complete");
-    log("INFO: Success: " + std::to_string(successCount) + ", Failed: " + std::to_string(failCount));
+    log("INFO: Phase 2 - Testing and updating via proxy");
     log("========================================");
     
-    return successCount > 0;
+    if (xrayPath_.empty()) {
+        log("ERROR: xrayPath not configured");
+        failCount = failedSubsList.size();
+        log("========================================");
+        log("INFO: Subscription update complete (direct only)");
+        log("INFO: Total enabled: " + std::to_string(totalEnabled));
+        log("INFO: Direct success: " + std::to_string(directSuccessCount));
+        log("INFO: Proxy update: 0");
+        log("INFO: Failed: " + std::to_string(failCount));
+        if (!failedSubsList.empty()) {
+            log("INFO: Failed subscriptions:");
+            for (const auto& f : failedSubsList) {
+                log("INFO:   - [" + f.first + "] " + f.second);
+            }
+        }
+        log("========================================");
+        return directSuccessCount > 0;
+    }
+    
+    config::ConfigGenerator configGen(db_);
+    xray::XrayApi* xrayApi = nullptr;
+    
+    std::vector<FallbackProxy> fallbackProxies = getAllFallbackProxies(5);
+    
+    if (fallbackProxies.empty()) {
+        log("ERROR: No fallback proxies available");
+        failCount = failedSubsList.size();
+        log("========================================");
+        log("INFO: Subscription update complete (direct only)");
+        log("INFO: Total enabled: " + std::to_string(totalEnabled));
+        log("INFO: Direct success: " + std::to_string(directSuccessCount));
+        log("INFO: Proxy update: 0");
+        log("INFO: Failed: " + std::to_string(failCount));
+        if (!failedSubsList.empty()) {
+            log("INFO: Failed subscriptions:");
+            for (const auto& f : failedSubsList) {
+                log("INFO:   - [" + f.first + "] " + f.second);
+            }
+        }
+        log("========================================");
+        return directSuccessCount > 0;
+    }
+    
+    for (size_t i = 0; i < fallbackProxies.size(); i++) {
+        const auto& proxy = fallbackProxies[i];
+        log("INFO: Testing proxy " + std::to_string(i + 1) + "/" + std::to_string(fallbackProxies.size()) + 
+            " (indexId=" + proxy.indexId + ", address=" + proxy.address + ", delay=" + std::to_string(proxy.delay) + "ms)");
+        
+        db::models::ProfileitemDAO profileDao(db_);
+        std::string sql = "SELECT * FROM ProfileItem WHERE IndexId = '" + proxy.indexId + "';";
+        auto profiles = profileDao.getAll(sql);
+        
+        if (profiles.empty()) {
+            log("WARN: Proxy profile not found: " + proxy.indexId);
+            exItemDao_.updateTestResult(proxy.indexId, -1, false, "Profile not found");
+            continue;
+        }
+        
+        auto profile = profiles[0];
+        log("DEBUG: profile.id=[" + profile.id + "], configtype=[" + profile.configtype + "], address=[" + profile.address + "], port=[" + profile.port + "]");
+        
+        int actualStartPort = startPort_;
+        int actualApiPort = xrayApiPort_;
+        
+        if (isPortInUse(actualStartPort)) {
+            actualStartPort = findAvailablePort(startPort_);
+            log("WARN: SOCKS port " + std::to_string(startPort_) + " in use, using " + std::to_string(actualStartPort));
+        }
+        if (isPortInUse(actualApiPort)) {
+            actualApiPort = findAvailablePort(xrayApiPort_);
+            log("WARN: API port " + std::to_string(xrayApiPort_) + " in use, using " + std::to_string(actualApiPort));
+        }
+        
+        profile.presocksport = std::to_string(actualStartPort);
+        
+        try {
+        profile.checkRequired();
+        } catch (const std::exception& e) {
+            log("WARN: Proxy config error: " + std::string(e.what()));
+            exItemDao_.updateTestResult(proxy.indexId, -1, false, e.what());
+            continue;
+        }
+        
+        config::ConfigGenerator configGen(db_);
+        auto xrayConfig = configGen.generateConfig(profile);
+        
+        log("DEBUG: Generated outbound config: " + xrayConfig.outbound_json);
+        
+        boost::json::object xrayConfigRoot;
+        boost::json::array inboundArray;
+        
+        int apiPort = actualApiPort;
+        
+        boost::json::object socksInbound;
+        socksInbound["tag"] = "socks-in";
+        socksInbound["protocol"] = "mixed";
+        socksInbound["port"] = actualStartPort;
+        socksInbound["listen"] = "127.0.0.1";
+        socksInbound["settings"] = boost::json::object({
+            {"auth", "noauth"},
+            {"udp", true}
+        });
+        inboundArray.push_back(socksInbound);
+        
+        boost::json::object apiInbound;
+        apiInbound["tag"] = "api";
+        apiInbound["listen"] = "127.0.0.1";
+        apiInbound["port"] = apiPort;
+        apiInbound["protocol"] = "dokodemo-door";
+        apiInbound["settings"] = boost::json::object({
+            {"address", "127.0.0.1"}
+        });
+        inboundArray.push_back(apiInbound);
+        
+        log("DEBUG: Config API port set to: " + std::to_string(apiPort));
+        
+        xrayConfigRoot["inbounds"] = inboundArray;
+        
+        boost::json::value outboundJson = boost::json::parse(xrayConfig.outbound_json);
+        boost::json::array outbounds;
+        
+        boost::json::object proxyOutbound = outboundJson.at("outbounds").at(0).as_object();
+        proxyOutbound["tag"] = "proxy";
+        outbounds.push_back(proxyOutbound);
+        
+        outbounds.push_back(boost::json::parse(R"({"tag": "direct", "protocol": "freedom"})"));
+        xrayConfigRoot["outbounds"] = outbounds;
+        
+        xrayConfigRoot["api"] = boost::json::object({
+            {"tag", "api"},
+            {"services", boost::json::array({"HandlerService", "LoggerService", "StatsService"})}
+        });
+        
+        xrayConfigRoot["stats"] = boost::json::object();
+        xrayConfigRoot["policy"] = boost::json::object({
+            {"levels", boost::json::object({
+                {"0", boost::json::object({
+                    {"statsUserUplink", true},
+                    {"statsUserDownlink", true}
+                })}
+            })},
+            {"system", boost::json::object({
+                {"statsInboundUplink", true},
+                {"statsInboundDownlink", true},
+                {"statsOutboundUplink", true},
+                {"statsOutboundDownlink", true}
+            })}
+        });
+        
+        xrayConfigRoot["routing"] = boost::json::object({
+            {"domainStrategy", "AsIs"},
+            {"rules", boost::json::array({
+                boost::json::object({
+                    {"type", "field"},
+                    {"inboundTag", boost::json::array({"api"})},
+                    {"outboundTag", "api"}
+                }),
+                boost::json::object({
+                    {"type", "field"},
+                    {"outboundTag", "proxy"},
+                    {"network", "tcp"}
+                })
+            })}
+        });
+        
+        xrayConfigRoot["log"] = boost::json::object({
+            {"access", "xray_sub_access.log"},
+            {"error", "xray_sub_error.log"},
+            {"loglevel", "debug"}
+        });
+        
+        std::string configStr = boost::json::serialize(xrayConfigRoot);
+        
+        log("DEBUG: Full xray config: " + configStr);
+        std::string configFile = "E:\\eclipse_workspace\\multiple_thread_validproxy\\bin\\xray_sub_temp_" + std::to_string(i) + ".json";
+        std::ofstream configOut(configFile);
+        configOut << configStr;
+        configOut.close();
+        
+        std::string normalizedPath = configFile;
+        for (char& c : normalizedPath) {
+            if (c == '/') c = '\\';
+        }
+        
+        std::string cmd = "\"" + xrayPath_ + "\" run -c \"" + normalizedPath + "\"";
+        
+        log("DEBUG: Starting xray with CreateProcess: " + cmd);
+        
+        STARTUPINFOA si = {0};
+        si.cb = sizeof(si);
+        si.dwFlags = STARTF_USESHOWWINDOW;
+        si.wShowWindow = SW_HIDE;
+        
+        PROCESS_INFORMATION pi = {0};
+        
+        DWORD createFlags = CREATE_SUSPENDED | CREATE_NO_WINDOW;
+        
+        if (!CreateProcessA(nullptr, (char*)cmd.c_str(), nullptr, nullptr, FALSE, 
+                            createFlags, nullptr, nullptr, &si, &pi)) {
+            log("ERROR: Failed to start xray for proxy " + std::to_string(i + 1) + ", err=" + std::to_string(GetLastError()));
+            exItemDao_.updateTestResult(proxy.indexId, -1, false, "CreateProcess failed");
+            continue;
+        }
+        
+        HANDLE job = CreateJobObjectA(nullptr, nullptr);
+        if (job) {
+            AssignProcessToJobObject(job, pi.hProcess);
+        }
+        
+        HANDLE xrayJob = job;
+        
+        ResumeThread(pi.hThread);
+        CloseHandle(pi.hThread);
+        CloseHandle(pi.hProcess);
+        
+        log("DEBUG: Xray thread resumed, sleeping 5s for initialization...");
+        Sleep(5000);
+        
+        log("DEBUG: Waiting for xray to fully start...");
+        bool xrayReady = false;
+        std::string apiAddr = "127.0.0.1:" + std::to_string(apiPort);
+        log("DEBUG: Will use API port " + std::to_string(apiPort));
+        
+        for (int j = 0; j < 10; j++) {
+            Sleep(1000);
+            
+            xray::XrayApi testApi(xrayPath_, apiAddr);
+            if (testApi.listOutbounds()) {
+                log("DEBUG: Xray API connected after " + std::to_string(j+1) + "s");
+                xrayReady = true;
+                break;
+            }
+            log("DEBUG: Waited " + std::to_string(j+1) + "s, API not ready...");
+        }
+        
+        if (!xrayReady) {
+            log("ERROR: Xray API not reachable after 10s wait");
+            if (xrayJob) {
+                TerminateJobObject(xrayJob, 0);
+                CloseHandle(xrayJob);
+            }
+            log("DEBUG: Xray process stopped via job");
+            exItemDao_.updateTestResult(proxy.indexId, -1, false, "XRAY_START_TIMEOUT");
+            continue;
+        }
+        
+        log("DEBUG: Creating XrayApi with server=" + apiAddr);
+        
+        xray::XrayApi xrayApi(xrayPath_, apiAddr);
+        
+        auto config = configGen.generateConfig(profile);
+        
+        log("DEBUG: outbound_json=" + config.outbound_json);
+        
+        std::string tag = "proxy";
+        
+        log("DEBUG: Calling removeOutbound...");
+        xrayApi.removeOutbound(tag);
+        Sleep(500);
+        
+        log("DEBUG: Calling addOutbound...");
+        std::string addResult;
+        if (!xrayApi.addOutbound(config.outbound_json, tag, addResult)) {
+            log("ERROR: Failed to add outbound: " + xrayApi.getLastError() + " output: " + addResult);
+            exItemDao_.updateTestResult(proxy.indexId, -1, false, "XRAY_ERROR: " + xrayApi.getLastError());
+            
+            if (xrayJob) {
+                TerminateJobObject(xrayJob, 0);
+                CloseHandle(xrayJob);
+            }
+            log("DEBUG: Xray process stopped via job");
+            continue;
+        }
+        
+        Sleep(500);
+        
+        long latencyMs = -1;
+        std::string errorMsg;
+        bool testResult = testProxyConnectivity(startPort_, latencyMs, errorMsg);
+        
+        if (testResult) {
+            log("INFO: Proxy " + std::to_string(i + 1) + " test SUCCEEDED (latency=" + std::to_string(latencyMs) + "ms)");
+            exItemDao_.updateTestResult(proxy.indexId, latencyMs, true, "OK");
+            
+            log("========================================");
+            log("INFO: Updating failed subscriptions via proxy " + std::to_string(i + 1));
+            log("========================================");
+            
+            for (const auto& sub : failedSubs) {
+                log("--- Updating via proxy: " + sub.remarks + " (id: " + sub.id + ") ---");
+                
+                std::string content = fetchUrlViaProxy(sub.url, actualStartPort);
+                
+                if (content.empty()) {
+                    log("ERROR: Failed to fetch via proxy: " + sub.remarks);
+                    failedSubsList.emplace_back(sub.id, sub.remarks);
+                    continue;
+                }
+                
+                auto profiles = parseSubscription(content, sub.id);
+                if (profiles.empty()) {
+                    log("WARN: No valid profiles parsed from: " + sub.remarks);
+                    continue;
+                }
+                
+                if (updateProfileItems(sub.id, profiles)) {
+                    successCount++;
+                    proxySuccessCount++;
+                    log("INFO: Successfully updated via proxy: " + sub.remarks);
+                } else {
+                    failedSubsList.emplace_back(sub.id, sub.remarks);
+                    log("ERROR: Failed to update profiles for: " + sub.remarks);
+                }
+            }
+            
+            if (xrayJob) {
+                TerminateJobObject(xrayJob, 0);
+                CloseHandle(xrayJob);
+            }
+            log("INFO: Xray process stopped via job");
+            
+            failCount = failedSubsList.size();
+            
+            log("========================================");
+            log("INFO: Subscription update complete");
+            log("INFO: Total enabled: " + std::to_string(totalEnabled));
+            log("INFO: Direct success: " + std::to_string(directSuccessCount));
+            log("INFO: Proxy update: " + std::to_string(proxySuccessCount));
+            log("INFO: Failed: " + std::to_string(failCount));
+            if (!failedSubsList.empty()) {
+                log("INFO: Failed subscriptions:");
+                for (const auto& f : failedSubsList) {
+                    log("INFO:   - [" + f.first + "] " + f.second);
+                }
+            }
+            log("========================================");
+            
+            return successCount > 0;
+        } else {
+            log("INFO: Proxy " + std::to_string(i + 1) + " test FAILED (error: " + errorMsg + ")");
+            exItemDao_.updateTestResult(proxy.indexId, latencyMs, false, errorMsg);
+            
+            if (xrayJob) {
+                TerminateJobObject(xrayJob, 0);
+                CloseHandle(xrayJob);
+            }
+            log("DEBUG: Xray process stopped via job");
+        }
+    }
+    
+    log("ERROR: All fallback proxies failed");
+    failCount = failedSubsList.size();
+    log("========================================");
+    log("INFO: Subscription update complete (direct only)");
+    log("INFO: Total enabled: " + std::to_string(totalEnabled));
+    log("INFO: Direct success: " + std::to_string(directSuccessCount));
+    log("INFO: Proxy update: 0");
+    log("INFO: Failed: " + std::to_string(failCount));
+    if (!failedSubsList.empty()) {
+        log("INFO: Failed subscriptions:");
+        for (const auto& f : failedSubsList) {
+            log("INFO:   - [" + f.first + "] " + f.second);
+        }
+    }
+    log("========================================");
+    
+    return directSuccessCount > 0;
+}
+
+std::vector<SubitemUpdater::FallbackProxy> SubitemUpdater::getAllFallbackProxies(int maxCount) {
+    std::vector<FallbackProxy> proxies;
+    
+    std::string sql = "SELECT pi.IndexId, pi.Address, pi.Port, pi.PreSocksPort, COALESCE(pe.Delay, 999999) AS Delay "
+                      "FROM ProfileItem pi "
+                      "LEFT JOIN ProfileExItem pe ON pi.IndexId = pe.IndexId "
+                      "WHERE pi.Subid = '" + fallbackSubId_ + "' "
+                      "AND pi.Address IS NOT NULL AND pi.Address != '' "
+                      "ORDER BY Delay ASC "
+                      "LIMIT " + std::to_string(maxCount) + ";";
+    
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db_, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
+        log("ERROR: SQL prepare failed - " + std::string(sqlite3_errmsg(db_)));
+        return proxies;
+    }
+    
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        FallbackProxy proxy;
+        proxy.indexId = (const char*)sqlite3_column_text(stmt, 0);
+        proxy.address = (const char*)sqlite3_column_text(stmt, 1);
+        proxy.delay = std::stoi((const char*)sqlite3_column_text(stmt, 4));
+        
+        const char* preSocksPort = (const char*)sqlite3_column_text(stmt, 3);
+        const char* port = (const char*)sqlite3_column_text(stmt, 2);
+        
+        if (preSocksPort && strlen(preSocksPort) > 0) {
+            proxy.socksPort = std::stoi(preSocksPort);
+        } else if (port && strlen(port) > 0) {
+            proxy.socksPort = std::stoi(port);
+        } else {
+            continue;
+        }
+        
+        proxies.push_back(proxy);
+    }
+    
+    sqlite3_finalize(stmt);
+    
+    return proxies;
+}
+
+bool SubitemUpdater::startXrayForSubscription() {
+    if (xrayPath_.empty()) {
+        log("ERROR: xrayPath is empty");
+        return false;
+    }
+    
+    log("DEBUG: Creating xray config with mixed inbound on port " + std::to_string(startPort_));
+    
+    int actualStartPort = startPort_;
+    if (isPortInUse(actualStartPort)) {
+        actualStartPort = findAvailablePort(startPort_);
+        log("WARN: SOCKS port " + std::to_string(startPort_) + " in use, using " + std::to_string(actualStartPort));
+    }
+    
+    boost::json::object config;
+    boost::json::array inboundArray;
+    
+    boost::json::object socksInbound;
+    socksInbound["tag"] = "socks-in";
+    socksInbound["protocol"] = "mixed";
+    socksInbound["port"] = actualStartPort;
+    socksInbound["listen"] = "127.0.0.1";
+    socksInbound["settings"] = boost::json::object({
+        {"auth", "noauth"},
+        {"udp", true}
+    });
+    
+    inboundArray.push_back(socksInbound);
+    config["inbounds"] = inboundArray;
+    
+    boost::json::array outbounds;
+    outbounds.push_back(boost::json::parse(R"({"tag": "direct", "protocol": "freedom"})"));
+    config["outbounds"] = outbounds;
+    
+    config["log"] = boost::json::object({
+        {"access", ""},
+        {"loglevel", "warning"}
+    });
+    
+    std::string configStr = boost::json::serialize(config);
+    log("DEBUG: xray config: " + configStr);
+    
+    std::string configFile = "E:\\eclipse_workspace\\multiple_thread_validproxy\\bin\\xray_subscription_temp.json";
+    std::ofstream configOut(configFile);
+    configOut << configStr;
+    configOut.close();
+    
+    std::string normalizedPath = configFile;
+    for (char& c : normalizedPath) {
+        if (c == '/') c = '\\';
+    }
+    
+    std::string cmd = "\"" + xrayPath_ + "\" run -c \"" + normalizedPath + "\"";
+    log("DEBUG: xray command: " + cmd);
+    
+    STARTUPINFOA si = {0};
+    si.cb = sizeof(si);
+    si.dwFlags = STARTF_USESTDHANDLES | STARTF_USESHOWWINDOW;
+    si.wShowWindow = SW_HIDE;
+    si.hStdInput = INVALID_HANDLE_VALUE;
+    
+    PROCESS_INFORMATION pi = {0};
+    
+    DWORD createFlags = CREATE_SUSPENDED | CREATE_NO_WINDOW;
+    
+    if (!CreateProcessA(nullptr, (char*)cmd.c_str(), nullptr, nullptr, FALSE, 
+                        createFlags, nullptr, nullptr, &si, &pi)) {
+        log("ERROR: CreateProcess failed for xray");
+        return false;
+    }
+    
+    ResumeThread(pi.hThread);
+    CloseHandle(pi.hThread);
+    CloseHandle(pi.hProcess);
+    
+    xrayProcessId_ = pi.dwProcessId;
+    log("DEBUG: xray process started (PID=" + std::to_string(xrayProcessId_) + "), waiting 2s...");
+    Sleep(2000);
+    
+    log("INFO: Xray process started successfully");
+    return true;
+}
+
+bool SubitemUpdater::testSubscriptionViaXray(int socksPort, const std::string& subUrl) {
+    CURL* curl = curl_easy_init();
+    if (!curl) {
+        log("ERROR: curl_easy_init failed");
+        return false;
+    }
+    
+    curl_easy_setopt(curl, CURLOPT_URL, subUrl.c_str());
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 10L);
+    curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+    
+    std::string proxyUrl = "socks5://127.0.0.1:" + std::to_string(socksPort);
+    curl_easy_setopt(curl, CURLOPT_PROXY, proxyUrl.c_str());
+    
+    std::string response;
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
+    
+    CURLcode res = curl_easy_perform(curl);
+    
+    long httpCode = 0;
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
+    curl_easy_cleanup(curl);
+    
+    if (res == CURLE_OK) {
+        log("DEBUG: CURL result=OK, httpCode=" + std::to_string(httpCode) + ", responseSize=" + std::to_string(response.size()));
+        return !response.empty();
+    } else {
+        log("DEBUG: CURL result=" + std::string(curl_easy_strerror(res)) + " (" + std::to_string(res) + ")");
+        return false;
+    }
+}
+
+void SubitemUpdater::cleanupXray() {
+    if (xrayProcessId_ != 0) {
+        log("INFO: Killing xray process (PID=" + std::to_string(xrayProcessId_) + ")");
+        std::string cmd = "taskkill /F /PID " + std::to_string(xrayProcessId_) + " >NUL 2>&1";
+        system(cmd.c_str());
+        xrayProcessId_ = 0;
+    } else {
+        log("DEBUG: No xray process to kill");
+    }
 }
 
 bool SubitemUpdater::runSingle(const std::string& subId) {
@@ -853,47 +1666,244 @@ bool SubitemUpdater::runSingle(const std::string& subId) {
     log("--- Processing: " + sub.remarks + " (id: " + sub.id + ") ---");
     log("INFO: URL: " + sub.url);
     
-    std::string content;
-    
-    content = fetchUrl(sub.url);
+    std::string content = fetchUrl(sub.url);
     
     if (content.empty()) {
-        log("WARN: Direct fetch failed, trying fallback proxies...");
+        log("WARN: Direct fetch failed, trying priority proxy mode...");
         
-        std::vector<FallbackProxy> fallbackProxies = getAllFallbackProxies(5);
-        
-        if (fallbackProxies.empty()) {
-            log("ERROR: No fallback proxies available");
-            return false;
-        }
-        
-        log("INFO: Found " + std::to_string(fallbackProxies.size()) + " fallback proxies");
-        
-        if (!startXrayForSubscription()) {
-            log("ERROR: Failed to start xray for subscription testing");
-            return false;
-        }
-        
-        bool success = false;
-        for (size_t i = 0; i < fallbackProxies.size(); i++) {
-            log("INFO: Testing fallback proxy " + std::to_string(i + 1) + "/" + std::to_string(fallbackProxies.size()) + 
-                " (socksPort=" + std::to_string(fallbackProxies[i].socksPort) + ", delay=" + 
-                std::to_string(fallbackProxies[i].delay) + ")");
-            
-            if (testSubscriptionViaXray(fallbackProxies[i].socksPort, sub.url)) {
-                log("INFO: Fallback proxy " + std::to_string(i + 1) + " succeeded");
-                content = fetchUrlViaProxy(sub.url, fallbackProxies[i].socksPort);
-                success = true;
-                break;
-            } else {
-                log("INFO: Fallback proxy " + std::to_string(i + 1) + " failed");
+        std::vector<FallbackProxy> allProxies = getAllFallbackProxies(100);
+        std::vector<FallbackProxy> validProxies;
+        for (const auto& proxy : allProxies) {
+            if (proxy.delay > 0) {
+                validProxies.push_back(proxy);
             }
         }
         
-        cleanupXray();
+        log("INFO: Found " + std::to_string(validProxies.size()) + " proxies with delay > 0");
         
-        if (!success) {
-            log("ERROR: All fallback proxies failed");
+        if (validProxies.empty()) {
+            log("ERROR: No working proxies available");
+            return false;
+        }
+        
+        for (size_t pIdx = 0; pIdx < validProxies.size(); pIdx++) {
+            const auto& proxy = validProxies[pIdx];
+            log("INFO: Testing priority proxy " + std::to_string(pIdx + 1) + "/" + std::to_string(validProxies.size()) + 
+                " (indexId=" + proxy.indexId + ", address=" + proxy.address + ", delay=" + std::to_string(proxy.delay) + "ms)");
+            
+            db::models::ProfileitemDAO profileDao(db_);
+            std::string profileSql = "SELECT * FROM ProfileItem WHERE IndexId = '" + proxy.indexId + "';";
+            auto profiles = profileDao.getAll(profileSql);
+            
+            if (profiles.empty()) {
+                log("WARN: Proxy profile not found: " + proxy.indexId);
+                continue;
+            }
+            
+            auto profile = profiles[0];
+            
+            int actualStartPort = startPort_;
+            int actualApiPort = xrayApiPort_;
+            
+            if (isPortInUse(actualStartPort)) {
+                actualStartPort = findAvailablePort(startPort_);
+                log("WARN: SOCKS port " + std::to_string(startPort_) + " in use, using " + std::to_string(actualStartPort));
+            }
+            if (isPortInUse(actualApiPort)) {
+                actualApiPort = findAvailablePort(xrayApiPort_);
+                log("WARN: API port " + std::to_string(xrayApiPort_) + " in use, using " + std::to_string(actualApiPort));
+            }
+            
+            profile.presocksport = std::to_string(actualStartPort);
+            
+            try {
+                profile.checkRequired();
+            } catch (const std::exception& e) {
+                log("WARN: Proxy config error: " + std::string(e.what()));
+                continue;
+            }
+            
+            config::ConfigGenerator configGen(db_);
+            auto xrayConfig = configGen.generateConfig(profile);
+            
+            boost::json::object xrayConfigRoot;
+            boost::json::array inboundArray;
+            
+            int apiPort = actualApiPort;
+            
+            boost::json::object socksInbound;
+            socksInbound["tag"] = "socks-in";
+            socksInbound["protocol"] = "mixed";
+            socksInbound["port"] = actualStartPort;
+            socksInbound["listen"] = "127.0.0.1";
+            socksInbound["settings"] = boost::json::object({
+                {"auth", "noauth"},
+                {"udp", true}
+            });
+            inboundArray.push_back(socksInbound);
+            
+            boost::json::object apiInbound;
+            apiInbound["tag"] = "api";
+            apiInbound["listen"] = "127.0.0.1";
+            apiInbound["port"] = apiPort;
+            apiInbound["protocol"] = "dokodemo-door";
+            apiInbound["settings"] = boost::json::object({
+                {"address", "127.0.0.1"}
+            });
+            inboundArray.push_back(apiInbound);
+            
+            xrayConfigRoot["inbounds"] = inboundArray;
+            
+            boost::json::value outboundJson = boost::json::parse(xrayConfig.outbound_json);
+            boost::json::array outbounds;
+            
+            boost::json::object proxyOutbound = outboundJson.at("outbounds").at(0).as_object();
+            proxyOutbound["tag"] = "proxy";
+            outbounds.push_back(proxyOutbound);
+            outbounds.push_back(boost::json::parse(R"({"tag": "direct", "protocol": "freedom"})"));
+            xrayConfigRoot["outbounds"] = outbounds;
+            
+            xrayConfigRoot["api"] = boost::json::object({
+                {"tag", "api"},
+                {"services", boost::json::array({"HandlerService", "LoggerService", "StatsService"})}
+            });
+            
+            xrayConfigRoot["stats"] = boost::json::object();
+            xrayConfigRoot["policy"] = boost::json::object({
+                {"levels", boost::json::object({
+                    {"0", boost::json::object({
+                        {"statsUserUplink", true},
+                        {"statsUserDownlink", true}
+                    })}
+                })},
+                {"system", boost::json::object({
+                    {"statsInboundUplink", true},
+                    {"statsInboundDownlink", true},
+                    {"statsOutboundUplink", true},
+                    {"statsOutboundDownlink", true}
+                })}
+            });
+            
+            xrayConfigRoot["routing"] = boost::json::object({
+                {"domainStrategy", "AsIs"},
+                {"rules", boost::json::array({
+                    boost::json::object({
+                        {"type", "field"},
+                        {"inboundTag", boost::json::array({"api"})},
+                        {"outboundTag", "api"}
+                    }),
+                    boost::json::object({
+                        {"type", "field"},
+                        {"outboundTag", "proxy"},
+                        {"network", "tcp"}
+                    })
+                })}
+            });
+            
+            xrayConfigRoot["log"] = boost::json::object({
+                {"access", "xray_sub_access.log"},
+                {"error", "xray_sub_error.log"},
+                {"loglevel", "debug"}
+            });
+            
+            std::string configStr = boost::json::serialize(xrayConfigRoot);
+            log("DEBUG: Full xray config: " + configStr);
+            
+            std::string configFile = "E:\\eclipse_workspace\\multiple_thread_validproxy\\bin\\xray_priority_single.json";
+            std::ofstream configOut(configFile);
+            configOut << configStr;
+            configOut.close();
+            
+            std::string normalizedPath = configFile;
+            for (char& c : normalizedPath) {
+                if (c == '/') c = '\\';
+            }
+            
+            std::string cmd = "\"" + xrayPath_ + "\" run -c \"" + normalizedPath + "\"";
+            log("DEBUG: Starting priority xray: " + cmd);
+            
+            STARTUPINFOA si = {0};
+            si.cb = sizeof(si);
+            si.dwFlags = STARTF_USESHOWWINDOW;
+            si.wShowWindow = SW_HIDE;
+            
+            PROCESS_INFORMATION pi = {0};
+            DWORD createFlags = CREATE_SUSPENDED | CREATE_NO_WINDOW;
+            
+            if (!CreateProcessA(nullptr, (char*)cmd.c_str(), nullptr, nullptr, FALSE, 
+                                createFlags, nullptr, nullptr, &si, &pi)) {
+                log("ERROR: Failed to start xray, err=" + std::to_string(GetLastError()));
+                continue;
+            }
+            
+            HANDLE job = CreateJobObjectA(nullptr, nullptr);
+            if (job) {
+                AssignProcessToJobObject(job, pi.hProcess);
+            }
+            
+            ResumeThread(pi.hThread);
+            CloseHandle(pi.hThread);
+            CloseHandle(pi.hProcess);
+            
+            log("DEBUG: Priority xray started, waiting 5s...");
+            Sleep(5000);
+            
+            bool xrayReady = false;
+            std::string apiAddr = "127.0.0.1:" + std::to_string(apiPort);
+            
+            for (int j = 0; j < 10; j++) {
+                Sleep(1000);
+                xray::XrayApi testApi(xrayPath_, apiAddr);
+                if (testApi.listOutbounds()) {
+                    log("DEBUG: Priority xray API ready after " + std::to_string(j+1) + "s");
+                    xrayReady = true;
+                    break;
+                }
+                log("DEBUG: Waited " + std::to_string(j+1) + "s for priority xray...");
+            }
+            
+            if (!xrayReady) {
+                log("ERROR: Priority xray API not ready, trying next proxy...");
+                if (job) {
+                    TerminateJobObject(job, 0);
+                    CloseHandle(job);
+                }
+                continue;
+            }
+            
+            log("INFO: Testing proxy connectivity via SOCKS port " + std::to_string(actualStartPort) + "...");
+            long latencyMs = -1;
+            std::string errorMsg;
+            bool proxyWorking = testProxyConnectivity(actualStartPort, latencyMs, errorMsg);
+            
+            if (!proxyWorking) {
+                log("WARN: Proxy connectivity test failed: " + errorMsg + ", trying next proxy...");
+                if (job) {
+                    TerminateJobObject(job, 0);
+                    CloseHandle(job);
+                }
+                continue;
+            }
+            
+            log("INFO: Proxy connectivity test SUCCEEDED (latency=" + std::to_string(latencyMs) + "ms)");
+            
+            content = fetchUrlViaProxy(sub.url, actualStartPort);
+            
+            if (job) {
+                TerminateJobObject(job, 0);
+                CloseHandle(job);
+            }
+            
+            if (!content.empty()) {
+                log("INFO: Successfully fetched subscription via proxy");
+                break;
+            }
+            
+            log("WARN: Failed to fetch via proxy, trying next...");
+        }
+        
+        if (content.empty()) {
+            log("ERROR: All priority proxies failed");
             return false;
         }
     }
@@ -997,4 +2007,40 @@ bool SubitemUpdater::runSingleWithProxy(const std::string& subId, int socksPort)
     log("========================================");
     
     return success;
+}
+
+bool SubitemUpdater::testProxyConnectivity(int socksPort, long& latencyMs, std::string& errorMsg) {
+    latencyMs = -1;
+    errorMsg = "";
+
+    CURL* curl = curl_easy_init();
+    if (!curl) {
+        errorMsg = "curl_init_failed";
+        return false;
+    }
+
+    std::string proxyUrl = "http://127.0.0.1:" + std::to_string(socksPort);
+    curl_easy_setopt(curl, CURLOPT_PROXY, proxyUrl.c_str());
+    curl_easy_setopt(curl, CURLOPT_URL, "https://www.google.com/generate_204");
+    curl_easy_setopt(curl, CURLOPT_NOBODY, 1L);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, test_timeout_ms_);
+    curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+
+    CURLcode res = curl_easy_perform(curl);
+
+    double totalTime = 0;
+    curl_easy_getinfo(curl, CURLINFO_TOTAL_TIME, &totalTime);
+    latencyMs = static_cast<long>(totalTime * 1000);
+
+    long responseCode = 0;
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &responseCode);
+    curl_easy_cleanup(curl);
+
+    if (res != CURLE_OK) {
+        errorMsg = curl_easy_strerror(res);
+    } else if (responseCode != 200 && responseCode != 204) {
+        errorMsg = "http_" + std::to_string(responseCode);
+    }
+
+    return res == CURLE_OK && (responseCode == 200 || responseCode == 204);
 }
