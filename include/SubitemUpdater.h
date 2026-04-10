@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 #include <set>
+#include <filesystem>
 #include <sqlite3.h>
 #include <curl/curl.h>
 #include <fstream>
@@ -29,7 +30,8 @@ public:
                            int xrayApiPort = 10086,
                            int testTimeoutMs = 3000,
                            int startPort = 1080,
-                           bool priorityProxyEnabled = false);
+                           bool priorityProxyEnabled = false,
+                           const std::string& baseDir = "");
 
     bool run();
     bool runSingle(const std::string& subId);
@@ -51,6 +53,8 @@ private:
     int test_timeout_ms_;
     int startPort_;
     bool priorityProxyEnabled_;
+    std::string baseDir_;
+    std::string timestamp_;
 
     void log(const std::string& msg);
     std::string fetchUrl(const std::string& url);

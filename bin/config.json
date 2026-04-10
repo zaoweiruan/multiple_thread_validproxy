@@ -1,7 +1,7 @@
 {
     "database": {
         "path": "E:/v2rayN-windows-64/guiConfigs/guiNDB.db",
-        "sql": "SELECT IndexId, ConfigType, ConfigVersion, Address, Port, Ports, Id, AlterId, Security, Network, Remarks, HeaderType, RequestHost, Path, StreamSecurity, AllowInsecure, Subid, IsSub, Flow, Sni, Alpn, CoreType, PreSocksPort, Fingerprint, DisplayLog, PublicKey, ShortId, SpiderX, Mldsa65Verify, Extra, MuxEnabled, Cert FROM (SELECT *, ROW_NUMBER() OVER (ORDER BY IndexId) AS linenum FROM ProfileItem WHERE Subid IN ('5126987642659995691')) WHERE linenum BETWEEN 1 AND 10000;",
+        "sql": "SELECT IndexId, ConfigType, ConfigVersion, Address, Port, Ports, Id, AlterId, Security, Network, Remarks, HeaderType, RequestHost, Path, StreamSecurity, AllowInsecure, Subid, IsSub, Flow, Sni, Alpn, CoreType, PreSocksPort, Fingerprint, DisplayLog, PublicKey, ShortId, SpiderX, Mldsa65Verify, Extra, MuxEnabled, Cert FROM (SELECT *, ROW_NUMBER() OVER (ORDER BY IndexId) AS linenum FROM ProfileItem WHERE Subid IN ('5407284047721367022')) WHERE linenum BETWEEN 1 AND 10000;",
         "sql1": "SELECT IndexId, ConfigType, ConfigVersion, Address, Port, Ports, Id, AlterId, Security, Network, Remarks, HeaderType, RequestHost, Path, StreamSecurity, AllowInsecure, Subid, IsSub, Flow, Sni, Alpn, CoreType, PreSocksPort, Fingerprint, DisplayLog, PublicKey, ShortId, SpiderX, Mldsa65Verify, Extra, MuxEnabled, Cert FROM ProfileItem WHERE Subid NOT IN ('5544178410297751350','4793493882399264076','5126987642659995691') AND ConfigType IN ('1', '3', '5', '6');"
     },
 
