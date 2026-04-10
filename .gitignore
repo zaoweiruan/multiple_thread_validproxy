@@ -1,0 +1,13 @@
+bin/test_log_*.txt
+bin/worker_config_*.json
+bin/*.bat
+bin/*.json
+!bin/config.json
+bin/*.log
+bin/*.txt
+bin/.agents/
+bin/.windsurf/
+bin/.claude/
+bin/.other/
+build/
+*.tmp
