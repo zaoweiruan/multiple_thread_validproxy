@@ -27,7 +27,9 @@ public:
     explicit SubitemUpdater(sqlite3* db, std::ofstream* logOut = nullptr,
                            const std::string& xrayPath = "",
                            int xrayApiPort = 10086,
-                           int testTimeoutMs = 3000);
+                           int testTimeoutMs = 3000,
+                           int startPort = 1080,
+                           bool priorityProxyEnabled = false);
 
     bool run();
     bool runSingle(const std::string& subId);
@@ -38,6 +40,7 @@ private:
         int socksPort;
         int delay;
         std::string indexId;
+        std::string address;
     };
     
     sqlite3* db_;
@@ -46,6 +49,8 @@ private:
     std::string xrayPath_;
     int xrayApiPort_;
     int test_timeout_ms_;
+    int startPort_;
+    bool priorityProxyEnabled_;
 
     void log(const std::string& msg);
     std::string fetchUrl(const std::string& url);
@@ -60,6 +65,10 @@ private:
     bool startXrayForSubscription();
     bool testSubscriptionViaXray(int socksPort, const std::string& subUrl);
     void cleanupXray();
+    
+    bool testProxyConnectivity(int socksPort, long& latencyMs, std::string& errorMsg);
+    DWORD xrayProcessId_;
+    db::models::ProfileexitemDAO exItemDao_;
 };
 
 #endif // SUBITEM_UPDATER_H

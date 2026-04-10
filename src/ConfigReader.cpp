@@ -103,13 +103,13 @@ std::optional<AppConfig> ConfigReader::load(const std::string& configPath) {
 
     if (obj.contains("subscription") && obj["subscription"].is_object()) {
         auto& sub = obj["subscription"].as_object();
-        if (sub.contains("update_enabled")) {
-            config.update_subscription = sub["update_enabled"].as_bool();
+        if (sub.contains("priority_proxy_enabled")) {
+            config.priority_proxy_enabled = sub["priority_proxy_enabled"].as_bool();
         } else {
-            config.update_subscription = false;
+            config.priority_proxy_enabled = false;
         }
     } else {
-        config.update_subscription = false;
+        config.priority_proxy_enabled = false;
     }
     
     std::cerr << "[DEBUG] Config loaded successfully" << std::endl;

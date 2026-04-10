@@ -17,6 +17,7 @@ struct AppConfig {
     int test_timeout_ms;
     bool log_enabled;
     bool update_subscription;
+    bool priority_proxy_enabled;
 };
 
 class ConfigReader {
