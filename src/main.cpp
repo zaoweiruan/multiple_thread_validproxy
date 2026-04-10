@@ -383,19 +383,17 @@ int main(int argc, char* argv[]) {
             return 1;
         }
         
-        char timestamp[32];
+char timestamp[32];
         time_t now = time(nullptr);
         strftime(timestamp, sizeof(timestamp), "%Y%m%d_%H%M%S", localtime(&now));
         
-        if (commandMode == "test") {
-            std::cout << "Running TEST mode for subscription: " << singleSubId << std::endl;
-            std::cout << "Use --sub parameter to test. Note: For testing, please run without --update or --test to use the main test mode." << std::endl;
-            sqlite3_close(db);
-            curl_global_cleanup();
-            return 0;
+        std::filesystem::path baseDir = std::filesystem::current_path();
+        std::filesystem::path logDir = baseDir / "log";
+        if (!std::filesystem::exists(logDir)) {
+            std::filesystem::create_directory(logDir);
         }
         
-        std::string logFile = "sub_update_" + std::string(timestamp) + ".log";
+        std::string logFile = (logDir / ("sub_update_" + std::string(timestamp) + ".log")).string();
         std::ofstream logOut(logFile, std::ios::out | std::ios::trunc);
         
         std::cout << "Updating subscription: " << singleSubId << std::endl;
@@ -406,7 +404,8 @@ int main(int argc, char* argv[]) {
                                    10086,
                                    appConfig->test_timeout_ms,
                                    appConfig->xray_start_port,
-                                   appConfig->priority_proxy_enabled);
+                                   appConfig->priority_proxy_enabled,
+                                   baseDir.string());
         
         bool result;
         if (singleSubId == "__all__") {
@@ -455,15 +454,16 @@ int main(int argc, char* argv[]) {
     char timestamp[32];
     strftime(timestamp, sizeof(timestamp), "%Y%m%d_%H%M%S", localtime(&startTimeT));
     
-    std::filesystem::path binDir = std::filesystem::current_path();
-    if (binDir.filename() == "bin") {
-    } else {
-        binDir = binDir / "bin";
+    std::filesystem::path baseDir = std::filesystem::current_path();
+    std::filesystem::path configDir = baseDir / "config";
+    std::filesystem::path logDir = baseDir / "log";
+    if (!std::filesystem::exists(configDir)) {
+        std::filesystem::create_directory(configDir);
     }
-    if (!std::filesystem::exists(binDir)) {
-        std::filesystem::create_directory(binDir);
+    if (!std::filesystem::exists(logDir)) {
+        std::filesystem::create_directory(logDir);
     }
-    std::string logFile = (binDir / ("test_log_" + std::string(timestamp) + ".txt")).string();
+    std::string logFile = (logDir / ("test_log_" + std::string(timestamp) + ".log")).string();
     std::ofstream logOut;
     if (logEnabled) {
         logOut.open(logFile);
@@ -528,7 +528,7 @@ int main(int argc, char* argv[]) {
     }
 
     std::vector<std::string> xrayConfigs;
-    std::string baseDir = "bin";
+    std::string workersDir = "bin";
     
     for (int i = 0; i < numWorkers; ++i) {
         int socksPort = workerPorts[i].first;

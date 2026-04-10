@@ -1,5 +1,6 @@
 #include "SubitemUpdater.h"
 #include <boost/json.hpp>
+#include <filesystem>
 #include <stdexcept>
 #include <random>
 #include <winsock2.h>
@@ -53,10 +54,20 @@ static int findAvailablePort(int startPort, int maxAttempts = 100) {
     return -1;
 }
 
-SubitemUpdater::SubitemUpdater(sqlite3* db, std::ofstream* logOut, const std::string& xrayPath, int xrayApiPort, int testTimeoutMs, int startPort, bool priorityProxyEnabled)
+SubitemUpdater::SubitemUpdater(sqlite3* db, std::ofstream* logOut, const std::string& xrayPath, int xrayApiPort, int testTimeoutMs, int startPort, bool priorityProxyEnabled, const std::string& baseDir)
     : db_(db), logOut_(logOut), fallbackSubId_("5544178410297751350"),
       xrayPath_(xrayPath), xrayApiPort_(xrayApiPort), test_timeout_ms_(testTimeoutMs),
-      xrayProcessId_(0), exItemDao_(db), startPort_(startPort), priorityProxyEnabled_(priorityProxyEnabled) {}
+      xrayProcessId_(0), exItemDao_(db), startPort_(startPort), priorityProxyEnabled_(priorityProxyEnabled),
+      baseDir_(baseDir) {
+    if (baseDir_.empty()) {
+        baseDir_ = std::filesystem::current_path().string();
+    }
+    auto now = std::chrono::system_clock::now();
+    auto time = std::chrono::system_clock::to_time_t(now);
+    char ts[32];
+    strftime(ts, sizeof(ts), "%Y%m%d_%H%M%S", localtime(&time));
+    timestamp_ = ts;
+}
 
 void SubitemUpdater::log(const std::string& msg) {
     auto now = std::chrono::system_clock::now();
@@ -898,8 +909,8 @@ bool SubitemUpdater::run() {
                 });
                 
                 xrayConfigRoot["log"] = boost::json::object({
-                    {"access", "xray_sub_access.log"},
-                    {"error", "xray_sub_error.log"},
+                    {"access", baseDir_ + "\\log\\xray_sub_access_" + timestamp_ + ".log"},
+                    {"error", baseDir_ + "\\log\\xray_sub_error_" + timestamp_ + ".log"},
                     {"loglevel", "debug"}
                 });
                 
@@ -907,7 +918,7 @@ bool SubitemUpdater::run() {
                 
                 log("DEBUG: Full priority proxy xray config: " + configStr);
                 
-                std::string configFile = "E:\\eclipse_workspace\\multiple_thread_validproxy\\bin\\xray_priority_temp.json";
+                std::string configFile = baseDir_ + "\\config\\xray_priority_temp.json";
                 std::ofstream configOut(configFile);
                 configOut << configStr;
                 configOut.close();
@@ -1268,15 +1279,15 @@ bool SubitemUpdater::run() {
         });
         
         xrayConfigRoot["log"] = boost::json::object({
-            {"access", "xray_sub_access.log"},
-            {"error", "xray_sub_error.log"},
+{"access", baseDir_ + "\\log\\xray_sub_access_" + timestamp_ + ".log"},
+                    {"error", baseDir_ + "\\log\\xray_sub_error_" + timestamp_ + ".log"},
             {"loglevel", "debug"}
         });
         
         std::string configStr = boost::json::serialize(xrayConfigRoot);
         
         log("DEBUG: Full xray config: " + configStr);
-        std::string configFile = "E:\\eclipse_workspace\\multiple_thread_validproxy\\bin\\xray_sub_temp_" + std::to_string(i) + ".json";
+        std::string configFile = baseDir_ + "\\config\\xray_sub_temp_" + std::to_string(i) + ".json";
         std::ofstream configOut(configFile);
         configOut << configStr;
         configOut.close();
@@ -1555,7 +1566,7 @@ bool SubitemUpdater::startXrayForSubscription() {
     std::string configStr = boost::json::serialize(config);
     log("DEBUG: xray config: " + configStr);
     
-    std::string configFile = "E:\\eclipse_workspace\\multiple_thread_validproxy\\bin\\xray_subscription_temp.json";
+    std::string configFile = baseDir_ + "\\config\\xray_subscription_temp.json";
     std::ofstream configOut(configFile);
     configOut << configStr;
     configOut.close();
@@ -1809,7 +1820,7 @@ bool SubitemUpdater::runSingle(const std::string& subId) {
             std::string configStr = boost::json::serialize(xrayConfigRoot);
             log("DEBUG: Full xray config: " + configStr);
             
-            std::string configFile = "E:\\eclipse_workspace\\multiple_thread_validproxy\\bin\\xray_priority_single.json";
+            std::string configFile = baseDir_ + "\\config\\xray_priority_single.json";
             std::ofstream configOut(configFile);
             configOut << configStr;
             configOut.close();
