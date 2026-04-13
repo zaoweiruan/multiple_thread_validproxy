@@ -55,6 +55,9 @@ std::optional<AppConfig> ConfigReader::load(const std::string& configPath) {
             if (db.contains("sql")) {
                 config.sql_query = db["sql"].as_string().c_str();
             }
+            if (db.contains("sql_by_subid")) {
+                config.sql_by_subid = db["sql_by_subid"].as_string().c_str();
+            }
         }
     }
     

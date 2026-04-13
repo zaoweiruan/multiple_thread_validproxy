@@ -1,0 +1,225 @@
+[20260413_111615] Starting subscription update for subId: __all__
+[2026-04-13 11:16:15] ========================================
+[2026-04-13 11:16:15] INFO: Starting subscription update
+[2026-04-13 11:16:15] ========================================
+[2026-04-13 11:16:15] INFO: Found 19 enabled subscriptions
+[2026-04-13 11:16:15] ========================================
+[2026-04-13 11:16:15] DEBUG: Phase 0 - Priority proxy update for all subscriptions
+[2026-04-13 11:16:15] ========================================
+[2026-04-13 11:16:15] DEBUG: Found 35 proxies with delay > 0
+[2026-04-13 11:16:15] DEBUG: Testing proxy 1/35 (indexId=5506355591903565450, address=8.223.63.150, delay=29ms)
+[2026-04-13 11:16:15] DEBUG: Generated outbound config: {"outbounds":[{"tag":"proxy","protocol":"shadowsocks","settings":{"servers":[{"address":"8.223.63.150","port":443,"method":"none","password":"3e96ef7d-8637-42c2-ac73-75182196e755"}]},"streamSettings":{"network":"ws","security":"tls","tlsSettings":{"allowInsecure":false,"serverName":"mfvpn.fuchen.indevs.in"},"wsSettings":{"path":"3e96ef7d-8637-42c2-ac73-75182196e755/?ed=2560","headers":{"host":"mfvpn.fuchen.indevs.in"}}},"mux":{"enabled":false,"concurrency":-1}}]}
+[2026-04-13 11:16:15] WARN: SOCKS port 1080 in use, using 1084
+[2026-04-13 11:16:15] DEBUG: Priority proxy config API port: 10086
+[2026-04-13 11:16:15] DEBUG: Full priority proxy xray config: {"inbounds":[{"tag":"socks-in","protocol":"mixed","port":1084,"listen":"127.0.0.1","settings":{"auth":"noauth","udp":true}},{"tag":"api","listen":"127.0.0.1","port":10086,"protocol":"dokodemo-door","settings":{"address":"127.0.0.1"}}],"outbounds":[{"tag":"proxy","protocol":"shadowsocks","settings":{"servers":[{"address":"8.223.63.150","port":443,"method":"none","password":"3e96ef7d-8637-42c2-ac73-75182196e755"}]},"streamSettings":{"network":"ws","security":"tls","tlsSettings":{"allowInsecure":false,"serverName":"mfvpn.fuchen.indevs.in"},"wsSettings":{"path":"3e96ef7d-8637-42c2-ac73-75182196e755/?ed=2560","headers":{"host":"mfvpn.fuchen.indevs.in"}}},"mux":{"enabled":false,"concurrency":-1}},{"tag":"direct","protocol":"freedom"}],"api":{"tag":"api","services":["HandlerService","LoggerService","StatsService"]},"stats":{},"policy":{"levels":{"0":{"statsUserUplink":true,"statsUserDownlink":true}},"system":{"statsInboundUplink":true,"statsInboundDownlink":true,"statsOutboundUplink":true,"statsOutboundDownlink":true}},"routing":{"domainStrategy":"AsIs","rules":[{"type":"field","inboundTag":["api"],"outboundTag":"api"},{"type":"field","outboundTag":"proxy","network":"tcp"}]},"log":{"access":"E:\\eclipse_workspace\\multiple_thread_validproxy\\bin\\log\\xray_sub_access_20260413_111615.log","error":"E:\\eclipse_workspace\\multiple_thread_validproxy\\bin\\log\\xray_sub_error_20260413_111615.log","loglevel":"debug"}}
+[2026-04-13 11:16:15] DEBUG: Starting priority xray: "E:/v2rayN-windows-64/bin/xray/xray.exe" run -c "E:\eclipse_workspace\multiple_thread_validproxy\bin\config\xray_priority_temp.json"
+[2026-04-13 11:16:15] DEBUG: Priority xray started, waiting 5s...
+[2026-04-13 11:16:22] DEBUG: Priority xray API ready after 1s
+[2026-04-13 11:16:22] INFO: Testing proxy connectivity via SOCKS port 1084...
+[2026-04-13 11:16:27] WARN: Proxy connectivity test failed: Timeout was reached, trying next proxy...
+[2026-04-13 11:16:27] DEBUG: Testing proxy 2/35 (indexId=4879226301731483827, address=43.153.183.11, delay=39ms)
+[2026-04-13 11:16:27] DEBUG: Generated outbound config: {"outbounds":[{"tag":"proxy","protocol":"shadowsocks","settings":{"servers":[{"address":"43.153.183.11","port":18651,"method":"none","password":"3e96ef7d-8637-42c2-ac73-75182196e755"}]},"streamSettings":{"network":"ws","security":"tls","tlsSettings":{"allowInsecure":false,"serverName":"mfvpn.fuchen.indevs.in"},"wsSettings":{"path":"3e96ef7d-8637-42c2-ac73-75182196e755/?ed=2560","headers":{"host":"mfvpn.fuchen.indevs.in"}}},"mux":{"enabled":false,"concurrency":-1}}]}
+[2026-04-13 11:16:27] WARN: SOCKS port 1080 in use, using 1084
+[2026-04-13 11:16:27] DEBUG: Priority proxy config API port: 10086
+[2026-04-13 11:16:27] DEBUG: Full priority proxy xray config: {"inbounds":[{"tag":"socks-in","protocol":"mixed","port":1084,"listen":"127.0.0.1","settings":{"auth":"noauth","udp":true}},{"tag":"api","listen":"127.0.0.1","port":10086,"protocol":"dokodemo-door","settings":{"address":"127.0.0.1"}}],"outbounds":[{"tag":"proxy","protocol":"shadowsocks","settings":{"servers":[{"address":"43.153.183.11","port":18651,"method":"none","password":"3e96ef7d-8637-42c2-ac73-75182196e755"}]},"streamSettings":{"network":"ws","security":"tls","tlsSettings":{"allowInsecure":false,"serverName":"mfvpn.fuchen.indevs.in"},"wsSettings":{"path":"3e96ef7d-8637-42c2-ac73-75182196e755/?ed=2560","headers":{"host":"mfvpn.fuchen.indevs.in"}}},"mux":{"enabled":false,"concurrency":-1}},{"tag":"direct","protocol":"freedom"}],"api":{"tag":"api","services":["HandlerService","LoggerService","StatsService"]},"stats":{},"policy":{"levels":{"0":{"statsUserUplink":true,"statsUserDownlink":true}},"system":{"statsInboundUplink":true,"statsInboundDownlink":true,"statsOutboundUplink":true,"statsOutboundDownlink":true}},"routing":{"domainStrategy":"AsIs","rules":[{"type":"field","inboundTag":["api"],"outboundTag":"api"},{"type":"field","outboundTag":"proxy","network":"tcp"}]},"log":{"access":"E:\\eclipse_workspace\\multiple_thread_validproxy\\bin\\log\\xray_sub_access_20260413_111615.log","error":"E:\\eclipse_workspace\\multiple_thread_validproxy\\bin\\log\\xray_sub_error_20260413_111615.log","loglevel":"debug"}}
+[2026-04-13 11:16:27] DEBUG: Starting priority xray: "E:/v2rayN-windows-64/bin/xray/xray.exe" run -c "E:\eclipse_workspace\multiple_thread_validproxy\bin\config\xray_priority_temp.json"
+[2026-04-13 11:16:27] DEBUG: Priority xray started, waiting 5s...
+[2026-04-13 11:16:33] DEBUG: Priority xray API ready after 1s
+[2026-04-13 11:16:33] INFO: Testing proxy connectivity via SOCKS port 1084...
+[2026-04-13 11:16:34] INFO: Proxy connectivity test SUCCEEDED (latency=843ms)
+[2026-04-13 11:16:34] INFO: ===== Updating all subscriptions via proxy =====
+[2026-04-13 11:16:34] --- Updating via priority proxy: ShatakVPN_vless ---
+[2026-04-13 11:16:50] ERROR: fetchUrlViaProxy failed for https://raw.githubusercontent.com/ShatakVPN/ConfigForge-V2Ray/refs/heads/main/configs/vless.txt - SSL connect error
+[2026-04-13 11:16:50] WARN: Failed to fetch via proxy: ShatakVPN_vless
+[2026-04-13 11:16:50] --- Updating via priority proxy: githubusercontent.com_roosterkid_openproxylist ---
+[2026-04-13 11:17:06] ERROR: fetchUrlViaProxy failed for https://raw.githubusercontent.com/roosterkid/openproxylist/main/V2RAY_RAW.txt - SSL connect error
+[2026-04-13 11:17:06] WARN: Failed to fetch via proxy: githubusercontent.com_roosterkid_openproxylist
+[2026-04-13 11:17:06] --- Updating via priority proxy: barry-far-Vless ---
+[2026-04-13 11:17:22] ERROR: fetchUrlViaProxy failed for https://raw.githubusercontent.com/barry-far/V2ray-config/main/Splitted-By-Protocol/vless.txt - SSL connect error
+[2026-04-13 11:17:22] WARN: Failed to fetch via proxy: barry-far-Vless
+[2026-04-13 11:17:22] --- Updating via priority proxy: blob-vless ---
+[2026-04-13 11:17:37] ERROR: fetchUrlViaProxy failed for https://github.com/kasesm/Free-Config/raw/refs/heads/main/vless_raw.txt - SSL connect error
+[2026-04-13 11:17:37] WARN: Failed to fetch via proxy: blob-vless
+[2026-04-13 11:17:37] --- Updating via priority proxy: crackbest ---
+[2026-04-13 11:17:53] ERROR: fetchUrlViaProxy failed for https://raw.githubusercontent.com/crackbest/V2ray-Config/refs/heads/main/config.txt - SSL connect error
+[2026-04-13 11:17:53] WARN: Failed to fetch via proxy: crackbest
+[2026-04-13 11:17:53] --- Updating via priority proxy: Epodonios-vless ---
+[2026-04-13 11:18:09] ERROR: fetchUrlViaProxy failed for https://github.com/Epodonios/v2ray-configs/raw/main/Splitted-By-Protocol/vless.txt - SSL connect error
+[2026-04-13 11:18:09] WARN: Failed to fetch via proxy: Epodonios-vless
+[2026-04-13 11:18:09] --- Updating via priority proxy: Surfboardv2ray-vless ---
+[2026-04-13 11:18:24] ERROR: fetchUrlViaProxy failed for https://raw.githubusercontent.com/Surfboardv2ray/TGParse/main/splitted/vless - SSL connect error
+[2026-04-13 11:18:24] WARN: Failed to fetch via proxy: Surfboardv2ray-vless
+[2026-04-13 11:18:24] --- Updating via priority proxy: kasesm-vless ---
+[2026-04-13 11:18:40] ERROR: fetchUrlViaProxy failed for https://raw.githubusercontent.com/kasesm/Free-Config/refs/heads/main/vless_raw.txt - SSL connect error
+[2026-04-13 11:18:40] WARN: Failed to fetch via proxy: kasesm-vless
+[2026-04-13 11:18:40] --- Updating via priority proxy: TGParse-vless ---
+[2026-04-13 11:18:56] ERROR: fetchUrlViaProxy failed for https://raw.githubusercontent.com/Surfboardv2ray/TGParse/refs/heads/main/splitted/vless - SSL connect error
+[2026-04-13 11:18:56] WARN: Failed to fetch via proxy: TGParse-vless
+[2026-04-13 11:18:56] --- Updating via priority proxy: TGParse-vmess ---
+[2026-04-13 11:18:58] INFO: Attempting base64 decode...
+[2026-04-13 11:18:58] INFO: decodeBase64 result length: 10471
+[2026-04-13 11:18:58] INFO: Final content length: 10471
+[2026-04-13 11:18:58] WARN: Failed to parse vmess: syntax error [boost.json:1 at ./boost/json/basic_parser_impl.hpp:701 in function 'parse_value']
+[2026-04-13 11:18:58] WARN: Failed to parse vmess: syntax error [boost.json:1 at ./boost/json/basic_parser_impl.hpp:701 in function 'parse_value']
+[2026-04-13 11:18:58] INFO: Parsed 28 profiles from subscription (scanned 30 lines)
+[2026-04-13 11:18:58] INFO: Removing duplicates by Address:Port:Network...
+[2026-04-13 11:18:58] INFO: Removed 7 duplicates, remaining: 21
+[2026-04-13 11:18:58] INFO: Updated 21 profiles for subid=5407284047721367022
+[2026-04-13 11:18:58] INFO: Successfully updated via proxy: TGParse-vmess
+[2026-04-13 11:18:58] --- Updating via priority proxy: Epodonios-vmess ---
+[2026-04-13 11:19:00] INFO: Content appears to be plain text share links
+[2026-04-13 11:19:00] INFO: Final content length: 342849
+[2026-04-13 11:19:00] WARN: Failed to parse vmess: syntax error [boost.json:1 at ./boost/json/basic_parser_impl.hpp:701 in function 'parse_value']
+[2026-04-13 11:19:00] WARN: Failed to parse vmess: syntax error [boost.json:1 at ./boost/json/basic_parser_impl.hpp:701 in function 'parse_value']
+[2026-04-13 11:19:00] WARN: Failed to parse vmess: incomplete JSON [boost.json:3 at ./boost/json/basic_parser_impl.hpp:2867 in function 'write_some']
+[2026-04-13 11:19:00] WARN: Failed to parse vmess: incomplete JSON [boost.json:3 at ./boost/json/basic_parser_impl.hpp:2867 in function 'write_some']
+[2026-04-13 11:19:00] WARN: Failed to parse vmess: incomplete JSON [boost.json:3 at ./boost/json/basic_parser_impl.hpp:2867 in function 'write_some']
+[2026-04-13 11:19:00] WARN: Failed to parse vmess: incomplete JSON [boost.json:3 at ./boost/json/basic_parser_impl.hpp:2867 in function 'write_some']
+[2026-04-13 11:19:00] WARN: Failed to parse vmess: extra data [boost.json:2 at ./boost/json/impl/parser.ipp:110 in function 'write']
+[2026-04-13 11:19:00] WARN: Failed to parse vmess: extra data [boost.json:2 at ./boost/json/impl/parser.ipp:110 in function 'write']
+[2026-04-13 11:19:00] WARN: Failed to parse vmess: extra data [boost.json:2 at ./boost/json/impl/parser.ipp:110 in function 'write']
+[2026-04-13 11:19:00] WARN: Failed to parse vmess: extra data [boost.json:2 at ./boost/json/impl/parser.ipp:110 in function 'write']
+[2026-04-13 11:19:00] WARN: Failed to parse vmess: extra data [boost.json:2 at ./boost/json/impl/parser.ipp:110 in function 'write']
+[2026-04-13 11:19:00] WARN: Failed to parse vmess: incomplete JSON [boost.json:3 at ./boost/json/basic_parser_impl.hpp:2867 in function 'write_some']
+[2026-04-13 11:19:00] WARN: Failed to parse vmess: extra data [boost.json:2 at ./boost/json/impl/parser.ipp:110 in function 'write']
+[2026-04-13 11:19:00] WARN: Failed to parse vmess: incomplete JSON [boost.json:3 at ./boost/json/basic_parser_impl.hpp:2867 in function 'write_some']
+[2026-04-13 11:19:00] WARN: Failed to parse vmess: incomplete JSON [boost.json:3 at ./boost/json/basic_parser_impl.hpp:2867 in function 'write_some']
+[2026-04-13 11:19:00] WARN: Failed to parse vmess: incomplete JSON [boost.json:3 at ./boost/json/basic_parser_impl.hpp:2867 in function 'write_some']
+[2026-04-13 11:19:00] WARN: Failed to parse vmess: incomplete JSON [boost.json:3 at ./boost/json/basic_parser_impl.hpp:2867 in function 'write_some']
+[2026-04-13 11:19:00] WARN: Failed to parse vmess: incomplete JSON [boost.json:3 at ./boost/json/basic_parser_impl.hpp:2867 in function 'write_some']
+[2026-04-13 11:19:00] WARN: Failed to parse vmess: incomplete JSON [boost.json:3 at ./boost/json/basic_parser_impl.hpp:2867 in function 'write_some']
+[2026-04-13 11:19:00] WARN: Failed to parse vmess: extra data [boost.json:2 at ./boost/json/impl/parser.ipp:110 in function 'write']
+[2026-04-13 11:19:00] WARN: Failed to parse vmess: extra data [boost.json:2 at ./boost/json/impl/parser.ipp:110 in function 'write']
+[2026-04-13 11:19:00] WARN: Failed to parse vmess: extra data [boost.json:2 at ./boost/json/impl/parser.ipp:110 in function 'write']
+[2026-04-13 11:19:00] WARN: Failed to parse vmess: extra data [boost.json:2 at ./boost/json/impl/parser.ipp:110 in function 'write']
+[2026-04-13 11:19:00] WARN: Failed to parse vmess: extra data [boost.json:2 at ./boost/json/impl/parser.ipp:110 in function 'write']
+[2026-04-13 11:19:00] WARN: Failed to parse vmess: extra data [boost.json:2 at ./boost/json/impl/parser.ipp:110 in function 'write']
+[2026-04-13 11:19:00] WARN: Failed to parse vmess: extra data [boost.json:2 at ./boost/json/impl/parser.ipp:110 in function 'write']
+[2026-04-13 11:19:00] WARN: Failed to parse vmess: incomplete JSON [boost.json:3 at ./boost/json/basic_parser_impl.hpp:2867 in function 'write_some']
+[2026-04-13 11:19:00] WARN: Failed to parse vmess: extra data [boost.json:2 at ./boost/json/impl/parser.ipp:110 in function 'write']
+[2026-04-13 11:19:00] WARN: Failed to parse vmess: extra data [boost.json:2 at ./boost/json/impl/parser.ipp:110 in function 'write']
+[2026-04-13 11:19:00] WARN: Failed to parse vmess: extra data [boost.json:2 at ./boost/json/impl/parser.ipp:110 in function 'write']
+[2026-04-13 11:19:00] WARN: Failed to parse vmess: extra data [boost.json:2 at ./boost/json/impl/parser.ipp:110 in function 'write']
+[2026-04-13 11:19:00] WARN: Failed to parse vmess: extra data [boost.json:2 at ./boost/json/impl/parser.ipp:110 in function 'write']
+[2026-04-13 11:19:00] WARN: Failed to parse vmess: extra data [boost.json:2 at ./boost/json/impl/parser.ipp:110 in function 'write']
+[2026-04-13 11:19:00] WARN: Failed to parse vmess: extra data [boost.json:2 at ./boost/json/impl/parser.ipp:110 in function 'write']
+[2026-04-13 11:19:00] WARN: Failed to parse vmess: incomplete JSON [boost.json:3 at ./boost/json/basic_parser_impl.hpp:2867 in function 'write_some']
+[2026-04-13 11:19:00] WARN: Failed to parse vmess: extra data [boost.json:2 at ./boost/json/impl/parser.ipp:110 in function 'write']
+[2026-04-13 11:19:00] WARN: Failed to parse vmess: incomplete JSON [boost.json:3 at ./boost/json/basic_parser_impl.hpp:2867 in function 'write_some']
+[2026-04-13 11:19:00] WARN: Failed to parse vmess: syntax error [boost.json:1 at ./boost/json/basic_parser_impl.hpp:701 in function 'parse_value']
+[2026-04-13 11:19:00] WARN: Failed to parse vmess: syntax error [boost.json:1 at ./boost/json/basic_parser_impl.hpp:701 in function 'parse_value']
+[2026-04-13 11:19:00] WARN: Failed to parse vmess: syntax error [boost.json:1 at ./boost/json/basic_parser_impl.hpp:701 in function 'parse_value']
+[2026-04-13 11:19:00] WARN: Failed to parse vmess: syntax error [boost.json:1 at ./boost/json/basic_parser_impl.hpp:1763 in function 'parse_object']
+[2026-04-13 11:19:00] WARN: Failed to parse vmess: extra data [boost.json:2 at ./boost/json/impl/parser.ipp:110 in function 'write']
+[2026-04-13 11:19:00] WARN: Failed to parse vmess: extra data [boost.json:2 at ./boost/json/impl/parser.ipp:110 in function 'write']
+[2026-04-13 11:19:00] WARN: Failed to parse vmess: incomplete JSON [boost.json:3 at ./boost/json/basic_parser_impl.hpp:2867 in function 'write_some']
+[2026-04-13 11:19:00] WARN: Failed to parse vmess: incomplete JSON [boost.json:3 at ./boost/json/basic_parser_impl.hpp:2867 in function 'write_some']
+[2026-04-13 11:19:00] INFO: Parsed 495 profiles from subscription (scanned 540 lines)
+[2026-04-13 11:19:00] INFO: Removing duplicates by Address:Port:Network...
+[2026-04-13 11:19:00] INFO: Removed 187 duplicates, remaining: 308
+[2026-04-13 11:19:00] INFO: Updated 308 profiles for subid=5400954633311634558
+[2026-04-13 11:19:00] INFO: Successfully updated via proxy: Epodonios-vmess
+[2026-04-13 11:19:00] --- Updating via priority proxy: SoliSpirit-vless ---
+[2026-04-13 11:19:16] ERROR: fetchUrlViaProxy failed for https://raw.githubusercontent.com/SoliSpirit/v2ray-configs/refs/heads/main/Protocols/vless.txt - SSL connect error
+[2026-04-13 11:19:16] WARN: Failed to fetch via proxy: SoliSpirit-vless
+[2026-04-13 11:19:16] --- Updating via priority proxy: SoliSpirit-vmess ---
+[2026-04-13 11:19:20] INFO: Content appears to be plain text share links
+[2026-04-13 11:19:20] INFO: Final content length: 310613
+[2026-04-13 11:19:20] WARN: Failed to parse vmess: incomplete JSON [boost.json:3 at ./boost/json/basic_parser_impl.hpp:2867 in function 'write_some']
+[2026-04-13 11:19:20] WARN: Failed to parse vmess: incomplete JSON [boost.json:3 at ./boost/json/basic_parser_impl.hpp:2867 in function 'write_some']
+[2026-04-13 11:19:20] WARN: Failed to parse vmess: incomplete JSON [boost.json:3 at ./boost/json/basic_parser_impl.hpp:2867 in function 'write_some']
+[2026-04-13 11:19:20] WARN: Failed to parse vmess: incomplete JSON [boost.json:3 at ./boost/json/basic_parser_impl.hpp:2867 in function 'write_some']
+[2026-04-13 11:19:20] WARN: Failed to parse vmess: incomplete JSON [boost.json:3 at ./boost/json/basic_parser_impl.hpp:2867 in function 'write_some']
+[2026-04-13 11:19:20] WARN: Failed to parse vmess: incomplete JSON [boost.json:3 at ./boost/json/basic_parser_impl.hpp:2867 in function 'write_some']
+[2026-04-13 11:19:20] WARN: Failed to parse vmess: incomplete JSON [boost.json:3 at ./boost/json/basic_parser_impl.hpp:2867 in function 'write_some']
+[2026-04-13 11:19:20] WARN: Failed to parse vmess: incomplete JSON [boost.json:3 at ./boost/json/basic_parser_impl.hpp:2867 in function 'write_some']
+[2026-04-13 11:19:20] WARN: Failed to parse vmess: incomplete JSON [boost.json:3 at ./boost/json/basic_parser_impl.hpp:2867 in function 'write_some']
+[2026-04-13 11:19:20] WARN: Failed to parse vmess: incomplete JSON [boost.json:3 at ./boost/json/basic_parser_impl.hpp:2867 in function 'write_some']
+[2026-04-13 11:19:20] WARN: Failed to parse vmess: incomplete JSON [boost.json:3 at ./boost/json/basic_parser_impl.hpp:2867 in function 'write_some']
+[2026-04-13 11:19:20] WARN: Failed to parse vmess: incomplete JSON [boost.json:3 at ./boost/json/basic_parser_impl.hpp:2867 in function 'write_some']
+[2026-04-13 11:19:20] WARN: Failed to parse vmess: incomplete JSON [boost.json:3 at ./boost/json/basic_parser_impl.hpp:2867 in function 'write_some']
+[2026-04-13 11:19:20] WARN: Failed to parse vmess: incomplete JSON [boost.json:3 at ./boost/json/basic_parser_impl.hpp:2867 in function 'write_some']
+[2026-04-13 11:19:20] WARN: Failed to parse vmess: incomplete JSON [boost.json:3 at ./boost/json/basic_parser_impl.hpp:2867 in function 'write_some']
+[2026-04-13 11:19:20] WARN: Failed to parse vmess: incomplete JSON [boost.json:3 at ./boost/json/basic_parser_impl.hpp:2867 in function 'write_some']
+[2026-04-13 11:19:20] WARN: Failed to parse vmess: incomplete JSON [boost.json:3 at ./boost/json/basic_parser_impl.hpp:2867 in function 'write_some']
+[2026-04-13 11:19:20] WARN: Failed to parse vmess: incomplete JSON [boost.json:3 at ./boost/json/basic_parser_impl.hpp:2867 in function 'write_some']
+[2026-04-13 11:19:20] WARN: Failed to parse vmess: incomplete JSON [boost.json:3 at ./boost/json/basic_parser_impl.hpp:2867 in function 'write_some']
+[2026-04-13 11:19:20] WARN: Failed to parse vmess: incomplete JSON [boost.json:3 at ./boost/json/basic_parser_impl.hpp:2867 in function 'write_some']
+[2026-04-13 11:19:20] WARN: Failed to parse vmess: incomplete JSON [boost.json:3 at ./boost/json/basic_parser_impl.hpp:2867 in function 'write_some']
+[2026-04-13 11:19:20] WARN: Failed to parse vmess: incomplete JSON [boost.json:3 at ./boost/json/basic_parser_impl.hpp:2867 in function 'write_some']
+[2026-04-13 11:19:20] WARN: Failed to parse vmess: incomplete JSON [boost.json:3 at ./boost/json/basic_parser_impl.hpp:2867 in function 'write_some']
+[2026-04-13 11:19:20] WARN: Failed to parse vmess: incomplete JSON [boost.json:3 at ./boost/json/basic_parser_impl.hpp:2867 in function 'write_some']
+[2026-04-13 11:19:20] WARN: Failed to parse vmess: incomplete JSON [boost.json:3 at ./boost/json/basic_parser_impl.hpp:2867 in function 'write_some']
+[2026-04-13 11:19:20] WARN: Failed to parse vmess: incomplete JSON [boost.json:3 at ./boost/json/basic_parser_impl.hpp:2867 in function 'write_some']
+[2026-04-13 11:19:20] WARN: Failed to parse vmess: incomplete JSON [boost.json:3 at ./boost/json/basic_parser_impl.hpp:2867 in function 'write_some']
+[2026-04-13 11:19:20] WARN: Failed to parse vmess: incomplete JSON [boost.json:3 at ./boost/json/basic_parser_impl.hpp:2867 in function 'write_some']
+[2026-04-13 11:19:20] WARN: Failed to parse vmess: incomplete JSON [boost.json:3 at ./boost/json/basic_parser_impl.hpp:2867 in function 'write_some']
+[2026-04-13 11:19:20] WARN: Failed to parse vmess: incomplete JSON [boost.json:3 at ./boost/json/basic_parser_impl.hpp:2867 in function 'write_some']
+[2026-04-13 11:19:20] WARN: Failed to parse vmess: incomplete JSON [boost.json:3 at ./boost/json/basic_parser_impl.hpp:2867 in function 'write_some']
+[2026-04-13 11:19:20] WARN: Failed to parse vmess: incomplete JSON [boost.json:3 at ./boost/json/basic_parser_impl.hpp:2867 in function 'write_some']
+[2026-04-13 11:19:20] WARN: Failed to parse vmess: incomplete JSON [boost.json:3 at ./boost/json/basic_parser_impl.hpp:2867 in function 'write_some']
+[2026-04-13 11:19:20] WARN: Failed to parse vmess: incomplete JSON [boost.json:3 at ./boost/json/basic_parser_impl.hpp:2867 in function 'write_some']
+[2026-04-13 11:19:20] WARN: Failed to parse vmess: incomplete JSON [boost.json:3 at ./boost/json/basic_parser_impl.hpp:2867 in function 'write_some']
+[2026-04-13 11:19:20] WARN: Failed to parse vmess: incomplete JSON [boost.json:3 at ./boost/json/basic_parser_impl.hpp:2867 in function 'write_some']
+[2026-04-13 11:19:20] WARN: Failed to parse vmess: incomplete JSON [boost.json:3 at ./boost/json/basic_parser_impl.hpp:2867 in function 'write_some']
+[2026-04-13 11:19:20] WARN: Failed to parse vmess: incomplete JSON [boost.json:3 at ./boost/json/basic_parser_impl.hpp:2867 in function 'write_some']
+[2026-04-13 11:19:20] WARN: Failed to parse vmess: incomplete JSON [boost.json:3 at ./boost/json/basic_parser_impl.hpp:2867 in function 'write_some']
+[2026-04-13 11:19:20] WARN: Failed to parse vmess: incomplete JSON [boost.json:3 at ./boost/json/basic_parser_impl.hpp:2867 in function 'write_some']
+[2026-04-13 11:19:20] INFO: Parsed 733 profiles from subscription (scanned 773 lines)
+[2026-04-13 11:19:20] INFO: Removing duplicates by Address:Port:Network...
+[2026-04-13 11:19:20] INFO: Removed 234 duplicates, remaining: 499
+[2026-04-13 11:19:20] INFO: Updated 499 profiles for subid=5752585990878570490
+[2026-04-13 11:19:20] INFO: Successfully updated via proxy: SoliSpirit-vmess
+[2026-04-13 11:19:20] --- Updating via priority proxy: MatinGhanbari ---
+[2026-04-13 11:19:36] ERROR: fetchUrlViaProxy failed for https://raw.githubusercontent.com/MatinGhanbari/v2ray-configs/main/subscriptions/v2ray/super-sub.txt - SSL connect error
+[2026-04-13 11:19:36] WARN: Failed to fetch via proxy: MatinGhanbari
+[2026-04-13 11:19:36] --- Updating via priority proxy: Argh94-vless ---
+[2026-04-13 11:19:49] INFO: Content appears to be plain text share links
+[2026-04-13 11:19:49] INFO: Final content length: 3125305
+[2026-04-13 11:19:49] INFO: Parsed 20297 profiles from subscription (scanned 20321 lines)
+[2026-04-13 11:19:49] INFO: Removing duplicates by Address:Port:Network...
+[2026-04-13 11:19:49] INFO: Removed 7211 duplicates, remaining: 13086
+[2026-04-13 11:19:50] INFO: Updated 13086 profiles for subid=5078855804150014158
+[2026-04-13 11:19:50] INFO: Successfully updated via proxy: Argh94-vless
+[2026-04-13 11:19:50] --- Updating via priority proxy: Argh94-vmess ---
+[2026-04-13 11:20:05] ERROR: fetchUrlViaProxy failed for https://raw.githubusercontent.com/Argh94/V2RayAutoConfig/refs/heads/main/configs/Vmess.txt - SSL connect error
+[2026-04-13 11:20:05] WARN: Failed to fetch via proxy: Argh94-vmess
+[2026-04-13 11:20:05] --- Updating via priority proxy: MustafaBaqer-vless ---
+[2026-04-13 11:20:09] INFO: Content appears to be plain text share links
+[2026-04-13 11:20:09] INFO: Final content length: 905659
+[2026-04-13 11:20:09] INFO: Parsed 4110 profiles from subscription (scanned 4110 lines)
+[2026-04-13 11:20:09] INFO: Removing duplicates by Address:Port:Network...
+[2026-04-13 11:20:09] INFO: Removed 2659 duplicates, remaining: 1451
+[2026-04-13 11:20:10] INFO: Updated 1451 profiles for subid=5139605162626600316
+[2026-04-13 11:20:10] INFO: Successfully updated via proxy: MustafaBaqer-vless
+[2026-04-13 11:20:10] --- Updating via priority proxy: MustafaBaqer-vmess ---
+[2026-04-13 11:20:17] INFO: Content appears to be plain text share links
+[2026-04-13 11:20:17] INFO: Final content length: 601104
+[2026-04-13 11:20:17] WARN: Failed to parse vmess: incomplete JSON [boost.json:3 at ./boost/json/basic_parser_impl.hpp:2867 in function 'write_some']
+[2026-04-13 11:20:17] WARN: Failed to parse vmess: incomplete JSON [boost.json:3 at ./boost/json/basic_parser_impl.hpp:2867 in function 'write_some']
+[2026-04-13 11:20:17] WARN: Failed to parse vmess: incomplete JSON [boost.json:3 at ./boost/json/basic_parser_impl.hpp:2867 in function 'write_some']
+[2026-04-13 11:20:17] WARN: Failed to parse vmess: incomplete JSON [boost.json:3 at ./boost/json/basic_parser_impl.hpp:2867 in function 'write_some']
+[2026-04-13 11:20:17] WARN: Failed to parse vmess: incomplete JSON [boost.json:3 at ./boost/json/basic_parser_impl.hpp:2867 in function 'write_some']
+[2026-04-13 11:20:17] WARN: Failed to parse vmess: incomplete JSON [boost.json:3 at ./boost/json/basic_parser_impl.hpp:2867 in function 'write_some']
+[2026-04-13 11:20:17] INFO: Parsed 1395 profiles from subscription (scanned 1401 lines)
+[2026-04-13 11:20:17] INFO: Removing duplicates by Address:Port:Network...
+[2026-04-13 11:20:17] INFO: Removed 1278 duplicates, remaining: 117
+[2026-04-13 11:20:18] INFO: Updated 117 profiles for subid=5232463768297899509
+[2026-04-13 11:20:18] INFO: Successfully updated via proxy: MustafaBaqer-vmess
+[2026-04-13 11:20:18] --- Updating via priority proxy: cook369-85la ---
+[2026-04-13 11:20:20] INFO: Attempting base64 decode...
+[2026-04-13 11:20:20] INFO: decodeBase64 result length: 101104
+[2026-04-13 11:20:20] INFO: Final content length: 101104
+[2026-04-13 11:20:20] INFO: Parsed 395 profiles from subscription (scanned 400 lines)
+[2026-04-13 11:20:20] INFO: Removing duplicates by Address:Port:Network...
+[2026-04-13 11:20:20] INFO: Removed 37 duplicates, remaining: 358
+[2026-04-13 11:20:20] INFO: Updated 358 profiles for subid=5283972762061622068
+[2026-04-13 11:20:20] INFO: Successfully updated via proxy: cook369-85la
+[2026-04-13 11:20:20] INFO: Priority proxy xray stopped
+[2026-04-13 11:20:20] ========================================
+[2026-04-13 11:20:20] INFO: Subscription update complete (priority proxy mode)
+[2026-04-13 11:20:20] INFO: Total enabled: 19
+[2026-04-13 11:20:20] INFO: Direct success: 0
+[2026-04-13 11:20:20] INFO: Proxy update: 19
+[2026-04-13 11:20:20] INFO: Failed: 0
+[2026-04-13 11:20:20] ========================================

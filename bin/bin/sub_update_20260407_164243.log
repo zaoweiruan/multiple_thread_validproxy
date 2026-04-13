@@ -1,0 +1,11 @@
+[2026-04-07 16:42:46] ========================================
+[2026-04-07 16:42:46] INFO: Starting single subscription update for subId: 5307176960649387083
+[2026-04-07 16:42:46] ========================================
+[2026-04-07 16:42:46] --- Processing: githubusercontent.com_roosterkid_openproxylist (id: 5307176960649387083) ---
+[2026-04-07 16:42:46] INFO: URL: https://raw.githubusercontent.com/roosterkid/openproxylist/main/V2RAY_RAW.txt
+[2026-04-07 16:42:46] INFO: Trying fetch via proxy on port 10800
+[2026-04-07 16:42:46] ERROR: fetchUrlViaProxy failed for https://raw.githubusercontent.com/roosterkid/openproxylist/main/V2RAY_RAW.txt - SSL connect error
+[2026-04-07 16:42:46] WARN: Proxy fetch failed, trying direct fetch...
+[2026-04-07 16:42:47] INFO: fetchUrl success for https://raw.githubusercontent.com/roosterkid/openproxylist/main/V2RAY_RAW.txt (31790 bytes)
+[2026-04-07 16:42:47] INFO: Parsed 0 profiles from subscription
+[2026-04-07 16:42:47] WARN: No valid profiles parsed from: githubusercontent.com_roosterkid_openproxylist

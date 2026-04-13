@@ -4,11 +4,17 @@
 #include <string>
 #include <vector>
 #include <sqlite3.h>
+#include <queue>
+#include <mutex>
+#include <atomic>
+#include <thread>
 #include "Profileitem.h"
 #include "Profileexitem.h"
 #include "ConfigReader.h"
 #include "XrayManager.h"
 #include "ProxyTester.h"
+#include "XrayApi.h"
+#include "ConfigGenerator.h"
 
 class ProxyBatchTester {
 public:
@@ -25,6 +31,8 @@ private:
     void testProxiesMultiThreaded();
     void printSummary();
     
+    void workerThreadFunc(int workerId, int socksPort, int apiPort);
+    
     sqlite3* db_;
     config::AppConfig config_;
     XrayManager* xrayManager_;
@@ -32,6 +40,10 @@ private:
     int totalProxies_;
     int successCount_;
     int failedCount_;
+    std::vector<db::models::Profileitem> proxies_;
+    std::queue<int> proxiesQueue_;
+    std::mutex queueMutex_;
+    std::atomic<int> processedCount_;
 };
 
 #endif // PROXY_BATCH_TESTER_H

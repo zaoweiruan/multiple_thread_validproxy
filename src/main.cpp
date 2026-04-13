@@ -20,6 +20,7 @@
 #include "ConfigReader.h"
 #include "XrayApi.h"
 #include "SubitemUpdater.h"
+#include "ProxyBatchTester.h"
 
 namespace {
 
@@ -347,6 +348,11 @@ int main(int argc, char* argv[]) {
                 singleSubId = argv[++i];
                 commandMode = "test";
             }
+        } else if (arg == "--test-sub") {
+            if (i + 1 < argc) {
+                singleSubId = argv[++i];
+                commandMode = "test-sub";
+            }
         } else if (arg == "--update-all") {
             singleSubId = "__all__";
             commandMode = "update";
@@ -408,7 +414,14 @@ char timestamp[32];
                                    baseDir.string());
         
         bool result;
-        if (singleSubId == "__all__") {
+        if (commandMode == "test-sub") {
+            ProxyBatchTester tester(db, *appConfig);
+            if (!singleSubId.empty()) {
+                result = tester.runWithSubId(singleSubId);
+            } else {
+                result = tester.run();
+            }
+        } else if (singleSubId == "__all__") {
             result = subUpdater.run();
         } else {
             result = subUpdater.runSingle(singleSubId);

@@ -1,0 +1,26 @@
+validproxy starting...
+Config loaded from: E:\eclipse_workspace\multiple_thread_validproxy\config.json
+Database path: E:/v2rayN-windows-64/guiConfigs/guiNDB.db
+SQL query: SELECT IndexId, ConfigType, ConfigVersion, Address, Port, Id, AlterId, Security, Network, Remarks, HeaderType, RequestHost, Path, StreamSecurity, AllowInsecure, Subid, IsSub, Flow, Sni, Alpn, CoreType, PreSocksPort, Fingerprint, DisplayLog, PublicKey, ShortId, SpiderX, Extra, Ports, Mldsa65Verify, MuxEnabled, Cert FROM ProfileItem WHERE Subid in ('5544178410297751350')  AND ConfigType IN ('1', '3', '5', '6')  LIMIT 600;
+Xray executable: E:/soft/v2rayN-windows-64/bin/xray/xray.exe
+Workers: 3
+Start port: 1080
+Base API port: 10080
+Log file: E:\eclipse_workspace\multiple_thread_validproxy\bin\test_log_20260402_100846.txt (enabled: 1)
+Database opened: E:/v2rayN-windows-64/guiConfigs/guiNDB.db
+Worker 0: socks=1080 api=10080
+Worker 1: socks=1081 api=10081
+Worker 2: socks=1082 api=10082
+Worker 0 config: E:\eclipse_workspace\multiple_thread_validproxy\bin\worker_config_1080.json
+Worker 1 config: E:\eclipse_workspace\multiple_thread_validproxy\bin\worker_config_1081.json
+Worker 2 config: E:\eclipse_workspace\multiple_thread_validproxy\bin\worker_config_1082.json
+Job object initialized
+Worker 0 xray started
+Worker 1 xray started
+Worker 2 xray started
+Worker 0 API port 10080 ready
+Worker 1 API port 10081 ready
+Worker 2 API port 10082 ready
+DEBUG: Loading profiles with SQL: SELECT IndexId, ConfigType, ConfigVersion, Address, Port, Id, AlterId, Security, Network, Remarks, HeaderType, RequestHost, Path, StreamSecurity, AllowInsecure, Subid, IsSub, Flow, Sni, Alpn, CoreType, PreSocksPort, Fingerprint, DisplayLog, PublicKey, ShortId, SpiderX, Extra, Ports, Mldsa65Verify, MuxEnabled, Cert FROM ProfileItem WHERE Subid in ('5544178410297751350')  AND ConfigType IN ('1', '3', '5', '6')  LIMIT 600;
+DEBUG ConfigGenerator: SQL = SELECT IndexId, ConfigType, ConfigVersion, Address, Port, Id, AlterId, Security, Network, Remarks, HeaderType, RequestHost, Path, StreamSecurity, AllowInsecure, Subid, IsSub, Flow, Sni, Alpn, CoreType, PreSocksPort, Fingerprint, DisplayLog, PublicKey, ShortId, SpiderX, Extra, Ports, Mldsa65Verify, MuxEnabled, Cert FROM ProfileItem WHERE Subid in ('5544178410297751350')  AND ConfigType IN ('1', '3', '5', '6')  LIMIT 600;
+DEBUG DAO: Executing SQL: SELECT IndexId, ConfigType, ConfigVersion, Address, Port, Id, AlterId, Security, Network, Remarks, HeaderType, RequestHost, Path, StreamSecurity, AllowInsecure, Subid, IsSub, Flow, Sni, Alpn, CoreType, PreSocksPort, Fingerprint, DisplayLog, PublicKey, ShortId, SpiderX, Extra, Ports, Mldsa65Verify, MuxEnabled, Cert FROM ProfileItem WHERE Subid in ('5544178410297751350')  AND ConfigType IN ('1', '3', '5', '6')  LIMIT 600;

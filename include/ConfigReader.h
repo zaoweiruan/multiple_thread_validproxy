@@ -9,6 +9,7 @@ namespace config {
 struct AppConfig {
     std::string database_path;
     std::string sql_query;
+    std::string sql_by_subid;
     std::string xray_executable;
     int xray_workers;
     int xray_start_port;
