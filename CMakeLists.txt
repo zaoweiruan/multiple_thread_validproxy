@@ -32,6 +32,13 @@ add_executable(validproxy
     src/ConfigReader.cpp
     src/XrayApi.cpp
     src/SubitemUpdater.cpp
+    src/PortManager.cpp
+    src/Logger.cpp
+    src/XrayInstance.cpp
+    src/XrayManager.cpp
+    src/ProxyTester.cpp
+    src/UrlFetcher.cpp
+    src/ProxyBatchTester.cpp
 )
 
 target_link_libraries(validproxy PRIVATE
