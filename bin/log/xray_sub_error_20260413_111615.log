@@ -1,0 +1,162 @@
+2026/04/13 11:16:15.978222 [Debug] app/log: Logger started
+2026/04/13 11:16:15.990557 [Debug] app/stats: create new counter inbound>>>socks-in>>>traffic>>>uplink
+2026/04/13 11:16:15.990557 [Debug] app/stats: create new counter inbound>>>socks-in>>>traffic>>>downlink
+2026/04/13 11:16:15.990557 [Debug] app/proxyman/inbound: creating stream worker on 127.0.0.1:1084
+2026/04/13 11:16:15.990557 [Debug] app/stats: create new counter inbound>>>api>>>traffic>>>uplink
+2026/04/13 11:16:15.990557 [Debug] app/stats: create new counter inbound>>>api>>>traffic>>>downlink
+2026/04/13 11:16:15.990557 [Debug] app/proxyman/inbound: creating stream worker on 127.0.0.1:10086
+2026/04/13 11:16:15.990557 [Debug] app/stats: create new counter outbound>>>proxy>>>traffic>>>uplink
+2026/04/13 11:16:15.990557 [Debug] app/stats: create new counter outbound>>>proxy>>>traffic>>>downlink
+2026/04/13 11:16:15.990557 [Debug] app/stats: create new counter outbound>>>direct>>>traffic>>>uplink
+2026/04/13 11:16:15.990557 [Debug] app/stats: create new counter outbound>>>direct>>>traffic>>>downlink
+2026/04/13 11:16:15.990557 [Info] transport/internet/tcp: listening TCP on 127.0.0.1:1084
+2026/04/13 11:16:15.990557 [Info] transport/internet/udp: listening UDP on 127.0.0.1:1084
+2026/04/13 11:16:15.990557 [Info] transport/internet/tcp: listening TCP on 127.0.0.1:10086
+2026/04/13 11:16:15.990557 [Warning] core: Xray 26.2.4 started
+2026/04/13 11:16:22.034022 [Debug] [3121752436] proxy/dokodemo: processing connection from: 127.0.0.1:59155
+2026/04/13 11:16:22.034022 [Info] [3121752436] proxy/dokodemo: received request for 127.0.0.1:59155
+2026/04/13 11:16:22.034022 [Info] [3121752436] app/dispatcher: taking detour [api] for [tcp:127.0.0.1:10086]
+2026/04/13 11:16:22.074071 [Debug] [3078293340] proxy/socks: Not Socks request, try to parse as HTTP request
+2026/04/13 11:16:22.074071 [Info] [3078293340] proxy/http: request to Method [CONNECT] Host [www.google.com:443] with URL [//www.google.com:443]
+2026/04/13 11:16:22.074071 [Info] [3078293340] app/dispatcher: taking detour [proxy] for [tcp:www.google.com:443]
+2026/04/13 11:16:22.074071 [Info] [3078293340] transport/internet/websocket: creating connection to tcp:8.223.63.150:443
+2026/04/13 11:16:22.074071 [Info] [3078293340] proxy/shadowsocks: tunneling request to tcp:www.google.com:443 via TCP:8.223.63.150:443
+2026/04/13 11:16:22.077596 [Debug] [3078293340] transport/internet: dialing to tcp:8.223.63.150:443
+2026/04/13 11:16:27.172013 [Debug] app/log: Logger started
+2026/04/13 11:16:27.186053 [Debug] app/stats: create new counter inbound>>>socks-in>>>traffic>>>uplink
+2026/04/13 11:16:27.186053 [Debug] app/stats: create new counter inbound>>>socks-in>>>traffic>>>downlink
+2026/04/13 11:16:27.186053 [Debug] app/proxyman/inbound: creating stream worker on 127.0.0.1:1084
+2026/04/13 11:16:27.186053 [Debug] app/stats: create new counter inbound>>>api>>>traffic>>>uplink
+2026/04/13 11:16:27.186053 [Debug] app/stats: create new counter inbound>>>api>>>traffic>>>downlink
+2026/04/13 11:16:27.186053 [Debug] app/proxyman/inbound: creating stream worker on 127.0.0.1:10086
+2026/04/13 11:16:27.186053 [Debug] app/stats: create new counter outbound>>>proxy>>>traffic>>>uplink
+2026/04/13 11:16:27.186053 [Debug] app/stats: create new counter outbound>>>proxy>>>traffic>>>downlink
+2026/04/13 11:16:27.186053 [Debug] app/stats: create new counter outbound>>>direct>>>traffic>>>uplink
+2026/04/13 11:16:27.186053 [Debug] app/stats: create new counter outbound>>>direct>>>traffic>>>downlink
+2026/04/13 11:16:27.186053 [Info] transport/internet/tcp: listening TCP on 127.0.0.1:1084
+2026/04/13 11:16:27.186053 [Info] transport/internet/udp: listening UDP on 127.0.0.1:1084
+2026/04/13 11:16:27.186053 [Info] transport/internet/tcp: listening TCP on 127.0.0.1:10086
+2026/04/13 11:16:27.186053 [Warning] core: Xray 26.2.4 started
+2026/04/13 11:16:33.232707 [Debug] [2969590590] proxy/dokodemo: processing connection from: 127.0.0.1:59227
+2026/04/13 11:16:33.232707 [Info] [2969590590] proxy/dokodemo: received request for 127.0.0.1:59227
+2026/04/13 11:16:33.232707 [Info] [2969590590] app/dispatcher: taking detour [api] for [tcp:127.0.0.1:10086]
+2026/04/13 11:16:33.295748 [Debug] [2266051071] proxy/socks: Not Socks request, try to parse as HTTP request
+2026/04/13 11:16:33.295748 [Info] [2266051071] proxy/http: request to Method [CONNECT] Host [www.google.com:443] with URL [//www.google.com:443]
+2026/04/13 11:16:33.295748 [Info] [2266051071] app/dispatcher: taking detour [proxy] for [tcp:www.google.com:443]
+2026/04/13 11:16:33.295748 [Info] [2266051071] transport/internet/websocket: creating connection to tcp:43.153.183.11:18651
+2026/04/13 11:16:33.295748 [Info] [2266051071] proxy/shadowsocks: tunneling request to tcp:www.google.com:443 via TCP:43.153.183.11:18651
+2026/04/13 11:16:33.296810 [Debug] [2266051071] transport/internet: dialing to tcp:43.153.183.11:18651
+2026/04/13 11:16:34.134463 [Info] [1928417743] proxy/socks: TCP Connect request to tcp:185.199.108.133:443
+2026/04/13 11:16:34.134463 [Info] [1928417743] app/dispatcher: taking detour [proxy] for [tcp:185.199.108.133:443]
+2026/04/13 11:16:34.134463 [Info] [1928417743] transport/internet/websocket: creating connection to tcp:43.153.183.11:18651
+2026/04/13 11:16:34.134463 [Info] [1928417743] proxy/shadowsocks: tunneling request to tcp:185.199.108.133:443 via TCP:43.153.183.11:18651
+2026/04/13 11:16:34.135279 [Debug] [1928417743] transport/internet: dialing to tcp:43.153.183.11:18651
+2026/04/13 11:16:50.136248 [Error] [1928417743] transport/internet/websocket: failed to dial to 43.153.183.11:18651 > dial tcp 43.153.183.11:18651: i/o timeout
+2026/04/13 11:16:50.136387 [Info] [1928417743] app/proxyman/outbound: app/proxyman/outbound: failed to process outbound traffic > proxy/shadowsocks: connection ends > transport/internet/websocket: failed to dial WebSocket > transport/internet/websocket: failed to dial to (wss://43.153.183.11:18651/3e96ef7d-8637-42c2-ac73-75182196e755/):  > dial tcp 43.153.183.11:18651: i/o timeout
+2026/04/13 11:16:50.179161 [Info] [3283170259] proxy/socks: TCP Connect request to tcp:185.199.108.133:443
+2026/04/13 11:16:50.179161 [Info] [3283170259] app/dispatcher: taking detour [proxy] for [tcp:185.199.108.133:443]
+2026/04/13 11:16:50.179161 [Info] [3283170259] transport/internet/websocket: creating connection to tcp:43.153.183.11:18651
+2026/04/13 11:16:50.179161 [Info] [3283170259] proxy/shadowsocks: tunneling request to tcp:185.199.108.133:443 via TCP:43.153.183.11:18651
+2026/04/13 11:16:50.179756 [Debug] [3283170259] transport/internet: dialing to tcp:43.153.183.11:18651
+2026/04/13 11:17:06.180537 [Error] [3283170259] transport/internet/websocket: failed to dial to 43.153.183.11:18651 > dial tcp 43.153.183.11:18651: i/o timeout
+2026/04/13 11:17:06.180537 [Info] [3283170259] app/proxyman/outbound: app/proxyman/outbound: failed to process outbound traffic > proxy/shadowsocks: connection ends > transport/internet/websocket: failed to dial WebSocket > transport/internet/websocket: failed to dial to (wss://43.153.183.11:18651/3e96ef7d-8637-42c2-ac73-75182196e755/):  > dial tcp 43.153.183.11:18651: i/o timeout
+2026/04/13 11:17:06.189020 [Info] [1753628813] proxy/socks: TCP Connect request to tcp:185.199.108.133:443
+2026/04/13 11:17:06.189020 [Info] [1753628813] app/dispatcher: taking detour [proxy] for [tcp:185.199.108.133:443]
+2026/04/13 11:17:06.189020 [Info] [1753628813] transport/internet/websocket: creating connection to tcp:43.153.183.11:18651
+2026/04/13 11:17:06.189020 [Info] [1753628813] proxy/shadowsocks: tunneling request to tcp:185.199.108.133:443 via TCP:43.153.183.11:18651
+2026/04/13 11:17:06.189020 [Debug] [1753628813] transport/internet: dialing to tcp:43.153.183.11:18651
+2026/04/13 11:17:22.189122 [Error] [1753628813] transport/internet/websocket: failed to dial to 43.153.183.11:18651 > dial tcp 43.153.183.11:18651: i/o timeout
+2026/04/13 11:17:22.189122 [Info] [1753628813] app/proxyman/outbound: app/proxyman/outbound: failed to process outbound traffic > proxy/shadowsocks: connection ends > transport/internet/websocket: failed to dial WebSocket > transport/internet/websocket: failed to dial to (wss://43.153.183.11:18651/3e96ef7d-8637-42c2-ac73-75182196e755/):  > dial tcp 43.153.183.11:18651: i/o timeout
+2026/04/13 11:17:22.243667 [Info] [357016437] proxy/socks: TCP Connect request to tcp:20.205.243.166:443
+2026/04/13 11:17:22.243667 [Info] [357016437] app/dispatcher: taking detour [proxy] for [tcp:20.205.243.166:443]
+2026/04/13 11:17:22.243667 [Info] [357016437] transport/internet/websocket: creating connection to tcp:43.153.183.11:18651
+2026/04/13 11:17:22.243667 [Info] [357016437] proxy/shadowsocks: tunneling request to tcp:20.205.243.166:443 via TCP:43.153.183.11:18651
+2026/04/13 11:17:22.244965 [Debug] [357016437] transport/internet: dialing to tcp:43.153.183.11:18651
+2026/04/13 11:17:37.602963 [Error] [357016437] transport/internet/websocket: failed to dial to 43.153.183.11:18651 > EOF
+2026/04/13 11:17:37.625091 [Info] [1273464924] proxy/socks: TCP Connect request to tcp:185.199.108.133:443
+2026/04/13 11:17:37.625091 [Info] [1273464924] app/dispatcher: taking detour [proxy] for [tcp:185.199.108.133:443]
+2026/04/13 11:17:37.625091 [Info] [1273464924] transport/internet/websocket: creating connection to tcp:43.153.183.11:18651
+2026/04/13 11:17:37.625091 [Info] [1273464924] proxy/shadowsocks: tunneling request to tcp:185.199.108.133:443 via TCP:43.153.183.11:18651
+2026/04/13 11:17:37.626068 [Debug] [1273464924] transport/internet: dialing to tcp:43.153.183.11:18651
+2026/04/13 11:17:53.626310 [Error] [1273464924] transport/internet/websocket: failed to dial to 43.153.183.11:18651 > dial tcp 43.153.183.11:18651: i/o timeout
+2026/04/13 11:17:53.626310 [Info] [1273464924] app/proxyman/outbound: app/proxyman/outbound: failed to process outbound traffic > proxy/shadowsocks: connection ends > transport/internet/websocket: failed to dial WebSocket > transport/internet/websocket: failed to dial to (wss://43.153.183.11:18651/3e96ef7d-8637-42c2-ac73-75182196e755/):  > dial tcp 43.153.183.11:18651: i/o timeout
+2026/04/13 11:17:53.657061 [Info] [811999503] proxy/socks: TCP Connect request to tcp:20.205.243.166:443
+2026/04/13 11:17:53.657061 [Info] [811999503] app/dispatcher: taking detour [proxy] for [tcp:20.205.243.166:443]
+2026/04/13 11:17:53.657061 [Info] [811999503] transport/internet/websocket: creating connection to tcp:43.153.183.11:18651
+2026/04/13 11:17:53.657061 [Info] [811999503] proxy/shadowsocks: tunneling request to tcp:20.205.243.166:443 via TCP:43.153.183.11:18651
+2026/04/13 11:17:53.658005 [Debug] [811999503] transport/internet: dialing to tcp:43.153.183.11:18651
+2026/04/13 11:18:09.022473 [Error] [811999503] transport/internet/websocket: failed to dial to 43.153.183.11:18651 > EOF
+2026/04/13 11:18:09.060652 [Info] [4040176926] proxy/socks: TCP Connect request to tcp:185.199.108.133:443
+2026/04/13 11:18:09.060735 [Info] [4040176926] app/dispatcher: taking detour [proxy] for [tcp:185.199.108.133:443]
+2026/04/13 11:18:09.060735 [Info] [4040176926] transport/internet/websocket: creating connection to tcp:43.153.183.11:18651
+2026/04/13 11:18:09.060735 [Info] [4040176926] proxy/shadowsocks: tunneling request to tcp:185.199.108.133:443 via TCP:43.153.183.11:18651
+2026/04/13 11:18:09.062218 [Debug] [4040176926] transport/internet: dialing to tcp:43.153.183.11:18651
+2026/04/13 11:18:24.723308 [Error] [4040176926] transport/internet/websocket: failed to dial to 43.153.183.11:18651 > EOF
+2026/04/13 11:18:24.746919 [Info] [1346038192] proxy/socks: TCP Connect request to tcp:185.199.108.133:443
+2026/04/13 11:18:24.746919 [Info] [1346038192] app/dispatcher: taking detour [proxy] for [tcp:185.199.108.133:443]
+2026/04/13 11:18:24.746919 [Info] [1346038192] transport/internet/websocket: creating connection to tcp:43.153.183.11:18651
+2026/04/13 11:18:24.746919 [Info] [1346038192] proxy/shadowsocks: tunneling request to tcp:185.199.108.133:443 via TCP:43.153.183.11:18651
+2026/04/13 11:18:24.748701 [Debug] [1346038192] transport/internet: dialing to tcp:43.153.183.11:18651
+2026/04/13 11:18:40.748756 [Error] [1346038192] transport/internet/websocket: failed to dial to 43.153.183.11:18651 > dial tcp 43.153.183.11:18651: i/o timeout
+2026/04/13 11:18:40.749790 [Info] [1346038192] app/proxyman/outbound: app/proxyman/outbound: failed to process outbound traffic > proxy/shadowsocks: connection ends > transport/internet/websocket: failed to dial WebSocket > transport/internet/websocket: failed to dial to (wss://43.153.183.11:18651/3e96ef7d-8637-42c2-ac73-75182196e755/):  > dial tcp 43.153.183.11:18651: i/o timeout
+2026/04/13 11:18:40.811190 [Info] [1940154601] proxy/socks: TCP Connect request to tcp:185.199.108.133:443
+2026/04/13 11:18:40.811190 [Info] [1940154601] app/dispatcher: taking detour [proxy] for [tcp:185.199.108.133:443]
+2026/04/13 11:18:40.811190 [Info] [1940154601] transport/internet/websocket: creating connection to tcp:43.153.183.11:18651
+2026/04/13 11:18:40.811190 [Info] [1940154601] proxy/shadowsocks: tunneling request to tcp:185.199.108.133:443 via TCP:43.153.183.11:18651
+2026/04/13 11:18:40.811727 [Debug] [1940154601] transport/internet: dialing to tcp:43.153.183.11:18651
+2026/04/13 11:18:56.161476 [Error] [1940154601] transport/internet/websocket: failed to dial to 43.153.183.11:18651 > EOF
+2026/04/13 11:18:56.229466 [Info] [1752377862] proxy/socks: TCP Connect request to tcp:185.199.108.133:443
+2026/04/13 11:18:56.229569 [Info] [1752377862] app/dispatcher: taking detour [proxy] for [tcp:185.199.108.133:443]
+2026/04/13 11:18:56.229569 [Info] [1752377862] transport/internet/websocket: creating connection to tcp:43.153.183.11:18651
+2026/04/13 11:18:56.229569 [Info] [1752377862] proxy/shadowsocks: tunneling request to tcp:185.199.108.133:443 via TCP:43.153.183.11:18651
+2026/04/13 11:18:56.230573 [Debug] [1752377862] transport/internet: dialing to tcp:43.153.183.11:18651
+2026/04/13 11:18:58.373451 [Info] [206319019] proxy/socks: TCP Connect request to tcp:185.199.108.133:443
+2026/04/13 11:18:58.373451 [Info] [206319019] app/dispatcher: taking detour [proxy] for [tcp:185.199.108.133:443]
+2026/04/13 11:18:58.373451 [Info] [206319019] transport/internet/websocket: creating connection to tcp:43.153.183.11:18651
+2026/04/13 11:18:58.373451 [Info] [206319019] proxy/shadowsocks: tunneling request to tcp:185.199.108.133:443 via TCP:43.153.183.11:18651
+2026/04/13 11:18:58.374004 [Debug] [206319019] transport/internet: dialing to tcp:43.153.183.11:18651
+2026/04/13 11:19:00.320574 [Info] [2917749675] proxy/socks: TCP Connect request to tcp:185.199.108.133:443
+2026/04/13 11:19:00.320574 [Info] [2917749675] app/dispatcher: taking detour [proxy] for [tcp:185.199.108.133:443]
+2026/04/13 11:19:00.320574 [Info] [2917749675] transport/internet/websocket: creating connection to tcp:43.153.183.11:18651
+2026/04/13 11:19:00.320574 [Info] [2917749675] proxy/shadowsocks: tunneling request to tcp:185.199.108.133:443 via TCP:43.153.183.11:18651
+2026/04/13 11:19:00.321403 [Debug] [2917749675] transport/internet: dialing to tcp:43.153.183.11:18651
+2026/04/13 11:19:16.322083 [Error] [2917749675] transport/internet/websocket: failed to dial to 43.153.183.11:18651 > dial tcp 43.153.183.11:18651: i/o timeout
+2026/04/13 11:19:16.322083 [Info] [2917749675] app/proxyman/outbound: app/proxyman/outbound: failed to process outbound traffic > proxy/shadowsocks: connection ends > transport/internet/websocket: failed to dial WebSocket > transport/internet/websocket: failed to dial to (wss://43.153.183.11:18651/3e96ef7d-8637-42c2-ac73-75182196e755/):  > dial tcp 43.153.183.11:18651: i/o timeout
+2026/04/13 11:19:16.335077 [Info] [312748149] proxy/socks: TCP Connect request to tcp:185.199.108.133:443
+2026/04/13 11:19:16.335077 [Info] [312748149] app/dispatcher: taking detour [proxy] for [tcp:185.199.108.133:443]
+2026/04/13 11:19:16.335077 [Info] [312748149] transport/internet/websocket: creating connection to tcp:43.153.183.11:18651
+2026/04/13 11:19:16.335077 [Info] [312748149] proxy/shadowsocks: tunneling request to tcp:185.199.108.133:443 via TCP:43.153.183.11:18651
+2026/04/13 11:19:16.335779 [Debug] [312748149] transport/internet: dialing to tcp:43.153.183.11:18651
+2026/04/13 11:19:20.942522 [Info] [4236413386] proxy/socks: TCP Connect request to tcp:185.199.108.133:443
+2026/04/13 11:19:20.942522 [Info] [4236413386] app/dispatcher: taking detour [proxy] for [tcp:185.199.108.133:443]
+2026/04/13 11:19:20.942522 [Info] [4236413386] transport/internet/websocket: creating connection to tcp:43.153.183.11:18651
+2026/04/13 11:19:20.942522 [Info] [4236413386] proxy/shadowsocks: tunneling request to tcp:185.199.108.133:443 via TCP:43.153.183.11:18651
+2026/04/13 11:19:20.942522 [Debug] [4236413386] transport/internet: dialing to tcp:43.153.183.11:18651
+2026/04/13 11:19:36.942668 [Error] [4236413386] transport/internet/websocket: failed to dial to 43.153.183.11:18651 > dial tcp 43.153.183.11:18651: i/o timeout
+2026/04/13 11:19:36.942668 [Info] [4236413386] app/proxyman/outbound: app/proxyman/outbound: failed to process outbound traffic > proxy/shadowsocks: connection ends > transport/internet/websocket: failed to dial WebSocket > transport/internet/websocket: failed to dial to (wss://43.153.183.11:18651/3e96ef7d-8637-42c2-ac73-75182196e755/):  > dial tcp 43.153.183.11:18651: i/o timeout
+2026/04/13 11:19:36.967476 [Info] [1920193017] proxy/socks: TCP Connect request to tcp:185.199.108.133:443
+2026/04/13 11:19:36.967476 [Info] [1920193017] app/dispatcher: taking detour [proxy] for [tcp:185.199.108.133:443]
+2026/04/13 11:19:36.967476 [Info] [1920193017] transport/internet/websocket: creating connection to tcp:43.153.183.11:18651
+2026/04/13 11:19:36.967476 [Info] [1920193017] proxy/shadowsocks: tunneling request to tcp:185.199.108.133:443 via TCP:43.153.183.11:18651
+2026/04/13 11:19:36.969110 [Debug] [1920193017] transport/internet: dialing to tcp:43.153.183.11:18651
+2026/04/13 11:19:50.501560 [Info] [1201975310] proxy/socks: TCP Connect request to tcp:185.199.108.133:443
+2026/04/13 11:19:50.501560 [Info] [1201975310] app/dispatcher: taking detour [proxy] for [tcp:185.199.108.133:443]
+2026/04/13 11:19:50.501560 [Info] [1201975310] transport/internet/websocket: creating connection to tcp:43.153.183.11:18651
+2026/04/13 11:19:50.501560 [Info] [1201975310] proxy/shadowsocks: tunneling request to tcp:185.199.108.133:443 via TCP:43.153.183.11:18651
+2026/04/13 11:19:50.502222 [Debug] [1201975310] transport/internet: dialing to tcp:43.153.183.11:18651
+2026/04/13 11:20:05.893545 [Error] [1201975310] transport/internet/websocket: failed to dial to 43.153.183.11:18651 > EOF
+2026/04/13 11:20:05.918073 [Info] [511778683] proxy/socks: TCP Connect request to tcp:185.199.108.133:443
+2026/04/13 11:20:05.918073 [Info] [511778683] app/dispatcher: taking detour [proxy] for [tcp:185.199.108.133:443]
+2026/04/13 11:20:05.918073 [Info] [511778683] transport/internet/websocket: creating connection to tcp:43.153.183.11:18651
+2026/04/13 11:20:05.918073 [Info] [511778683] proxy/shadowsocks: tunneling request to tcp:185.199.108.133:443 via TCP:43.153.183.11:18651
+2026/04/13 11:20:05.919582 [Debug] [511778683] transport/internet: dialing to tcp:43.153.183.11:18651
+2026/04/13 11:20:10.076634 [Info] [2587887305] proxy/socks: TCP Connect request to tcp:185.199.108.133:443
+2026/04/13 11:20:10.076634 [Info] [2587887305] app/dispatcher: taking detour [proxy] for [tcp:185.199.108.133:443]
+2026/04/13 11:20:10.076634 [Info] [2587887305] transport/internet/websocket: creating connection to tcp:43.153.183.11:18651
+2026/04/13 11:20:10.076634 [Info] [2587887305] proxy/shadowsocks: tunneling request to tcp:185.199.108.133:443 via TCP:43.153.183.11:18651
+2026/04/13 11:20:10.077222 [Debug] [2587887305] transport/internet: dialing to tcp:43.153.183.11:18651
+2026/04/13 11:20:18.191978 [Info] [4280476523] proxy/socks: TCP Connect request to tcp:185.199.108.133:443
+2026/04/13 11:20:18.191978 [Info] [4280476523] app/dispatcher: taking detour [proxy] for [tcp:185.199.108.133:443]
+2026/04/13 11:20:18.191978 [Info] [4280476523] transport/internet/websocket: creating connection to tcp:43.153.183.11:18651
+2026/04/13 11:20:18.191978 [Info] [4280476523] proxy/shadowsocks: tunneling request to tcp:185.199.108.133:443 via TCP:43.153.183.11:18651
+2026/04/13 11:20:18.193230 [Debug] [4280476523] transport/internet: dialing to tcp:43.153.183.11:18651

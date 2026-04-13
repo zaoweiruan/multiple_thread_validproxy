@@ -1,0 +1,18 @@
+[20260410_173135] Starting subscription update for subId: 5407284047721367022
+[2026-04-10 17:31:35] ========================================
+[2026-04-10 17:31:35] INFO: Starting single subscription update for subId: 5407284047721367022
+[2026-04-10 17:31:35] ========================================
+[2026-04-10 17:31:35] --- Processing: TGParse-vmess (id: 5407284047721367022) ---
+[2026-04-10 17:31:35] INFO: URL: https://raw.githubusercontent.com/Surfboardv2ray/TGParse/refs/heads/main/splitted/vmess
+[2026-04-10 17:31:36] INFO: fetchUrl success for https://raw.githubusercontent.com/Surfboardv2ray/TGParse/refs/heads/main/splitted/vmess (10117 bytes)
+[2026-04-10 17:31:36] INFO: Attempting base64 decode...
+[2026-04-10 17:31:36] INFO: decodeBase64 result length: 7585
+[2026-04-10 17:31:36] INFO: Final content length: 7585
+[2026-04-10 17:31:36] INFO: Parsed 22 profiles from subscription (scanned 22 lines)
+[2026-04-10 17:31:36] INFO: Removing duplicates by Address:Port:Network...
+[2026-04-10 17:31:36] INFO: Removed 5 duplicates, remaining: 17
+[2026-04-10 17:31:36] INFO: Updated 17 profiles for subid=5407284047721367022
+[2026-04-10 17:31:36] INFO: Successfully updated: TGParse-vmess
+[2026-04-10 17:31:36] ========================================
+[2026-04-10 17:31:36] INFO: Single subscription update complete
+[2026-04-10 17:31:36] ========================================

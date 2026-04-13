@@ -17,6 +17,6 @@
     },
     "subscription": {
         "update_enabled": true,
-        "priority_mode": "direct_first"
+        "priority_mode": "proxy_first"
     }
 }
