@@ -22,6 +22,7 @@
 #include "Profileexitem.h"
 #include "ConfigGenerator.h"
 #include "XrayApi.h"
+#include "PortManager.h"
 
 class SubitemUpdater {
 public:
@@ -30,7 +31,7 @@ public:
                            int xrayApiPort = 10086,
                            int testTimeoutMs = 3000,
                            int startPort = 1080,
-                           bool priorityProxyEnabled = false,
+                           const std::string& priorityMode = "direct_first",
                            const std::string& baseDir = "");
 
     bool run();
@@ -52,7 +53,7 @@ private:
     int xrayApiPort_;
     int test_timeout_ms_;
     int startPort_;
-    bool priorityProxyEnabled_;
+    std::string priorityMode_;
     std::string baseDir_;
     std::string timestamp_;
 

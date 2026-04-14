@@ -1,10 +1,18 @@
 #include "SubitemUpdater.h"
+#include "PortManager.h"
+#include <windows.h>
 #include <boost/json.hpp>
 #include <filesystem>
 #include <stdexcept>
 #include <random>
 #include <winsock2.h>
 #include <ws2tcpip.h>
+
+static std::string getExecutableDir() {
+    char buffer[MAX_PATH];
+    GetModuleFileNameA(NULL, buffer, MAX_PATH);
+    return std::filesystem::path(buffer).parent_path().string();
+}
 
 static std::string getJsonValueString(const boost::json::object& obj, const char* key, const char* defaultVal = "") {
     if (!obj.contains(key)) return defaultVal;
@@ -43,24 +51,16 @@ static bool isPortInUse(int port) {
     return result == SOCKET_ERROR;
 }
 
-static int findAvailablePort(int startPort, int maxAttempts = 100) {
-    for (int i = 0; i < maxAttempts; ++i) {
-        int port = startPort + i;
-        if (port > 65535) port = 10000 + (port - 10000) % 50000;
-        if (!isPortInUse(port)) {
-            return port;
-        }
-    }
-    return -1;
-}
-
-SubitemUpdater::SubitemUpdater(sqlite3* db, std::ofstream* logOut, const std::string& xrayPath, int xrayApiPort, int testTimeoutMs, int startPort, bool priorityProxyEnabled, const std::string& baseDir)
+SubitemUpdater::SubitemUpdater(sqlite3* db, std::ofstream* logOut, const std::string& xrayPath, int xrayApiPort, int testTimeoutMs, int startPort, const std::string& priorityMode, const std::string& baseDir)
     : db_(db), logOut_(logOut), fallbackSubId_("5544178410297751350"),
       xrayPath_(xrayPath), xrayApiPort_(xrayApiPort), test_timeout_ms_(testTimeoutMs),
-      xrayProcessId_(0), exItemDao_(db), startPort_(startPort), priorityProxyEnabled_(priorityProxyEnabled),
-      baseDir_(baseDir) {
+      xrayProcessId_(0), exItemDao_(db), startPort_(startPort),
+      priorityMode_(priorityMode), baseDir_(baseDir) {
     if (baseDir_.empty()) {
-        baseDir_ = std::filesystem::current_path().string();
+        baseDir_ = getExecutableDir();
+        if (baseDir_.empty()) {
+            baseDir_ = std::filesystem::current_path().string();
+        }
     }
     auto now = std::chrono::system_clock::now();
     auto time = std::chrono::system_clock::to_time_t(now);
@@ -326,10 +326,21 @@ std::vector<db::models::Profileitem> SubitemUpdater::parseSubscription(const std
         
         if (line.find("vmess://") == 0) {
             std::string encoded = line.substr(8);
+            
             std::string jsonStr = decodeBase64(encoded);
+            if (jsonStr.empty()) {
+                jsonStr = urlDecode(encoded);
+            }
+            
             if (jsonStr.empty()) continue;
             
+            bool isJson = (jsonStr.find('{') != std::string::npos && jsonStr.find('}') != std::string::npos);
+            
+            bool parseSuccess = false;
             try {
+                if (!isJson) {
+                    throw std::runtime_error("not JSON");
+                }
                 boost::json::value jv = boost::json::parse(jsonStr);
                 boost::json::object obj = jv.as_object();
                 
@@ -378,10 +389,39 @@ std::vector<db::models::Profileitem> SubitemUpdater::parseSubscription(const std
                 profile.fingerprint = getJsonValueString(obj, "fp", "chrome");
                 profile.alpn = getJsonValueString(obj, "alpn", "");
                 profile.headertype = getJsonValueString(obj, "type", "");
+                parseSuccess = true;
             } catch (const std::exception& e) {
-                log("WARN: Failed to parse vmess: " + std::string(e.what()));
-                continue;
+                std::string errMsg = e.what();
+                if (errMsg.find("incomplete") != std::string::npos || 
+                    errMsg.find("extra data") != std::string::npos) {
+                    size_t braceStart = jsonStr.find('{');
+                    if (braceStart != std::string::npos) {
+                        size_t braceEnd = jsonStr.rfind('}');
+                        if (braceEnd != std::string::npos && braceEnd > braceStart) {
+                            std::string singleJson = jsonStr.substr(braceStart, braceEnd - braceStart + 1);
+                            try {
+                                boost::json::value jv = boost::json::parse(singleJson);
+                                boost::json::object obj = jv.as_object();
+                                profile.configtype = "1";
+                                profile.configversion = "2";
+                                profile.alterid = "0";
+                                profile.network = "tcp";
+                                profile.coretype = "0";
+                                profile.muxenabled = "0";
+                                profile.address = getJsonValueString(obj, "add", "");
+                                profile.id = getJsonValueString(obj, "id", "");
+                                profile.security = getJsonValueString(obj, "scy", "auto");
+                                profile.remarks = getJsonValueString(obj, "ps", "");
+                                parseSuccess = true;
+                            } catch (...) {}
+                        }
+                    }
+                }
+                if (!parseSuccess) {
+                    log("WARN: Failed to parse vmess: " + errMsg);
+                }
             }
+            if (!parseSuccess) continue;
         } else if (line.find("vless://") == 0) {
             std::string uri = line.substr(8);
             size_t atPos = uri.find('@');
@@ -748,6 +788,7 @@ bool SubitemUpdater::updateProfileItems(const std::string& subid, const std::vec
 bool SubitemUpdater::run() {
     log("========================================");
     log("INFO: Starting subscription update");
+    log("INFO: Priority mode: " + priorityMode_);
     log("========================================");
     
     db::models::SubitemDAO subDao(db_);
@@ -767,7 +808,14 @@ bool SubitemUpdater::run() {
     std::vector<std::pair<std::string, std::string>> failedSubsList;
     int priorityProxySuccessCount = 0;
     
-    if (priorityProxyEnabled_ && !xrayPath_.empty()) {
+    bool useProxyForAll = (priorityMode_ == "proxy_first" && !xrayPath_.empty());
+    bool skipDirect = (priorityMode_ == "proxy_first");
+    
+    if (skipDirect) {
+        log("INFO: Mode is proxy_first - skipping Phase 1 (direct)");
+    }
+    
+    if (useProxyForAll) {
         log("========================================");
         log("DEBUG: Phase 0 - Priority proxy update for all subscriptions");
         log("========================================");
@@ -823,11 +871,11 @@ bool SubitemUpdater::run() {
                 int actualApiPort = xrayApiPort_;
                 
                 if (isPortInUse(actualStartPort)) {
-                    actualStartPort = findAvailablePort(startPort_);
+                    actualStartPort = PortManager::findAvailable(startPort_, 1000);
                     log("WARN: SOCKS port " + std::to_string(startPort_) + " in use, using " + std::to_string(actualStartPort));
                 }
                 if (isPortInUse(actualApiPort)) {
-                    actualApiPort = findAvailablePort(xrayApiPort_);
+                    actualApiPort = PortManager::findAvailable(xrayApiPort_, 1000);
                     log("WARN: API port " + std::to_string(xrayApiPort_) + " in use, using " + std::to_string(actualApiPort));
                 }
                 
@@ -1058,8 +1106,11 @@ bool SubitemUpdater::run() {
     log("INFO: Phase 1 - Direct fetch for all subscriptions");
     log("========================================");
     
-    for (const auto& sub : enabledSubs) {
-        log("--- Processing: " + sub.remarks + " (id: " + sub.id + ") ---");
+    for (size_t idx = 0; idx < enabledSubs.size(); idx++) {
+        const auto& sub = enabledSubs[idx];
+        int currentNum = idx + 1;
+        int totalNum = enabledSubs.size();
+        log("--- [" + std::to_string(currentNum) + "/" + std::to_string(totalNum) + "] Processing: " + sub.remarks + " (id: " + sub.id + ") ---");
         log("INFO: URL: " + sub.url);
         
         std::string content = fetchUrl(sub.url);
@@ -1178,11 +1229,11 @@ bool SubitemUpdater::run() {
         int actualApiPort = xrayApiPort_;
         
         if (isPortInUse(actualStartPort)) {
-            actualStartPort = findAvailablePort(startPort_);
+            actualStartPort = PortManager::findAvailable(startPort_, 1000);
             log("WARN: SOCKS port " + std::to_string(startPort_) + " in use, using " + std::to_string(actualStartPort));
         }
         if (isPortInUse(actualApiPort)) {
-            actualApiPort = findAvailablePort(xrayApiPort_);
+            actualApiPort = PortManager::findAvailable(xrayApiPort_, 1000);
             log("WARN: API port " + std::to_string(xrayApiPort_) + " in use, using " + std::to_string(actualApiPort));
         }
         
@@ -1534,7 +1585,7 @@ bool SubitemUpdater::startXrayForSubscription() {
     
     int actualStartPort = startPort_;
     if (isPortInUse(actualStartPort)) {
-        actualStartPort = findAvailablePort(startPort_);
+        actualStartPort = PortManager::findAvailable(startPort_, 1000);
         log("WARN: SOCKS port " + std::to_string(startPort_) + " in use, using " + std::to_string(actualStartPort));
     }
     
@@ -1676,11 +1727,27 @@ bool SubitemUpdater::runSingle(const std::string& subId) {
     
     log("--- Processing: " + sub.remarks + " (id: " + sub.id + ") ---");
     log("INFO: URL: " + sub.url);
+    log("INFO: Priority mode: " + priorityMode_);
     
-    std::string content = fetchUrl(sub.url);
+    std::string content;
+    bool tryDirectFirst = (priorityMode_ != "proxy_first");
+    bool tryProxy = (priorityMode_ != "direct_only");
     
-    if (content.empty()) {
-        log("WARN: Direct fetch failed, trying priority proxy mode...");
+    if (tryProxy && xrayPath_.empty()) {
+        log("WARN: xrayPath not configured, cannot use proxy");
+        tryProxy = false;
+    }
+    
+    if (tryDirectFirst) {
+        content = fetchUrl(sub.url);
+    }
+    
+    if (content.empty() && tryProxy) {
+        if (tryDirectFirst) {
+            log("WARN: Direct fetch failed, trying priority proxy mode...");
+        } else {
+            log("INFO: Mode is proxy_first - trying priority proxy directly...");
+        }
         
         std::vector<FallbackProxy> allProxies = getAllFallbackProxies(100);
         std::vector<FallbackProxy> validProxies;
@@ -1717,11 +1784,11 @@ bool SubitemUpdater::runSingle(const std::string& subId) {
             int actualApiPort = xrayApiPort_;
             
             if (isPortInUse(actualStartPort)) {
-                actualStartPort = findAvailablePort(startPort_);
+                actualStartPort = PortManager::findAvailable(startPort_, 1000);
                 log("WARN: SOCKS port " + std::to_string(startPort_) + " in use, using " + std::to_string(actualStartPort));
             }
             if (isPortInUse(actualApiPort)) {
-                actualApiPort = findAvailablePort(xrayApiPort_);
+                actualApiPort = PortManager::findAvailable(xrayApiPort_, 1000);
                 log("WARN: API port " + std::to_string(xrayApiPort_) + " in use, using " + std::to_string(actualApiPort));
             }
             
@@ -1812,13 +1879,15 @@ bool SubitemUpdater::runSingle(const std::string& subId) {
             });
             
             xrayConfigRoot["log"] = boost::json::object({
-                {"access", "xray_sub_access.log"},
-                {"error", "xray_sub_error.log"},
+                {"access", baseDir_ + "\\log\\xray_sub_access_" + timestamp_ + ".log"},
+                {"error", baseDir_ + "\\log\\xray_sub_error_" + timestamp_ + ".log"},
                 {"loglevel", "debug"}
             });
             
             std::string configStr = boost::json::serialize(xrayConfigRoot);
             log("DEBUG: Full xray config: " + configStr);
+            
+            std::filesystem::path configPath(baseDir_ + "\\config\\xray_priority_single.json");
             
             std::string configFile = baseDir_ + "\\config\\xray_priority_single.json";
             std::ofstream configOut(configFile);
