@@ -18,7 +18,7 @@
 
 class ProxyBatchTester {
 public:
-    ProxyBatchTester(sqlite3* db, const config::AppConfig& config);
+    ProxyBatchTester(sqlite3* db, const config::AppConfig& config, const std::string& baseDir = "", std::ofstream* logOut = nullptr);
     ~ProxyBatchTester();
     
     bool run();
@@ -32,11 +32,13 @@ private:
     void printSummary();
     
     void workerThreadFunc(int workerId, int socksPort, int apiPort);
+    void writeLog(const std::string& msg);
     
     sqlite3* db_;
     config::AppConfig config_;
     XrayManager* xrayManager_;
     ProxyTester* proxyTester_;
+    std::ofstream* logOut_;
     int totalProxies_;
     int successCount_;
     int failedCount_;

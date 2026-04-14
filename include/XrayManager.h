@@ -4,11 +4,12 @@
 #include <string>
 #include <vector>
 #include <memory>
+#include <fstream>
 #include "XrayInstance.h"
 
 class XrayManager {
 public:
-    XrayManager(const std::string& xrayPath, const std::string& configDir);
+    XrayManager(const std::string& xrayPath, const std::string& configDir, std::ofstream* logOut = nullptr);
     ~XrayManager();
     
     int start(int count, int startPort, int apiPort);
@@ -21,6 +22,7 @@ private:
     std::vector<std::unique_ptr<XrayInstance>> instances_;
     std::string xrayPath_;
     std::string configDir_;
+    std::ofstream* logOut_;
 };
 
 #endif // XRAY_MANAGER_H

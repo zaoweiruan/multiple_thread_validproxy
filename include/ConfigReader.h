@@ -17,8 +17,9 @@ struct AppConfig {
     std::string test_url;
     int test_timeout_ms;
     bool log_enabled;
+    bool log_network_failures;
     bool update_subscription;
-    bool priority_proxy_enabled;
+    std::string priority_mode;
 };
 
 class ConfigReader {

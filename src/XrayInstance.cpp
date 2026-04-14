@@ -1,4 +1,5 @@
 #include "XrayInstance.h"
+#include <iostream>
 #include <fstream>
 #include <thread>
 #include <chrono>
@@ -16,28 +17,42 @@ XrayInstance::~XrayInstance() {
 }
 
 bool XrayInstance::start() {
-    if (!createConfigFile()) return false;
+    std::cout << "[XrayInstance] Creating config: " << configPath_ << std::endl;
+    if (!createConfigFile()) {
+        std::cerr << "[XrayInstance] Failed to create config file" << std::endl;
+        return false;
+    }
     
     jobObject_ = CreateJobObjectA(NULL, NULL);
-    if (!jobObject_) return false;
+    if (!jobObject_) {
+        std::cerr << "[XrayInstance] Failed to create job object: " << GetLastError() << std::endl;
+        return false;
+    }
     
     JOBOBJECT_EXTENDED_LIMIT_INFORMATION jobLimit = {};
     jobLimit.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
     SetInformationJobObject(jobObject_, JobObjectExtendedLimitInformation, &jobLimit, sizeof(jobLimit));
     
     std::string cmd = "\"" + xrayPath_ + "\" run -c \"" + configPath_ + "\"";
+    std::cout << "[XrayInstance] Executing: " << cmd << std::endl;
     
     STARTUPINFOA si = {0};
     si.cb = sizeof(si);
     PROCESS_INFORMATION pi = {0};
     
-    if (!CreateProcessA(NULL, (LPSTR)cmd.c_str(), NULL, NULL, FALSE, CREATE_SUSPENDED | CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
+    BOOL created = CreateProcessA(NULL, (LPSTR)cmd.c_str(), NULL, NULL, FALSE, CREATE_SUSPENDED | CREATE_NO_WINDOW, NULL, NULL, &si, &pi);
+    if (!created) {
+        DWORD err = GetLastError();
+        std::cerr << "[XrayInstance] Failed to create process: " << err << std::endl;
         CloseHandle(jobObject_);
         jobObject_ = nullptr;
         return false;
     }
     
-    AssignProcessToJobObject(jobObject_, pi.hProcess);
+    if (!AssignProcessToJobObject(jobObject_, pi.hProcess)) {
+        std::cerr << "[XrayInstance] Failed to assign to job: " << GetLastError() << std::endl;
+    }
+    
     ResumeThread(pi.hThread);
     CloseHandle(pi.hProcess);
     CloseHandle(pi.hThread);
@@ -45,6 +60,7 @@ bool XrayInstance::start() {
     processHandle_ = pi.hProcess;
     std::this_thread::sleep_for(std::chrono::seconds(2));
     running_ = true;
+    std::cout << "[XrayInstance] Started successfully, socks=" << socksPort_ << ", api=" << apiPort_ << std::endl;
     return true;
 }
 

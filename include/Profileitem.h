@@ -34,6 +34,8 @@ struct Profileitem {
   std::string alpn;  // Alpn
   std::string coretype;  // CoreType
   std::string presocksport;  // PreSocksPort
+  std::string username;  // Username
+  std::string endpoint;  // Endpoint
   std::string fingerprint;  // Fingerprint
   std::string displaylog;  // DisplayLog
   std::string publickey;  // PublicKey
@@ -44,6 +46,9 @@ struct Profileitem {
   std::string mldsa65verify;  // Mldsa65Verify
   std::string muxenabled;  // MuxEnabled
   std::string cert;  // Cert
+  std::string certsha;  // CertSha
+  std::string echconfiglist;  // EchConfigList
+  std::string echforcequery;  // EchForceQuery
   // gRPC
   int grpcMultiMode = 0;
   // KCP
@@ -159,6 +164,12 @@ struct Profileitem {
     // Fingerprint
     text = (const char*)sqlite3_column_text(stmt, 23);
     obj.fingerprint = text ? text : "";
+    // Username
+    text = (const char*)sqlite3_column_text(stmt, 34);
+    obj.username = text ? text : "";
+    // Endpoint (for WireGuard)
+    text = (const char*)sqlite3_column_text(stmt, 35);
+    obj.endpoint = text ? text : "";
     // DisplayLog
     text = (const char*)sqlite3_column_text(stmt, 24);
     obj.displaylog = text ? text : "";
@@ -183,6 +194,15 @@ struct Profileitem {
     // Cert
     text = (const char*)sqlite3_column_text(stmt, 31);
     obj.cert = text ? text : "";
+    // CertSha
+    text = (const char*)sqlite3_column_text(stmt, 33);
+    obj.certsha = text ? text : "";
+    // EchConfigList
+    text = (const char*)sqlite3_column_text(stmt, 36);
+    obj.echconfiglist = text ? text : "";
+    // EchForceQuery
+    text = (const char*)sqlite3_column_text(stmt, 37);
+    obj.echforcequery = text ? text : "";
     return obj;
   }
 

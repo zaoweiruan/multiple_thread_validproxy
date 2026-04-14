@@ -32,6 +32,11 @@ private:
     boost::json::object buildVMessOutbound(const db::models::Profileitem& p, const std::string& outboundTag);
     boost::json::object buildSSOutbound(const db::models::Profileitem& p, const std::string& outboundTag);
     boost::json::object buildTrojanOutbound(const db::models::Profileitem& p, const std::string& outboundTag);
+    boost::json::object buildSOCKSOutbound(const db::models::Profileitem& p, const std::string& outboundTag);
+    boost::json::object buildHTTPOutbound(const db::models::Profileitem& p, const std::string& outboundTag);
+    boost::json::object buildHysteria2Outbound(const db::models::Profileitem& p, const std::string& outboundTag);
+    boost::json::object buildTUICOutbound(const db::models::Profileitem& p, const std::string& outboundTag);
+    boost::json::object buildWireGuardOutbound(const db::models::Profileitem& p, const std::string& outboundTag);
 };
 
 } // namespace config
