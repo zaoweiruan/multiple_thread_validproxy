@@ -23,6 +23,7 @@ public:
     
     bool run();
     bool runWithSubId(const std::string& subId);
+    XrayManager* getXrayManager() { return xrayManager_; }
 
 private:
     std::vector<db::models::Profileitem> loadProxies(const std::string& subId = "");

@@ -3,13 +3,13 @@
 
 #include <string>
 #include <vector>
+#include <algorithm>
 #include <set>
 #include <filesystem>
 #include <sqlite3.h>
 #include <curl/curl.h>
 #include <fstream>
 #include <sstream>
-#include <algorithm>
 #include <iostream>
 #include <chrono>
 #include <ctime>
@@ -23,9 +23,18 @@
 #include "ConfigGenerator.h"
 #include "XrayApi.h"
 #include "PortManager.h"
+#include "XrayManager.h"
 
 class SubitemUpdater {
 public:
+    static XrayManager* getGlobalXrayManager() { return globalXrayManager_; }
+    static void setGlobalXrayManager(XrayManager* mgr) { globalXrayManager_ = mgr; }
+    static void stopAllXray() {
+        if (globalXrayManager_) {
+            globalXrayManager_->stopAll();
+        }
+    }
+    
     explicit SubitemUpdater(sqlite3* db, std::ofstream* logOut = nullptr,
                            const std::string& xrayPath = "",
                            int xrayApiPort = 10086,
@@ -33,7 +42,13 @@ public:
                            int startPort = 1080,
                            const std::string& priorityMode = "direct_first",
                            const std::string& baseDir = "");
-
+    
+    ~SubitemUpdater() {
+        cleanupXray();
+    }
+    
+    void registerInstance();
+    
     bool run();
     bool runSingle(const std::string& subId);
     bool runSingleWithProxy(const std::string& subId, int socksPort);
@@ -72,8 +87,17 @@ private:
     void cleanupXray();
     
     bool testProxyConnectivity(int socksPort, long& latencyMs, std::string& errorMsg);
-    DWORD xrayProcessId_;
+    int xrayProcessId_;
+    HANDLE xrayJob_;
     db::models::ProfileexitemDAO exItemDao_;
+    
+static XrayManager* globalXrayManager_;
+    static std::vector<SubitemUpdater*> activeInstances_;
+    
+    int requestXrayInstances(int testCount);
+    void releaseXrayInstances();
+    std::vector<std::pair<int, int>> getAllocatedPorts();
+    std::pair<int, int> getFirstWorkingProxy(const std::string& testUrl);
 };
 
 #endif // SUBITEM_UPDATER_H

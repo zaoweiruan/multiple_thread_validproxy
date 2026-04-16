@@ -6,19 +6,9 @@
 #include <boost/json.hpp>
 
 #include "ConfigReader.h"
+#include "Utils.h"
 
 namespace config {
-
-static std::string getExecutableDir() {
-    char buffer[MAX_PATH];
-    GetModuleFileNameA(NULL, buffer, MAX_PATH);
-    std::string exePath = buffer;
-    size_t pos = exePath.rfind('\\');
-    if (pos != std::string::npos) {
-        exePath = exePath.substr(0, pos);
-    }
-    return exePath;
-}
 
 static std::string resolvePath(const std::string& path, const std::string& exeDir) {
     if (path.empty()) return "";
@@ -70,7 +60,7 @@ std::optional<AppConfig> ConfigReader::load(const std::string& configPath) {
         return std::nullopt;
     }
     
-    std::string exeDir = getExecutableDir();
+    std::string exeDir = utils::getExecutableDir();
     
     AppConfig config;
     

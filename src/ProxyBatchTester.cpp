@@ -1,21 +1,16 @@
 #include "ProxyBatchTester.h"
 #include "ConfigGenerator.h"
+#include "Utils.h"
 #include <iostream>
 #include <fstream>
 #include <filesystem>
 #include <algorithm>
 #include <windows.h>
 
-static std::string getExecutableDir() {
-    char buffer[MAX_PATH];
-    GetModuleFileNameA(NULL, buffer, MAX_PATH);
-    return std::filesystem::path(buffer).parent_path().string();
-}
-
 ProxyBatchTester::ProxyBatchTester(sqlite3* db, const config::AppConfig& config, const std::string& baseDir, std::ofstream* logOut)
     : db_(db), config_(config), totalProxies_(0), successCount_(0), failedCount_(0), processedCount_(0), logOut_(logOut) {
     
-    std::string exeBaseDir = baseDir.empty() ? getExecutableDir() : baseDir;
+    std::string exeBaseDir = baseDir.empty() ? utils::getExecutableDir() : baseDir;
     std::string configDir = exeBaseDir + "/config";
     
     std::filesystem::path configPath(configDir);
@@ -23,7 +18,7 @@ ProxyBatchTester::ProxyBatchTester(sqlite3* db, const config::AppConfig& config,
         std::filesystem::create_directory(configPath);
     }
     
-    xrayManager_ = new XrayManager(config_.xray_executable, configDir, logOut_);
+    xrayManager_ = XrayManager::getInstance(config_.xray_executable, configDir, config_.xray_workers, logOut_);
     proxyTester_ = new ProxyTester(xrayManager_, config_.test_url, config_.test_timeout_ms);
 }
 

@@ -4,15 +4,44 @@
 #include <thread>
 #include <chrono>
 
-XrayManager::XrayManager(const std::string& xrayPath, const std::string& configDir, std::ofstream* logOut)
-    : xrayPath_(xrayPath), configDir_(configDir), logOut_(logOut) {}
+XrayManager* XrayManager::instance_ = nullptr;
+
+XrayManager* XrayManager::getInstance() {
+    return instance_;
+}
+
+XrayManager* XrayManager::getInstance(const std::string& xrayPath, const std::string& configDir, int workers, std::ofstream* logOut) {
+    if (!instance_) {
+        instance_ = new XrayManager(xrayPath, configDir, workers, logOut);
+    }
+    return instance_;
+}
+
+void XrayManager::release() {
+    if (instance_) {
+        instance_->stopAll();
+        delete instance_;
+        instance_ = nullptr;
+    }
+}
+
+XrayManager::XrayManager(const std::string& xrayPath, const std::string& configDir, int workers, std::ofstream* logOut)
+    : xrayPath_(xrayPath), configDir_(configDir), workers_(workers), logOut_(logOut) {}
 
 XrayManager::~XrayManager() {
     stopAll();
 }
 
+int XrayManager::start(int testCount) {
+    return start(testCount, 1080, 10080);
+}
+
 int XrayManager::start(int count, int startPort, int apiPort) {
-    std::cout << "XrayManager::start: count=" << count << ", startPort=" << startPort << ", apiPort=" << apiPort << ", configDir=" << configDir_ << std::endl;
+    if (count > workers_) {
+        count = workers_;
+    }
+    
+    std::cout << "XrayManager::start: testCount=" << count << ", workers=" << workers_ << ", startPort=" << startPort << ", apiPort=" << apiPort << std::endl;
     if (logOut_) {
         *logOut_ << "XrayManager::start: count=" << count << ", startPort=" << startPort << ", apiPort=" << apiPort << ", configDir=" << configDir_ << std::endl;
     }
