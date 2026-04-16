@@ -17,9 +17,11 @@ void ProxyFinder::log(const std::string& msg) {
     }
 }
 
-ProxyFinder::ProxyFinder(sqlite3* db, XrayManager* manager, const std::string& xrayPath, const std::string& testUrl, int timeoutMs, std::ostream* logOut)
-    : db_(db), manager_(manager), xrayPath_(xrayPath), testUrl_(testUrl), timeoutMs_(timeoutMs), 
-      currentSocksPort_(-1), currentApiPort_(-1), logOut_(logOut) {
+ProxyFinder::ProxyFinder(sqlite3* db, XrayManager* manager, const std::string& xrayPath, 
+                         const std::string& testUrl, const std::string& targetUrl, 
+                         int timeoutMs, std::ostream* logOut)
+    : db_(db), manager_(manager), xrayPath_(xrayPath), testUrl_(testUrl), targetUrl_(targetUrl),
+      timeoutMs_(timeoutMs), currentSocksPort_(-1), currentApiPort_(-1), logOut_(logOut) {
     lastResult_ = {false, -1, "", "", "", 0, 0};
 }
 
@@ -27,7 +29,7 @@ ProxyFinder::~ProxyFinder() {
     release();
 }
 
-std::pair<int, int> ProxyFinder::findFirstWorkingProxy() {
+std::pair<int, int> ProxyFinder::findFirstWorkingProxy(const std::string& targetUrl) {
     std::pair<int, int> result = {-1, -1};
     
     if (!manager_ || manager_->getInstanceCount() == 0) {
@@ -43,7 +45,9 @@ std::pair<int, int> ProxyFinder::findFirstWorkingProxy() {
         validProxies.end()
     );
     
+    std::string testUrl = targetUrl.empty() ? testUrl_ : targetUrl;
     std::cout << "ProxyFinder: Testing " << validProxies.size() << " proxies (first match)..." << std::endl;
+    std::cout << "ProxyFinder: Using test URL: " << testUrl << std::endl;
     
     for (size_t i = 0; i < validProxies.size(); ++i) {
         const auto& proxy = validProxies[i];
@@ -66,7 +70,7 @@ std::pair<int, int> ProxyFinder::findFirstWorkingProxy() {
         
         std::this_thread::sleep_for(std::chrono::milliseconds(500));
         
-        auto testRes = testProxyConnectivity(currentSocksPort_);
+        auto testRes = testProxyConnectivity(currentSocksPort_, testUrl);
         if (testRes.success) {
             std::cout << "ProxyFinder: Found working proxy at socks=" << currentSocksPort_ << std::endl;
             lastResult_ = {true, testRes.latencyMs, "", proxy.indexId, proxy.address, proxy.socksPort, proxy.delay};
@@ -83,7 +87,7 @@ std::pair<int, int> ProxyFinder::findFirstWorkingProxy() {
     return result;
 }
 
-std::pair<int, int> ProxyFinder::findWorkingProxy() {
+std::pair<int, int> ProxyFinder::findWorkingProxy(const std::string& targetUrl) {
     std::pair<int, int> result = {-1, -1};
     
     if (!manager_ || manager_->getInstanceCount() == 0) {
@@ -99,7 +103,9 @@ std::pair<int, int> ProxyFinder::findWorkingProxy() {
         validProxies.end()
     );
     
+    std::string testUrl = targetUrl.empty() ? testUrl_ : targetUrl;
     std::cout << "ProxyFinder: Testing " << validProxies.size() << " proxies..." << std::endl;
+    std::cout << "ProxyFinder: Using test URL: " << testUrl << std::endl;
     
     // 测试所有代理，记录实际延迟
     std::vector<TestResult> allResults;
@@ -125,7 +131,7 @@ std::pair<int, int> ProxyFinder::findWorkingProxy() {
         
         std::this_thread::sleep_for(std::chrono::milliseconds(500));
         
-        auto testRes = testProxyConnectivity(currentSocksPort_);
+        auto testRes = testProxyConnectivity(currentSocksPort_, testUrl);
         if (testRes.success) {
             testRes.indexId = proxy.indexId;
             testRes.address = proxy.address;
@@ -175,8 +181,10 @@ void ProxyFinder::release() {
     currentApiPort_ = -1;
 }
 
-ProxyFinder::TestResult ProxyFinder::testProxyConnectivity(int socksPort) {
+ProxyFinder::TestResult ProxyFinder::testProxyConnectivity(int socksPort, const std::string& targetUrl) {
     TestResult result = {false, -1, ""};
+    
+    std::string urlToTest = targetUrl.empty() ? testUrl_ : targetUrl;
     
     CURL* curl = curl_easy_init();
     if (!curl) {
@@ -186,7 +194,7 @@ ProxyFinder::TestResult ProxyFinder::testProxyConnectivity(int socksPort) {
     
     std::string proxyUrl = "http://127.0.0.1:" + std::to_string(socksPort);
     curl_easy_setopt(curl, CURLOPT_PROXY, proxyUrl.c_str());
-    curl_easy_setopt(curl, CURLOPT_URL, testUrl_.c_str());
+    curl_easy_setopt(curl, CURLOPT_URL, urlToTest.c_str());
     curl_easy_setopt(curl, CURLOPT_NOBODY, 1L);
     curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, timeoutMs_);
     curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
@@ -218,8 +226,7 @@ std::vector<ProxyFinder::FallbackProxy> ProxyFinder::loadFallbackProxies(int max
     std::string sql = "SELECT pi.IndexId, pi.Address, pi.Port, pi.PreSocksPort, COALESCE(pe.Delay, 999999) AS Delay "
                   "FROM ProfileItem pi "
                   "LEFT JOIN ProfileExItem pe ON pi.IndexId = pe.IndexId "
-                  "WHERE pi.Subid = '5544178410297751350' "
-                  "AND pi.Address IS NOT NULL AND pi.Address != '' "
+                  "WHERE pi.Address IS NOT NULL AND pi.Address != '' "
                   "AND pi.ConfigType IN ('1', '3', '4', '5', '6', '7', '8', '9', '10') "
                   "AND COALESCE(pe.Delay, 0) > 0 "
                   "ORDER BY CAST(pe.Delay AS INTEGER) ASC "

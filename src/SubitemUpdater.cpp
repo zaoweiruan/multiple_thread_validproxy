@@ -107,29 +107,16 @@ static size_t WriteCallback(void* contents, size_t size, size_t nmemb, void* use
 }
 
 static std::string generateUniqueId() {
-    std::array<uint8_t, 16> guid;
     static std::mt19937_64 rng(std::chrono::steady_clock::now().time_since_epoch().count());
+    static std::uniform_int_distribution<int> firstDist(0, 1);
+    static std::uniform_int_distribution<long long> restDist(0, 999999999999999999);
     
-    for (size_t i = 0; i < 16; ++i) {
-        guid[i] = static_cast<uint8_t>(rng() & 0xFF);
-    }
+    int first = 4 + firstDist(rng);
+    long long rest = restDist(rng);
     
-    guid[6] = (guid[6] & 0x0F) | 0x40;
-    guid[8] = (guid[8] & 0x3F) | 0x80;
-    
-    guid[15] = (guid[15] & 0x0F) | (((rng() & 1) + 4) << 4);
-    
-    int64_t result = 0;
-    for (int i = 7; i >= 0; --i) {
-        result = (result << 8) | guid[i];
-    }
-    
-    for (int i = 15; i >= 8; --i) {
-        result = (result << 8) | guid[i];
-    }
-    
-    result = result & 0x7FFFFFFFFFFFFFFF;
-    return std::to_string(result);
+    std::ostringstream oss;
+    oss << first << std::setw(18) << std::setfill('0') << rest;
+    return oss.str();
 }
 
 static bool isPortInUse(int port) {
@@ -794,20 +781,13 @@ bool SubitemUpdater::updateProfileItems(const std::string& subid, const std::vec
     
     char* errMsg = nullptr;
     
-    std::string selectSql = "SELECT IndexId FROM ProfileItem WHERE Subid = '" + subid + "';";
-    sqlite3_stmt* stmt = nullptr;
-    std::vector<std::string> oldIndexIds;
-    if (sqlite3_prepare_v2(db_, selectSql.c_str(), -1, &stmt, nullptr) == SQLITE_OK) {
-        while (sqlite3_step(stmt) == SQLITE_ROW) {
-            const char* idx = (const char*)sqlite3_column_text(stmt, 0);
-            if (idx) oldIndexIds.push_back(idx);
-        }
-        sqlite3_finalize(stmt);
-    }
-    
-    for (const auto& idx : oldIndexIds) {
-        std::string deleteExSql = "DELETE FROM ProfileExItem WHERE IndexId = '" + idx + "';";
-        sqlite3_exec(db_, deleteExSql.c_str(), nullptr, nullptr, nullptr);
+    std::string deleteExSql = "DELETE FROM ProfileExItem WHERE IndexId IN "
+                               "(SELECT IndexId FROM ProfileItem WHERE Subid = '" + subid + "');";
+    if (sqlite3_exec(db_, deleteExSql.c_str(), nullptr, nullptr, &errMsg) != SQLITE_OK) {
+        log("ERROR: Failed to delete old profileex items - " + std::string(errMsg));
+        sqlite3_free(errMsg);
+        sqlite3_exec(db_, "ROLLBACK;", nullptr, nullptr, nullptr);
+        return false;
     }
     
     std::string deleteSql = "DELETE FROM ProfileItem WHERE Subid = '" + subid + "';";
