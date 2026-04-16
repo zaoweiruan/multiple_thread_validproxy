@@ -18,16 +18,25 @@
 #include "Profileitem.h"
 #include "Profileexitem.h"
 #include "ConfigGenerator.h"
+#include "ProxyFinder.h"
 #include "ConfigReader.h"
 #include "XrayApi.h"
+#include "XrayManager.h"
 #include "SubitemUpdater.h"
 #include "ProxyBatchTester.h"
+#include "Utils.h"
 
 namespace {
 
+XrayManager* g_xrayManager = nullptr;
+
 BOOL WINAPI consoleCtrlHandler(DWORD ctrlType) {
     if (ctrlType == CTRL_C_EVENT || ctrlType == CTRL_BREAK_EVENT) {
-        std::cout << "\nCtrl+C detected, shutting down..." << std::endl;
+        std::cout << "\nCtrl+C detected, stopping xray instances..." << std::endl;
+        if (g_xrayManager) {
+            g_xrayManager->stopAll();
+        }
+        SubitemUpdater::stopAllXray();
         exit(1);
     }
     return FALSE;
@@ -35,22 +44,17 @@ BOOL WINAPI consoleCtrlHandler(DWORD ctrlType) {
 
 } // anonymous namespace
 
-std::string getExecutableDir() {
-    char buffer[MAX_PATH];
-    GetModuleFileNameA(NULL, buffer, MAX_PATH);
-    return std::filesystem::path(buffer).parent_path().string();
-}
-
 int main(int argc, char* argv[]) {
     SetConsoleCtrlHandler(consoleCtrlHandler, TRUE);
     
     std::cout << "validproxy starting..." << std::endl;
 
-    std::string exeDir = getExecutableDir();
+    std::string exeDir = utils::getExecutableDir();
     
     std::string configPath = config::ConfigReader::getDefaultConfigPath();
     std::string singleSubId;
     std::string commandMode;
+    std::string generatorIndexId;
     
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
@@ -65,34 +69,35 @@ int main(int argc, char* argv[]) {
             }
         } else if (arg == "-show-sub" || arg == "--show-sub") {
             commandMode = "show-sub";
-        } else if (arg == "-update" || arg == "--update" || arg == "-update-sub" || arg == "--update-sub") {
+        } else if (arg == "-G" || arg == "-generator" || arg == "--generator") {
             if (i + 1 < argc) {
-                singleSubId = argv[++i];
-                commandMode = "update";
+                generatorIndexId = argv[++i];
+                commandMode = "generator";
             }
-        } else if (arg == "-test" || arg == "--test") {
-            if (i + 1 < argc) {
-                singleSubId = argv[++i];
-                commandMode = "test";
-            }
-        } else if (arg == "-test-sub" || arg == "--test-sub") {
+        } else if (arg == "-FMIN" || arg == "-findminproxy" || arg == "--findminproxy") {
+            commandMode = "findminproxy";
+        } else if (arg == "-F" || arg == "-find-proxy" || arg == "--find-proxy") {
+            commandMode = "find-proxy";
+        } else if (arg == "-T" || arg == "-test-sub" || arg == "--test-sub") {
             if (i + 1 < argc) {
                 singleSubId = argv[++i];
                 commandMode = "test-sub";
             }
-        } else if (arg == "-update-all" || arg == "--update-all") {
+        } else if (arg == "-UA" || arg == "-update-all" || arg == "--update-all") {
             singleSubId = "__all__";
             commandMode = "update";
         } else if (arg == "-h" || arg == "--help") {
-            std::cout << "Usage: validproxy [options]\n"
+std::cout << "Usage: validproxy [options]\n"
                       << "Options:\n"
-                      << "  -c, --config <path>    Config file path (default: config.json)\n"
+                      << "  -c, --config <path>   Config file path (default: config.json)\n"
                       << "  -show-sub, --show-sub  Show all subscriptions\n"
-                      << "  -update <id>           Update single subscription by ID\n"
-                      << "  --update-all           Update all enabled subscriptions\n"
-                      << "  -test <id>            Test proxies from subscription by ID\n"
-                      << "  -test-sub <id>        Test proxies from subscription by ID\n"
-                      << "  -h, --help            Show this help\n";
+                      << "  -G, -generator <id>  Generate outbound JSON for profile by indexId\n"
+                      << "  -F, -find-proxy     Find first working proxy (first found)\n"
+                      << "  -FMIN,-findminproxy   Find first working proxy (sorted by delay)\n"
+                      << "  -U, -update <id>      Update single subscription by ID\n"
+                      << "  -UA, -update-all     Update all enabled subscriptions\n"
+                      << "  -T, -test-sub <id>   Test proxies from subscription by ID\n"
+                      << "  -h, --help           Show this help\n";
             return 0;
         } else if (arg.find(".json") != std::string::npos) {
             std::filesystem::path p(arg);
@@ -105,6 +110,54 @@ int main(int argc, char* argv[]) {
             std::cerr << "Run 'validproxy --help' for usage information" << std::endl;
             return 1;
         }
+    }
+    
+    if (commandMode == "generator") {
+        auto appConfig = config::ConfigReader::load(configPath);
+        if (!appConfig) {
+            std::cerr << "Failed to load config from: " << configPath << std::endl;
+            return 1;
+        }
+        
+        sqlite3* db = nullptr;
+        if (sqlite3_open(appConfig->database_path.c_str(), &db) != SQLITE_OK) {
+            std::cerr << "Failed to open database: " << sqlite3_errmsg(db) << std::endl;
+            return 1;
+        }
+        
+        db::models::ProfileitemDAO profileDao(db);
+        auto profileOpt = profileDao.getByIndexId(generatorIndexId);
+        
+        if (!profileOpt) {
+            std::cerr << "Profile not found: " << generatorIndexId << std::endl;
+            sqlite3_close(db);
+            return 1;
+        }
+        
+        config::ConfigGenerator configGen(db);
+        auto config = configGen.generateConfig(*profileOpt);
+        
+        std::cout << "\n=== Generated Outbound JSON ===" << std::endl;
+        std::cout << config.outbound_json << std::endl;
+        
+        std::filesystem::path outDir = std::filesystem::path(exeDir) / "config";
+        if (!std::filesystem::exists(outDir)) {
+            std::filesystem::create_directory(outDir);
+        }
+        
+        std::string outFile = (outDir / (generatorIndexId + ".json")).string();
+        
+        std::ofstream out(outFile);
+        if (out.is_open()) {
+            out << config.outbound_json;
+            out.close();
+            std::cout << "\nSaved to: " << outFile << std::endl;
+        } else {
+            std::cerr << "Failed to write file: " << outFile << std::endl;
+        }
+        
+        sqlite3_close(db);
+        return 0;
     }
     
     if (commandMode == "show-sub") {
@@ -210,6 +263,174 @@ int main(int argc, char* argv[]) {
         return 0;
     }
     
+    if (commandMode == "find-proxy") {
+        auto appConfig = config::ConfigReader::load(configPath);
+        if (!appConfig) {
+            std::cerr << "Failed to load config from: " << configPath << std::endl;
+            return 1;
+        }
+        
+        sqlite3* db = nullptr;
+        curl_global_init(CURL_GLOBAL_DEFAULT);
+        
+        if (sqlite3_open(appConfig->database_path.c_str(), &db) != SQLITE_OK) {
+            std::cerr << "Failed to open database: " << sqlite3_errmsg(db) << std::endl;
+            return 1;
+        }
+        
+        std::string exeBaseDir = exeDir;
+        std::string configDir = exeBaseDir + "/config";
+        std::filesystem::path configPathObj(configDir);
+        if (!std::filesystem::exists(configPathObj)) {
+            std::filesystem::create_directory(configPathObj);
+        }
+        
+        XrayManager* xrayMgr = XrayManager::getInstance(appConfig->xray_executable, configDir, appConfig->xray_workers);
+        int started = xrayMgr->start(1, appConfig->xray_start_port, appConfig->xray_api_port);
+        
+        if (started == 0) {
+            std::cerr << "Failed to start xray instance" << std::endl;
+            sqlite3_close(db);
+            curl_global_cleanup();
+            return 1;
+        }
+        
+ProxyFinder finder(db, xrayMgr, appConfig->xray_executable, appConfig->test_url, appConfig->test_timeout_ms);
+        auto ports = finder.findFirstWorkingProxy();  // -F: 只返回第一个找到的
+        
+        if (ports.first > 0) {
+            auto res = finder.getLastResult();
+            std::cout << "\n=== Working Proxy ===" << std::endl;
+            std::cout << "IndexId: " << res.indexId << std::endl;
+            std::cout << "Address: " << res.address << ":" << res.port << std::endl;
+            std::cout << "Delay: " << res.latencyMs << "ms" << std::endl;
+            std::cout << "SocksPort: " << ports.first << std::endl;
+            std::cout << "ApiPort: " << ports.second << std::endl;
+        } else {
+            std::cerr << "No working proxy found" << std::endl;
+        }
+        
+        finder.release();
+        XrayManager::release();
+        
+        sqlite3_close(db);
+        curl_global_cleanup();
+        
+return ports.first > 0 ? 0 : 1;
+    }
+    
+    if (!singleSubId.empty()) {
+        auto appConfig = config::ConfigReader::load(configPath);
+        if (!appConfig) {
+            std::cerr << "Failed to load config from: " << configPath << std::endl;
+            return 1;
+        }
+        
+        sqlite3* db = nullptr;
+        curl_global_init(CURL_GLOBAL_DEFAULT);
+        
+        if (sqlite3_open(appConfig->database_path.c_str(), &db) != SQLITE_OK) {
+            std::cerr << "Failed to open database: " << sqlite3_errmsg(db) << std::endl;
+            return 1;
+        }
+        
+        std::string exeBaseDir = exeDir;
+        std::string configDir = exeBaseDir + "/config";
+        std::filesystem::path configPathObj(configDir);
+        if (!std::filesystem::exists(configPathObj)) {
+            std::filesystem::create_directory(configPathObj);
+        }
+        
+        XrayManager* xrayMgr = XrayManager::getInstance(appConfig->xray_executable, configDir, appConfig->xray_workers);
+        int started = xrayMgr->start(1, appConfig->xray_start_port, appConfig->xray_api_port);
+        
+        if (started == 0) {
+            std::cerr << "Failed to start xray instance" << std::endl;
+            sqlite3_close(db);
+            curl_global_cleanup();
+            return 1;
+        }
+        
+        ProxyFinder finder(db, xrayMgr, appConfig->xray_executable, appConfig->test_url, appConfig->test_timeout_ms);
+        auto ports = finder.findWorkingProxy();  // -FMIN: 测试所有，返回延迟最小的
+        
+        if (ports.first > 0) {
+            auto res = finder.getLastResult();
+            std::cout << "\n=== Working Proxy (Minimum Delay) ===" << std::endl;
+            std::cout << "IndexId: " << res.indexId << std::endl;
+            std::cout << "Address: " << res.address << ":" << res.port << std::endl;
+            std::cout << "Delay: " << res.latencyMs << "ms" << std::endl;
+            std::cout << "SocksPort: " << ports.first << std::endl;
+            std::cout << "ApiPort: " << ports.second << std::endl;
+        } else {
+            std::cerr << "No working proxy found" << std::endl;
+        }
+        
+        finder.release();
+        XrayManager::release();
+        
+        sqlite3_close(db);
+        curl_global_cleanup();
+        
+return ports.first > 0 ? 0 : 1;
+    }
+    
+    if (commandMode == "findminproxy") {
+        auto appConfig = config::ConfigReader::load(configPath);
+        if (!appConfig) {
+            std::cerr << "Failed to load config from: " << configPath << std::endl;
+            return 1;
+        }
+        
+        sqlite3* db = nullptr;
+        curl_global_init(CURL_GLOBAL_DEFAULT);
+        
+        if (sqlite3_open(appConfig->database_path.c_str(), &db) != SQLITE_OK) {
+            std::cerr << "Failed to open database: " << sqlite3_errmsg(db) << std::endl;
+            return 1;
+        }
+        
+        std::string exeBaseDir = exeDir;
+        std::string configDir = exeBaseDir + "/config";
+        std::filesystem::path configPathObj(configDir);
+        if (!std::filesystem::exists(configPathObj)) {
+            std::filesystem::create_directory(configPathObj);
+        }
+        
+        XrayManager* xrayMgr = XrayManager::getInstance(appConfig->xray_executable, configDir, appConfig->xray_workers);
+        int started = xrayMgr->start(1, appConfig->xray_start_port, appConfig->xray_api_port);
+        
+        if (started == 0) {
+            std::cerr << "Failed to start xray instance" << std::endl;
+            sqlite3_close(db);
+            curl_global_cleanup();
+            return 1;
+        }
+        
+        ProxyFinder finder(db, xrayMgr, appConfig->xray_executable, appConfig->test_url, appConfig->test_timeout_ms);
+        auto ports = finder.findWorkingProxy();  // -FMIN: 测试所有，返回延迟最小的
+        
+        if (ports.first > 0) {
+            auto res = finder.getLastResult();
+            std::cout << "\n=== Working Proxy (Minimum Delay) ===" << std::endl;
+            std::cout << "IndexId: " << res.indexId << std::endl;
+            std::cout << "Address: " << res.address << ":" << res.port << std::endl;
+            std::cout << "Delay: " << res.latencyMs << "ms" << std::endl;
+            std::cout << "SocksPort: " << ports.first << std::endl;
+            std::cout << "ApiPort: " << ports.second << std::endl;
+        } else {
+            std::cerr << "No working proxy found" << std::endl;
+        }
+        
+        finder.release();
+        XrayManager::release();
+        
+        sqlite3_close(db);
+        curl_global_cleanup();
+        
+        return ports.first > 0 ? 0 : 1;
+    }
+    
     if (!singleSubId.empty()) {
         auto appConfig = config::ConfigReader::load(configPath);
         if (!appConfig) {
@@ -238,10 +459,10 @@ int main(int argc, char* argv[]) {
         std::string logFileName;
         if (commandMode == "test-sub") {
             logFileName = "test_proxy_" + std::string(timestamp) + ".log";
-        } else if (commandMode == "update-sub") {
+        } else if (commandMode == "update") {
             logFileName = "sub_update_" + std::string(timestamp) + ".log";
         } else {
-            logFileName = "sub_update_" + std::string(timestamp) + ".log";
+            logFileName = "test_proxy_" + std::string(timestamp) + ".log";
         }
         
         std::string logFile = (logDir / logFileName).string();
@@ -250,22 +471,27 @@ int main(int argc, char* argv[]) {
         std::cout << "Mode: " << commandMode << ", subscription: " << singleSubId << std::endl;
         logOut << "[" << timestamp << "] Starting " << commandMode << " for subId: " << singleSubId << std::endl;
         
-        SubitemUpdater subUpdater(db, logOut.is_open() ? &logOut : nullptr,
-                                   appConfig->xray_executable,
-                                   10086,
-                                   appConfig->test_timeout_ms,
-                                   appConfig->xray_start_port,
-                                   appConfig->priority_mode,
-                                   "");
-        
         bool result;
         if (commandMode == "test-sub") {
             ProxyBatchTester tester(db, *appConfig, exeDir, logOut.is_open() ? &logOut : nullptr);
+            g_xrayManager = tester.getXrayManager();
+            SubitemUpdater::setGlobalXrayManager(g_xrayManager);
             result = tester.runWithSubId(singleSubId);
-        } else if (singleSubId == "__all__") {
-            result = subUpdater.run();
         } else {
-            result = subUpdater.runSingle(singleSubId);
+            g_xrayManager = XrayManager::getInstance(appConfig->xray_executable, configPath, appConfig->xray_workers, logOut.is_open() ? &logOut : nullptr);
+            SubitemUpdater::setGlobalXrayManager(g_xrayManager);
+            SubitemUpdater subUpdater(db, logOut.is_open() ? &logOut : nullptr,
+                                       appConfig->xray_executable,
+                                       10086,
+                                       appConfig->test_timeout_ms,
+                                       appConfig->xray_start_port,
+                                       appConfig->priority_mode,
+                                       "");
+            if (singleSubId == "__all__") {
+                result = subUpdater.run();
+            } else {
+                result = subUpdater.runSingle(singleSubId);
+            }
         }
         
         if (logOut.is_open()) {
@@ -339,17 +565,22 @@ int main(int argc, char* argv[]) {
     sqlite3_exec(db, "PRAGMA journal_mode=WAL", nullptr, nullptr, nullptr);
     std::cout << "Database opened: " << appConfig->database_path << std::endl;
 
-    ProxyBatchTester tester(db, *appConfig, exeDir, logOutStream.is_open() ? &logOutStream : nullptr);
+ProxyBatchTester tester(db, *appConfig, exeDir, logOutStream.is_open() ? &logOutStream : nullptr);
+    g_xrayManager = tester.getXrayManager();
     bool testResult = tester.run();
-
+    
+    if (g_xrayManager) {
+        XrayManager::release();
+    }
+    
     if (logOutStream.is_open()) {
         logOutStream.flush();
         logOutStream.close();
     }
-
+    
     sqlite3_close(db);
     curl_global_cleanup();
-
+    
     std::cout << "validproxy " << (testResult ? "finished" : "failed") << std::endl;
     return testResult ? 0 : 1;
 }

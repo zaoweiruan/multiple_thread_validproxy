@@ -1,17 +1,93 @@
-#include "SubitemUpdater.h"
-#include "PortManager.h"
 #include <windows.h>
-#include <boost/json.hpp>
 #include <filesystem>
 #include <stdexcept>
 #include <random>
 #include <winsock2.h>
 #include <ws2tcpip.h>
 
-static std::string getExecutableDir() {
-    char buffer[MAX_PATH];
-    GetModuleFileNameA(NULL, buffer, MAX_PATH);
-    return std::filesystem::path(buffer).parent_path().string();
+#include "SubitemUpdater.h"
+#include "PortManager.h"
+#include "Utils.h"
+#include "XrayManager.h"
+
+XrayManager* SubitemUpdater::globalXrayManager_ = nullptr;
+std::vector<SubitemUpdater*> SubitemUpdater::activeInstances_;
+
+void SubitemUpdater::registerInstance() {
+    activeInstances_.push_back(this);
+}
+
+int SubitemUpdater::requestXrayInstances(int count) {
+    if (!globalXrayManager_) {
+        log("ERROR: No XrayManager configured");
+        return 0;
+    }
+    
+    int startPort = PortManager::findAvailable(startPort_, count * 2 + 10);
+    int result = globalXrayManager_->start(count, startPort, xrayApiPort_);
+    
+    if (result > 0) {
+        log("INFO: Allocated " + std::to_string(result) + " xray instances");
+    }
+    return result;
+}
+
+void SubitemUpdater::releaseXrayInstances() {
+    log("INFO: Releasing xray instances...");
+    XrayManager::release();
+    log("INFO: Released all xray instances");
+}
+
+std::vector<std::pair<int, int>> SubitemUpdater::getAllocatedPorts() {
+    if (!globalXrayManager_) {
+        return {};
+    }
+    return globalXrayManager_->getPortPairs();
+}
+
+std::pair<int, int> SubitemUpdater::getFirstWorkingProxy(const std::string& testUrl) {
+    std::pair<int, int> result = {-1, -1};
+    
+    if (!globalXrayManager_ || globalXrayManager_->getInstanceCount() == 0) {
+        log("ERROR: No xray instances running, call requestXrayInstances first");
+        return result;
+    }
+    
+    auto proxies = getAllFallbackProxies(100);
+    auto validProxies = proxies;
+    validProxies.erase(
+        std::remove_if(validProxies.begin(), validProxies.end(),
+            [](const FallbackProxy& p) { return p.delay <= 0; }),
+        validProxies.end()
+    );
+    
+    log("INFO: Testing " + std::to_string(validProxies.size()) + " proxies for first working...");
+    
+    for (size_t i = 0; i < validProxies.size(); ++i) {
+        const auto& proxy = validProxies[i];
+        long latencyMs = -1;
+        std::string errorMsg;
+        
+        int workerIndex = i % globalXrayManager_->getInstanceCount();
+        auto instance = globalXrayManager_->getInstance(workerIndex);
+        if (!instance) continue;
+        
+        int socksPort = instance->getSocksPort();
+        
+        log("INFO: Testing proxy " + std::to_string(i+1) + "/" + std::to_string(validProxies.size()) + 
+            " (socks=" + std::to_string(socksPort) + ", delay=" + std::to_string(proxy.delay) + "ms)");
+        
+        if (testProxyConnectivity(socksPort, latencyMs, errorMsg)) {
+            log("INFO: Found working proxy at socks=" + std::to_string(socksPort));
+            result = {socksPort, instance->getApiPort()};
+            return result;
+        } else {
+            log("WARN: Proxy failed: " + errorMsg);
+        }
+    }
+    
+    log("ERROR: No working proxy found");
+    return result;
 }
 
 static std::string getJsonValueString(const boost::json::object& obj, const char* key, const char* defaultVal = "") {
@@ -31,9 +107,29 @@ static size_t WriteCallback(void* contents, size_t size, size_t nmemb, void* use
 }
 
 static std::string generateUniqueId() {
+    std::array<uint8_t, 16> guid;
     static std::mt19937_64 rng(std::chrono::steady_clock::now().time_since_epoch().count());
-    uint64_t val = rng();
-    return std::to_string(val);
+    
+    for (size_t i = 0; i < 16; ++i) {
+        guid[i] = static_cast<uint8_t>(rng() & 0xFF);
+    }
+    
+    guid[6] = (guid[6] & 0x0F) | 0x40;
+    guid[8] = (guid[8] & 0x3F) | 0x80;
+    
+    guid[15] = (guid[15] & 0x0F) | (((rng() & 1) + 4) << 4);
+    
+    int64_t result = 0;
+    for (int i = 7; i >= 0; --i) {
+        result = (result << 8) | guid[i];
+    }
+    
+    for (int i = 15; i >= 8; --i) {
+        result = (result << 8) | guid[i];
+    }
+    
+    result = result & 0x7FFFFFFFFFFFFFFF;
+    return std::to_string(result);
 }
 
 static bool isPortInUse(int port) {
@@ -54,10 +150,10 @@ static bool isPortInUse(int port) {
 SubitemUpdater::SubitemUpdater(sqlite3* db, std::ofstream* logOut, const std::string& xrayPath, int xrayApiPort, int testTimeoutMs, int startPort, const std::string& priorityMode, const std::string& baseDir)
     : db_(db), logOut_(logOut), fallbackSubId_("5544178410297751350"),
       xrayPath_(xrayPath), xrayApiPort_(xrayApiPort), test_timeout_ms_(testTimeoutMs),
-      xrayProcessId_(0), exItemDao_(db), startPort_(startPort),
+      xrayProcessId_(0), xrayJob_(nullptr), exItemDao_(db), startPort_(startPort),
       priorityMode_(priorityMode), baseDir_(baseDir) {
     if (baseDir_.empty()) {
-        baseDir_ = getExecutableDir();
+        baseDir_ = utils::getExecutableDir();
         if (baseDir_.empty()) {
             baseDir_ = std::filesystem::current_path().string();
         }
@@ -67,6 +163,8 @@ SubitemUpdater::SubitemUpdater(sqlite3* db, std::ofstream* logOut, const std::st
     char ts[32];
     strftime(ts, sizeof(ts), "%Y%m%d_%H%M%S", localtime(&time));
     timestamp_ = ts;
+    
+    registerInstance();
 }
 
 void SubitemUpdater::log(const std::string& msg) {
@@ -966,6 +1064,15 @@ bool SubitemUpdater::run() {
                 
                 log("DEBUG: Full priority proxy xray config: " + configStr);
                 
+                std::filesystem::path configDir = baseDir_ + "\\config";
+                if (!std::filesystem::exists(configDir)) {
+                    std::filesystem::create_directory(configDir);
+                }
+                std::filesystem::path logDir = baseDir_ + "\\log";
+                if (!std::filesystem::exists(logDir)) {
+                    std::filesystem::create_directory(logDir);
+                }
+                
                 std::string configFile = baseDir_ + "\\config\\xray_priority_temp.json";
                 std::ofstream configOut(configFile);
                 configOut << configStr;
@@ -1338,7 +1445,17 @@ bool SubitemUpdater::run() {
         std::string configStr = boost::json::serialize(xrayConfigRoot);
         
         log("DEBUG: Full xray config: " + configStr);
-        std::string configFile = baseDir_ + "\\config\\xray_sub_temp_" + std::to_string(i) + ".json";
+        
+std::filesystem::path configDir = baseDir_ + "\\config";
+            if (!std::filesystem::exists(configDir)) {
+                std::filesystem::create_directory(configDir);
+            }
+            std::filesystem::path logDir = baseDir_ + "\\log";
+            if (!std::filesystem::exists(logDir)) {
+                std::filesystem::create_directory(logDir);
+            }
+            
+            std::string configFile = baseDir_ + "\\config\\xray_sub_temp_" + std::to_string(i) + ".json";
         std::ofstream configOut(configFile);
         configOut << configStr;
         configOut.close();
@@ -1617,6 +1734,15 @@ bool SubitemUpdater::startXrayForSubscription() {
     std::string configStr = boost::json::serialize(config);
     log("DEBUG: xray config: " + configStr);
     
+    std::filesystem::path configDir = baseDir_ + "\\config";
+    if (!std::filesystem::exists(configDir)) {
+        std::filesystem::create_directory(configDir);
+    }
+    std::filesystem::path logDir = baseDir_ + "\\log";
+    if (!std::filesystem::exists(logDir)) {
+        std::filesystem::create_directory(logDir);
+    }
+    
     std::string configFile = baseDir_ + "\\config\\xray_subscription_temp.json";
     std::ofstream configOut(configFile);
     configOut << configStr;
@@ -1629,6 +1755,11 @@ bool SubitemUpdater::startXrayForSubscription() {
     
     std::string cmd = "\"" + xrayPath_ + "\" run -c \"" + normalizedPath + "\"";
     log("DEBUG: xray command: " + cmd);
+    
+    HANDLE job = CreateJobObjectA(nullptr, nullptr);
+    if (!job) {
+        log("ERROR: CreateJobObject failed: " + std::to_string(GetLastError()));
+    }
     
     STARTUPINFOA si = {0};
     si.cb = sizeof(si);
@@ -1648,9 +1779,17 @@ bool SubitemUpdater::startXrayForSubscription() {
     
     ResumeThread(pi.hThread);
     CloseHandle(pi.hThread);
-    CloseHandle(pi.hProcess);
+    
+    JOBOBJECT_EXTENDED_LIMIT_INFORMATION jobLimit = {};
+    jobLimit.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+    if (!SetInformationJobObject(xrayJob_, JobObjectExtendedLimitInformation, &jobLimit, sizeof(jobLimit))) {
+        log("ERROR: SetInformationJobObject failed");
+    }
     
     xrayProcessId_ = pi.dwProcessId;
+    xrayJob_ = job;
+    
+    CloseHandle(pi.hProcess);
     log("DEBUG: xray process started (PID=" + std::to_string(xrayProcessId_) + "), waiting 2s...");
     Sleep(2000);
     
@@ -1692,14 +1831,25 @@ bool SubitemUpdater::testSubscriptionViaXray(int socksPort, const std::string& s
 }
 
 void SubitemUpdater::cleanupXray() {
+    if (xrayJob_) {
+        log("INFO: Killing xray via Job object");
+        TerminateJobObject(xrayJob_, 0);
+        CloseHandle(xrayJob_);
+        xrayJob_ = nullptr;
+    } else {
+        log("DEBUG: No xrayJob_, trying xray processes...");
+        std::string cmd = "taskkill /F /IM xray.exe >NUL 2>&1";
+        system(cmd.c_str());
+    }
+    
     if (xrayProcessId_ != 0) {
         log("INFO: Killing xray process (PID=" + std::to_string(xrayProcessId_) + ")");
         std::string cmd = "taskkill /F /PID " + std::to_string(xrayProcessId_) + " >NUL 2>&1";
         system(cmd.c_str());
         xrayProcessId_ = 0;
-    } else {
-        log("DEBUG: No xray process to kill");
     }
+    
+log("INFO: Cleanup complete");
 }
 
 bool SubitemUpdater::runSingle(const std::string& subId) {
@@ -1887,7 +2037,14 @@ bool SubitemUpdater::runSingle(const std::string& subId) {
             std::string configStr = boost::json::serialize(xrayConfigRoot);
             log("DEBUG: Full xray config: " + configStr);
             
-            std::filesystem::path configPath(baseDir_ + "\\config\\xray_priority_single.json");
+            std::filesystem::path configDir = baseDir_ + "\\config";
+            if (!std::filesystem::exists(configDir)) {
+                std::filesystem::create_directory(configDir);
+            }
+            std::filesystem::path logDir = baseDir_ + "\\log";
+            if (!std::filesystem::exists(logDir)) {
+                std::filesystem::create_directory(logDir);
+            }
             
             std::string configFile = baseDir_ + "\\config\\xray_priority_single.json";
             std::ofstream configOut(configFile);
@@ -1919,6 +2076,10 @@ bool SubitemUpdater::runSingle(const std::string& subId) {
             HANDLE job = CreateJobObjectA(nullptr, nullptr);
             if (job) {
                 AssignProcessToJobObject(job, pi.hProcess);
+                JOBOBJECT_EXTENDED_LIMIT_INFORMATION jobLimit = {};
+                jobLimit.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+                SetInformationJobObject(job, JobObjectExtendedLimitInformation, &jobLimit, sizeof(jobLimit));
+                xrayJob_ = job;
             }
             
             ResumeThread(pi.hThread);

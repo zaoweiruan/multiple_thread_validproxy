@@ -7,6 +7,11 @@
 #include <sqlite3.h>
 #include <iostream>
 #include <sstream>
+#include <algorithm>
+#include <thread>
+#include <chrono>
+#include <random>
+#include <array>
 
 namespace db {
 namespace models {
@@ -90,8 +95,8 @@ struct Profileitem {
   static Profileitem fromStmt(sqlite3_stmt* stmt) {
     Profileitem obj;
     const char* text;
-    // 实际表字段顺序: IndexId, ConfigType, ConfigVersion, Address, Port, Ports, Id, AlterId, Security, Network, Remarks, HeaderType, RequestHost, Path, StreamSecurity, AllowInsecure, Subid, IsSub, Flow, Sni, Alpn, CoreType, PreSocksPort, Fingerprint, DisplayLog, PublicKey, ShortId, SpiderX, Mldsa65Verify, Extra, MuxEnabled, Cert, CertSha, EchConfigList, EchForceQuery
-    // 索引:           0          1          2              3       4      5      6     7        8        9       10        11          12          13    14              15            16      17     18    19    20    21        22           23          24         25       26       27             28           29      30         31       32          33            34
+    // SQL字段顺序: IndexId, ConfigType, ConfigVersion, Address, Port, Ports, Id, AlterId, Security, Network, Remarks, HeaderType, RequestHost, Path, StreamSecurity, AllowInsecure, Subid, IsSub, Flow, Sni, Alpn, CoreType, PreSocksPort, Fingerprint, DisplayLog, PublicKey, ShortId, SpiderX, Mldsa65Verify, Extra, MuxEnabled, Cert, CertSha, EchConfigList, EchForceQuery, Username, Endpoint
+    // 索引:        0          1          2              3       4      5      6     7        8        9       10        11          12          13    14              15            16      17     18    19    20    21        22           23          24         25       26       27             28           29      30         31       32          33            34           35
     // IndexId
     text = (const char*)sqlite3_column_text(stmt, 0);
     obj.indexid = text ? text : "";
@@ -165,10 +170,10 @@ struct Profileitem {
     text = (const char*)sqlite3_column_text(stmt, 23);
     obj.fingerprint = text ? text : "";
     // Username
-    text = (const char*)sqlite3_column_text(stmt, 34);
+    text = (const char*)sqlite3_column_text(stmt, 35);
     obj.username = text ? text : "";
     // Endpoint (for WireGuard)
-    text = (const char*)sqlite3_column_text(stmt, 35);
+    text = (const char*)sqlite3_column_text(stmt, 36);
     obj.endpoint = text ? text : "";
     // DisplayLog
     text = (const char*)sqlite3_column_text(stmt, 24);
@@ -195,13 +200,13 @@ struct Profileitem {
     text = (const char*)sqlite3_column_text(stmt, 31);
     obj.cert = text ? text : "";
     // CertSha
-    text = (const char*)sqlite3_column_text(stmt, 33);
+    text = (const char*)sqlite3_column_text(stmt, 32);
     obj.certsha = text ? text : "";
     // EchConfigList
-    text = (const char*)sqlite3_column_text(stmt, 36);
+    text = (const char*)sqlite3_column_text(stmt, 33);
     obj.echconfiglist = text ? text : "";
     // EchForceQuery
-    text = (const char*)sqlite3_column_text(stmt, 37);
+    text = (const char*)sqlite3_column_text(stmt, 34);
     obj.echforcequery = text ? text : "";
     return obj;
   }
@@ -331,6 +336,21 @@ public:
 
     sqlite3_finalize(stmt);
     return result;
+  }
+  
+  std::optional<Profileitem> getByIndexId(const std::string& indexId) {
+    std::string sql = "SELECT * FROM ProfileItem WHERE IndexId = '" + indexId + "';";
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db_, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
+      return std::nullopt;
+    }
+    if (sqlite3_step(stmt) == SQLITE_ROW) {
+      Profileitem item = Profileitem::fromStmt(stmt);
+      sqlite3_finalize(stmt);
+      return item;
+    }
+    sqlite3_finalize(stmt);
+    return std::nullopt;
   }
 };
 

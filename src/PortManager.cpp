@@ -42,7 +42,7 @@ bool PortManager::isInUse(int port) {
 std::vector<int> PortManager::allocateRange(int startPort, int count) {
     std::vector<int> ports;
     for (int i = 0; i < count; ++i) {
-        int port = findAvailable(startPort + i * 2, 100);
+        int port = findAvailable(startPort + i, 100);
         if (port > 0) ports.push_back(port);
     }
     return ports;

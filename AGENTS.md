@@ -176,16 +176,66 @@ target_link_libraries(test_model PRIVATE gtest_main ModelLib)
 add_test(NAME ModelTest COMMAND test_model)
 ```
 
-## 8. 功能待实现
+## 8. 功能列表
 
-1. 扫描项目 ../validproxy 获取功能列表
-2. 读取 sqlite3 数据库 guiNDB.db，表 Profileitem、Profileexitem
-3. 根据 configType 生成 JSON 配置 (3=SS, 1=VMess, 5=VLESS, 6=Trojan)
-4. xray API 方式启动 (端口 10086，stdin 注入配置)
-5. curl 测试代理连通性 (https://www.google.com/generate_204)
-6. 多线程并发测试多个代理
+### 命令行模式
 
-## 9. 常见问题
+| 参数 | 说明 |
+|---|---|
+| `-c, --config <path>` | 配置文件路径 (默认: config.json) |
+| `-show-sub` | 显示所有订阅 |
+| `-G, -generator <id>` | 根据 indexId 生成 outbound JSON |
+| `-F, -find-proxy` | 查找第一个可用的代理 (立即返回) |
+| `-FMIN, -findminproxy` | 查找延迟最小的代理 (测试全部后排序) |
+| `-U, -update <id>` | 更新单个订阅 |
+| `-UA, -update-all` | 更新所有启用的订阅 |
+| `-T, -test-sub <id>` | 测试订阅中的代理 |
+| `-h, --help` | 显示帮助 |
+
+### 核心模块
+
+1. **XrayManager** - xray 实例单例管理
+   - `getInstance()` - 获取单例实例
+   - `start()` - 启动指定数量的 xray 实例
+   - `stop()` - 停止所有实例
+   - `release()` - 释放单例
+
+2. **ProxyFinder** - 代理查找模块
+   - `findFirstWorkingProxy()` - 查找第一个可用代理 (-F)
+   - `findWorkingProxy()` - 测试所有代理，返回延迟最小的 (-FMIN)
+
+3. **ConfigGenerator** - 根据 configType 生成 JSON 配置 (3=SS, 1=VMess, 5=VLESS, 6=Trojan)
+
+4. **ConfigReader** - 读取配置文件
+
+5. **SubitemUpdater** - 订阅更新
+
+6. **ProxyBatchTester** - 多线程并发测试
+
+## 9. 最近变更 (2026-04-16)
+
+### XrayManager 单例模式
+
+```cpp
+// 修改前后对比
+// 之前: 每次创建新实例
+XrayManager* mgr = new XrayManager(path, workers, log);
+
+// 之后: 使用单例
+XrayManager* mgr = XrayManager::getInstance(path, configDir, workers);
+mgr->start(count, startPort, apiPort);
+XrayManager::release();
+```
+
+### 新增 ProxyFinder 模块
+
+- 独立查找可用代理功能
+- 复用 XrayApi.addOutbound 注入配置
+- 两个查找模式:
+  - `findFirstWorkingProxy()`: 找到第一个即返回 (-F)
+  - `findWorkingProxy()`: 测试所有，按延迟排序返回最小的 (-FMIN)
+
+## 10. 常见问题
 
 **Q: 如何添加新依赖?**
 A: 编辑 CMakeLists.txt，使用 find_package 或 FetchContent
