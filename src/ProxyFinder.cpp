@@ -9,9 +9,17 @@
 #include <chrono>
 #include <algorithm>
 
-ProxyFinder::ProxyFinder(sqlite3* db, XrayManager* manager, const std::string& xrayPath, const std::string& testUrl, int timeoutMs)
+void ProxyFinder::log(const std::string& msg) {
+    std::cout << msg << std::endl;
+    if (logOut_ && !logOut_->fail()) {
+        *logOut_ << msg << std::endl;
+        logOut_->flush();
+    }
+}
+
+ProxyFinder::ProxyFinder(sqlite3* db, XrayManager* manager, const std::string& xrayPath, const std::string& testUrl, int timeoutMs, std::ostream* logOut)
     : db_(db), manager_(manager), xrayPath_(xrayPath), testUrl_(testUrl), timeoutMs_(timeoutMs), 
-      currentSocksPort_(-1), currentApiPort_(-1) {
+      currentSocksPort_(-1), currentApiPort_(-1), logOut_(logOut) {
     lastResult_ = {false, -1, "", "", "", 0, 0};
 }
 
@@ -212,8 +220,12 @@ std::vector<ProxyFinder::FallbackProxy> ProxyFinder::loadFallbackProxies(int max
                   "LEFT JOIN ProfileExItem pe ON pi.IndexId = pe.IndexId "
                   "WHERE pi.Subid = '5544178410297751350' "
                   "AND pi.Address IS NOT NULL AND pi.Address != '' "
-                  "ORDER BY Delay ASC "
+                  "AND pi.ConfigType IN ('1', '3', '4', '5', '6', '7', '8', '9', '10') "
+                  "AND COALESCE(pe.Delay, 0) > 0 "
+                  "ORDER BY CAST(pe.Delay AS INTEGER) ASC "
                   "LIMIT " + std::to_string(maxCount) + ";";
+    
+    log("ProxyFinder: SQL: " + sql);
     
     sqlite3_stmt* stmt = nullptr;
     if (sqlite3_prepare_v2(db_, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
@@ -225,7 +237,9 @@ std::vector<ProxyFinder::FallbackProxy> ProxyFinder::loadFallbackProxies(int max
         FallbackProxy proxy;
         proxy.indexId = (const char*)sqlite3_column_text(stmt, 0);
         proxy.address = (const char*)sqlite3_column_text(stmt, 1);
-        proxy.delay = std::stoi((const char*)sqlite3_column_text(stmt, 4));
+        
+        const char* delayText = (const char*)sqlite3_column_text(stmt, 4);
+        proxy.delay = delayText ? std::stoi(delayText) : 999999;
         
         const char* preSocksPort = (const char*)sqlite3_column_text(stmt, 3);
         const char* port = (const char*)sqlite3_column_text(stmt, 2);
@@ -242,6 +256,7 @@ std::vector<ProxyFinder::FallbackProxy> ProxyFinder::loadFallbackProxies(int max
     }
     
     sqlite3_finalize(stmt);
+    log("ProxyFinder: Loaded " + std::to_string(proxies.size()) + " proxies from database");
     return proxies;
 }
 
