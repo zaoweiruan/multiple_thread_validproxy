@@ -265,3 +265,72 @@ DELETE FROM ProfileExItem WHERE IndexId IN
 ### 7.5 版本记录
 
 - v1.0.4 (2026-04-16): 可用版本 - IndexId 生成优化、批量删除优化、Bug 修复
+
+## 8. 2026-04-17 更新 (v1.0.41)
+
+### 8.1 代码重构
+
+1. **删除 SubitemUpdater**：统一使用 SubitemUpdaterV2
+   - 删除 include/SubitemUpdater.h
+   - 删除 src/SubitemUpdater.cpp
+   - main.cpp 移除 SubitemUpdater 引用
+
+2. **公共模块 Utils 扩展**：
+   - 添加 `generateUniqueId()` - 4/5 开头 19 位数字 ID 生成
+   - 添加 `getProtocolName()` - ConfigType 转协议名称
+
+3. **目录创建统一**：
+   - main.cpp 开头统一创建 config/log 目录
+   - 移除各分支重复创建代码
+
+### 8.2 测试日志优化
+
+1. **输出格式**：
+   ```
+   [Worker-2] [15/100] 1.2.3.4:443 (Shadowsocks) OK 123ms
+   [Worker-1] [16/100] 5.6.7.8:443 (Trojan) FAIL Timeout was reached
+   ```
+
+2. **Mutex 保护**：添加 coutMutex 保护控制台输出，避免交错
+
+3. **计数器修复**：在锁内读取并递增 processedCount_，避免竞态条件
+
+### 8.3 ConfigType 扩展
+
+1. **getProtocolName() 扩展**：支持 ConfigType 7-12, 16, 17
+
+| ConfigType | 协议 |
+|------------|------|
+| 1 | VMess |
+| 2 | Custom |
+| 3 | Shadowsocks |
+| 4 | SOCKS |
+| 5 | VLESS |
+| 6 | Trojan |
+| 7 | Hysteria2 |
+| 8 | TUIC |
+| 9 | WireGuard |
+| 10 | HTTP |
+| 11 | Anytls |
+| 12 | Naive |
+| 16 | WireGuard (兼容) |
+| 17 | TUIC (兼容) |
+
+2. **ConfigGenerator 补充**：ConfigType 11, 12 添加显式提示
+
+### 8.4 文件变更
+
+| 文件 | 变更 |
+|------|------|
+| include/Utils.h | 新增 getProtocolName() |
+| src/Utils.cpp | 实现 generateUniqueId(), getProtocolName() |
+| src/main.cpp | 统一目录创建，移除 SubitemUpdater |
+| src/ProxyBatchTester.cpp | 日志格式优化，Mutex 保护，计数器修复 |
+| src/ConfigGenerator.cpp | 添加 ConfigType 11,12 提示 |
+| src/SubitemUpdaterV2.cpp | 使用 utils 模块 |
+| include/SubitemUpdater.h | 删除 |
+| src/SubitemUpdater.cpp | 删除 |
+
+### 8.5 版本记录
+
+- v1.0.41 (2026-04-17): 删除旧模块，日志优化，ConfigType 扩展

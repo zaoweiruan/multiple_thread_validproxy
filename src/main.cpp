@@ -22,7 +22,6 @@
 #include "ConfigReader.h"
 #include "XrayApi.h"
 #include "XrayManager.h"
-#include "SubitemUpdater.h"
 #include "SubitemUpdaterV2.h"
 #include "ProxyBatchTester.h"
 #include "Utils.h"
@@ -37,7 +36,6 @@ BOOL WINAPI consoleCtrlHandler(DWORD ctrlType) {
         if (g_xrayManager) {
             g_xrayManager->stopAll();
         }
-        SubitemUpdater::stopAllXray();
         exit(1);
     }
     return FALSE;
@@ -51,6 +49,16 @@ int main(int argc, char* argv[]) {
     std::cout << "validproxy starting..." << std::endl;
 
     std::string exeDir = utils::getExecutableDir();
+    
+    std::filesystem::path baseDir = std::filesystem::path(exeDir);
+    std::filesystem::path configDir = baseDir / "config";
+    std::filesystem::path logDir = baseDir / "log";
+    if (!std::filesystem::exists(configDir)) {
+        std::filesystem::create_directory(configDir);
+    }
+    if (!std::filesystem::exists(logDir)) {
+        std::filesystem::create_directory(logDir);
+    }
     
     std::string configPath = config::ConfigReader::getDefaultConfigPath();
     std::string singleSubId;
@@ -146,12 +154,7 @@ std::cout << "Usage: validproxy [options]\n"
         std::cout << "\n=== Generated Outbound JSON ===" << std::endl;
         std::cout << config.outbound_json << std::endl;
         
-        std::filesystem::path outDir = std::filesystem::path(exeDir) / "config";
-        if (!std::filesystem::exists(outDir)) {
-            std::filesystem::create_directory(outDir);
-        }
-        
-        std::string outFile = (outDir / (generatorIndexId + ".json")).string();
+        std::string outFile = (configDir / (generatorIndexId + ".json")).string();
         
         std::ofstream out(outFile);
         if (out.is_open()) {
@@ -286,15 +289,6 @@ if (commandMode == "find-proxy") {
         
         std::string exeBaseDir = exeDir;
         std::string configDir = exeBaseDir + "/config";
-        std::filesystem::path configPathObj(configDir);
-        if (!std::filesystem::exists(configPathObj)) {
-            std::filesystem::create_directory(configPathObj);
-        }
-        
-        std::filesystem::path logDir = std::filesystem::path(exeDir) / "log";
-        if (!std::filesystem::exists(logDir)) {
-            std::filesystem::create_directory(logDir);
-        }
         
         char timestamp[32];
         time_t now = time(nullptr);
@@ -358,15 +352,6 @@ if (commandMode == "find-proxy") {
         
         std::string exeBaseDir = exeDir;
         std::string configDir = exeBaseDir + "/config";
-        std::filesystem::path configPathObj(configDir);
-        if (!std::filesystem::exists(configPathObj)) {
-            std::filesystem::create_directory(configPathObj);
-        }
-        
-        std::filesystem::path logDir = std::filesystem::path(exeDir) / "log";
-        if (!std::filesystem::exists(logDir)) {
-            std::filesystem::create_directory(logDir);
-        }
         
         char timestamp[32];
         time_t now = time(nullptr);
@@ -432,12 +417,6 @@ if (commandMode == "find-proxy") {
         time_t now = time(nullptr);
         strftime(timestamp, sizeof(timestamp), "%Y%m%d_%H%M%S", localtime(&now));
         
-        std::filesystem::path baseDir = std::filesystem::path(exeDir);
-        std::filesystem::path logDir = baseDir / "log";
-        if (!std::filesystem::exists(logDir)) {
-            std::filesystem::create_directory(logDir);
-        }
-        
         std::string logFileName;
         if (commandMode == "test-sub") {
             logFileName = "test_proxy_" + std::string(timestamp) + ".log";
@@ -457,7 +436,6 @@ if (commandMode == "find-proxy") {
         if (commandMode == "test-sub") {
             ProxyBatchTester tester(db, *appConfig, exeDir, logOut.is_open() ? &logOut : nullptr);
             g_xrayManager = tester.getXrayManager();
-            SubitemUpdater::setGlobalXrayManager(g_xrayManager);
             result = tester.runWithSubId(singleSubId);
         } else {
             update::SubitemUpdaterV2 subUpdaterV2(db,
@@ -509,15 +487,6 @@ if (commandMode == "find-proxy") {
     char timestamp[32];
     strftime(timestamp, sizeof(timestamp), "%Y%m%d_%H%M%S", localtime(&startTimeT));
     
-    std::filesystem::path baseDir = std::filesystem::path(exeDir);
-    std::filesystem::path configDir = baseDir / "config";
-    std::filesystem::path logDir = baseDir / "log";
-    if (!std::filesystem::exists(configDir)) {
-        std::filesystem::create_directory(configDir);
-    }
-    if (!std::filesystem::exists(logDir)) {
-        std::filesystem::create_directory(logDir);
-    }
     std::string logFile = (logDir / ("test_log_" + std::string(timestamp) + ".log")).string();
     std::ofstream logOutStream;
     if (logEnabled) {

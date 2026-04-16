@@ -4,6 +4,7 @@
 #include "ConfigGenerator.h"
 #include "XrayApi.h"
 #include "PortManager.h"
+#include "Utils.h"
 
 #include <curl/curl.h>
 #include <chrono>
@@ -33,19 +34,6 @@ namespace {
             if (val.is_double()) return std::to_string(static_cast<int>(val.as_double()));
         } catch (...) {}
         return defaultVal;
-    }
-
-    std::string generateUniqueId() {
-        static std::mt19937_64 rng(std::chrono::steady_clock::now().time_since_epoch().count());
-        static std::uniform_int_distribution<int> firstDist(0, 1);
-        static std::uniform_int_distribution<long long> restDist(0, 999999999999999999);
-        
-        int first = 4 + firstDist(rng);
-        long long rest = restDist(rng);
-        
-        std::ostringstream oss;
-        oss << first << std::setw(18) << std::setfill('0') << rest;
-        return oss.str();
     }
 }
 
@@ -685,7 +673,7 @@ std::vector<db::models::Profileitem> SubitemUpdaterV2::parseSubscription(const s
             continue;
         }
         
-        profile.indexid = generateUniqueId();
+        profile.indexid = utils::generateUniqueId();
         profiles.push_back(profile);
         validCount++;
     }

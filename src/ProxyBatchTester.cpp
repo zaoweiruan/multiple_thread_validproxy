@@ -13,11 +13,6 @@ ProxyBatchTester::ProxyBatchTester(sqlite3* db, const config::AppConfig& config,
     std::string exeBaseDir = baseDir.empty() ? utils::getExecutableDir() : baseDir;
     std::string configDir = exeBaseDir + "/config";
     
-    std::filesystem::path configPath(configDir);
-    if (!std::filesystem::exists(configPath)) {
-        std::filesystem::create_directory(configPath);
-    }
-    
     xrayManager_ = XrayManager::getInstance(config_.xray_executable, configDir, config_.xray_workers, logOut_);
     proxyTester_ = new ProxyTester(xrayManager_, config_.test_url, config_.test_timeout_ms);
 }
@@ -30,7 +25,15 @@ ProxyBatchTester::~ProxyBatchTester() {
 void ProxyBatchTester::writeLog(const std::string& msg) {
     if (logOut_ && logOut_->is_open()) {
         *logOut_ << msg << std::endl;
+        logOut_->flush();
     }
+}
+
+static std::mutex coutMutex;
+
+void ProxyBatchTester::logToConsole(const std::string& msg) {
+    std::lock_guard<std::mutex> lock(coutMutex);
+    std::cout << msg << "\n" << std::flush;
 }
 
 std::vector<db::models::Profileitem> ProxyBatchTester::loadProxies(const std::string& subId) {
@@ -83,18 +86,11 @@ void ProxyBatchTester::workerThreadFunc(int workerId, int socksPort, int apiPort
         
         const auto& profile = proxies_[profileIdx];
         
-        std::cout << "[Worker-" << workerId << "] [" << (processedCount_ + 1) << "/" << totalProxies_ << "] Testing: " 
-                  << profile.address << ":" << profile.port << " (" << profile.remarks << ")" << std::endl;
-        if (config_.log_network_failures) {
-            writeLog("[Worker-" + std::to_string(workerId) + "] Testing " + profile.address + ":" + profile.port + " (" + profile.remarks + ")");
-        }
-        
-        db::models::Profileitem configProfile = profile;
+db::models::Profileitem configProfile = profile;
         
         try {
             configProfile.checkRequired();
         } catch (const std::exception& e) {
-            std::cerr << "[Worker-" << workerId << "] Config error: " << e.what() << std::endl;
             std::string errorDetail = profile.address + ":" + profile.port + " (" + profile.configtype + ") - " + e.what();
             writeLog("CONFIG_ERROR: " + profile.indexid + " - " + errorDetail);
             {
@@ -148,23 +144,27 @@ void ProxyBatchTester::workerThreadFunc(int workerId, int socksPort, int apiPort
             
             auto result = proxyTester_->test(socksPort);
             
+            int currentNum;
             if (result.success) {
                 {
                     std::lock_guard<std::mutex> lock(queueMutex_);
+                    currentNum = ++processedCount_;
                     successCount_++;
-                    processedCount_++;
                 }
-                std::cout << "[Worker-" << workerId << "] Test SUCCESS - Latency: " << result.latencyMs << "ms" << std::endl;
-                if (config_.log_network_failures) {
-                    writeLog("[Worker-" + std::to_string(workerId) + "] Test SUCCESS - " + profile.indexid + " | Latency: " + std::to_string(result.latencyMs) + "ms");
-                }
+                logToConsole("[Worker-" + std::to_string(workerId) + "] [" + std::to_string(currentNum) + "/" + std::to_string(totalProxies_) + "] " + profile.address + ":" + profile.port + 
+                         " (" + utils::getProtocolName(profile.configtype) + ") OK " + std::to_string(result.latencyMs) + "ms");
+                writeLog("[Worker-" + std::to_string(workerId) + "] " + profile.address + ":" + profile.port + 
+                         " (" + utils::getProtocolName(profile.configtype) + ") SUCCESS - Latency: " + std::to_string(result.latencyMs) + "ms");
             } else {
-                std::cout << "[Worker-" << workerId << "] Test FAILED - Error: " << result.errorMsg << std::endl;
                 {
                     std::lock_guard<std::mutex> lock(queueMutex_);
+                    currentNum = ++processedCount_;
                     failedCount_++;
-                    processedCount_++;
                 }
+                logToConsole("[Worker-" + std::to_string(workerId) + "] [" + std::to_string(currentNum) + "/" + std::to_string(totalProxies_) + "] " + profile.address + ":" + profile.port + 
+                         " (" + utils::getProtocolName(profile.configtype) + ") FAIL " + result.errorMsg);
+                writeLog("[Worker-" + std::to_string(workerId) + "] " + profile.address + ":" + profile.port + 
+                         " (" + utils::getProtocolName(profile.configtype) + ") FAILED - " + result.errorMsg);
             }
             
             exItemDao.updateTestResult(profile.indexid, result.latencyMs, result.success, result.errorMsg);

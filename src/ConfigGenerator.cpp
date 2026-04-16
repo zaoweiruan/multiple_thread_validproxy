@@ -627,6 +627,10 @@ XrayConfig ConfigGenerator::generateConfig(const db::models::Profileitem& profil
         outbound = buildTUICOutbound(profile, outboundTag);
     } else if (profile.configtype == "9") {
         outbound = buildWireGuardOutbound(profile, outboundTag);
+    } else if (profile.configtype == "11") {
+        throw std::runtime_error("ConfigType 11 (Anytls) 暂不支持生成配置");
+    } else if (profile.configtype == "12") {
+        throw std::runtime_error("ConfigType 12 (Naive) 暂不支持生成配置");
     } else {
         throw std::runtime_error("不支持的协议类型: " + profile.configtype);
     }

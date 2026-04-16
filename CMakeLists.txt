@@ -31,7 +31,7 @@ add_executable(validproxy
     src/ConfigGenerator.cpp
     src/ConfigReader.cpp
     src/XrayApi.cpp
-    src/SubitemUpdater.cpp
+    src/SubitemUpdaterV2.cpp
     src/PortManager.cpp
     src/Logger.cpp
     src/XrayInstance.cpp
@@ -40,7 +40,7 @@ add_executable(validproxy
     src/UrlFetcher.cpp
     src/ProxyBatchTester.cpp
     src/ProxyFinder.cpp
-    Utils.cpp
+    src/Utils.cpp
 )
 
 target_link_libraries(validproxy PRIVATE

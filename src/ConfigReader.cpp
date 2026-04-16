@@ -22,14 +22,8 @@ static std::string resolvePath(const std::string& path, const std::string& exeDi
 }
 
 std::string ConfigReader::getDefaultConfigPath() {
-    char buffer[MAX_PATH];
-    GetModuleFileNameA(NULL, buffer, MAX_PATH);
-    std::string exePath = buffer;
-    size_t pos = exePath.rfind('\\');
-    if (pos != std::string::npos) {
-        exePath = exePath.substr(0, pos);
-    }
-    return exePath + "\\config.json";
+    std::string exeDir = utils::getExecutableDir();
+    return exeDir + "\\config.json";
 }
 
 std::optional<AppConfig> ConfigReader::load(const std::string& configPath) {
