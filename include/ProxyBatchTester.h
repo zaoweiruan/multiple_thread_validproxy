@@ -34,6 +34,7 @@ private:
     
     void workerThreadFunc(int workerId, int socksPort, int apiPort);
     void writeLog(const std::string& msg);
+    void logToConsole(const std::string& msg);
     
     sqlite3* db_;
     config::AppConfig config_;
