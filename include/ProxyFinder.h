@@ -6,13 +6,14 @@
 #include <utility>
 #include <sqlite3.h>
 #include <curl/curl.h>
+#include <iostream>
 
 class XrayManager;
 class ConfigGenerator;
 
 class ProxyFinder {
 public:
-    ProxyFinder(sqlite3* db, XrayManager* manager, const std::string& xrayPath, const std::string& testUrl = "https://www.google.com/generate_204", int timeoutMs = 5000);
+    ProxyFinder(sqlite3* db, XrayManager* manager, const std::string& xrayPath, const std::string& testUrl = "https://www.google.com/generate_204", int timeoutMs = 5000, std::ostream* logOut = nullptr);
     ~ProxyFinder();
     
     std::pair<int, int> findFirstWorkingProxy();
@@ -44,6 +45,7 @@ private:
     std::vector<FallbackProxy> loadFallbackProxies(int maxCount = 100);
     bool injectProxyToXray(const std::string& indexId);
     void removeProxyFromXray();
+    void log(const std::string& msg);
     
     sqlite3* db_;
     XrayManager* manager_;
@@ -53,6 +55,7 @@ private:
     int currentSocksPort_;
     int currentApiPort_;
     TestResult lastResult_;
+    std::ostream* logOut_;
 };
 
 #endif // PROXY_FINDER_H
