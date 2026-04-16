@@ -23,6 +23,7 @@
 #include "XrayApi.h"
 #include "XrayManager.h"
 #include "SubitemUpdater.h"
+#include "SubitemUpdaterV2.h"
 #include "ProxyBatchTester.h"
 #include "Utils.h"
 
@@ -86,6 +87,11 @@ int main(int argc, char* argv[]) {
         } else if (arg == "-UA" || arg == "-update-all" || arg == "--update-all") {
             singleSubId = "__all__";
             commandMode = "update";
+        } else if (arg == "-U" || arg == "-update" || arg == "--update") {
+            if (i + 1 < argc) {
+                singleSubId = argv[++i];
+                commandMode = "update";
+            }
         } else if (arg == "-h" || arg == "--help") {
 std::cout << "Usage: validproxy [options]\n"
                       << "Options:\n"
@@ -307,7 +313,7 @@ if (commandMode == "find-proxy") {
             return 1;
         }
         
-        ProxyFinder finder(db, xrayMgr, appConfig->xray_executable, appConfig->test_url, appConfig->test_timeout_ms, logOutStream.is_open() ? &logOutStream : nullptr);
+        ProxyFinder finder(db, xrayMgr, appConfig->xray_executable, appConfig->test_url, "", appConfig->test_timeout_ms, logOutStream.is_open() ? &logOutStream : nullptr);
         auto ports = finder.findFirstWorkingProxy();
         
         if (ports.first > 0) {
@@ -379,8 +385,8 @@ if (commandMode == "find-proxy") {
             return 1;
         }
         
-        ProxyFinder finder(db, xrayMgr, appConfig->xray_executable, appConfig->test_url, appConfig->test_timeout_ms, logOutStream.is_open() ? &logOutStream : nullptr);
-        auto ports = finder.findWorkingProxy();
+        ProxyFinder finder(db, xrayMgr, appConfig->xray_executable, appConfig->test_url, "", appConfig->test_timeout_ms, logOutStream.is_open() ? &logOutStream : nullptr);
+        auto ports = finder.findWorkingProxy("");
         
         if (ports.first > 0) {
             auto res = finder.getLastResult();
@@ -454,19 +460,15 @@ if (commandMode == "find-proxy") {
             SubitemUpdater::setGlobalXrayManager(g_xrayManager);
             result = tester.runWithSubId(singleSubId);
         } else {
-            g_xrayManager = XrayManager::getInstance(appConfig->xray_executable, configPath, appConfig->xray_workers, logOut.is_open() ? &logOut : nullptr);
-            SubitemUpdater::setGlobalXrayManager(g_xrayManager);
-            SubitemUpdater subUpdater(db, logOut.is_open() ? &logOut : nullptr,
-                                       appConfig->xray_executable,
-                                       10086,
-                                       appConfig->test_timeout_ms,
-                                       appConfig->xray_start_port,
-                                       appConfig->priority_mode,
-                                       "");
+            update::SubitemUpdaterV2 subUpdaterV2(db,
+                                                  appConfig->xray_executable,
+                                                  *appConfig,
+                                                  logOut.is_open() ? &logOut : nullptr,
+                                                  exeDir);
             if (singleSubId == "__all__") {
-                result = subUpdater.run();
+                result = subUpdaterV2.run();
             } else {
-                result = subUpdater.runSingle(singleSubId);
+                result = subUpdaterV2.runSingle(singleSubId);
             }
         }
         

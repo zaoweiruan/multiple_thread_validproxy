@@ -13,11 +13,14 @@ class ConfigGenerator;
 
 class ProxyFinder {
 public:
-    ProxyFinder(sqlite3* db, XrayManager* manager, const std::string& xrayPath, const std::string& testUrl = "https://www.google.com/generate_204", int timeoutMs = 5000, std::ostream* logOut = nullptr);
+    ProxyFinder(sqlite3* db, XrayManager* manager, const std::string& xrayPath, 
+                const std::string& testUrl = "https://www.google.com/generate_204", 
+                const std::string& targetUrl = "",
+                int timeoutMs = 5000, std::ostream* logOut = nullptr);
     ~ProxyFinder();
     
-    std::pair<int, int> findFirstWorkingProxy();
-    std::pair<int, int> findWorkingProxy();
+    std::pair<int, int> findFirstWorkingProxy(const std::string& targetUrl = "");
+    std::pair<int, int> findWorkingProxy(const std::string& targetUrl = "");
     void release();
     
     struct TestResult {
@@ -32,7 +35,7 @@ public:
     
     TestResult getLastResult() const { return lastResult_; }
     
-    TestResult testProxyConnectivity(int socksPort);
+    TestResult testProxyConnectivity(int socksPort, const std::string& targetUrl = "");
 
 struct FallbackProxy {
     std::string indexId;
@@ -51,6 +54,7 @@ private:
     XrayManager* manager_;
     std::string xrayPath_;
     std::string testUrl_;
+    std::string targetUrl_;
     int timeoutMs_;
     int currentSocksPort_;
     int currentApiPort_;
