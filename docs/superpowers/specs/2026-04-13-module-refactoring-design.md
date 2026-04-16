@@ -330,7 +330,7 @@ private:
 validproxy.exe
 
 # 测试指定订阅的代理
-validproxy.exe --test-sub '5544178410297751350'
+validproxy.exe -c ..\config.json --test-sub '5126987642659995691'
 
 # 更新单个订阅
 validproxy.exe --update 'subId'

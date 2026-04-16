@@ -1,14 +1,78 @@
-bin/test_log_*.txt
-bin/worker_config_*.json
-bin/worker/
-bin/*.bat
+# Build output
+build/
+*.tmp
+*.o
+*.obj
+*.exe
+
+# Bin directory (except config.json and validproxy.exe)
+bin/log/
+bin/config/xray_config_*.json
+bin/config/*_priority*.json
+bin/config/*_temp*.json
+bin/config/worker_config_*.json
 bin/*.json
-!bin/config.json
 bin/*.log
 bin/*.txt
+bin/*.bat
+bin/worker/
 bin/.agents/
 bin/.windsurf/
 bin/.claude/
 bin/.other/
-build/
-*.tmp
+bin/bin/
+
+# Root log files
+log/
+*.log
+
+# Docs (except .md files)
+docs/superpowers/specs/*.html
+docs/superpowers/specs/*.bak
+
+# Python scripts
+*.py
+
+# Database
+*.db
+
+# IDE
+.kilo/
+.kilocode/
+.adal/
+.agents/
+.augment/
+.bob/
+.claude/
+.codebuddy/
+.continue/
+.cortex/
+.crush/
+.factory/
+.goose/
+.iflow/
+.junie/
+.kilo/
+.kilocode/
+.kiro/
+.kode/
+.mcpjam/
+.mux/
+.neovate/
+.opencode/
+.openhands/
+.pi/
+.pochi/
+.qoder/
+.qwen/
+.roo/
+.trae/
+.vibe/
+.windsurf/
+.zencoder/
+
+# Temp files
+Utils.cpp
+Utils.h
+kilo.json
+config.json
