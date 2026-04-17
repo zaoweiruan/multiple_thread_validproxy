@@ -102,6 +102,7 @@ INFO: Dedup completed successfully
 
 ## 9. 版本记录
 
+- v1.0.44 (2026-04-17): Phase2 调整：保留 delay 最小的有效代理
 - v1.0.43 (2026-04-17): 新增 Phase 0 标记受保护/降级代理 + Phase 1 私网地址过滤
 - v1.0.42 (2026-04-17): 新增去重功能 (Phase 1/2/3)
 
@@ -162,21 +163,23 @@ WHERE
     OR Address LIKE '192.168.%';
 ```
 
-#### Phase 2: 与有效代理 (delay > 0) 去重
+#### Phase 2: 与有效代理 (delay > 0) 去重，保留延迟最小的
 
 ```sql
 DELETE FROM ProfileItem 
 WHERE IndexId IN (
     SELECT pi.IndexId FROM ProfileItem pi
     JOIN (
-        SELECT Address, Port, Network, MIN(IndexId) as MinIndexId
-        FROM ProfileItem
-        WHERE Address IN (
-            SELECT DISTINCT p.Address FROM ProfileItem p
-            JOIN ProfileExItem pe ON p.IndexId = pe.IndexId
-            WHERE pe.Delay > 0 AND pe.Delay != '-1'
-        )
+        SELECT Address, Port, Network, MIN(pe.Delay) as MinDelay
+        FROM ProfileItem p
+        JOIN ProfileExItem pe ON p.IndexId = pe.IndexId
+        WHERE pe.Delay > 0 AND pe.Delay != '-1'
         GROUP BY Address, Port, Network
+    ) valid ON pi.Address = valid.Address AND pi.Port = valid.Port AND pi.Network = valid.Network
+    JOIN ProfileExItem pe2 ON pi.IndexId = pe2.IndexId
+    WHERE pe2.Delay > valid.MinDelay
+);
+```
     ) dup ON pi.Address = dup.Address AND pi.Port = dup.Port AND pi.Network = dup.Network
     WHERE pi.IndexId > dup.MinIndexId
 );

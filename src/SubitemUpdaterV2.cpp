@@ -997,16 +997,14 @@ int SubitemUpdaterV2::deduplicatePhase2() {
         WHERE IndexId IN (
             SELECT pi.IndexId FROM ProfileItem pi
             JOIN (
-                SELECT Address, Port, Network, MIN(IndexId) as MinIndexId
-                FROM ProfileItem
-                WHERE Address IN (
-                    SELECT DISTINCT p.Address FROM ProfileItem p
-                    JOIN ProfileExItem pe ON p.IndexId = pe.IndexId
-                    WHERE pe.Delay > 0 AND pe.Delay != '-1'
-                )
+                SELECT Address, Port, Network, MIN(pe.Delay) as MinDelay
+                FROM ProfileItem p
+                JOIN ProfileExItem pe ON p.IndexId = pe.IndexId
+                WHERE pe.Delay > 0 AND pe.Delay != '-1'
                 GROUP BY Address, Port, Network
-            ) dup ON pi.Address = dup.Address AND pi.Port = dup.Port AND pi.Network = dup.Network
-            WHERE pi.IndexId > dup.MinIndexId
+            ) valid ON pi.Address = valid.Address AND pi.Port = valid.Port AND pi.Network = valid.Network
+            JOIN ProfileExItem pe2 ON pi.IndexId = pe2.IndexId
+            WHERE pe2.Delay > valid.MinDelay
         )
     )";
     
