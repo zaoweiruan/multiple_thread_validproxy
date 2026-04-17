@@ -8,6 +8,7 @@ namespace utils {
     std::string getExecutableDir();
     std::string generateUniqueId();
     std::string getProtocolName(const std::string& configType);
+    void sendNotification(const std::string& title, const std::string& message);
 }
 
 #endif // UTILS_H

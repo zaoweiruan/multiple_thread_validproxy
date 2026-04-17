@@ -160,6 +160,29 @@ std::optional<AppConfig> ConfigReader::load(const std::string& configPath) {
         config.dedup_after_update = false;
     }
     
+    if (obj.contains("notification") && obj["notification"].is_object()) {
+        auto& notif = obj["notification"].as_object();
+        if (notif.contains("enabled")) {
+            config.notification_enabled = notif["enabled"].as_bool();
+        } else {
+            config.notification_enabled = false;
+        }
+        if (notif.contains("on_update")) {
+            config.notification_on_update = notif["on_update"].as_bool();
+        } else {
+            config.notification_on_update = false;
+        }
+        if (notif.contains("on_test")) {
+            config.notification_on_test = notif["on_test"].as_bool();
+        } else {
+            config.notification_on_test = false;
+        }
+    } else {
+        config.notification_enabled = false;
+        config.notification_on_update = false;
+        config.notification_on_test = false;
+    }
+    
     if (!config.database_path.empty()) {
         std::filesystem::path dbPath(config.database_path);
         if (!std::filesystem::exists(dbPath)) {
