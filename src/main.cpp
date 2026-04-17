@@ -231,9 +231,19 @@ std::cout << "Usage: validproxy [options]\n"
         
         std::vector<std::pair<int, std::string>> typeCounts = {
             {1, "VMess"},
+            {2, "Custom"},
             {3, "Shadowsocks"},
+            {4, "SOCKS"},
             {5, "VLESS"},
-            {6, "Trojan"}
+            {6, "Trojan"},
+            {7, "Hysteria2"},
+            {8, "TUIC"},
+            {9, "WireGuard"},
+            {10, "HTTP"},
+            {11, "Anytls"},
+            {12, "Naive"},
+            {16, "WireGuard"},
+            {17, "TUIC"}
         };
         
         for (const auto& [type, desc] : typeCounts) {
