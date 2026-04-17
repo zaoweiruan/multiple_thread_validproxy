@@ -75,6 +75,8 @@ public static async Task<Tuple<int, int>> DedupServerList(Config config, string 
 
 ## 2. 配置扩展
 
+### 2.1 去重配置
+
 ```json
 {
     "dedup": {
@@ -90,6 +92,24 @@ public static async Task<Tuple<int, int>> DedupServerList(Config config, string 
 | enabled | bool | 启用去重功能 |
 | dedup_after_update | bool | 每次更新订阅后自动去重 |
 | subids | array | 保留的订阅ID列表 |
+
+### 2.2 通知配置
+
+```json
+{
+    "notification": {
+        "enabled": true,
+        "on_update": true,
+        "on_test": true
+    }
+}
+```
+
+| 配置项 | 类型 | 说明 |
+|--------|------|------|
+| enabled | bool | 启用通知功能 |
+| on_update | bool | 更新订阅完成后发送通知 |
+| on_test | bool | 测试代理完成后发送通知 |
 
 ## 3. 命令行参数
 
@@ -191,11 +211,11 @@ INFO: Dedup completed successfully
 
 ## 9. 版本记录
 
+- v1.1.4 (2026-04-17): 新增 Windows 通知功能 (更新/测试完成后)
+- v1.1.3 (2026-04-17): 修复 Phase1 SQL 语法错误
 - v1.1.2 (2026-04-17): Phase1 删除非TLS且不在dedup_subids中的代理
 - v1.1.1 (2026-04-17): 新增 dedup_after_update 配置项
 - v1.1.0 (2026-04-17): 删除未使用方法，清理旧文件
-- v1.0.54 (2026-04-17): 修复 Phase2/4 包含空 SubId，确保完整去重 + cleanupProfileExItem 移到最后
-- v1.0.54 (2026-04-17): 修复 Phase2/4 包含空 SubId，确保完整去重 + cleanupProfileExItem 移到最后
 - v1.0.53 (2026-04-17): 重构去重阶段 - Phase1 无效过滤, Phase2 非 dedup 去重, Phase3 dedup_subids 内去重, Phase4 全表去重
 - v1.0.48 (2026-04-17): 解析订阅时修复 malformed address ([|: IPv6 格式)
 - v1.0.47 (2026-04-17): Phase1 增强：过滤 user@addr, http(s)://, 尾部点号
