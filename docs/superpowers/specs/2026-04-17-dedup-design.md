@@ -102,6 +102,7 @@ INFO: Dedup completed successfully
 
 ## 9. 版本记录
 
+- v1.0.46 (2026-04-17): Phase1 增强：过滤 IPv6/malformed 地址 (含冒号/方括号)
 - v1.0.45 (2026-04-17): Phase1 增强：过滤无效 address (长度<5, 不含点, localhost, 0.0.0.0, 无效格式)
 - v1.0.44 (2026-04-17): Phase2 调整：保留 delay 最小的有效代理
 - v1.0.43 (2026-04-17): 新增 Phase 0 标记受保护/降级代理 + Phase 1 私网地址过滤
