@@ -1054,7 +1054,7 @@ int SubitemUpdaterV2::deduplicatePhase2() {
     
     std::string sql = 
         "DELETE FROM ProfileItem "
-        "WHERE SubId NOT IN (" + subidsList + ") "
+        "WHERE (SubId NOT IN (" + subidsList + ") OR SubId = '' OR SubId IS NULL) "
         "AND (Address, Port, Network) IN ("
         "SELECT Address, Port, Network FROM ProfileItem "
         "WHERE SubId IN (" + subidsList + ") "
@@ -1126,10 +1126,10 @@ int SubitemUpdaterV2::deduplicatePhase4() {
     
     std::string sql = 
         "DELETE FROM ProfileItem "
-        "WHERE SubId NOT IN (" + subidsList + ") "
+        "WHERE (SubId NOT IN (" + subidsList + ") OR SubId = '' OR SubId IS NULL) "
         "AND IndexId NOT IN ("
         "SELECT MIN(IndexId) FROM ProfileItem "
-        "WHERE SubId NOT IN (" + subidsList + ") "
+        "WHERE (SubId NOT IN (" + subidsList + ") OR SubId = '' OR SubId IS NULL) "
         "GROUP BY Address, Port, Network"
         ")";
     
