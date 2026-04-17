@@ -103,7 +103,8 @@ INFO: Dedup completed successfully
 ## 9. 版本记录
 
 - v1.0.50 (2026-04-17): 调整 Phase3/4: Phase3=dedup_subids内去重(保留delay最小), Phase4=全表去重(保留dedup_subids)
-- v1.0.49 (2026-04-17): --show-sub 显示所有 ConfigType (1-17)
+- v1.0.54 (2026-04-17): 修复 Phase2/4 包含空 SubId，确保完整去重 + cleanupProfileExItem 移到最后
+- v1.0.53 (2026-04-17): 重构去重阶段 - Phase1 无效过滤, Phase2 非 dedup 去重, Phase3 dedup_subids 内去重, Phase4 全表去重
 - v1.0.48 (2026-04-17): 解析订阅时修复 malformed address ([|: IPv6 格式)
 - v1.0.47 (2026-04-17): Phase1 增强：过滤 user@addr, http(s)://, 尾部点号
 - v1.0.46 (2026-04-17): Phase1 增强：过滤 IPv6/malformed 地址 (含冒号/方括号)
