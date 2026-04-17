@@ -20,6 +20,8 @@ struct AppConfig {
     bool log_network_failures;
     bool update_subscription;
     std::string priority_mode;
+    bool dedup_enabled;
+    std::vector<std::string> dedup_subids;
 };
 
 class ConfigReader {

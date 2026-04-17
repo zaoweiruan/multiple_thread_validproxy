@@ -20,6 +20,10 @@
     },
     "subscription": {
         "priority_mode": "proxy_first",
-        "update_subscription": false
+        "update_subscription": true
+    },
+    "dedup": {
+        "enabled": true,
+        "subids": ["5544178410297751350", "5126987642659995691"]
     }
 }

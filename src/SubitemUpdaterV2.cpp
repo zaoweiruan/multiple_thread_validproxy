@@ -935,4 +935,170 @@ std::string SubitemUpdaterV2::urlDecode(const std::string& input) {
     return result;
 }
 
+int SubitemUpdaterV2::deduplicatePhase1() {
+    std::string sql = R"(
+        DELETE FROM ProfileItem 
+        WHERE IndexId IN (
+            SELECT pi.IndexId FROM ProfileItem pi
+            JOIN (
+                SELECT Address, Port, Network, MIN(IndexId) as MinIndexId
+                FROM ProfileItem
+                WHERE Address IN (
+                    SELECT DISTINCT p.Address FROM ProfileItem p
+                    JOIN ProfileExItem pe ON p.IndexId = pe.IndexId
+                    WHERE pe.Delay > 0 AND pe.Delay != '-1'
+                )
+                GROUP BY Address, Port, Network
+            ) dup ON pi.Address = dup.Address AND pi.Port = dup.Port AND pi.Network = dup.Network
+            WHERE pi.IndexId > dup.MinIndexId
+        )
+    )";
+    
+    char* errMsg = nullptr;
+    if (sqlite3_exec(db_, sql.c_str(), nullptr, nullptr, &errMsg) != SQLITE_OK) {
+        log("ERROR: Phase1 dedup failed - " + std::string(errMsg));
+        sqlite3_free(errMsg);
+        return 0;
+    }
+    
+    int deleted = sqlite3_changes(db_);
+    log("INFO: Phase 1 deleted: " + std::to_string(deleted));
+    return deleted;
+}
+
+int SubitemUpdaterV2::deduplicatePhase2() {
+    if (config_.dedup_subids.empty()) {
+        log("INFO: Phase 2 skipped - no dedup_subids configured");
+        return 0;
+    }
+    
+    std::string subidsList;
+    for (size_t i = 0; i < config_.dedup_subids.size(); ++i) {
+        if (i > 0) subidsList += ", ";
+        subidsList += "'" + config_.dedup_subids[i] + "'";
+    }
+    
+    std::string sql = "DELETE FROM ProfileItem WHERE SubId NOT IN (" + subidsList + ") AND IndexId IN (SELECT pi.IndexId FROM ProfileItem pi JOIN (SELECT Address, Port, Network FROM ProfileItem WHERE SubId IN (" + subidsList + ") GROUP BY Address, Port, Network) dup ON pi.Address = dup.Address AND pi.Port = dup.Port AND pi.Network = dup.Network)";
+    
+    char* errMsg = nullptr;
+    if (sqlite3_exec(db_, sql.c_str(), nullptr, nullptr, &errMsg) != SQLITE_OK) {
+        log("ERROR: Phase2 dedup failed - " + std::string(errMsg));
+        sqlite3_free(errMsg);
+        return 0;
+    }
+    
+    int deleted = sqlite3_changes(db_);
+    log("INFO: Phase 2 deleted: " + std::to_string(deleted));
+    return deleted;
+}
+
+int SubitemUpdaterV2::deduplicatePhase3() {
+    if (config_.dedup_subids.empty()) {
+        std::string sql = R"(
+            DELETE FROM ProfileItem 
+            WHERE IndexId IN (
+                SELECT pi.IndexId FROM ProfileItem pi
+                JOIN (
+                    SELECT Address, Port, Network, MIN(IndexId) as MinIndexId
+                    FROM ProfileItem
+                    GROUP BY Address, Port, Network
+                ) dup ON pi.Address = dup.Address AND pi.Port = dup.Port AND pi.Network = dup.Network
+                WHERE pi.IndexId > dup.MinIndexId
+            )
+        )";
+        
+        char* errMsg = nullptr;
+        if (sqlite3_exec(db_, sql.c_str(), nullptr, nullptr, &errMsg) != SQLITE_OK) {
+            log("ERROR: Phase3 dedup failed - " + std::string(errMsg));
+            sqlite3_free(errMsg);
+            return 0;
+        }
+        
+        int deleted = sqlite3_changes(db_);
+        log("INFO: Phase 3 deleted: " + std::to_string(deleted));
+        return deleted;
+    }
+    
+    std::string subidsList;
+    for (size_t i = 0; i < config_.dedup_subids.size(); ++i) {
+        if (i > 0) subidsList += ", ";
+        subidsList += "'" + config_.dedup_subids[i] + "'";
+    }
+    
+    std::string sql = "DELETE FROM ProfileItem WHERE SubId NOT IN (" + subidsList + ") AND IndexId IN (SELECT pi.IndexId FROM ProfileItem pi JOIN (SELECT Address, Port, Network, MIN(IndexId) as MinIndexId FROM ProfileItem WHERE SubId NOT IN (" + subidsList + ") GROUP BY Address, Port, Network) dup ON pi.Address = dup.Address AND pi.Port = dup.Port AND pi.Network = dup.Network WHERE pi.IndexId > dup.MinIndexId)";
+    
+    char* errMsg = nullptr;
+    if (sqlite3_exec(db_, sql.c_str(), nullptr, nullptr, &errMsg) != SQLITE_OK) {
+        log("ERROR: Phase3 dedup failed - " + std::string(errMsg));
+        sqlite3_free(errMsg);
+        return 0;
+    }
+    
+    int deleted = sqlite3_changes(db_);
+    log("INFO: Phase 3 deleted: " + std::to_string(deleted));
+    return deleted;
+}
+
+void SubitemUpdaterV2::cleanupProfileExItem() {
+    std::string sql = "DELETE FROM ProfileExItem WHERE IndexId NOT IN (SELECT IndexId FROM ProfileItem)";
+    
+    char* errMsg = nullptr;
+    if (sqlite3_exec(db_, sql.c_str(), nullptr, nullptr, &errMsg) != SQLITE_OK) {
+        log("ERROR: ProfileExItem cleanup failed - " + std::string(errMsg));
+        sqlite3_free(errMsg);
+        return;
+    }
+    
+    int deleted = sqlite3_changes(db_);
+    log("INFO: ProfileExItem cleaned: " + std::to_string(deleted) + " orphaned records");
+}
+
+bool SubitemUpdaterV2::deduplicate() {
+    log("========================================");
+    log("INFO: Starting Deduplication");
+    log("========================================");
+    
+    std::string countSql = "SELECT COUNT(*) FROM ProfileItem";
+    sqlite3_stmt* stmt = nullptr;
+    int totalBefore = 0;
+    if (sqlite3_prepare_v2(db_, countSql.c_str(), -1, &stmt, nullptr) == SQLITE_OK) {
+        if (sqlite3_step(stmt) == SQLITE_ROW) {
+            totalBefore = sqlite3_column_int(stmt, 0);
+        }
+        sqlite3_finalize(stmt);
+    }
+    log("INFO: Total proxies before: " + std::to_string(totalBefore));
+    
+    log("INFO: Phase 1/3 - Removing duplicates with delay>0 proxies");
+    int p1 = deduplicatePhase1();
+    
+    log("INFO: Phase 2/3 - Keeping dedup_subids, removing duplicates");
+    int p2 = deduplicatePhase2();
+    
+    log("INFO: Phase 3/3 - Full deduplication excluding subids");
+    int p3 = deduplicatePhase3();
+    
+    log("INFO: Cleaning up ProfileExItem...");
+    cleanupProfileExItem();
+    
+    int totalAfter = 0;
+    if (sqlite3_prepare_v2(db_, countSql.c_str(), -1, &stmt, nullptr) == SQLITE_OK) {
+        if (sqlite3_step(stmt) == SQLITE_ROW) {
+            totalAfter = sqlite3_column_int(stmt, 0);
+        }
+        sqlite3_finalize(stmt);
+    }
+    
+    int totalDeleted = totalBefore - totalAfter;
+    
+    log("========================================");
+    log("INFO: Deduplication Summary");
+    log("========================================");
+    log("INFO: Total deleted: " + std::to_string(totalDeleted));
+    log("INFO: Total remaining: " + std::to_string(totalAfter));
+    log("INFO: Dedup completed successfully");
+    
+    return true;
+}
+
 } // namespace update
