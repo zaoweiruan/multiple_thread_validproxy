@@ -48,4 +48,16 @@ namespace utils {
         if (configType == "17") return "TUIC";
         return "Unknown(" + configType + ")";
     }
+    
+    void sendNotification(const std::string& title, const std::string& message) {
+        NOTIFYICONDATA nid = {0};
+        nid.cbSize = sizeof(NOTIFYICONDATA);
+        nid.uFlags = NIF_INFO;
+        nid.dwInfoFlags = NIIF_INFO;
+        
+        strncpy_s(nid.szInfoTitle, title.c_str(), _TRUNCATE);
+        strncpy_s(nid.szInfo, message.c_str(), _TRUNCATE);
+        
+        Shell_NotifyIcon(NIM_MODIFY, &nid);
+    }
 }

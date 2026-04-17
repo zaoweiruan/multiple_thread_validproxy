@@ -499,6 +499,9 @@ if (commandMode == "find-proxy") {
             ProxyBatchTester tester(db, *appConfig, exeDir, logOut.is_open() ? &logOut : nullptr);
             g_xrayManager = tester.getXrayManager();
             result = tester.runWithSubId(singleSubId);
+            if (appConfig->notification_enabled && appConfig->notification_on_test) {
+                utils::sendNotification("Proxy Test Complete", result ? "Test completed successfully" : "Test failed");
+            }
         } else if (commandMode == "dedup") {
             update::SubitemUpdaterV2 subUpdaterV2(db,
                                                   appConfig->xray_executable,
@@ -516,6 +519,9 @@ if (commandMode == "find-proxy") {
                 result = subUpdaterV2.run();
             } else {
                 result = subUpdaterV2.runSingle(singleSubId);
+            }
+            if (appConfig->notification_enabled && appConfig->notification_on_update) {
+                utils::sendNotification("Subscription Update Complete", result ? "Update completed successfully" : "Update failed");
             }
         }
         

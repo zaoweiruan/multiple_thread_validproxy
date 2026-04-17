@@ -23,6 +23,9 @@ struct AppConfig {
     bool dedup_enabled;
     bool dedup_after_update;
     std::vector<std::string> dedup_subids;
+    bool notification_enabled;
+    bool notification_on_update;
+    bool notification_on_test;
 };
 
 class ConfigReader {

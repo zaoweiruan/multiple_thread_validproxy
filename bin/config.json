@@ -26,5 +26,10 @@
         "enabled": true,
         "dedup_after_update": true,
         "subids": ["5544178410297751350", "5126987642659995691"]
+    },
+    "notification": {
+        "enabled": true,
+        "on_update": true,
+        "on_test": true
     }
 }
