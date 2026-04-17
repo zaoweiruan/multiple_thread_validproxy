@@ -1041,21 +1041,25 @@ int SubitemUpdaterV2::deduplicatePhase1() {
 }
 
 int SubitemUpdaterV2::deduplicatePhase2() {
-    std::string sql = R"(
-        DELETE FROM ProfileItem 
-        WHERE IndexId IN (
-            SELECT pi.IndexId FROM ProfileItem pi
-            JOIN (
-                SELECT Address, Port, Network, MIN(pe.Delay) as MinDelay
-                FROM ProfileItem p
-                JOIN ProfileExItem pe ON p.IndexId = pe.IndexId
-                WHERE pe.Delay > 0 AND pe.Delay != '-1'
-                GROUP BY Address, Port, Network
-            ) valid ON pi.Address = valid.Address AND pi.Port = valid.Port AND pi.Network = valid.Network
-            JOIN ProfileExItem pe2 ON pi.IndexId = pe2.IndexId
-            WHERE pe2.Delay > valid.MinDelay
-        )
-    )";
+    if (config_.dedup_subids.empty()) {
+        log("INFO: Phase 2 skipped: no dedup_subids configured");
+        return 0;
+    }
+    
+    std::string subidsList;
+    for (size_t i = 0; i < config_.dedup_subids.size(); ++i) {
+        if (i > 0) subidsList += ", ";
+        subidsList += "'" + config_.dedup_subids[i] + "'";
+    }
+    
+    std::string sql = 
+        "DELETE FROM ProfileItem "
+        "WHERE SubId NOT IN (" + subidsList + ") "
+        "AND (Address, Port, Network) IN ("
+        "SELECT Address, Port, Network FROM ProfileItem "
+        "WHERE SubId IN (" + subidsList + ") "
+        "GROUP BY Address, Port, Network"
+        ")";
     
     char* errMsg = nullptr;
     if (sqlite3_exec(db_, sql.c_str(), nullptr, nullptr, &errMsg) != SQLITE_OK) {
@@ -1065,7 +1069,7 @@ int SubitemUpdaterV2::deduplicatePhase2() {
     }
     
     int deleted = sqlite3_changes(db_);
-    log("INFO: Phase 2 deleted: " + std::to_string(deleted));
+    log("INFO: Phase 2 deleted: " + std::to_string(deleted) + " (remove non-dedup duplicates with dedup_subids)");
     return deleted;
 }
 
@@ -1084,18 +1088,16 @@ int SubitemUpdaterV2::deduplicatePhase3() {
     std::string sql = 
         "DELETE FROM ProfileItem "
         "WHERE SubId IN (" + subidsList + ") "
-        "AND IndexId IN ("
-        "SELECT pi.IndexId FROM ProfileItem pi "
-        "JOIN ("
-        "SELECT Address, Port, Network, MIN(pe.Delay) as MinDelay "
-        "FROM ProfileItem p "
+        "AND IndexId NOT IN ("
+        "SELECT p.IndexId FROM ProfileItem p "
         "JOIN ProfileExItem pe ON p.IndexId = pe.IndexId "
-        "WHERE p.SubId IN (" + subidsList + ") "
-        "AND pe.Delay > 0 AND pe.Delay != '-1' "
+        "WHERE p.SubId IN (" + subidsList + ") AND pe.Delay > 0 AND pe.Delay != '-1' "
+        "GROUP BY p.Address, p.Port, p.Network"
+        ") "
+        "AND IndexId NOT IN ("
+        "SELECT MIN(IndexId) FROM ProfileItem "
+        "WHERE SubId IN (" + subidsList + ") "
         "GROUP BY Address, Port, Network"
-        ") valid ON pi.Address = valid.Address AND pi.Port = valid.Port AND pi.Network = valid.Network "
-        "JOIN ProfileExItem pe2 ON pi.IndexId = pe2.IndexId "
-        "WHERE pe2.Delay > valid.MinDelay OR pe2.Delay = '-1' OR pe2.Delay IS NULL OR pe2.Delay <= 0"
         ")";
     
     char* errMsg = nullptr;
@@ -1106,54 +1108,29 @@ int SubitemUpdaterV2::deduplicatePhase3() {
     }
     
     int deleted = sqlite3_changes(db_);
-    log("INFO: Phase 3 deleted: " + std::to_string(deleted) + " (dedup_subids internal)");
+    log("INFO: Phase 3 deleted: " + std::to_string(deleted) + " (dedup_subids internal, keep delay>0)");
     return deleted;
 }
 
 int SubitemUpdaterV2::deduplicatePhase4() {
+    if (config_.dedup_subids.empty()) {
+        log("INFO: Phase 4 skipped: no dedup_subids configured");
+        return 0;
+    }
+    
     std::string subidsList;
     for (size_t i = 0; i < config_.dedup_subids.size(); ++i) {
         if (i > 0) subidsList += ", ";
         subidsList += "'" + config_.dedup_subids[i] + "'";
     }
     
-    if (config_.dedup_subids.empty()) {
-        std::string sql = R"(
-            DELETE FROM ProfileItem 
-            WHERE IndexId IN (
-                SELECT pi.IndexId FROM ProfileItem pi
-                JOIN (
-                    SELECT Address, Port, Network, MIN(IndexId) as MinIndexId
-                    FROM ProfileItem
-                    GROUP BY Address, Port, Network
-                ) dup ON pi.Address = dup.Address AND pi.Port = dup.Port AND pi.Network = dup.Network
-                WHERE pi.IndexId > dup.MinIndexId
-            )
-        )";
-        
-        char* errMsg = nullptr;
-        if (sqlite3_exec(db_, sql.c_str(), nullptr, nullptr, &errMsg) != SQLITE_OK) {
-            log("ERROR: Phase4 dedup failed - " + std::string(errMsg));
-            sqlite3_free(errMsg);
-            return 0;
-        }
-        
-        int deleted = sqlite3_changes(db_);
-        log("INFO: Phase 4 deleted: " + std::to_string(deleted) + " (full table)");
-        return deleted;
-    }
-    
     std::string sql = 
         "DELETE FROM ProfileItem "
         "WHERE SubId NOT IN (" + subidsList + ") "
-        "AND IndexId IN ("
-        "SELECT pi.IndexId FROM ProfileItem pi "
-        "JOIN ("
-        "SELECT Address, Port, Network, MIN(IndexId) as MinIndexId "
-        "FROM ProfileItem "
+        "AND IndexId NOT IN ("
+        "SELECT MIN(IndexId) FROM ProfileItem "
+        "WHERE SubId NOT IN (" + subidsList + ") "
         "GROUP BY Address, Port, Network"
-        ") dup ON pi.Address = dup.Address AND pi.Port = dup.Port AND pi.Network = dup.Network "
-        "WHERE pi.IndexId > dup.MinIndexId"
         ")";
     
     char* errMsg = nullptr;
@@ -1164,7 +1141,7 @@ int SubitemUpdaterV2::deduplicatePhase4() {
     }
     
     int deleted = sqlite3_changes(db_);
-    log("INFO: Phase 4 deleted: " + std::to_string(deleted) + " (full table, keep dedup_subids)");
+    log("INFO: Phase 4 deleted: " + std::to_string(deleted) + " (full table dedup non-dedup_subids)");
     return deleted;
 }
 
