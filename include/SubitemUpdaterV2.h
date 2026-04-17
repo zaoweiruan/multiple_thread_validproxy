@@ -54,9 +54,11 @@ private:
     bool startXray(const std::string& indexId, int socksPort, int apiPort);
     void cleanupXray();
 
+    int deduplicatePhase0();
     int deduplicatePhase1();
     int deduplicatePhase2();
     int deduplicatePhase3();
+    int deduplicatePhase4();
     void cleanupProfileExItem();
 
     Strategy parseStrategy(const std::string& mode);
