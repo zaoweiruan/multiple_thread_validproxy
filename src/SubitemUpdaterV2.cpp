@@ -1091,10 +1091,11 @@ int SubitemUpdaterV2::deduplicatePhase3() {
         "FROM ProfileItem p "
         "JOIN ProfileExItem pe ON p.IndexId = pe.IndexId "
         "WHERE p.SubId IN (" + subidsList + ") "
+        "AND pe.Delay > 0 AND pe.Delay != '-1' "
         "GROUP BY Address, Port, Network"
         ") valid ON pi.Address = valid.Address AND pi.Port = valid.Port AND pi.Network = valid.Network "
         "JOIN ProfileExItem pe2 ON pi.IndexId = pe2.IndexId "
-        "WHERE pe2.Delay > valid.MinDelay OR pe2.Delay = '-1' OR pe2.Delay IS NULL"
+        "WHERE pe2.Delay > valid.MinDelay OR pe2.Delay = '-1' OR pe2.Delay IS NULL OR pe2.Delay <= 0"
         ")";
     
     char* errMsg = nullptr;
