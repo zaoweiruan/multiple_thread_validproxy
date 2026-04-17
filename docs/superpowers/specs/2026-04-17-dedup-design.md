@@ -102,6 +102,9 @@ INFO: Dedup completed successfully
 
 ## 9. 版本记录
 
+- v1.0.49 (2026-04-17): --show-sub 显示所有 ConfigType (1-17)
+- v1.0.48 (2026-04-17): 解析订阅时修复 malformed address ([|: IPv6 格式)
+- v1.0.47 (2026-04-17): Phase1 增强：过滤 user@addr, http(s)://, 尾部点号
 - v1.0.46 (2026-04-17): Phase1 增强：过滤 IPv6/malformed 地址 (含冒号/方括号)
 - v1.0.45 (2026-04-17): Phase1 增强：过滤无效 address (长度<5, 不含点, localhost, 0.0.0.0, 无效格式)
 - v1.0.44 (2026-04-17): Phase2 调整：保留 delay 最小的有效代理
@@ -166,7 +169,15 @@ WHERE
     OR Address NOT LIKE '%.%'
     OR Address LIKE '127.%'
     OR Address = '0.0.0.0'
-    OR Address LIKE '% %';
+    OR Address LIKE '% %'
+    OR Address LIKE '[%'
+    OR Address LIKE '%:%'
+    OR Address LIKE '%[%]%'
+    OR Address LIKE '%@%'
+    OR Address LIKE 'http://%'
+    OR Address LIKE 'https://%'
+    OR Address LIKE '%.'
+);
 ```
 
 过滤条件:
@@ -176,6 +187,10 @@ WHERE
 - localhost: 127.x.x.x
 - 0.0.0.0
 - 无效格式 (含空格)
+- IPv6 / malformed: 含 `:` 或 `[` 或 `]`
+- 用户名@地址: 含 `@`
+- URL 当地址: `http://` 或 `https://`
+- 尾部点号: 以 `.` 结尾
 
 #### Phase 2: 与有效代理 (delay > 0) 去重，保留延迟最小的
 
