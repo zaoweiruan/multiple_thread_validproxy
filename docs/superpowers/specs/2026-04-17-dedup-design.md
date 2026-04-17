@@ -102,6 +102,7 @@ INFO: Dedup completed successfully
 
 ## 9. 版本记录
 
+- v1.0.45 (2026-04-17): Phase1 增强：过滤无效 address (长度<5, 不含点, localhost, 0.0.0.0, 无效格式)
 - v1.0.44 (2026-04-17): Phase2 调整：保留 delay 最小的有效代理
 - v1.0.43 (2026-04-17): 新增 Phase 0 标记受保护/降级代理 + Phase 1 私网地址过滤
 - v1.0.42 (2026-04-17): 新增去重功能 (Phase 1/2/3)
@@ -148,7 +149,7 @@ AND IndexId IN (
 );
 ```
 
-#### Phase 1: 删除私网地址
+#### Phase 1: 删除无效地址
 
 ```sql
 DELETE FROM ProfileItem 
@@ -159,9 +160,21 @@ WHERE
     OR Address LIKE '172.22.%' OR Address LIKE '172.23.%' OR Address LIKE '172.24.%'
     OR Address LIKE '172.25.%' OR Address LIKE '172.26.%' OR Address LIKE '172.27.%'
     OR Address LIKE '172.28.%' OR Address LIKE '172.29.%' OR Address LIKE '172.30.%'
-    OR Address LIKE '172.31.%'
-    OR Address LIKE '192.168.%';
+    OR Address LIKE '172.31.%' OR Address LIKE '192.168.%'
+    OR LENGTH(Address) < 5
+    OR Address NOT LIKE '%.%'
+    OR Address LIKE '127.%'
+    OR Address = '0.0.0.0'
+    OR Address LIKE '% %';
 ```
+
+过滤条件:
+- 私网 IP: 10.x, 172.16-31.x, 192.168.x
+- 长度 < 5
+- 不含点号 (.)
+- localhost: 127.x.x.x
+- 0.0.0.0
+- 无效格式 (含空格)
 
 #### Phase 2: 与有效代理 (delay > 0) 去重，保留延迟最小的
 
