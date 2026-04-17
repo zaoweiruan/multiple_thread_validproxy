@@ -1014,29 +1014,40 @@ int SubitemUpdaterV2::deduplicatePhase0() {
 }
 
 int SubitemUpdaterV2::deduplicatePhase1() {
-    std::string sql = R"(
-        DELETE FROM ProfileItem 
-        WHERE 
-            Address LIKE '10.%'
-            OR Address LIKE '172.16.%' OR Address LIKE '172.17.%' OR Address LIKE '172.18.%'
-            OR Address LIKE '172.19.%' OR Address LIKE '172.20.%' OR Address LIKE '172.21.%'
-            OR Address LIKE '172.22.%' OR Address LIKE '172.23.%' OR Address LIKE '172.24.%'
-            OR Address LIKE '172.25.%' OR Address LIKE '172.26.%' OR Address LIKE '172.27.%'
-            OR Address LIKE '172.28.%' OR Address LIKE '172.29.%' OR Address LIKE '172.30.%'
-            OR Address LIKE '172.31.%' OR Address LIKE '192.168.%'
-            OR LENGTH(Address) < 5
-            OR Address NOT LIKE '%.%'
-            OR Address LIKE '127.%'
-            OR Address = '0.0.0.0'
-            OR Address LIKE '% %'
-            OR Address LIKE '[%'
-            OR Address LIKE '%:%'
-            OR Address LIKE '%[%]%'
-            OR Address LIKE '%@%'
-            OR Address LIKE 'http://%'
-            OR Address LIKE 'https://%'
-            OR Address LIKE '%.'
-    )";
+    std::string subidsList;
+    for (size_t i = 0; i < config_.dedup_subids.size(); ++i) {
+        if (i > 0) subidsList += ", ";
+        subidsList += "'" + config_.dedup_subids[i] + "'";
+    }
+    
+    std::string sql = 
+        "DELETE FROM ProfileItem "
+        "WHERE ("
+        "Address LIKE '10.%'"
+        "OR Address LIKE '172.16.%' OR Address LIKE '172.17.%' OR Address LIKE '172.18.%'"
+        "OR Address LIKE '172.19.%' OR Address LIKE '172.20.%' OR Address LIKE '172.21.%'"
+        "OR Address LIKE '172.22.%' OR Address LIKE '172.23.%' OR Address LIKE '172.24.%'"
+        "OR Address LIKE '172.25.%' OR Address LIKE '172.26.%' OR Address LIKE '172.27.%'"
+        "OR Address LIKE '172.28.%' OR Address LIKE '172.29.%' OR Address LIKE '172.30.%'"
+        "OR Address LIKE '172.31.%' OR Address LIKE '192.168.%'"
+        "OR LENGTH(Address) < 5"
+        "OR Address NOT LIKE '%.%'"
+        "OR Address LIKE '127.%'"
+        "OR Address = '0.0.0.0'"
+        "OR Address LIKE '% %'"
+        "OR Address LIKE '[%'"
+        "OR Address LIKE '%:%'"
+        "OR Address LIKE '%[%]%'"
+        "OR Address LIKE '%@%'"
+        "OR Address LIKE 'http://%'"
+        "OR Address LIKE 'https://%'"
+        "OR Address LIKE '%.'"
+        ")";
+    
+    if (!config_.dedup_subids.empty()) {
+        sql += " OR (StreamSecurity = '' AND SubId NOT IN (" + subidsList + "))";
+    }
+    sql += ")";
     
     char* errMsg = nullptr;
     if (sqlite3_exec(db_, sql.c_str(), nullptr, nullptr, &errMsg) != SQLITE_OK) {
