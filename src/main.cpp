@@ -191,8 +191,8 @@ std::cout << "Usage: validproxy [options]\n"
         auto subs = subDao.getAll();
         
         std::cout << "\n=== Subscriptions ===" << std::endl;
-        std::cout << "remarks                                    | id                    | url                                               | 启用\n";
-        std::cout << "-----------------------------------------+-----------------------+---------------------------------------------------+----\n";
+        std::cout << "remarks                                    | id                    | url                                               | 代理数 | 启用\n";
+        std::cout << "-----------------------------------------+-----------------------+---------------------------------------------------+--------+----\n";
         
         for (const auto& sub : subs) {
             std::string remarks = sub.remarks;
@@ -204,80 +204,25 @@ std::cout << "Usage: validproxy [options]\n"
             if (id.length() > 20) id = id.substr(0, 17) + "...";
             if (url.length() > 50) url = url.substr(0, 47) + "...";
             
+            std::string countSql = "SELECT COUNT(*) FROM ProfileItem WHERE Subid = '" + sub.id + "'";
+            sqlite3_stmt* cntStmt = nullptr;
+            int proxyCount = 0;
+            if (sqlite3_prepare_v2(db, countSql.c_str(), -1, &cntStmt, nullptr) == SQLITE_OK) {
+                if (sqlite3_step(cntStmt) == SQLITE_ROW) {
+                    proxyCount = sqlite3_column_int(cntStmt, 0);
+                }
+                sqlite3_finalize(cntStmt);
+            }
+            
             std::cout << std::left << std::setw(40) << remarks << " | "
                      << std::setw(20) << id << " | "
                      << std::setw(50) << url << " | "
-                     << std::right << std::setw(4) << enabled << "\n";
+                     << std::right << std::setw(6) << proxyCount << " | "
+                     << std::setw(4) << enabled << "\n";
         }
         
-        std::cout << "-----------------------------------------+-----------------------+---------------------------------------------------+----\n";
+        std::cout << "-----------------------------------------+-----------------------+---------------------------------------------------+--------+----\n";
         std::cout << "Total: " << subs.size() << " subscriptions\n";
-        
-        db::models::ProfileitemDAO profileDao(db);
-        
-        std::string sqlTotal = "SELECT COUNT(*) FROM ProfileItem";
-        sqlite3_stmt* stmt = nullptr;
-        int totalCount = 0;
-        if (sqlite3_prepare_v2(db, sqlTotal.c_str(), -1, &stmt, nullptr) == SQLITE_OK) {
-            if (sqlite3_step(stmt) == SQLITE_ROW) {
-                totalCount = sqlite3_column_int(stmt, 0);
-            }
-            sqlite3_finalize(stmt);
-        }
-        
-        std::cout << "\n=== ProfileItem Statistics ===" << std::endl;
-        std::cout << "ConfigType  | Count | Description\n";
-        std::cout << "-----------+-------+-------------\n";
-        
-        std::vector<std::pair<int, std::string>> typeCounts = {
-            {1, "VMess"},
-            {2, "Custom"},
-            {3, "Shadowsocks"},
-            {4, "SOCKS"},
-            {5, "VLESS"},
-            {6, "Trojan"},
-            {7, "Hysteria2"},
-            {8, "TUIC"},
-            {9, "WireGuard"},
-            {10, "HTTP"},
-            {11, "Anytls"},
-            {12, "Naive"},
-            {16, "WireGuard"},
-            {17, "TUIC"}
-        };
-        
-        for (const auto& [type, desc] : typeCounts) {
-            std::string sql = "SELECT COUNT(*) FROM ProfileItem WHERE ConfigType = " + std::to_string(type);
-            sqlite3_stmt* stmt2 = nullptr;
-            int count = 0;
-            if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt2, nullptr) == SQLITE_OK) {
-                if (sqlite3_step(stmt2) == SQLITE_ROW) {
-                    count = sqlite3_column_int(stmt2, 0);
-                }
-                sqlite3_finalize(stmt2);
-            }
-            std::cout << std::setw(10) << type << " | " << std::setw(5) << count << " | " << desc << "\n";
-        }
-        
-        std::cout << "-----------+-------+-------------\n";
-        std::cout << "Total      | " << std::setw(5) << totalCount << " | All profiles\n";
-        
-        std::cout << "\n=== ProfileItem by Subscription ===" << std::endl;
-        std::cout << "SubId                      | Count\n";
-        std::cout << "--------------------------+------\n";
-        
-        std::string sqlBySub = "SELECT Subid, COUNT(*) as cnt FROM ProfileItem WHERE Subid != '' AND Subid IS NOT NULL GROUP BY Subid ORDER BY cnt DESC";
-        sqlite3_stmt* stmt3 = nullptr;
-        if (sqlite3_prepare_v2(db, sqlBySub.c_str(), -1, &stmt3, nullptr) == SQLITE_OK) {
-            while (sqlite3_step(stmt3) == SQLITE_ROW) {
-                const char* subid = (const char*)sqlite3_column_text(stmt3, 0);
-                int count = sqlite3_column_int(stmt3, 1);
-                std::string sid = subid ? subid : "(null)";
-                if (sid.length() > 22) sid = sid.substr(0, 19) + "...";
-                std::cout << std::setw(24) << std::left << sid << " | " << count << "\n";
-            }
-            sqlite3_finalize(stmt3);
-        }
         
         sqlite3_close(db);
         curl_global_cleanup();
