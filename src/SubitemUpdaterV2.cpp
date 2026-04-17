@@ -189,6 +189,11 @@ bool SubitemUpdaterV2::run() {
     }
     log("========================================");
 
+    if (config_.dedup_after_update && config_.dedup_enabled) {
+        log("INFO: Running dedup after subscription update...");
+        deduplicate();
+    }
+
     return successCount > 0;
 }
 
@@ -217,6 +222,11 @@ bool SubitemUpdaterV2::runSingle(const std::string& subId) {
     bool result = updateWithStrategy(sub.url, sub.id, strategy);
 
     releaseProxyPorts();
+
+    if (config_.dedup_after_update && config_.dedup_enabled) {
+        log("INFO: Running dedup after subscription update...");
+        deduplicate();
+    }
 
     return result;
 }

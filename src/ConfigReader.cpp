@@ -145,6 +145,11 @@ std::optional<AppConfig> ConfigReader::load(const std::string& configPath) {
         } else {
             config.dedup_enabled = false;
         }
+        if (dedup.contains("dedup_after_update")) {
+            config.dedup_after_update = dedup["dedup_after_update"].as_bool();
+        } else {
+            config.dedup_after_update = false;
+        }
         if (dedup.contains("subids") && dedup["subids"].is_array()) {
             for (const auto& sid : dedup["subids"].as_array()) {
                 config.dedup_subids.push_back(sid.as_string().c_str());
@@ -152,6 +157,7 @@ std::optional<AppConfig> ConfigReader::load(const std::string& configPath) {
         }
     } else {
         config.dedup_enabled = false;
+        config.dedup_after_update = false;
     }
     
     if (!config.database_path.empty()) {

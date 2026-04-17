@@ -21,6 +21,7 @@ struct AppConfig {
     bool update_subscription;
     std::string priority_mode;
     bool dedup_enabled;
+    bool dedup_after_update;
     std::vector<std::string> dedup_subids;
 };
 
