@@ -1081,28 +1081,21 @@ int SubitemUpdaterV2::deduplicatePhase3() {
         subidsList += "'" + config_.dedup_subids[i] + "'";
     }
     
-    std::string sql = R"(
-        DELETE FROM ProfileItem 
-        WHERE SubId IN (SUBIDS_PLACEHOLDER)
-        AND IndexId IN (
-            SELECT pi.IndexId FROM ProfileItem pi
-            JOIN (
-                SELECT Address, Port, Network, MIN(pe.Delay) as MinDelay
-                FROM ProfileItem p
-                JOIN ProfileExItem pe ON p.IndexId = pe.IndexId
-                WHERE p.SubId IN (SUBIDS_PLACEHOLDER)
-                GROUP BY Address, Port, Network
-            ) valid ON pi.Address = valid.Address AND pi.Port = valid.Port AND pi.Network = valid.Network
-            JOIN ProfileExItem pe2 ON pi.IndexId = pe2.IndexId
-            WHERE pe2.Delay > valid.MinDelay OR pe2.Delay = '-1' OR pe2.Delay IS NULL
-        )
-    )";
-    
-    size_t pos = sql.find("SUBIDS_PLACEHOLDER");
-    while (pos != std::string::npos) {
-        sql.replace(pos, 17, subidsList);
-        pos = sql.find("SUBIDS_PLACEHOLDER", pos + subidsList.length());
-    }
+    std::string sql = 
+        "DELETE FROM ProfileItem "
+        "WHERE SubId IN (" + subidsList + ") "
+        "AND IndexId IN ("
+        "SELECT pi.IndexId FROM ProfileItem pi "
+        "JOIN ("
+        "SELECT Address, Port, Network, MIN(pe.Delay) as MinDelay "
+        "FROM ProfileItem p "
+        "JOIN ProfileExItem pe ON p.IndexId = pe.IndexId "
+        "WHERE p.SubId IN (" + subidsList + ") "
+        "GROUP BY Address, Port, Network"
+        ") valid ON pi.Address = valid.Address AND pi.Port = valid.Port AND pi.Network = valid.Network "
+        "JOIN ProfileExItem pe2 ON pi.IndexId = pe2.IndexId "
+        "WHERE pe2.Delay > valid.MinDelay OR pe2.Delay = '-1' OR pe2.Delay IS NULL"
+        ")";
     
     char* errMsg = nullptr;
     if (sqlite3_exec(db_, sql.c_str(), nullptr, nullptr, &errMsg) != SQLITE_OK) {
@@ -1149,22 +1142,18 @@ int SubitemUpdaterV2::deduplicatePhase4() {
         return deleted;
     }
     
-    std::string sql = R"(
-        DELETE FROM ProfileItem 
-        WHERE SubId NOT IN (SUBIDS_PLACEHOLDER)
-        AND IndexId IN (
-            SELECT pi.IndexId FROM ProfileItem pi
-            JOIN (
-                SELECT Address, Port, Network, MIN(IndexId) as MinIndexId
-                FROM ProfileItem
-                GROUP BY Address, Port, Network
-            ) dup ON pi.Address = dup.Address AND pi.Port = dup.Port AND pi.Network = dup.Network
-            WHERE pi.IndexId > dup.MinIndexId
-        )
-    )";
-    
-    size_t pos = sql.find("SUBIDS_PLACEHOLDER");
-    sql.replace(pos, 17, subidsList);
+    std::string sql = 
+        "DELETE FROM ProfileItem "
+        "WHERE SubId NOT IN (" + subidsList + ") "
+        "AND IndexId IN ("
+        "SELECT pi.IndexId FROM ProfileItem pi "
+        "JOIN ("
+        "SELECT Address, Port, Network, MIN(IndexId) as MinIndexId "
+        "FROM ProfileItem "
+        "GROUP BY Address, Port, Network"
+        ") dup ON pi.Address = dup.Address AND pi.Port = dup.Port AND pi.Network = dup.Network "
+        "WHERE pi.IndexId > dup.MinIndexId"
+        ")";
     
     char* errMsg = nullptr;
     if (sqlite3_exec(db_, sql.c_str(), nullptr, nullptr, &errMsg) != SQLITE_OK) {
