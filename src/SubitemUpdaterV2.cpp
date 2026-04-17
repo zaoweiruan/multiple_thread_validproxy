@@ -992,6 +992,9 @@ int SubitemUpdaterV2::deduplicatePhase1() {
             OR Address LIKE '127.%'
             OR Address = '0.0.0.0'
             OR Address LIKE '% %'
+            OR Address LIKE '[%'
+            OR Address LIKE '%:%'
+            OR Address LIKE '%[%]%'
     )";
     
     char* errMsg = nullptr;
