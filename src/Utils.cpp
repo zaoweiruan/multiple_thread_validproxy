@@ -50,11 +50,25 @@ namespace utils {
     }
     
     void sendNotification(const std::string& title, const std::string& message) {
+        static bool initialized = false;
+        static UINT uid = 1;
+        
         NOTIFYICONDATA nid = {0};
         nid.cbSize = sizeof(NOTIFYICONDATA);
+        nid.uID = uid;
+        nid.hWnd = GetConsoleWindow();
+        
+        if (!initialized) {
+            nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
+            nid.hIcon = LoadIcon(NULL, IDI_APPLICATION);
+            nid.uCallbackMessage = WM_USER;
+            strncpy_s(nid.szTip, "validproxy", _TRUNCATE);
+            Shell_NotifyIcon(NIM_ADD, &nid);
+            initialized = true;
+        }
+        
         nid.uFlags = NIF_INFO;
         nid.dwInfoFlags = NIIF_INFO;
-        
         strncpy_s(nid.szInfoTitle, title.c_str(), _TRUNCATE);
         strncpy_s(nid.szInfo, message.c_str(), _TRUNCATE);
         
