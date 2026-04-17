@@ -224,6 +224,35 @@ std::cout << "Usage: validproxy [options]\n"
         std::cout << "-----------------------------------------+-----------------------+---------------------------------------------------+--------+----\n";
         std::cout << "Total: " << subs.size() << " subscriptions\n";
         
+        std::cout << "\n=== ProfileItem Statistics ===" << std::endl;
+        std::cout << "ConfigType  | Count | Description\n";
+        std::cout << "-----------+-------+-------------\n";
+        
+        std::vector<std::pair<int, std::string>> typeCounts = {
+            {1, "VMess"}, {2, "Custom"}, {3, "Shadowsocks"}, {4, "SOCKS"},
+            {5, "VLESS"}, {6, "Trojan"}, {7, "Hysteria2"}, {8, "TUIC"},
+            {9, "WireGuard"}, {10, "HTTP"}, {11, "Anytls"}, {12, "Naive"},
+            {16, "WireGuard"}, {17, "TUIC"}
+        };
+        
+        int totalCount = 0;
+        for (const auto& [type, desc] : typeCounts) {
+            std::string sql = "SELECT COUNT(*) FROM ProfileItem WHERE ConfigType = " + std::to_string(type);
+            sqlite3_stmt* stmt2 = nullptr;
+            int count = 0;
+            if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt2, nullptr) == SQLITE_OK) {
+                if (sqlite3_step(stmt2) == SQLITE_ROW) {
+                    count = sqlite3_column_int(stmt2, 0);
+                }
+                sqlite3_finalize(stmt2);
+            }
+            totalCount += count;
+            std::cout << std::setw(10) << type << " | " << std::setw(5) << count << " | " << desc << "\n";
+        }
+        
+        std::cout << "-----------+-------+-------------\n";
+        std::cout << "Total      | " << std::setw(5) << totalCount << " | All profiles\n";
+        
         sqlite3_close(db);
         curl_global_cleanup();
         
