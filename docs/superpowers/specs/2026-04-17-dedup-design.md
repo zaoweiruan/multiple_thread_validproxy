@@ -79,10 +79,17 @@ public static async Task<Tuple<int, int>> DedupServerList(Config config, string 
 {
     "dedup": {
         "enabled": true,
+        "dedup_after_update": true,
         "subids": ["5544178410297751350"]
     }
 }
 ```
+
+| 配置项 | 类型 | 说明 |
+|--------|------|------|
+| enabled | bool | 启用去重功能 |
+| dedup_after_update | bool | 每次更新订阅后自动去重 |
+| subids | array | 保留的订阅ID列表 |
 
 ## 3. 命令行参数
 
@@ -100,7 +107,20 @@ public static async Task<Tuple<int, int>> DedupServerList(Config config, string 
 - delay > 0 的代理 → subids[0]（受保护）
 - subids[0] 中 delay <= 0 的代理 → subids[1]（降级）
 
-### Phase 1: 删除私网地址
+### Phase 1: 删除无效地址和非TLS代理
+
+删除以下条件的代理:
+- 私网 IP (10.x, 172.16-31.x, 192.168.x)
+- 长度 < 5
+- 不含点号
+- localhost (127.x.x.x)
+- 0.0.0.0
+- 无效格式 (含空格)
+- IPv6/malformed (含 `:`, `[`, `]`)
+- 用户名@地址 (含 `@`)
+- URL 当地址 (`http://`/`https://`)
+- 尾部点号
+- StreamSecurity='' 且不在 dedup_subids 中
 
 删除私网地址范围内的代理：
 - 10.x.x.x (10.0.0.0/8)
@@ -171,7 +191,10 @@ INFO: Dedup completed successfully
 
 ## 9. 版本记录
 
-- v1.0.50 (2026-04-17): 调整 Phase3/4: Phase3=dedup_subids内去重(保留delay最小), Phase4=全表去重(保留dedup_subids)
+- v1.1.2 (2026-04-17): Phase1 删除非TLS且不在dedup_subids中的代理
+- v1.1.1 (2026-04-17): 新增 dedup_after_update 配置项
+- v1.1.0 (2026-04-17): 删除未使用方法，清理旧文件
+- v1.0.54 (2026-04-17): 修复 Phase2/4 包含空 SubId，确保完整去重 + cleanupProfileExItem 移到最后
 - v1.0.54 (2026-04-17): 修复 Phase2/4 包含空 SubId，确保完整去重 + cleanupProfileExItem 移到最后
 - v1.0.53 (2026-04-17): 重构去重阶段 - Phase1 无效过滤, Phase2 非 dedup 去重, Phase3 dedup_subids 内去重, Phase4 全表去重
 - v1.0.48 (2026-04-17): 解析订阅时修复 malformed address ([|: IPv6 格式)
