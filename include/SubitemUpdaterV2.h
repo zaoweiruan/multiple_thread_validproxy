@@ -32,6 +32,7 @@ public:
     bool run();
     bool runSingle(const std::string& subId);
     bool runSingleWithProxy(const std::string& subId, int socksPort);
+    bool deduplicate();
 
 private:
     enum class Strategy {
@@ -52,6 +53,11 @@ private:
 
     bool startXray(const std::string& indexId, int socksPort, int apiPort);
     void cleanupXray();
+
+    int deduplicatePhase1();
+    int deduplicatePhase2();
+    int deduplicatePhase3();
+    void cleanupProfileExItem();
 
     Strategy parseStrategy(const std::string& mode);
     std::string getCurrentTimestamp();

@@ -100,6 +100,8 @@ int main(int argc, char* argv[]) {
                 singleSubId = argv[++i];
                 commandMode = "update";
             }
+        } else if (arg == "-D" || arg == "-dedup" || arg == "--dedup") {
+            commandMode = "dedup";
         } else if (arg == "-h" || arg == "--help") {
 std::cout << "Usage: validproxy [options]\n"
                       << "Options:\n"
@@ -111,6 +113,7 @@ std::cout << "Usage: validproxy [options]\n"
                       << "  -U, -update <id>      Update single subscription by ID\n"
                       << "  -UA, -update-all     Update all enabled subscriptions\n"
                       << "  -T, -test-sub <id>   Test proxies from subscription by ID\n"
+                      << "  -D, -dedup           Remove duplicate proxies from database\n"
                       << "  -h, --help           Show this help\n";
             return 0;
         } else if (arg.find(".json") != std::string::npos) {
@@ -398,6 +401,49 @@ if (commandMode == "find-proxy") {
         return ports.first > 0 ? 0 : 1;
     }
     
+    if (commandMode == "dedup") {
+        auto appConfig = config::ConfigReader::load(configPath);
+        if (!appConfig) {
+            std::cerr << "Failed to load config from: " << configPath << std::endl;
+            return 1;
+        }
+        
+        sqlite3* db = nullptr;
+        curl_global_init(CURL_GLOBAL_DEFAULT);
+        
+        if (sqlite3_open(appConfig->database_path.c_str(), &db) != SQLITE_OK) {
+            std::cerr << "Failed to open database: " << sqlite3_errmsg(db) << std::endl;
+            return 1;
+        }
+        
+        char timestamp[32];
+        time_t now = time(nullptr);
+        strftime(timestamp, sizeof(timestamp), "%Y%m%d_%H%M%S", localtime(&now));
+        
+        std::string logFileName = "dedup_" + std::string(timestamp) + ".log";
+        std::string logFile = (logDir / logFileName).string();
+        std::ofstream logOut(logFile, std::ios::out | std::ios::trunc);
+        
+        std::cout << "Mode: " << commandMode << std::endl;
+        
+        update::SubitemUpdaterV2 subUpdaterV2(db,
+                                              appConfig->xray_executable,
+                                              *appConfig,
+                                              logOut.is_open() ? &logOut : nullptr,
+                                              exeDir);
+        bool result = subUpdaterV2.deduplicate();
+        
+        if (logOut.is_open()) {
+            logOut.close();
+        }
+        
+        sqlite3_close(db);
+        curl_global_cleanup();
+        
+        std::cout << commandMode << " " << (result ? "completed" : "failed") << std::endl;
+        return result ? 0 : 1;
+    }
+    
     if (!singleSubId.empty()) {
         auto appConfig = config::ConfigReader::load(configPath);
         if (!appConfig) {
@@ -422,6 +468,8 @@ if (commandMode == "find-proxy") {
             logFileName = "test_proxy_" + std::string(timestamp) + ".log";
         } else if (commandMode == "update") {
             logFileName = "sub_update_" + std::string(timestamp) + ".log";
+        } else if (commandMode == "dedup") {
+            logFileName = "dedup_" + std::string(timestamp) + ".log";
         } else {
             logFileName = "test_proxy_" + std::string(timestamp) + ".log";
         }
@@ -429,14 +477,25 @@ if (commandMode == "find-proxy") {
         std::string logFile = (logDir / logFileName).string();
         std::ofstream logOut(logFile, std::ios::out | std::ios::trunc);
         
-        std::cout << "Mode: " << commandMode << ", subscription: " << singleSubId << std::endl;
-        logOut << "[" << timestamp << "] Starting " << commandMode << " for subId: " << singleSubId << std::endl;
+        if (commandMode == "dedup") {
+            std::cout << "Mode: " << commandMode << std::endl;
+        } else {
+            std::cout << "Mode: " << commandMode << ", subscription: " << singleSubId << std::endl;
+            logOut << "[" << timestamp << "] Starting " << commandMode << " for subId: " << singleSubId << std::endl;
+        }
         
         bool result;
         if (commandMode == "test-sub") {
             ProxyBatchTester tester(db, *appConfig, exeDir, logOut.is_open() ? &logOut : nullptr);
             g_xrayManager = tester.getXrayManager();
             result = tester.runWithSubId(singleSubId);
+        } else if (commandMode == "dedup") {
+            update::SubitemUpdaterV2 subUpdaterV2(db,
+                                                  appConfig->xray_executable,
+                                                  *appConfig,
+                                                  logOut.is_open() ? &logOut : nullptr,
+                                                  exeDir);
+            result = subUpdaterV2.deduplicate();
         } else {
             update::SubitemUpdaterV2 subUpdaterV2(db,
                                                   appConfig->xray_executable,

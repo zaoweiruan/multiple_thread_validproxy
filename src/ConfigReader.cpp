@@ -138,6 +138,22 @@ std::optional<AppConfig> ConfigReader::load(const std::string& configPath) {
         config.priority_mode = "direct_first";
     }
     
+    if (obj.contains("dedup") && obj["dedup"].is_object()) {
+        auto& dedup = obj["dedup"].as_object();
+        if (dedup.contains("enabled")) {
+            config.dedup_enabled = dedup["enabled"].as_bool();
+        } else {
+            config.dedup_enabled = false;
+        }
+        if (dedup.contains("subids") && dedup["subids"].is_array()) {
+            for (const auto& sid : dedup["subids"].as_array()) {
+                config.dedup_subids.push_back(sid.as_string().c_str());
+            }
+        }
+    } else {
+        config.dedup_enabled = false;
+    }
+    
     if (!config.database_path.empty()) {
         std::filesystem::path dbPath(config.database_path);
         if (!std::filesystem::exists(dbPath)) {
