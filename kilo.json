@@ -1,5 +1,8 @@
 {
   "skills": {
     "paths": ["C:\\Users\\dsm\\.config\\kilo\\skills"]
+  },
+  "model": {
+    "max_context": 4096
   }
 }
