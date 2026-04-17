@@ -490,10 +490,10 @@ std::vector<db::models::Profileitem> SubitemUpdaterV2::parseSubscription(const s
             size_t qPos = hostPart.find('?');
             std::string addrPart = (qPos != std::string::npos) ? hostPart.substr(0, qPos) : hostPart;
             
-            size_t colonPos = addrPart.find(':');
-            if (colonPos == std::string::npos) continue;
-            profile.address = addrPart.substr(0, colonPos);
-            profile.port = addrPart.substr(colonPos + 1);
+            auto [addr, port] = parseAddressPort(addrPart);
+            if (addr.empty()) continue;
+            profile.address = addr;
+            profile.port = port;
             
             if (qPos != std::string::npos) {
                 std::string params = hostPart.substr(qPos + 1);
@@ -546,10 +546,10 @@ std::vector<db::models::Profileitem> SubitemUpdaterV2::parseSubscription(const s
             std::string userInfo = uri.substr(0, atPos);
             std::string hostInfo = uri.substr(atPos + 1);
             
-            size_t colonPos = hostInfo.find(':');
-            if (colonPos == std::string::npos) continue;
-            profile.address = hostInfo.substr(0, colonPos);
-            profile.port = hostInfo.substr(colonPos + 1);
+            auto [addr, portWithParams] = parseAddressPort(hostInfo);
+            if (addr.empty()) continue;
+            profile.address = addr;
+            profile.port = portWithParams;
             
             size_t slashPos = profile.port.find('/');
             if (slashPos != std::string::npos) {
@@ -596,10 +596,10 @@ std::vector<db::models::Profileitem> SubitemUpdaterV2::parseSubscription(const s
             size_t qPos = hostPart.find('?');
             std::string addrPart = (qPos != std::string::npos) ? hostPart.substr(0, qPos) : hostPart;
             
-            size_t colonPos = addrPart.find(':');
-            if (colonPos == std::string::npos) continue;
-            profile.address = addrPart.substr(0, colonPos);
-            profile.port = addrPart.substr(colonPos + 1);
+            auto [addr, port] = parseAddressPort(addrPart);
+            if (addr.empty()) continue;
+            profile.address = addr;
+            profile.port = port;
             
             if (qPos != std::string::npos) {
                 std::string params = hostPart.substr(qPos + 1);
@@ -841,6 +841,33 @@ std::string SubitemUpdaterV2::getCurrentTimestamp() {
     std::stringstream ss;
     ss << std::put_time(std::localtime(&time_t), "%Y%m%d_%H%M%S");
     return ss.str();
+}
+
+std::pair<std::string, std::string> SubitemUpdaterV2::parseAddressPort(const std::string& addrPart) {
+    if (addrPart.find("[|:") == 0) {
+        size_t ipStart = addrPart.find("ffff:") + 5;
+        size_t ipEnd = addrPart.find("]:", ipStart);
+        if (ipStart != std::string::npos && ipEnd != std::string::npos && ipEnd > ipStart) {
+            std::string ip = addrPart.substr(ipStart, ipEnd - ipStart);
+            std::string port = addrPart.substr(ipEnd + 2);
+            return {ip, port};
+        }
+    }
+
+    if (addrPart.find('[') == 0) {
+        size_t closeBracket = addrPart.find(']');
+        if (closeBracket != std::string::npos && closeBracket + 1 < addrPart.length()) {
+            std::string ip = addrPart.substr(1, closeBracket - 1);
+            std::string port = addrPart.substr(closeBracket + 2);
+            return {ip, port};
+        }
+    }
+
+    size_t colonPos = addrPart.find(':');
+    if (colonPos == std::string::npos) {
+        return {addrPart, ""};
+    }
+    return {addrPart.substr(0, colonPos), addrPart.substr(colonPos + 1)};
 }
 
 void SubitemUpdaterV2::log(const std::string& msg) {

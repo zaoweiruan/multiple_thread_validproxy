@@ -66,6 +66,7 @@ private:
     void log(const std::string& msg);
     std::string decodeBase64(const std::string& input);
     std::string urlDecode(const std::string& input);
+    std::pair<std::string, std::string> parseAddressPort(const std::string& addrPart);
 
     sqlite3* db_;
     std::string xrayPath_;
