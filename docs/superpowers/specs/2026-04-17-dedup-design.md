@@ -4,6 +4,75 @@
 
 删除 ProfileItem 中的重复代理记录，保持数据整洁
 
+## 1.1 v2rayN 源码参考
+
+- **源码目录**: `E:\eclipse_workspace\v2rayn`
+- **关键文件**:
+  - `v2rayN\ServiceLib\Handler\ConfigHandler.cs` - DedupServerList() 方法
+  - `v2rayN\ServiceLib\Models\ProfileItem.cs` - 数据模型
+  - `v2rayN\ServiceLib\Manager\AppManager.cs` - ProfileItems() 获取代理列表
+
+### v2rayN 去重机制
+
+```csharp
+// ConfigHandler.cs:1028-1057
+public static async Task<Tuple<int, int>> DedupServerList(Config config, string subId)
+{
+    var lstProfile = await AppManager.Instance.ProfileItems(subId);
+    
+    List<ProfileItem> lstKeep = new();
+    List<ProfileItem> lstRemove = new();
+    if (!config.GuiItem.KeepOlderDedupl)
+    {
+        lstProfile.Reverse();  // 保留新的
+    }
+    
+    foreach (var item in lstProfile)
+    {
+        if (!lstKeep.Exists(i => CompareProfileItem(i, item, false)))
+        {
+            lstKeep.Add(item);
+        }
+        else
+        {
+            lstRemove.Add(item);
+        }
+    }
+}
+```
+
+#### 比较字段 (CompareProfileItem)
+
+| 字段 | 说明 |
+|------|------|
+| ConfigType | 协议类型 |
+| Address | 地址 |
+| Port | 端口 |
+| Password | 密码 |
+| Username | 用户名 |
+| VlessEncryption | VLESS 加密 |
+| SsMethod | SS 加密 |
+| VmessSecurity | VMess 安全 |
+| Network | 网络类型 |
+| HeaderType | 头类型 |
+| RequestHost | 请求 Host |
+| Path | 路径 |
+| StreamSecurity | 传输安全 |
+| Flow | VLESS Flow |
+| Sni | SNI |
+| Alpn | ALPN |
+| Fingerprint | 指纹 |
+| PublicKey | 公钥 |
+| ShortId | 短 ID |
+
+#### 特点
+
+- **单订阅去重**: 按 subId 单独处理
+- **新旧判断**: 依赖数据库 rowid (插入顺序)
+- **保留策略**: KeepOlderDedupl 配置项
+  - false (默认): 保留新的
+  - true: 保留旧的
+
 ## 2. 配置扩展
 
 ```json
