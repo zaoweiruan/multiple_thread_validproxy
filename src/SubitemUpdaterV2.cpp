@@ -1,6 +1,7 @@
 #include "SubitemUpdaterV2.h"
 #include "Subitem.h"
 #include "Profileitem.h"
+#include "Profileexitem.h"
 #include "ConfigGenerator.h"
 #include "XrayApi.h"
 #include "PortManager.h"
@@ -445,10 +446,15 @@ std::vector<db::models::Profileitem> SubitemUpdaterV2::parseSubscription(const s
                 profile.requesthost = getJsonValueString(obj, "host", "");
                 profile.streamsecurity = getJsonValueString(obj, "tls", "");
                 profile.sni = getJsonValueString(obj, "sni", "");
+                if (profile.sni.empty() && !profile.requesthost.empty() && profile.streamsecurity == "tls") {
+                    profile.sni = profile.requesthost;
+                }
                 profile.flow = getJsonValueString(obj, "flow", "");
                 profile.fingerprint = getJsonValueString(obj, "fp", "chrome");
                 profile.alpn = getJsonValueString(obj, "alpn", "");
                 profile.headertype = getJsonValueString(obj, "type", "");
+                std::string insecureVal = getJsonValueString(obj, "insecure", "");
+                profile.allowinsecure = (insecureVal == "1" || insecureVal == "true") ? "true" : "false";
                 parseSuccess = true;
             } catch (const std::exception& e) {
                 std::string errMsg = e.what();
@@ -495,6 +501,9 @@ std::vector<db::models::Profileitem> SubitemUpdaterV2::parseSubscription(const s
             profile.muxenabled = "0";
             profile.security = "none";
             profile.id = uri.substr(0, atPos);
+            if (!profile.id.empty() && profile.id.front() == '/') {
+                profile.id.erase(profile.id.begin());
+            }
             
             std::string hostPart = uri.substr(atPos + 1);
             size_t qPos = hostPart.find('?');
@@ -503,6 +512,9 @@ std::vector<db::models::Profileitem> SubitemUpdaterV2::parseSubscription(const s
             auto [addr, port] = parseAddressPort(addrPart);
             if (addr.empty()) continue;
             profile.address = addr;
+            if (!profile.address.empty() && profile.address.back() == '/') {
+                profile.address.pop_back();
+            }
             profile.port = port;
             
             if (qPos != std::string::npos) {
@@ -549,7 +561,7 @@ std::vector<db::models::Profileitem> SubitemUpdaterV2::parseSubscription(const s
             profile.configtype = "3";
             profile.configversion = "2";
             profile.alterid = "0";
-            profile.network = "tcp";
+            profile.network = "";
             profile.coretype = "0";
             profile.muxenabled = "0";
             
@@ -559,6 +571,9 @@ std::vector<db::models::Profileitem> SubitemUpdaterV2::parseSubscription(const s
             auto [addr, portWithParams] = parseAddressPort(hostInfo);
             if (addr.empty()) continue;
             profile.address = addr;
+            if (!profile.address.empty() && profile.address.back() == '/') {
+                profile.address.pop_back();
+            }
             profile.port = portWithParams;
             
             size_t slashPos = profile.port.find('/');
@@ -579,7 +594,72 @@ std::vector<db::models::Profileitem> SubitemUpdaterV2::parseSubscription(const s
                     std::string key = param.substr(0, eqPos);
                     std::string val = urlDecode(param.substr(eqPos + 1));
                     
-                    if (key == "plugin") profile.extra = val;
+                    if (key == "plugin") {
+                        profile.extra = val;
+                        std::string hostFromPlugin;
+                        std::istringstream pluginStream(val);
+                        std::string pluginPart;
+                        while (std::getline(pluginStream, pluginPart, ';')) {
+                            size_t partEqPos = pluginPart.find('=');
+                            if (partEqPos == std::string::npos) continue;
+                            std::string pKey = pluginPart.substr(0, partEqPos);
+                            std::string pVal = pluginPart.substr(partEqPos + 1);
+                            if (pKey == "mode" && pVal == "websocket") {
+                                profile.network = "ws";
+                            } else if (pKey == "path") {
+                                profile.path = pVal;
+                            } else if (pKey == "host") {
+                                hostFromPlugin = pVal;
+                                profile.requesthost = pVal;
+                            } else if (pKey == "sni") {
+                                profile.sni = pVal;
+                            } else if (pKey == "tls") {
+                                profile.streamsecurity = "tls";
+                            } else if (pKey == "skip-cert-verify") {
+                                profile.allowinsecure = (pVal == "true") ? "true" : "false";
+                            } else if (pKey == "mux") {
+                                profile.muxenabled = (pVal == "0") ? "0" : "1";
+                            }
+                        }
+                        if (!profile.sni.empty() && !hostFromPlugin.empty()) {
+                            if (profile.sni.find('@') != std::string::npos || 
+                                profile.sni.find('\xE2\x80') != std::string::npos ||
+                                profile.sni.find(' ') != std::string::npos) {
+                                profile.sni = hostFromPlugin;
+                            }
+                        }
+                        if (profile.streamsecurity == "tls" && profile.sni.empty() && !hostFromPlugin.empty()) {
+                            profile.sni = hostFromPlugin;
+                        }
+                    }
+                    else if (key == "obfs") profile.extra = profile.extra + ",obfs=" + val;
+                    else if (key == "obfs-host") profile.requesthost = val;
+                    else if (key == "obfs-uri") profile.path = val;
+                    else if (key == "sni") profile.sni = val;
+                    else if (key == "tls") profile.streamsecurity = val;
+                    else if (key == "security") profile.streamsecurity = val;
+                    else if (key == "path") profile.path = val;
+                    else if (key == "host") profile.requesthost = val;
+                    else if (key == "mode") profile.headertype = val;
+                }
+                
+                if (profile.extra.empty() && !profile.path.empty()) {
+                    profile.network = "ws";
+                }
+                
+                if (!profile.sni.empty()) {
+                    profile.streamsecurity = "tls";
+                    if (profile.sni.find('@') != std::string::npos || 
+                        profile.sni.find('\xE2\x80') != std::string::npos ||
+                        profile.sni.find(' ') != std::string::npos) {
+                        if (!profile.requesthost.empty()) {
+                            profile.sni = profile.requesthost;
+                        }
+                    }
+                }
+                
+                if (profile.streamsecurity == "tls" && profile.sni.empty() && !profile.requesthost.empty()) {
+                    profile.sni = profile.requesthost;
                 }
             }
             
@@ -589,7 +669,7 @@ std::vector<db::models::Profileitem> SubitemUpdaterV2::parseSubscription(const s
                 profile.security = decodedInfo.substr(0, methodPos);
                 profile.id = decodedInfo.substr(methodPos + 1);
             }
-        } else if (line.find("trojan://") == 0) {
+} else if (line.find("trojan://") == 0) {
             std::string uri = line.substr(9);
             size_t atPos = uri.find('@');
             if (atPos == std::string::npos) continue;
@@ -597,18 +677,24 @@ std::vector<db::models::Profileitem> SubitemUpdaterV2::parseSubscription(const s
             profile.configtype = "6";
             profile.configversion = "2";
             profile.alterid = "0";
-            profile.network = "tcp";
+            profile.network = "";
             profile.coretype = "0";
             profile.muxenabled = "0";
             profile.id = uri.substr(0, atPos);
+            if (!profile.id.empty() && profile.id.front() == '/') {
+                profile.id.erase(profile.id.begin());
+            }
             
             std::string hostPart = uri.substr(atPos + 1);
             size_t qPos = hostPart.find('?');
             std::string addrPart = (qPos != std::string::npos) ? hostPart.substr(0, qPos) : hostPart;
             
-            auto [addr, port] = parseAddressPort(addrPart);
+auto [addr, port] = parseAddressPort(addrPart);
             if (addr.empty()) continue;
             profile.address = addr;
+            if (!profile.address.empty() && profile.address.back() == '/') {
+                profile.address.pop_back();
+            }
             profile.port = port;
             
             if (qPos != std::string::npos) {
@@ -625,28 +711,43 @@ std::vector<db::models::Profileitem> SubitemUpdaterV2::parseSubscription(const s
                     std::string val = urlDecode(param.substr(eqPos + 1));
                     
                     if (key == "sni") profile.sni = val;
-                    else if (key == "allowInsecure") profile.allowinsecure = val;
+                    else if (key == "allowInsecure") profile.allowinsecure = (val == "1" || val == "true") ? "true" : "false";
                     else if (key == "alpn") profile.alpn = val;
                     else if (key == "fp") profile.fingerprint = val;
-                    else if (key == "security") profile.security = val;
+                    else if (key == "security") profile.streamsecurity = val;
+                    else if (key == "path") profile.path = val;
+                    else if (key == "host") profile.requesthost = val;
+                    else if (key == "type") profile.network = val;
+                    else if (key == "network") profile.network = val;
                 }
                 
                 if (hashPos != std::string::npos) {
                     profile.remarks = urlDecode(params.substr(hashPos + 1));
                 }
             }
+            
+            if (!profile.sni.empty()) {
+                profile.streamsecurity = "tls";
+            }
+            
+if (!profile.extra.empty() && profile.extra.front() == ',') {
+                profile.extra.erase(profile.extra.begin());
+            }
         } else if (line.find("hysteria2://") == 0 || line.find("hy2://") == 0) {
             std::string uri = line.find("hysteria2://") == 0 ? line.substr(12) : line.substr(5);
             size_t atPos = uri.find('@');
             if (atPos == std::string::npos) continue;
             
-            profile.configtype = "10";
+            profile.configtype = "7";
             profile.configversion = "2";
             profile.alterid = "0";
-            profile.network = "tcp";
+            profile.network = "";
             profile.coretype = "0";
             profile.muxenabled = "0";
             profile.id = uri.substr(0, atPos);
+            if (!profile.id.empty() && profile.id.front() == '/') {
+                profile.id.erase(profile.id.begin());
+            }
             
             std::string hostPart = uri.substr(atPos + 1);
             size_t qPos = hostPart.find('?');
@@ -655,7 +756,13 @@ std::vector<db::models::Profileitem> SubitemUpdaterV2::parseSubscription(const s
             size_t colonPos = addrPart.find(':');
             if (colonPos == std::string::npos) continue;
             profile.address = addrPart.substr(0, colonPos);
+            if (!profile.address.empty() && profile.address.back() == '/') {
+                profile.address.pop_back();
+            }
             profile.port = addrPart.substr(colonPos + 1);
+            if (!profile.port.empty() && profile.port.back() == '/') {
+                profile.port.pop_back();
+            }
             
             if (qPos != std::string::npos) {
                 std::string params = hostPart.substr(qPos + 1);
@@ -671,15 +778,33 @@ std::vector<db::models::Profileitem> SubitemUpdaterV2::parseSubscription(const s
                     std::string val = urlDecode(param.substr(eqPos + 1));
                     
                     if (key == "sni") profile.sni = val;
+                    else if (key == "security") profile.streamsecurity = val;
                     else if (key == "up") profile.extra = "up=" + val;
                     else if (key == "down") profile.extra = profile.extra + ",down=" + val;
+                    else if (key == "obfs") {
+                        if (val == "salamander") profile.headertype = "none";
+                    }
+                    else if (key == "obfs-password") {
+                        profile.path = val;
+                    }
+                    else if (key == "mport") profile.ports = val;
+                    else if (key == "pinSHA256") profile.certsha = val;
+                    else if (key == "insecure" || key == "allowInsecure") profile.allowinsecure = (val == "1" || val == "true") ? "true" : "false";
                 }
                 
                 if (hashPos != std::string::npos) {
                     profile.remarks = urlDecode(params.substr(hashPos + 1));
                 }
             }
-} else {
+            
+            if (!profile.sni.empty()) {
+                profile.streamsecurity = "tls";
+            }
+            
+            if (!profile.extra.empty() && profile.extra.front() == ',') {
+                profile.extra.erase(profile.extra.begin());
+            }
+        } else {
             continue;
         }
         
@@ -854,12 +979,19 @@ std::string SubitemUpdaterV2::getCurrentTimestamp() {
 }
 
 std::pair<std::string, std::string> SubitemUpdaterV2::parseAddressPort(const std::string& addrPart) {
+    auto trimTrailingSlash = [](std::string s) -> std::string {
+        if (!s.empty() && s.back() == '/') {
+            s.pop_back();
+        }
+        return s;
+    };
+
     if (addrPart.find("[|:") == 0) {
         size_t ipStart = addrPart.find("ffff:") + 5;
         size_t ipEnd = addrPart.find("]:", ipStart);
         if (ipStart != std::string::npos && ipEnd != std::string::npos && ipEnd > ipStart) {
             std::string ip = addrPart.substr(ipStart, ipEnd - ipStart);
-            std::string port = addrPart.substr(ipEnd + 2);
+            std::string port = trimTrailingSlash(addrPart.substr(ipEnd + 2));
             return {ip, port};
         }
     }
@@ -868,7 +1000,7 @@ std::pair<std::string, std::string> SubitemUpdaterV2::parseAddressPort(const std
         size_t closeBracket = addrPart.find(']');
         if (closeBracket != std::string::npos && closeBracket + 1 < addrPart.length()) {
             std::string ip = addrPart.substr(1, closeBracket - 1);
-            std::string port = addrPart.substr(closeBracket + 2);
+            std::string port = trimTrailingSlash(addrPart.substr(closeBracket + 2));
             return {ip, port};
         }
     }
@@ -877,7 +1009,9 @@ std::pair<std::string, std::string> SubitemUpdaterV2::parseAddressPort(const std
     if (colonPos == std::string::npos) {
         return {addrPart, ""};
     }
-    return {addrPart.substr(0, colonPos), addrPart.substr(colonPos + 1)};
+    std::string addr = addrPart.substr(0, colonPos);
+    std::string port = trimTrailingSlash(addrPart.substr(colonPos + 1));
+    return {addr, port};
 }
 
 void SubitemUpdaterV2::log(const std::string& msg) {
@@ -1032,6 +1166,8 @@ int SubitemUpdaterV2::deduplicatePhase1() {
     sql += "Address = '0.0.0.0' OR Address LIKE '% %' OR Address LIKE '[%' OR ";
     sql += "Address LIKE '%:%' OR Address LIKE '%[%]%' OR Address LIKE '%@%' OR ";
     sql += "Address LIKE 'http://%' OR Address LIKE 'https://%' OR Address LIKE '%.'";
+    sql += " OR SubId = '' OR SubId IS NULL";
+    sql += " OR (SubId NOT IN (SELECT Id FROM SubItem))";
     
     if (!config_.dedup_subids.empty()) {
         sql += " OR (StreamSecurity = '' AND SubId NOT IN (" + subidsList + "))";
