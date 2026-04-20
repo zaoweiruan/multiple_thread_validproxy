@@ -200,6 +200,7 @@ boost::json::object ConfigGenerator::buildStreamSettings(const db::models::Profi
             wsSettings["path"] = p.path;
         }
         if (!p.requesthost.empty()) {
+            wsSettings["host"] = p.requesthost;
             boost::json::object headers;
             headers["host"] = p.requesthost;
             wsSettings["headers"] = headers;
@@ -374,6 +375,15 @@ boost::json::object ConfigGenerator::buildTrojanOutbound(const db::models::Profi
     server["address"] = p.address;
     server["port"] = std::stoi(p.port);
     server["password"] = p.id;
+    
+    if (!p.security.empty()) {
+        server["method"] = p.security;
+    } else {
+        server["method"] = "chacha20";
+    }
+    
+    server["ota"] = false;
+    server["level"] = 1;
 
     serversArr.push_back(server);
     settings["servers"] = serversArr;
@@ -456,46 +466,81 @@ boost::json::object ConfigGenerator::buildHysteria2Outbound(const db::models::Pr
     boost::json::object settings;
     settings["address"] = p.address;
     settings["port"] = std::stoi(p.port);
-    settings["password"] = p.id;
-
-    if (!p.username.empty()) {
-        settings["username"] = p.username;
-    }
-
-    if (!p.sni.empty()) {
-        settings["sni"] = p.sni;
-    }
-
-    if (!p.alpn.empty()) {
-        std::vector<std::string> alpnList;
-        std::stringstream ss(p.alpn);
-        std::string item;
-        while (std::getline(ss, item, ',')) {
-            alpnList.push_back(item);
-        }
-        boost::json::array alpnArr;
-        for (const auto& a : alpnList) {
-            alpnArr.push_back(boost::json::value(a));
-        }
-        settings["alpn"] = alpnArr;
-    }
-
-    if (!p.fingerprint.empty()) {
-        settings["fingerprint"] = p.fingerprint;
-    }
-
-    if (p.allowinsecure == "1") {
-        settings["insecure"] = true;
-    }
-
-    if (!p.path.empty()) {
-        settings["obfs"] = boost::json::object({
-            {"type", "wrand"},
-            {"password", p.path}
-        });
-    }
-
+    settings["version"] = 2;
     outbound["settings"] = settings;
+
+    boost::json::object streamSettings;
+    streamSettings["network"] = "hysteria";
+    
+    bool hasTls = !p.sni.empty() || p.allowinsecure == "1";
+    if (hasTls) {
+        streamSettings["security"] = "tls";
+        boost::json::object tlsSettings;
+        if (p.allowinsecure == "1") {
+            tlsSettings["allowInsecure"] = true;
+        }
+        if (!p.sni.empty()) {
+            tlsSettings["serverName"] = p.sni;
+        }
+        streamSettings["tlsSettings"] = tlsSettings;
+    }
+
+    boost::json::object hysteriaSettings;
+    hysteriaSettings["version"] = 2;
+    hysteriaSettings["auth"] = p.id;
+    
+    std::string upSpeed = "100mbps";
+    std::string downSpeed = "100mbps";
+    std::string extra_clean = p.extra;
+    if (!extra_clean.empty() && extra_clean.front() == ',') {
+        extra_clean.erase(extra_clean.begin());
+    }
+    if (!extra_clean.empty()) {
+        if (extra_clean.find("up=") != std::string::npos) {
+            size_t upPos = extra_clean.find("up=") + 3;
+            size_t upEnd = extra_clean.find(",", upPos);
+            if (upEnd == std::string::npos) upEnd = extra_clean.length();
+            upSpeed = extra_clean.substr(upPos, upEnd - upPos);
+        }
+        if (extra_clean.find("down=") != std::string::npos) {
+            size_t downPos = extra_clean.find("down=") + 5;
+            size_t downEnd = extra_clean.find(",", downPos);
+            if (downEnd == std::string::npos) downEnd = extra_clean.length();
+            downSpeed = extra_clean.substr(downPos, downEnd - downPos);
+        }
+    }
+    hysteriaSettings["up"] = upSpeed;
+    hysteriaSettings["down"] = downSpeed;
+    streamSettings["hysteriaSettings"] = hysteriaSettings;
+
+    std::string obfsPassword;
+    if (!extra_clean.empty() && extra_clean.find("obfs-password=") != std::string::npos) {
+        size_t keyPos = extra_clean.find("obfs-password=");
+        size_t pos = keyPos + 14;
+        size_t end = extra_clean.find(",", pos);
+        if (end == std::string::npos) end = extra_clean.length();
+        obfsPassword = extra_clean.substr(pos, end - pos);
+    }
+    
+    if (!p.path.empty() || p.extra.find("obfs=salamander") != std::string::npos) {
+        boost::json::object finalmask;
+        boost::json::array udpArr;
+        boost::json::object salamander;
+        salamander["type"] = "salamander";
+        boost::json::object salamanderSettings;
+        std::string salamanderPwd = obfsPassword.empty() ? p.id : obfsPassword;
+        salamanderSettings["password"] = salamanderPwd;
+        salamander["settings"] = salamanderSettings;
+        udpArr.push_back(salamander);
+        finalmask["udp"] = udpArr;
+        streamSettings["finalmask"] = finalmask;
+    }
+
+    outbound["streamSettings"] = streamSettings;
+
+    boost::json::object mux;
+    mux["enabled"] = false;
+    outbound["mux"] = mux;
 
     return outbound;
 }
