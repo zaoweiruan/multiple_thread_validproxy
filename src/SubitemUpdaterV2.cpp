@@ -219,6 +219,11 @@ bool SubitemUpdaterV2::runSingle(const std::string& subId) {
         return false;
     }
 
+    if (sub.enabled != "1") {
+        log("ERROR: Subscription is disabled: " + subId);
+        return false;
+    }
+
     Strategy strategy = parseStrategy(config_.priority_mode);
     bool result = updateWithStrategy(sub.url, sub.id, strategy);
 
@@ -250,6 +255,11 @@ bool SubitemUpdaterV2::runSingleWithProxy(const std::string& subId, int socksPor
 
     if (sub.id.empty()) {
         log("ERROR: Subscription not found: " + subId);
+        return false;
+    }
+
+    if (sub.enabled != "1") {
+        log("ERROR: Subscription is disabled: " + subId);
         return false;
     }
 
