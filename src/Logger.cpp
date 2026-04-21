@@ -69,3 +69,15 @@ void Logger::close() {
 bool Logger::isEnabled() {
     return enabled_;
 }
+
+std::ofstream* Logger::getFile() {
+    return outFile_;
+}
+
+std::string Logger::getLogDir() {
+    return logDir_;
+}
+
+std::string Logger::getPrefix() {
+    return prefix_;
+}

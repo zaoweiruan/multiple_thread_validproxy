@@ -13,6 +13,9 @@ public:
     static void flush();
     static void close();
     static bool isEnabled();
+    static std::ofstream* getFile();
+    static std::string getLogDir();
+    static std::string getPrefix();
 
 private:
     static std::string logDir_;

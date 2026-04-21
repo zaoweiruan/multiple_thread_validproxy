@@ -378,48 +378,42 @@ if (commandMode == "find-proxy") {
             return 1;
         }
         
-        std::string exeBaseDir = exeDir;
-        std::filesystem::path configDirFs = baseDir / "config";
-        std::string configDirStr = configDirFs.string();
-        
         char timestamp[32];
         time_t now = time(nullptr);
         strftime(timestamp, sizeof(timestamp), "%Y%m%d_%H%M%S", localtime(&now));
-        std::string logFile = (logDir / ("findmin_proxy_" + std::string(timestamp) + ".log")).string();
-        std::ofstream logOutStream(logFile, std::ios::out | std::ios::trunc);
-        std::cout << "Log file: " << logFile << std::endl;
         
-        XrayManager* xrayMgr = XrayManager::getInstance(appConfig->xray_executable, configDirStr, appConfig->xray_workers, logOutStream.is_open() ? &logOutStream : nullptr);
+        std::string exeBaseDir = exeDir;
+        std::filesystem::path configDirFs = baseDir / "config";
+        std::string configDirStr = configDirFs.string();
+        logInfo("Using log file: " + Logger::getLogDir() + "/" + Logger::getPrefix() + "_" + timestamp + ".log");
+        
+        XrayManager* xrayMgr = XrayManager::getInstance(appConfig->xray_executable, configDirStr, appConfig->xray_workers, nullptr);
         int started = xrayMgr->start(1, appConfig->xray_start_port, appConfig->xray_api_port);
         
         if (started == 0) {
-            std::cerr << "Failed to start xray instance" << std::endl;
+            logError("Failed to start xray instance");
             sqlite3_close(db);
             curl_global_cleanup();
             return 1;
         }
         
-        ProxyFinder finder(db, xrayMgr, appConfig->xray_executable, appConfig->test_url, "", appConfig->test_timeout_ms, logOutStream.is_open() ? &logOutStream : nullptr);
-        auto ports = finder.findWorkingProxy("");
+        ProxyFinder finder(db, xrayMgr, appConfig->xray_executable, appConfig->test_url, "", appConfig->test_timeout_ms, nullptr);
+        auto ports = finder.findFirstWorkingProxy();
         
         if (ports.first > 0) {
             auto res = finder.getLastResult();
-            std::cout << "\n=== Working Proxy (Minimum Delay) ===" << std::endl;
+            std::cout << "\n=== Working Proxy ===" << std::endl;
             std::cout << "IndexId: " << res.indexId << std::endl;
             std::cout << "Address: " << res.address << ":" << res.port << std::endl;
             std::cout << "Delay: " << res.latencyMs << "ms" << std::endl;
             std::cout << "SocksPort: " << ports.first << std::endl;
             std::cout << "ApiPort: " << ports.second << std::endl;
         } else {
-            std::cerr << "No working proxy found" << std::endl;
+            logError("No working proxy found");
         }
         
         finder.release();
         XrayManager::release();
-        
-        if (logOutStream.is_open()) {
-            logOutStream.close();
-        }
         
         sqlite3_close(db);
         curl_global_cleanup();
