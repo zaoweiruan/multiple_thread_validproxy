@@ -1086,24 +1086,33 @@ std::string SubitemUpdaterV2::decodeBase64(const std::string& input) {
 }
 
 std::string SubitemUpdaterV2::urlDecode(const std::string& input) {
-    std::string result;
-    for (size_t i = 0; i < input.size(); i++) {
-        if (input[i] == '%' && i + 2 < input.size()) {
-            std::string hexStr = input.substr(i + 1, 2);
-            for (char& c : hexStr) c = std::tolower(c);
-            int value;
-            std::istringstream iss(hexStr);
-            if (iss >> std::hex >> value) {
-                result += static_cast<char>(value);
-                i += 2;
+    std::string result = input;
+    bool changed = true;
+    int maxIterations = 2;
+    while (changed && maxIterations-- > 0) {
+        changed = false;
+        std::string decoded;
+        for (size_t i = 0; i < result.size(); i++) {
+            if (result[i] == '%' && i + 2 < result.size()) {
+                std::string hexStr = result.substr(i + 1, 2);
+                for (char& c : hexStr) c = std::tolower(c);
+                int value;
+                std::istringstream iss(hexStr);
+                if (iss >> std::hex >> value) {
+                    decoded += static_cast<char>(value);
+                    i += 2;
+                    changed = true;
+                } else {
+                    decoded += result[i];
+                }
+            } else if (result[i] == '+') {
+                decoded += ' ';
+                changed = true;
             } else {
-                result += input[i];
+                decoded += result[i];
             }
-        } else if (input[i] == '+') {
-            result += ' ';
-        } else {
-            result += input[i];
         }
+        result = decoded;
     }
     return result;
 }
