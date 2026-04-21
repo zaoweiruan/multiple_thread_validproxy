@@ -43,6 +43,8 @@ private:
 
     bool updateWithStrategy(const std::string& subUrl, const std::string& subId, Strategy strategy);
     std::string fetchUrl(const std::string& url);
+
+    std::optional<db::models::Subitem> getSubscription(const std::string& subId);
     std::string fetchUrlViaProxy(const std::string& url, int socksPort);
 
     std::vector<db::models::Profileitem> parseSubscription(const std::string& content, const std::string& subid);

@@ -201,23 +201,12 @@ bool SubitemUpdaterV2::run() {
 bool SubitemUpdaterV2::runSingle(const std::string& subId) {
     log("INFO: runSingle - subId: " + subId);
 
-    std::string sql = "SELECT * FROM SubItem WHERE Id = '" + subId + "';";
-    sqlite3_stmt* stmt = nullptr;
-    if (sqlite3_prepare_v2(db_, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
-        log("ERROR: SQL prepare failed - " + std::string(sqlite3_errmsg(db_)));
-        return false;
-    }
-
-    db::models::Subitem sub;
-    if (sqlite3_step(stmt) == SQLITE_ROW) {
-        sub = db::models::Subitem::fromStmt(stmt);
-    }
-    sqlite3_finalize(stmt);
-
-    if (sub.id.empty()) {
+    auto optSub = getSubscription(subId);
+    if (!optSub) {
         log("ERROR: Subscription not found: " + subId);
         return false;
     }
+    const auto& sub = *optSub;
 
     if (sub.enabled != "1") {
         log("ERROR: Subscription is disabled: " + subId);
@@ -240,23 +229,12 @@ bool SubitemUpdaterV2::runSingle(const std::string& subId) {
 bool SubitemUpdaterV2::runSingleWithProxy(const std::string& subId, int socksPort) {
     log("INFO: runSingleWithProxy - subId: " + subId + ", socksPort: " + std::to_string(socksPort));
 
-    std::string sql = "SELECT * FROM SubItem WHERE Id = '" + subId + "';";
-    sqlite3_stmt* stmt = nullptr;
-    if (sqlite3_prepare_v2(db_, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
-        log("ERROR: SQL prepare failed - " + std::string(sqlite3_errmsg(db_)));
-        return false;
-    }
-
-    db::models::Subitem sub;
-    if (sqlite3_step(stmt) == SQLITE_ROW) {
-        sub = db::models::Subitem::fromStmt(stmt);
-    }
-    sqlite3_finalize(stmt);
-
-    if (sub.id.empty()) {
+    auto optSub = getSubscription(subId);
+    if (!optSub) {
         log("ERROR: Subscription not found: " + subId);
         return false;
     }
+    const auto& sub = *optSub;
 
     if (sub.enabled != "1") {
         log("ERROR: Subscription is disabled: " + subId);
@@ -271,6 +249,26 @@ bool SubitemUpdaterV2::runSingleWithProxy(const std::string& subId, int socksPor
 
     auto profiles = parseSubscription(content, sub.id);
     return updateProfileItems(sub.id, profiles);
+}
+
+std::optional<db::models::Subitem> SubitemUpdaterV2::getSubscription(const std::string& subId) {
+    std::string sql = "SELECT * FROM SubItem WHERE Id = '" + subId + "';";
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db_, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
+        log("ERROR: SQL prepare failed - " + std::string(sqlite3_errmsg(db_)));
+        return std::nullopt;
+    }
+
+    db::models::Subitem sub;
+    if (sqlite3_step(stmt) == SQLITE_ROW) {
+        sub = db::models::Subitem::fromStmt(stmt);
+    }
+    sqlite3_finalize(stmt);
+
+    if (sub.id.empty()) {
+        return std::nullopt;
+    }
+    return sub;
 }
 
 bool SubitemUpdaterV2::updateWithStrategy(const std::string& subUrl, const std::string& subId, Strategy strategy) {
@@ -1347,18 +1345,23 @@ bool SubitemUpdaterV2::deduplicate() {
     
     log("INFO: Phase 0/5 - Marking working proxies with protected subid");
     int p0 = deduplicatePhase0();
+    log("INFO: Phase 0 completed: " + std::to_string(p0) + " proxies marked");
     
     log("INFO: Phase 1/5 - Removing invalid addresses (private IPs)");
     int p1 = deduplicatePhase1();
+    log("INFO: Phase 1 completed: removed " + std::to_string(p1) + " proxies");
     
     log("INFO: Phase 2/5 - Removing duplicates with delay>0 proxies");
     int p2 = deduplicatePhase2();
+    log("INFO: Phase 2 completed: removed " + std::to_string(p2) + " proxies");
     
     log("INFO: Phase 3/5 - Keeping dedup_subids, removing duplicates");
     int p3 = deduplicatePhase3();
+    log("INFO: Phase 3 completed: removed " + std::to_string(p3) + " proxies");
     
     log("INFO: Phase 4/5 - Full deduplication excluding subids");
     int p4 = deduplicatePhase4();
+    log("INFO: Phase 4 completed: removed " + std::to_string(p4) + " proxies");
     
     log("INFO: Cleaning up ProfileExItem...");
     cleanupProfileExItem();
