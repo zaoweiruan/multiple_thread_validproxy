@@ -542,6 +542,7 @@ std::vector<db::models::Profileitem> SubitemUpdaterV2::parseSubscription(const s
                     else if (key == "spx") profile.spiderx = val;
                     else if (key == "headerType") profile.headertype = val;
                     else if (key == "allowInsecure") profile.allowinsecure = (val == "1" || val == "true") ? "true" : "false";
+                    else if (key == "alpn") profile.alpn = val;
                     else if (key == "e") profile.echconfiglist = val;
                 }
                 
