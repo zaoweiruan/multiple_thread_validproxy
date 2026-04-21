@@ -615,8 +615,6 @@ std::vector<db::models::Profileitem> SubitemUpdaterV2::parseSubscription(const s
                                 profile.sni = pVal;
                             } else if (pKey == "tls") {
                                 profile.streamsecurity = "tls";
-                            } else if (pKey == "skip-cert-verify") {
-                                profile.allowinsecure = (pVal == "true") ? "true" : "false";
                             } else if (pKey == "mux") {
                                 profile.muxenabled = (pVal == "0") ? "0" : "1";
                             }
