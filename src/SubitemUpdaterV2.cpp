@@ -541,6 +541,7 @@ std::vector<db::models::Profileitem> SubitemUpdaterV2::parseSubscription(const s
                     else if (key == "sid") profile.shortid = val;
                     else if (key == "spx") profile.spiderx = val;
                     else if (key == "headerType") profile.headertype = val;
+                    else if (key == "allowInsecure") profile.allowinsecure = (val == "1" || val == "true") ? "true" : "false";
                 }
                 
                 if (hashPos != std::string::npos) {
