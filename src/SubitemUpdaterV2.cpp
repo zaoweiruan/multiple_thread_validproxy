@@ -543,7 +543,7 @@ std::vector<db::models::Profileitem> SubitemUpdaterV2::parseSubscription(const s
                     else if (key == "headerType") profile.headertype = val;
                     else if (key == "allowInsecure") profile.allowinsecure = (val == "1" || val == "true") ? "true" : "false";
                     else if (key == "alpn") profile.alpn = val;
-                    else if (key == "e") profile.echconfiglist = val;
+                    else if (key == "e" || key == "ech") profile.echconfiglist = val;
                 }
                 
                 if (hashPos != std::string::npos) {
@@ -848,7 +848,7 @@ bool SubitemUpdaterV2::updateProfileItems(const std::string& subid, const std::v
         oss << "INSERT INTO ProfileItem (IndexId, ConfigType, ConfigVersion, Address, Port, Id, "
             << "AlterId, Security, Network, Remarks, HeaderType, RequestHost, Path, StreamSecurity, "
             << "AllowInsecure, Subid, IsSub, Flow, Sni, Alpn, CoreType, PreSocksPort, Fingerprint, "
-            << "DisplayLog, PublicKey, ShortId, SpiderX, Extra, Ports, Mldsa65Verify, MuxEnabled, Cert) VALUES (";
+            << "DisplayLog, PublicKey, ShortId, SpiderX, Mldsa65Verify, EchConfigList, Extra, Ports, MuxEnabled, Cert) VALUES (";
         oss << "'" << p.indexid << "', ";
         oss << "'" << p.configtype << "', ";
         oss << "'" << p.configversion << "', ";
@@ -876,9 +876,10 @@ bool SubitemUpdaterV2::updateProfileItems(const std::string& subid, const std::v
         oss << "'" << p.publickey << "', ";
         oss << "'" << p.shortid << "', ";
         oss << "'" << p.spiderx << "', ";
+        oss << "'" << p.mldsa65verify << "', ";
+        oss << "'" << p.echconfiglist << "', ";
         oss << "'" << p.extra << "', ";
         oss << "'" << p.ports << "', ";
-        oss << "'" << p.mldsa65verify << "', ";
         oss << "'" << p.muxenabled << "', ";
         oss << "'" << p.cert << "');";
 
@@ -1106,7 +1107,7 @@ std::string SubitemUpdaterV2::urlDecode(const std::string& input) {
                 } else {
                     decoded += result[i];
                 }
-            } else if (result[i] == '+') {
+            } else if (result[i] == '+' && maxIterations == 1) {
                 decoded += ' ';
                 changed = true;
             } else {
