@@ -6,6 +6,7 @@
 #include <sqlite3.h>
 #include <curl/curl.h>
 #include <chrono>
+#include <ctime>
 #include <thread>
 #include <atomic>
 #include <filesystem>
@@ -23,12 +24,46 @@
 #include "XrayApi.h"
 #include "XrayManager.h"
 #include "SubitemUpdaterV2.h"
+#include "ShareLink.h"
 #include "ProxyBatchTester.h"
 #include "Utils.h"
+#include "Logger.h"
 
 namespace {
 
 XrayManager* g_xrayManager = nullptr;
+std::string g_commandMode;
+
+std::string getTimestamp() {
+    auto now = std::chrono::system_clock::now();
+    time_t t = std::chrono::system_clock::to_time_t(now);
+    char buf[32];
+    strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", localtime(&t));
+    return std::string(buf);
+}
+
+void logInfo(const std::string& msg) {
+    std::string mode = g_commandMode.empty() ? "main" : g_commandMode;
+    std::string output = "[" + getTimestamp() + "] [" + mode + "] " + msg;
+    std::cout << output << std::endl;
+    Logger::write(output);
+}
+
+void logInfo(const char* msg) {
+    logInfo(std::string(msg));
+}
+
+void logError(const std::string& msg) {
+    std::string mode = g_commandMode.empty() ? "main" : g_commandMode;
+    std::string output = "[" + getTimestamp() + "] [" + mode + "] " + msg;
+    std::cerr << output << std::endl;
+    Logger::write(output);
+}
+
+void logError(const char* msg) {
+    std::string mode = g_commandMode.empty() ? "main" : g_commandMode;
+    std::cerr << "[" << getTimestamp() << "] [" << mode << "] " << msg << std::endl;
+}
 
 BOOL WINAPI consoleCtrlHandler(DWORD ctrlType) {
     if (ctrlType == CTRL_C_EVENT || ctrlType == CTRL_BREAK_EVENT) {
@@ -46,8 +81,6 @@ BOOL WINAPI consoleCtrlHandler(DWORD ctrlType) {
 int main(int argc, char* argv[]) {
     SetConsoleCtrlHandler(consoleCtrlHandler, TRUE);
     
-    std::cout << "validproxy starting..." << std::endl;
-
     std::string exeDir = utils::getExecutableDir();
     
     std::filesystem::path baseDir = std::filesystem::path(exeDir);
@@ -102,6 +135,8 @@ int main(int argc, char* argv[]) {
             }
         } else if (arg == "-D" || arg == "-dedup" || arg == "--dedup") {
             commandMode = "dedup";
+        } else if (arg == "-TU" || arg == "-tourl" || arg == "--tourl") {
+            commandMode = "tourl";
         } else if (arg == "-h" || arg == "--help") {
 std::cout << "Usage: validproxy [options]\n"
                       << "Options:\n"
@@ -114,6 +149,7 @@ std::cout << "Usage: validproxy [options]\n"
                       << "  -UA, -update-all     Update all enabled subscriptions\n"
                       << "  -T, -test-sub <id>   Test proxies from subscription by ID\n"
                       << "  -D, -dedup           Remove duplicate proxies from database\n"
+                      << "  -TU, -tourl         Export proxies (delay>0) to share links file\n"
                       << "  -h, --help           Show this help\n";
             return 0;
         } else if (arg.find(".json") != std::string::npos) {
@@ -128,6 +164,10 @@ std::cout << "Usage: validproxy [options]\n"
             return 1;
         }
     }
+    
+    g_commandMode = commandMode;
+    Logger::init(logDir.string(), g_commandMode.empty() ? "main" : g_commandMode);
+    logInfo("validproxy starting...");
     
     if (commandMode == "generator") {
         auto appConfig = config::ConfigReader::load(configPath);
@@ -275,7 +315,8 @@ if (commandMode == "find-proxy") {
         }
         
         std::string exeBaseDir = exeDir;
-        std::string configDir = exeBaseDir + "/config";
+        std::filesystem::path configDir = baseDir / "config";
+        std::string configDirStr = configDir.string();
         
         char timestamp[32];
         time_t now = time(nullptr);
@@ -284,7 +325,7 @@ if (commandMode == "find-proxy") {
         std::ofstream logOutStream(logFile, std::ios::out | std::ios::trunc);
         std::cout << "Log file: " << logFile << std::endl;
         
-        XrayManager* xrayMgr = XrayManager::getInstance(appConfig->xray_executable, configDir, appConfig->xray_workers, logOutStream.is_open() ? &logOutStream : nullptr);
+        XrayManager* xrayMgr = XrayManager::getInstance(appConfig->xray_executable, configDirStr, appConfig->xray_workers, logOutStream.is_open() ? &logOutStream : nullptr);
         int started = xrayMgr->start(1, appConfig->xray_start_port, appConfig->xray_api_port);
         
         if (started == 0) {
@@ -338,7 +379,8 @@ if (commandMode == "find-proxy") {
         }
         
         std::string exeBaseDir = exeDir;
-        std::string configDir = exeBaseDir + "/config";
+        std::filesystem::path configDirFs = baseDir / "config";
+        std::string configDirStr = configDirFs.string();
         
         char timestamp[32];
         time_t now = time(nullptr);
@@ -347,7 +389,7 @@ if (commandMode == "find-proxy") {
         std::ofstream logOutStream(logFile, std::ios::out | std::ios::trunc);
         std::cout << "Log file: " << logFile << std::endl;
         
-        XrayManager* xrayMgr = XrayManager::getInstance(appConfig->xray_executable, configDir, appConfig->xray_workers, logOutStream.is_open() ? &logOutStream : nullptr);
+        XrayManager* xrayMgr = XrayManager::getInstance(appConfig->xray_executable, configDirStr, appConfig->xray_workers, logOutStream.is_open() ? &logOutStream : nullptr);
         int started = xrayMgr->start(1, appConfig->xray_start_port, appConfig->xray_api_port);
         
         if (started == 0) {
@@ -424,7 +466,87 @@ if (commandMode == "find-proxy") {
         sqlite3_close(db);
         curl_global_cleanup();
         
-        std::cout << commandMode << " " << (result ? "completed" : "failed") << std::endl;
+        logInfo(result ? "completed" : "failed");
+        return result ? 0 : 1;
+    }
+    
+    if (commandMode == "tourl") {
+        auto appConfig = config::ConfigReader::load(configPath);
+        if (!appConfig) {
+            std::cerr << "Failed to load config from: " << configPath << std::endl;
+            return 1;
+        }
+        
+        sqlite3* db = nullptr;
+        curl_global_init(CURL_GLOBAL_DEFAULT);
+        
+        if (sqlite3_open(appConfig->database_path.c_str(), &db) != SQLITE_OK) {
+            std::cerr << "Failed to open database: " << sqlite3_errmsg(db) << std::endl;
+            return 1;
+        }
+        
+        db::models::ProfileitemDAO profileDao(db);
+        db::models::ProfileexitemDAO exDao(db);
+        
+        std::string sql = R"(
+            SELECT p.*, COALESCE(pe.Delay, 0) as ExDelay 
+            FROM ProfileItem p 
+            LEFT JOIN ProfileExItem pe ON p.IndexId = pe.IndexId 
+            WHERE p.SubId != 'custom' AND CAST(COALESCE(pe.Delay, 0) AS INTEGER) > 0
+            ORDER BY CAST(pe.Delay AS INTEGER) ASC
+        )";
+        
+        auto profiles = profileDao.getAll(sql);
+        std::cout << "Found " << profiles.size() << " proxies with delay > 0" << std::endl;
+        
+        std::string output;
+        for (const auto& profile : profiles) {
+            auto link = share::ShareLink::toShareUri(
+                profile.configtype,
+                profile.address,
+                profile.port,
+                profile.id,
+                profile.security,
+                profile.network,
+                profile.flow,
+                profile.sni,
+                profile.alpn,
+                profile.fingerprint,
+                profile.allowinsecure,
+                profile.path,
+                profile.requesthost,
+                profile.headertype,
+                profile.streamsecurity,
+                profile.remarks
+            );
+            if (!link.empty()) {
+                output += link + "\n";
+            }
+        }
+        
+        bool result = false;
+        if (!output.empty()) {
+            char timestamp[32];
+            time_t now = time(nullptr);
+            strftime(timestamp, sizeof(timestamp), "%Y%m%d_%H%M%S", localtime(&now));
+            
+            std::filesystem::path outPath = std::filesystem::path(exeDir) / "proxies" / ("proxies_" + std::string(timestamp) + ".txt");
+            std::filesystem::create_directories(outPath.parent_path());
+            
+            std::ofstream outFile(outPath, std::ios::binary);
+            outFile << output;
+            outFile.close();
+            
+            std::cout << "Exported to: " << outPath.string() << std::endl;
+            result = true;
+        } else {
+            std::cout << "No proxies to export" << std::endl;
+        }
+        
+        sqlite3_close(db);
+        curl_global_cleanup();
+        
+        logInfo(result ? "completed" : "failed");
         return result ? 0 : 1;
     }
     
@@ -483,6 +605,74 @@ if (commandMode == "find-proxy") {
                                                   logOut.is_open() ? &logOut : nullptr,
                                                   exeDir);
             result = subUpdaterV2.deduplicate();
+        } else if (commandMode == "tourl") {
+            sqlite3* db = nullptr;
+            curl_global_init(CURL_GLOBAL_DEFAULT);
+            
+            if (sqlite3_open(appConfig->database_path.c_str(), &db) != SQLITE_OK) {
+                std::cerr << "Failed to open database: " << sqlite3_errmsg(db) << std::endl;
+                return 1;
+            }
+            
+            db::models::ProfileitemDAO profileDao(db);
+            db::models::ProfileexitemDAO exDao(db);
+            
+            std::string sql = R"(
+                SELECT p.*, COALESCE(pe.Delay, 0) as ExDelay 
+                FROM ProfileItem p 
+                LEFT JOIN ProfileExItem pe ON p.IndexId = pe.IndexId 
+                WHERE p.IsSub = 'true' AND CAST(COALESCE(pe.Delay, 0) AS INTEGER) > 0
+                ORDER BY CAST(pe.Delay AS INTEGER) ASC
+            )";
+            
+            auto profiles = profileDao.getAll(sql);
+            std::cout << "Found " << profiles.size() << " proxies with delay > 0" << std::endl;
+            
+            std::string output;
+            for (const auto& profile : profiles) {
+                auto link = share::ShareLink::toShareUri(
+                    profile.configtype,
+                    profile.address,
+                    profile.port,
+                    profile.id,
+                    profile.security,
+                    profile.network,
+                    profile.flow,
+                    profile.sni,
+                    profile.alpn,
+                    profile.fingerprint,
+                    profile.allowinsecure,
+                    profile.path,
+                    profile.requesthost,
+                    profile.headertype,
+                    profile.streamsecurity,
+                    profile.remarks
+                );
+                if (!link.empty()) {
+                    output += link + "\n";
+                }
+            }
+            
+            if (!output.empty()) {
+                char timestamp[32];
+                time_t now = time(nullptr);
+                strftime(timestamp, sizeof(timestamp), "%Y%m%d_%H%M%S", localtime(&now));
+                
+                std::filesystem::path outPath = std::filesystem::path(exeDir) / "proxies" / ("proxies_" + std::string(timestamp) + ".txt");
+                std::filesystem::create_directories(outPath.parent_path());
+                
+                std::ofstream outFile(outPath, std::ios::binary);
+                outFile << output;
+                outFile.close();
+                
+                std::cout << "Exported to: " << outPath.string() << std::endl;
+                result = true;
+            } else {
+                std::cout << "No proxies to export" << std::endl;
+                result = false;
+            }
+            
+            sqlite3_close(db);
         } else {
             update::SubitemUpdaterV2 subUpdaterV2(db,
                                                   appConfig->xray_executable,
@@ -506,7 +696,7 @@ if (commandMode == "find-proxy") {
         sqlite3_close(db);
         curl_global_cleanup();
         
-        std::cout << commandMode << " " << (result ? "completed" : "failed") << std::endl;
+        logInfo(result ? "completed" : "failed");
         
         return result ? 0 : 1;
     }
