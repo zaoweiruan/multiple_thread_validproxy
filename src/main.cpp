@@ -166,12 +166,10 @@ std::cout << "Usage: validproxy [options]\n"
     }
     
     g_commandMode = commandMode;
-    if (!commandMode.empty()) {
-        Logger::init(logDir.string(), g_commandMode);
-        logInfo("validproxy starting...");
-    }
     
     if (commandMode == "generator") {
+        Logger::init(logDir.string(), commandMode);
+        logInfo("validproxy starting...");
         auto appConfig = config::ConfigReader::load(configPath);
         if (!appConfig) {
             std::cerr << "Failed to load config from: " << configPath << std::endl;
@@ -215,9 +213,12 @@ std::cout << "Usage: validproxy [options]\n"
     }
     
     if (commandMode == "show-sub") {
+        Logger::init(logDir.string(), commandMode);
+        logInfo("validproxy starting...");
+        
         auto appConfig = config::ConfigReader::load(configPath);
         if (!appConfig) {
-            std::cerr << "Failed to load config from: " << configPath << std::endl;
+            logError("Failed to load config from: " + configPath);
             return 1;
         }
         
@@ -225,7 +226,7 @@ std::cout << "Usage: validproxy [options]\n"
         curl_global_init(CURL_GLOBAL_DEFAULT);
         
         if (sqlite3_open(appConfig->database_path.c_str(), &db) != SQLITE_OK) {
-            std::cerr << "Failed to open database: " << sqlite3_errmsg(db) << std::endl;
+            logError("Failed to open database: " + std::string(sqlite3_errmsg(db)));
             return 1;
         }
         
@@ -302,9 +303,12 @@ std::cout << "Usage: validproxy [options]\n"
     }
     
 if (commandMode == "find-proxy") {
+        Logger::init(logDir.string(), commandMode);
+        logInfo("validproxy starting...");
+        
         auto appConfig = config::ConfigReader::load(configPath);
         if (!appConfig) {
-            std::cerr << "Failed to load config from: " << configPath << std::endl;
+            logError("Failed to load config from: " + configPath);
             return 1;
         }
         
@@ -312,7 +316,7 @@ if (commandMode == "find-proxy") {
         curl_global_init(CURL_GLOBAL_DEFAULT);
         
         if (sqlite3_open(appConfig->database_path.c_str(), &db) != SQLITE_OK) {
-            std::cerr << "Failed to open database: " << sqlite3_errmsg(db) << std::endl;
+            logError("Failed to open database: " + std::string(sqlite3_errmsg(db)));
             return 1;
         }
         
@@ -366,9 +370,12 @@ if (commandMode == "find-proxy") {
     }
     
     if (commandMode == "findminproxy") {
+        Logger::init(logDir.string(), commandMode);
+        logInfo("validproxy starting...");
+        
         auto appConfig = config::ConfigReader::load(configPath);
         if (!appConfig) {
-            std::cerr << "Failed to load config from: " << configPath << std::endl;
+            logError("Failed to load config from: " + configPath);
             return 1;
         }
         
@@ -376,7 +383,7 @@ if (commandMode == "find-proxy") {
         curl_global_init(CURL_GLOBAL_DEFAULT);
         
         if (sqlite3_open(appConfig->database_path.c_str(), &db) != SQLITE_OK) {
-            std::cerr << "Failed to open database: " << sqlite3_errmsg(db) << std::endl;
+            logError("Failed to open database: " + std::string(sqlite3_errmsg(db)));
             return 1;
         }
         
@@ -424,9 +431,12 @@ if (commandMode == "find-proxy") {
     }
     
     if (commandMode == "dedup") {
+        Logger::init(logDir.string(), commandMode);
+        logInfo("validproxy starting...");
+        
         auto appConfig = config::ConfigReader::load(configPath);
         if (!appConfig) {
-            std::cerr << "Failed to load config from: " << configPath << std::endl;
+            logError("Failed to load config from: " + configPath);
             return 1;
         }
         
@@ -434,7 +444,7 @@ if (commandMode == "find-proxy") {
         curl_global_init(CURL_GLOBAL_DEFAULT);
         
         if (sqlite3_open(appConfig->database_path.c_str(), &db) != SQLITE_OK) {
-            std::cerr << "Failed to open database: " << sqlite3_errmsg(db) << std::endl;
+            logError("Failed to open database: " + std::string(sqlite3_errmsg(db)));
             return 1;
         }
         
@@ -451,13 +461,11 @@ if (commandMode == "find-proxy") {
         update::SubitemUpdaterV2 subUpdaterV2(db,
                                               appConfig->xray_executable,
                                               *appConfig,
-                                              logOut.is_open() ? &logOut : nullptr,
+                                              nullptr,
                                               exeDir);
         bool result = subUpdaterV2.deduplicate();
         
-        if (logOut.is_open()) {
-            logOut.close();
-        }
+        
         
         sqlite3_close(db);
         curl_global_cleanup();
@@ -467,9 +475,12 @@ if (commandMode == "find-proxy") {
     }
     
     if (commandMode == "tourl") {
+        Logger::init(logDir.string(), commandMode);
+        logInfo("validproxy starting...");
+        
         auto appConfig = config::ConfigReader::load(configPath);
         if (!appConfig) {
-            std::cerr << "Failed to load config from: " << configPath << std::endl;
+            logError("Failed to load config from: " + configPath);
             return 1;
         }
         
@@ -477,7 +488,7 @@ if (commandMode == "find-proxy") {
         curl_global_init(CURL_GLOBAL_DEFAULT);
         
         if (sqlite3_open(appConfig->database_path.c_str(), &db) != SQLITE_OK) {
-            std::cerr << "Failed to open database: " << sqlite3_errmsg(db) << std::endl;
+            logError("Failed to open database: " + std::string(sqlite3_errmsg(db)));
             return 1;
         }
         
@@ -547,9 +558,12 @@ if (commandMode == "find-proxy") {
     }
     
     if (!singleSubId.empty()) {
+        Logger::init(logDir.string(), commandMode.empty() ? "test" : commandMode);
+        logInfo("validproxy starting...");
+        
         auto appConfig = config::ConfigReader::load(configPath);
         if (!appConfig) {
-            std::cerr << "Failed to load config from: " << configPath << std::endl;
+            logError("Failed to load config from: " + configPath);
             return 1;
         }
         
@@ -557,7 +571,7 @@ if (commandMode == "find-proxy") {
         curl_global_init(CURL_GLOBAL_DEFAULT);
         
         if (sqlite3_open(appConfig->database_path.c_str(), &db) != SQLITE_OK) {
-            std::cerr << "Failed to open database: " << sqlite3_errmsg(db) << std::endl;
+            logError("Failed to open database: " + std::string(sqlite3_errmsg(db)));
             return 1;
         }
         
@@ -565,30 +579,11 @@ if (commandMode == "find-proxy") {
         time_t now = time(nullptr);
         strftime(timestamp, sizeof(timestamp), "%Y%m%d_%H%M%S", localtime(&now));
         
-        std::string logFileName;
-        if (commandMode == "test-sub") {
-            logFileName = "test_proxy_" + std::string(timestamp) + ".log";
-        } else if (commandMode == "update") {
-            logFileName = "sub_update_" + std::string(timestamp) + ".log";
-        } else if (commandMode == "dedup") {
-            logFileName = "dedup_" + std::string(timestamp) + ".log";
-        } else {
-            logFileName = "test_proxy_" + std::string(timestamp) + ".log";
-        }
-        
-        std::string logFile = (logDir / logFileName).string();
-        std::ofstream logOut(logFile, std::ios::out | std::ios::trunc);
-        
-        if (commandMode == "dedup") {
-            std::cout << "Mode: " << commandMode << std::endl;
-        } else {
-            std::cout << "Mode: " << commandMode << ", subscription: " << singleSubId << std::endl;
-            logOut << "[" << timestamp << "] Starting " << commandMode << " for subId: " << singleSubId << std::endl;
-        }
+        logInfo("Mode: " + commandMode + ", subscription: " + singleSubId);
         
         bool result;
         if (commandMode == "test-sub") {
-            ProxyBatchTester tester(db, *appConfig, exeDir, logOut.is_open() ? &logOut : nullptr);
+            ProxyBatchTester tester(db, *appConfig, exeDir, nullptr);
             g_xrayManager = tester.getXrayManager();
             result = tester.runWithSubId(singleSubId);
             if (appConfig->notification_enabled && appConfig->notification_on_test) {
@@ -598,7 +593,7 @@ if (commandMode == "find-proxy") {
             update::SubitemUpdaterV2 subUpdaterV2(db,
                                                   appConfig->xray_executable,
                                                   *appConfig,
-                                                  logOut.is_open() ? &logOut : nullptr,
+                                                  nullptr,
                                                   exeDir);
             result = subUpdaterV2.deduplicate();
         } else if (commandMode == "tourl") {
@@ -673,7 +668,7 @@ if (commandMode == "find-proxy") {
             update::SubitemUpdaterV2 subUpdaterV2(db,
                                                   appConfig->xray_executable,
                                                   *appConfig,
-                                                  logOut.is_open() ? &logOut : nullptr,
+                                                  nullptr,
                                                   exeDir);
             if (singleSubId == "__all__") {
                 result = subUpdaterV2.run();
@@ -685,9 +680,7 @@ if (commandMode == "find-proxy") {
             }
         }
         
-        if (logOut.is_open()) {
-            logOut.close();
-        }
+        
         
         sqlite3_close(db);
         curl_global_cleanup();
@@ -699,20 +692,21 @@ if (commandMode == "find-proxy") {
     
     auto appConfig = config::ConfigReader::load(configPath);
     if (!appConfig) {
-        std::cerr << "Failed to load config from: " << configPath << std::endl;
+        logError("Failed to load config from: " + configPath);
         return 1;
     }
+    
+    Logger::init(logDir.string(), "test");
+    logInfo("validproxy starting...");
+    logInfo("Config loaded from: " + configPath);
+    logInfo("Database path: " + appConfig->database_path);
     
     int numWorkers = appConfig->xray_workers;
     int startPort = appConfig->xray_start_port;
     bool logEnabled = appConfig->log_enabled;
     
-    std::cout << "Config loaded from: " << configPath << std::endl;
-    std::cout << "Database path: " << appConfig->database_path << std::endl;
-    std::cout << "SQL query: " << appConfig->sql_query << std::endl;
-    std::cout << "Xray executable: " << appConfig->xray_executable << std::endl;
-    std::cout << "Workers: " << numWorkers << std::endl;
-    std::cout << "Start port: " << startPort << std::endl;
+    logInfo("Workers: " + std::to_string(numWorkers));
+    logInfo("Start port: " + std::to_string(startPort));
 
     auto startTime = std::chrono::system_clock::now();
     time_t startTimeT = std::chrono::system_clock::to_time_t(startTime);
