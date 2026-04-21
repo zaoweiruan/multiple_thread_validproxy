@@ -1089,8 +1089,10 @@ std::string SubitemUpdaterV2::urlDecode(const std::string& input) {
     std::string result;
     for (size_t i = 0; i < input.size(); i++) {
         if (input[i] == '%' && i + 2 < input.size()) {
+            std::string hexStr = input.substr(i + 1, 2);
+            for (char& c : hexStr) c = std::tolower(c);
             int value;
-            std::istringstream iss(input.substr(i + 1, 2));
+            std::istringstream iss(hexStr);
             if (iss >> std::hex >> value) {
                 result += static_cast<char>(value);
                 i += 2;
