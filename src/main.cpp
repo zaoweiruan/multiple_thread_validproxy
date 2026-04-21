@@ -166,8 +166,10 @@ std::cout << "Usage: validproxy [options]\n"
     }
     
     g_commandMode = commandMode;
-    Logger::init(logDir.string(), g_commandMode.empty() ? "main" : g_commandMode);
-    logInfo("validproxy starting...");
+    if (!commandMode.empty()) {
+        Logger::init(logDir.string(), g_commandMode);
+        logInfo("validproxy starting...");
+    }
     
     if (commandMode == "generator") {
         auto appConfig = config::ConfigReader::load(configPath);
