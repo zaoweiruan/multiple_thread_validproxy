@@ -262,12 +262,13 @@ std::string ShareLink::ssToUri(const std::string& address,
     std::string query;
     
     if (network == "ws" || network == "websocket") {
-        query = "plugin=v2ray-plugin;mode=websocket";
-        if (!path.empty()) {
-            query += ";path=" + urlEncode(path);
-        }
+        query = "plugin=v2ray-plugin";
+        query += ";mode=websocket";
         if (!sni.empty()) {
             query += ";host=" + sni;
+        }
+        if (!path.empty()) {
+            query += ";path=" + path;
         }
         if (streamsecurity == "tls") {
             query += ";tls";
