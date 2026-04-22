@@ -253,25 +253,45 @@ std::string ShareLink::trojanToUri(const std::string& address,
                                    const std::string& fingerprint,
                                    const std::string& allowinsecure,
                                    const std::string& remarks) {
-    std::map<std::string, std::string> params;
+    std::string query;
     
-    if (!flow.empty()) params["flow"] = flow;
-    if (!network.empty()) params["type"] = (network == "tcp" || network.empty()) ? "tcp" : network;
-    if (!headertype.empty()) params["headerType"] = headertype;
-    if (!sni.empty()) params["sni"] = sni;
-    if (!alpn.empty()) params["alpn"] = alpn;
-    if (!fingerprint.empty()) params["fp"] = fingerprint;
-    if (!path.empty()) params["path"] = path;
-    if (!requesthost.empty()) params["host"] = requesthost;
-    if (!remarks.empty()) params["remark"] = remarks;
-    if (streamsecurity == "tls") {
-        params["security"] = "tls";
-    } else if (streamsecurity == "reality") {
-        params["security"] = "reality";
+    if (streamsecurity == "tls" || streamsecurity == "reality") {
+        query += "security=" + streamsecurity;
+    }
+    if (!sni.empty()) {
+        if (!query.empty()) query += "&";
+        query += "sni=" + sni;
+    }
+    if (!fingerprint.empty()) {
+        if (!query.empty()) query += "&";
+        query += "fp=" + fingerprint;
+    }
+    query += "&insecure=0&allowInsecure=0";
+    
+    std::string net = network.empty() ? "tcp" : network;
+    if (net != "tcp") {
+        query += "&type=" + net;
+    }
+    if (!requesthost.empty()) {
+        query += "&host=" + requesthost;
+    }
+    if (!path.empty()) {
+        std::string pathFormatted = path;
+        replaceAll(pathFormatted, ";", "%3B");
+        replaceAll(pathFormatted, "=", "%3D");
+        query += "&path=" + pathFormatted;
     }
     
-    std::string query = buildQueryString(params);
-    return "trojan://" + password + "@" + address + ":" + port + (query.empty() ? "" : "?" + query);
+    std::string result = "trojan://" + password + "@" + address + ":" + port + "?" + query;
+    
+    if (!remarks.empty()) {
+        std::string remarksFormatted = remarks;
+        replaceAll(remarksFormatted, " ", "%20");
+        replaceAll(remarksFormatted, "|", "%7C");
+        result += "#" + remarksFormatted;
+    }
+    
+    return result;
 }
 
 std::string ShareLink::ssToUri(const std::string& address,
