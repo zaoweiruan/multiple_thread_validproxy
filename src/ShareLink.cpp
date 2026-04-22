@@ -261,9 +261,7 @@ std::string ShareLink::vlessToUri(const std::string& address,
     std::string result = "vless://" + id + "@" + address + ":" + port + "?" + query;
     
     if (!remarks.empty()) {
-        std::string remarksFormatted = remarks;
-        replaceAll(remarksFormatted, " ", "%20");
-        replaceAll(remarksFormatted, "|", "%7C");
+        std::string remarksFormatted = urlEncode(remarks);
         result += "#" + remarksFormatted;
     }
     
@@ -316,9 +314,7 @@ std::string ShareLink::trojanToUri(const std::string& address,
     std::string result = "trojan://" + password + "@" + address + ":" + port + "?" + query;
     
     if (!remarks.empty()) {
-        std::string remarksFormatted = remarks;
-        replaceAll(remarksFormatted, " ", "%20");
-        replaceAll(remarksFormatted, "|", "%7C");
+        std::string remarksFormatted = urlEncode(remarks);
         result += "#" + remarksFormatted;
     }
     
