@@ -133,6 +133,13 @@ std::string ShareLink::formatIpv6(const std::string& addr) {
     return result;
 }
 
+static std::string jsonEncode(const std::string& str) {
+    std::string result = str;
+    replaceAll(result, "\\", "\\\\");
+    replaceAll(result, "\"", "\\\"");
+    return result;
+}
+
 std::string ShareLink::vmessToUri(const std::string& address,
                                 const std::string& port,
                                 const std::string& id,
@@ -160,22 +167,23 @@ std::string ShareLink::vmessToUri(const std::string& address,
     } else {
         std::ostringstream oss;
         oss << "{\n";
-        oss << "  \"v\": \"2\",\n";
-        oss << "  \"ps\": \"" << remarks << "\",\n";
-        oss << "  \"add\": \"" << address << "\",\n";
-        oss << "  \"port\": \"" << port << "\",\n";
-        oss << "  \"id\": \"" << id << "\",\n";
-        oss << "  \"aid\": \"" << alterid << "\",\n";
-        oss << "  \"scy\": \"" << security << "\",\n";
-        oss << "  \"net\": \"" << network << "\",\n";
-        oss << "  \"type\": \"" << headertype << "\",\n";
-        oss << "  \"host\": \"" << requesthost << "\",\n";
-        oss << "  \"path\": \"" << path << "\",\n";
-        oss << "  \"tls\": \"" << streamsecurity << "\",\n";
-        oss << "  \"sni\": \"" << sni << "\",\n";
-        oss << "  \"alpn\": \"" << alpn << "\",\n";
-        oss << "  \"fp\": \"" << fingerprint << "\",\n";
-        oss << "  \"insecure\": \"" << (allowinsecure.empty() ? "0" : allowinsecure) << "\"\n";
+        oss << "  \"v\": \"" << jsonEncode("2") << "\",\n";
+        oss << "  \"ps\": \"" << jsonEncode(remarks) << "\",\n";
+        oss << "  \"add\": \"" << jsonEncode(address) << "\",\n";
+        oss << "  \"port\": \"" << jsonEncode(port) << "\",\n";
+        oss << "  \"id\": \"" << jsonEncode(id) << "\",\n";
+        oss << "  \"aid\": \"" << jsonEncode(alterid) << "\",\n";
+        oss << "  \"scy\": \"" << jsonEncode(security) << "\",\n";
+        oss << "  \"net\": \"" << jsonEncode(network) << "\",\n";
+        oss << "  \"type\": \"" << jsonEncode(headertype) << "\",\n";
+        oss << "  \"host\": \"" << jsonEncode(requesthost) << "\",\n";
+        oss << "  \"path\": \"" << jsonEncode(path) << "\",\n";
+        oss << "  \"tls\": \"" << jsonEncode(streamsecurity) << "\",\n";
+        oss << "  \"sni\": \"" << jsonEncode(sni) << "\",\n";
+        oss << "  \"alpn\": \"" << jsonEncode(alpn) << "\",\n";
+        oss << "  \"fp\": \"" << jsonEncode(fingerprint) << "\",\n";
+        std::string insecureVal = allowinsecure.empty() ? "0" : allowinsecure;
+        oss << "  \"insecure\": \"" << jsonEncode(insecureVal) << "\"\n";
         oss << "}";
         json = oss.str();
     }
