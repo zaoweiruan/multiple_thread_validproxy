@@ -258,15 +258,28 @@ std::string ShareLink::ssToUri(const std::string& address,
     std::string userInfo = method + ":" + password;
     std::string encoded = base64Encode(userInfo);
     
+    std::string result = "ss://" + encoded + "@" + address + ":" + port;
     std::string query;
-    if (!network.empty() && network != "tcp") {
+    
+    if (network == "ws" || network == "websocket") {
+        query = "plugin=v2ray-plugin;mode=websocket";
+        if (!path.empty()) {
+            query += ";path=" + urlEncode(path);
+        }
+        if (!sni.empty()) {
+            query += ";host=" + sni;
+        }
+        if (streamsecurity == "tls") {
+            query += ";tls";
+        }
+        query += ";mux=0";
+    } else if (!network.empty() && network != "tcp") {
         query = "obfs=" + network;
         if (!path.empty()) {
             query += "&obfs-path=" + urlEncode(path);
         }
     }
     
-    std::string result = "ss://" + encoded + "@" + address + ":" + port;
     if (!query.empty()) {
         result += "?" + query;
     }
