@@ -263,17 +263,17 @@ std::string ShareLink::ssToUri(const std::string& address,
     
     if (network == "ws" || network == "websocket") {
         query = "plugin=v2ray-plugin";
-        query += ";mode=websocket";
+        query += "%3Bmode=websocket";
         if (!sni.empty()) {
-            query += ";host=" + sni;
+            query += "%3Bhost=" + sni;
         }
         if (!path.empty()) {
-            query += ";path=" + path;
+            query += "%3Bpath=" + path;
         }
         if (streamsecurity == "tls") {
-            query += ";tls";
+            query += "%3Btls";
         }
-        query += ";mux=0";
+        query += "%3Bmux=0";
     } else if (!network.empty() && network != "tcp") {
         query = "obfs=" + network;
         if (!path.empty()) {
@@ -285,7 +285,7 @@ std::string ShareLink::ssToUri(const std::string& address,
         result += "?" + query;
     }
     if (!remarks.empty()) {
-        result += "#" + urlEncode(remarks);
+        result += "#" + remarks;
     }
     return result;
 }
