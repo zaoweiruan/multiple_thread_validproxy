@@ -4,6 +4,8 @@
 #include "ConfigGenerator.h"
 #include "XrayApi.h"
 #include "Profileitem.h"
+#include "Profileexitem.h"
+#include "Logger.h"
 #include <iostream>
 #include <thread>
 #include <chrono>
@@ -15,6 +17,7 @@ void ProxyFinder::log(const std::string& msg) {
         *logOut_ << msg << std::endl;
         logOut_->flush();
     }
+    Logger::write(msg);
 }
 
 ProxyFinder::ProxyFinder(sqlite3* db, XrayManager* manager, const std::string& xrayPath, 
@@ -71,6 +74,10 @@ std::pair<int, int> ProxyFinder::findFirstWorkingProxy(const std::string& target
         std::this_thread::sleep_for(std::chrono::milliseconds(500));
         
         auto testRes = testProxyConnectivity(currentSocksPort_, testUrl);
+        
+        db::models::ProfileexitemDAO exDao(db_);
+        exDao.updateTestResult(proxy.indexId, testRes.latencyMs, testRes.success, testRes.errorMsg);
+        
         if (testRes.success) {
             std::cout << "ProxyFinder: Found working proxy at socks=" << currentSocksPort_ << std::endl;
             lastResult_ = {true, testRes.latencyMs, "", proxy.indexId, proxy.address, proxy.socksPort, proxy.delay};
@@ -132,6 +139,10 @@ std::pair<int, int> ProxyFinder::findWorkingProxy(const std::string& targetUrl) 
         std::this_thread::sleep_for(std::chrono::milliseconds(500));
         
         auto testRes = testProxyConnectivity(currentSocksPort_, testUrl);
+        
+        db::models::ProfileexitemDAO exDao(db_);
+        exDao.updateTestResult(proxy.indexId, testRes.latencyMs, testRes.success, testRes.errorMsg);
+        
         if (testRes.success) {
             testRes.indexId = proxy.indexId;
             testRes.address = proxy.address;
@@ -303,7 +314,7 @@ bool ProxyFinder::injectProxyToXray(const std::string& indexId) {
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
     
     if (!xrayApi.addOutbound(config.outbound_json, tag, addResult)) {
-        std::cerr << "ProxyFinder: addOutbound failed: " << xrayApi.getLastError() << std::endl;
+        log("ERROR: addOutbound failed: " + xrayApi.getLastError());
         return false;
     }
     

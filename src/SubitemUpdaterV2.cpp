@@ -6,6 +6,7 @@
 #include "XrayApi.h"
 #include "PortManager.h"
 #include "Utils.h"
+#include "Logger.h"
 
 #include <curl/curl.h>
 #include <chrono>
@@ -1030,6 +1031,7 @@ void SubitemUpdaterV2::log(const std::string& msg) {
         *logOut_ << msg << std::endl;
         logOut_->flush();
     }
+    Logger::write(msg);
 }
 
 std::string SubitemUpdaterV2::decodeBase64(const std::string& input) {
