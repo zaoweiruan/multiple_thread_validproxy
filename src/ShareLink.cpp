@@ -197,7 +197,8 @@ std::string ShareLink::vlessToUri(const std::string& address,
                                 const std::string& alpn,
                                 const std::string& fingerprint,
                                 const std::string& allowinsecure,
-                                const std::string& remarks) {
+                                const std::string& remarks,
+                                const std::string& echConfigList) {
     std::string query;
     
     query += "encryption=none";
@@ -210,6 +211,12 @@ std::string ShareLink::vlessToUri(const std::string& address,
     }
     if (!fingerprint.empty()) {
         query += "&fp=" + fingerprint;
+    }
+    if (!echConfigList.empty()) {
+        std::string echFormatted = echConfigList;
+        replaceAll(echFormatted, ";", "%3B");
+        replaceAll(echFormatted, "=", "%3D");
+        query += "&ech=" + echFormatted;
     }
     query += "&insecure=0&allowInsecure=0";
     
@@ -385,8 +392,9 @@ std::string ShareLink::toShareUri(const std::string& configType,
                                  const std::string& requesthost,
                                  const std::string& headertype,
                                  const std::string& streamsecurity,
-                                 const std::string& remarks) {
-int type = std::stoi(configType);
+                                 const std::string& remarks,
+                                 const std::string& echConfigList) {
+    int type = std::stoi(configType);
     
     // v2rayN ConfigType: 1=VMess, 3=SS, 4=Socks, 5=VLESS, 6=Trojan, 7=Hysteria2, 8=TUIC, 9=WireGuard, 10=HTTP
     switch (type) {
@@ -403,7 +411,7 @@ int type = std::stoi(configType);
         case 5: // VLESS
             return vlessToUri(address, port, id, flow, network, headertype,
                            requesthost, path, streamsecurity, sni, alpn, fingerprint,
-                           allowinsecure, remarks);
+                           allowinsecure, remarks, echConfigList);
         case 6: // Trojan
             return trojanToUri(address, port, id, flow, network, headertype,
                              requesthost, path, streamsecurity, sni, alpn, fingerprint,
@@ -413,7 +421,7 @@ int type = std::stoi(configType);
         case 8: // TUIC
             return vlessToUri(address, port, id, flow, network, headertype,
                            requesthost, path, streamsecurity, sni, alpn, fingerprint,
-                           allowinsecure, remarks);
+                           allowinsecure, remarks, "");
         case 9: // WireGuard - not supported
             std::cerr << "WireGuard not supported: " << configType << std::endl;
             return "";
