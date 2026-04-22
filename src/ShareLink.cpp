@@ -140,6 +140,24 @@ static std::string jsonEncode(const std::string& str) {
     return result;
 }
 
+static std::string urlEncode(const std::string& str) {
+    std::string result;
+    for (unsigned char c : str) {
+        if (c >= 0x80) {
+            char buf[4];
+            snprintf(buf, sizeof(buf), "%%%02X", c);
+            result += buf;
+        } else if (c == ';' || c == '=' || c == ' ' || c == '|' || c == '#' || c == '?' || c == '/' || c == '\\') {
+            char buf[4];
+            snprintf(buf, sizeof(buf), "%%%02X", c);
+            result += buf;
+        } else {
+            result += (char)c;
+        }
+    }
+    return result;
+}
+
 std::string ShareLink::vmessToUri(const std::string& address,
                                 const std::string& port,
                                 const std::string& id,
@@ -236,9 +254,7 @@ std::string ShareLink::vlessToUri(const std::string& address,
         query += "&host=" + requesthost;
     }
     if (!path.empty()) {
-        std::string pathFormatted = path;
-        replaceAll(pathFormatted, ";", "%3B");
-        replaceAll(pathFormatted, "=", "%3D");
+        std::string pathFormatted = urlEncode(path);
         query += "&path=" + pathFormatted;
     }
     
