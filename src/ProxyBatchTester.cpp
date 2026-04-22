@@ -127,7 +127,6 @@ db::models::Profileitem configProfile = profile;
             }
             
             if (!addSuccess) {
-                std::cerr << "[Worker-" << workerId << "] Xray API error: " << xrayApi.getLastError() << std::endl;
                 writeLog("[Worker-" + std::to_string(workerId) + "] XRAY_ERROR - " + profile.indexid + " - " + xrayApi.getLastError());
                 writeLog("  Xray output: " + addResult);
                 writeLog("  Outbound JSON: " + config.outbound_json);

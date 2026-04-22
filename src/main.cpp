@@ -61,8 +61,7 @@ void logError(const std::string& msg) {
 }
 
 void logError(const char* msg) {
-    std::string mode = g_commandMode.empty() ? "main" : g_commandMode;
-    std::cerr << "[" << getTimestamp() << "] [" << mode << "] " << msg << std::endl;
+    logError(std::string(msg));
 }
 
 BOOL WINAPI consoleCtrlHandler(DWORD ctrlType) {
