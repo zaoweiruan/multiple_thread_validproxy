@@ -189,7 +189,7 @@ std::string ShareLink::vmessToUri(const std::string& address,
     }
     
     std::string b64 = base64Encode(json);
-    return "vmess://" + b64 + "@" + address + ":" + port;
+    return "vmess://" + b64;
 }
 
 std::string ShareLink::vlessToUri(const std::string& address,
