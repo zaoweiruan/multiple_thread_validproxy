@@ -12,6 +12,14 @@ namespace share {
 
 static const char* base64_chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
+static void replaceAll(std::string& str, const std::string& from, const std::string& to) {
+    size_t pos = 0;
+    while ((pos = str.find(from, pos)) != std::string::npos) {
+        str.replace(pos, from.length(), to);
+        pos += to.length();
+    }
+}
+
 std::string ShareLink::base64Encode(const std::string& str) {
     std::string result;
     int i = 0;
@@ -260,20 +268,23 @@ std::string ShareLink::ssToUri(const std::string& address,
     
     std::string result = "ss://" + encoded + "@" + address + ":" + port;
     std::string query;
+    std::string pathFormatted = path;
+    replaceAll(pathFormatted, ";", "%3B");
+    replaceAll(pathFormatted, "=", "%3D");
     
     if (network == "ws" || network == "websocket") {
         query = "plugin=v2ray-plugin";
-        query += "%3Bmode=websocket";
+        query += "%3Bmode%3Dwebsocket";
         if (!sni.empty()) {
-            query += "%3Bhost=" + sni;
+            query += "%3Bhost%3D" + sni;
         }
         if (!path.empty()) {
-            query += "%3Bpath=" + path;
+            query += "%3Bpath%3D" + pathFormatted;
         }
         if (streamsecurity == "tls") {
             query += "%3Btls";
         }
-        query += "%3Bmux=0";
+        query += "%3Bmux%3D0";
     } else if (!network.empty() && network != "tcp") {
         query = "obfs=" + network;
         if (!path.empty()) {
