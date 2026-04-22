@@ -1207,6 +1207,22 @@ int SubitemUpdaterV2::deduplicatePhase1() {
     
     int deleted = sqlite3_changes(db_);
     log("INFO: Phase 1 deleted: " + std::to_string(deleted) + " (invalid addresses)");
+    
+    if (!config_.dedup_subids.empty()) {
+        std::string sql2 = "DELETE FROM ProfileItem WHERE (";
+        sql2 += "Port <= 0 OR Port > 65535 OR Port IS NULL";
+        sql2 += ")";
+        
+        char* errMsg2 = nullptr;
+        if (sqlite3_exec(db_, sql2.c_str(), nullptr, nullptr, &errMsg2) != SQLITE_OK) {
+            log("ERROR: Phase1b dedup failed - " + std::string(errMsg2));
+            sqlite3_free(errMsg2);
+        } else {
+            int deleted2 = sqlite3_changes(db_);
+            log("INFO: Phase 1b deleted: " + std::to_string(deleted2) + " (invalid ports)");
+        }
+    }
+    
     return deleted;
 }
 
