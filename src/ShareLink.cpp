@@ -296,7 +296,10 @@ std::string ShareLink::ssToUri(const std::string& address,
         result += "?" + query;
     }
     if (!remarks.empty()) {
-        result += "#" + remarks;
+        std::string remarksFormatted = remarks;
+        replaceAll(remarksFormatted, " ", "%20");
+        replaceAll(remarksFormatted, "|", "%7C");
+        result += "#" + remarksFormatted;
     }
     return result;
 }
