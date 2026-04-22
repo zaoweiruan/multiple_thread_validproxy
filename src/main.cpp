@@ -513,7 +513,8 @@ if (commandMode == "find-proxy") {
                 profile.requesthost,
                 profile.headertype,
                 profile.streamsecurity,
-                profile.remarks
+                profile.remarks,
+                profile.echconfiglist
             );
             if (!link.empty()) {
                 output += link + "\n";
@@ -626,7 +627,8 @@ if (commandMode == "find-proxy") {
                     profile.requesthost,
                     profile.headertype,
                     profile.streamsecurity,
-                    profile.remarks
+                    profile.remarks,
+                    profile.echconfiglist
                 );
                 if (!link.empty()) {
                     output += link + "\n";
