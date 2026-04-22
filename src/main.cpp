@@ -42,26 +42,16 @@ std::string getTimestamp() {
     return std::string(buf);
 }
 
-void logInfo(const std::string& msg) {
+void logInfo(const std::string& msg, LogLevel level = LogLevel::INFO) {
     std::string mode = g_commandMode.empty() ? "main" : g_commandMode;
     std::string output = "[" + getTimestamp() + "] [" + mode + "] " + msg;
-    std::cout << output << std::endl;
-    Logger::write(output);
+    Logger::write(output, level);
 }
 
-void logInfo(const char* msg) {
-    logInfo(std::string(msg));
-}
-
-void logError(const std::string& msg) {
+void logError(const std::string& msg, LogLevel level = LogLevel::LOG_ERROR) {
     std::string mode = g_commandMode.empty() ? "main" : g_commandMode;
     std::string output = "[" + getTimestamp() + "] [" + mode + "] " + msg;
-    std::cerr << output << std::endl;
-    Logger::write(output);
-}
-
-void logError(const char* msg) {
-    logError(std::string(msg));
+    Logger::write(output, level);
 }
 
 BOOL WINAPI consoleCtrlHandler(DWORD ctrlType) {
