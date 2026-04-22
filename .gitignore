@@ -11,7 +11,8 @@ bin/config/xray_config_*.json
 bin/config/*_priority*.json
 bin/config/*_temp*.json
 bin/config/worker_config_*.json
-bin/*.json
+bin/config/*.json
+!bin/config.json
 bin/*.log
 bin/*.txt
 bin/*.bat
@@ -21,6 +22,8 @@ bin/.windsurf/
 bin/.claude/
 bin/.other/
 bin/bin/
+bin/nul
+bin/proxies/
 
 # Root log files
 log/
@@ -76,3 +79,16 @@ Utils.cpp
 Utils.h
 kilo.json
 config.json
+
+# Planning system outputs
+findings.md
+progress.md
+session-ses_*.md
+
+# Temporary test files
+*.json.bak
+json_diff*.json
+1.json
+1.json.bak
+1.md
+nul
