@@ -23,7 +23,8 @@ public:
                                    const std::string& requesthost,
                                    const std::string& headertype,
                                    const std::string& streamsecurity,
-                                   const std::string& remarks);
+                                   const std::string& remarks,
+                                   const std::string& echConfigList = "");
 
 private:
     static std::string vmessToUri(const std::string& address,
@@ -55,7 +56,8 @@ private:
                                   const std::string& alpn,
                                   const std::string& fingerprint,
                                   const std::string& allowinsecure,
-                                  const std::string& remarks);
+                                  const std::string& remarks,
+                                  const std::string& echConfigList = "");
 
     static std::string trojanToUri(const std::string& address,
                                     const std::string& port,
