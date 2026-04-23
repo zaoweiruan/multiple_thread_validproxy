@@ -271,7 +271,10 @@ std::string ShareLink::vlessToUri(const std::string& address,
     }
     
     if (!path.empty() && path != "/") {
-        std::string pathFormatted = urlEncode(path);
+        // v2rayN path encoding: only encode ';' and '=', keep '/' '?' '\' unencoded
+        std::string pathFormatted = path;
+        replaceAll(pathFormatted, ";", "%3B");
+        replaceAll(pathFormatted, "=", "%3D");
         query += "&path=" + pathFormatted;
     }
     
@@ -284,56 +287,6 @@ std::string ShareLink::vlessToUri(const std::string& address,
     
     return result;
 }
-    if (!sni.empty()) {
-        query += "&sni=" + sni;
-    }
-    if (!fingerprint.empty()) {
-        query += "&fp=" + fingerprint;
-    }
-    if (!publicKey.empty()) {
-        query += "&pbk=" + publicKey;
-    }
-    if (!shortId.empty()) {
-        query += "&sid=" + shortId;
-    }
-    if (!echConfigList.empty()) {
-        std::string echFormatted = echConfigList;
-        replaceAll(echFormatted, ";", "%3B");
-        replaceAll(echFormatted, "=", "%3D");
-        query += "&ech=" + echFormatted;
-    }
-    
-    // v2rayN ALWAYS outputs insecure=0&allowInsecure=0 regardless of DB value
-    query += "&insecure=0&allowInsecure=0";
-    
-    if (!flow.empty()) {
-        query += "&flow=" + flow;
-    }
-    
-    query += "&type=" + (network.empty() ? "tcp" : network);
-    
-    // v2rayN does NOT output headerType field
-    // (even when headertype has value, it's omitted from share link)
-    
-    if (!requesthost.empty()) {
-        query += "&host=" + requesthost;
-    }
-    
-    if (!path.empty() && path != "/") {
-        std::string pathFormatted = urlEncode(path);
-        query += "&path=" + pathFormatted;
-    }
-    
-    std::string result = "vless://" + id + "@" + address + ":" + port + "?" + query;
-    
-    if (!remarks.empty()) {
-        std::string remarksFormatted = urlEncode(remarks);
-        result += "#" + remarksFormatted;
-    }
-    
-    return result;
-}
-
 std::string ShareLink::trojanToUri(const std::string& address,
                                     const std::string& port,
                                     const std::string& password,
