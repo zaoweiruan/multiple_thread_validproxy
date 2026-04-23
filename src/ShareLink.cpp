@@ -227,13 +227,10 @@ std::string ShareLink::vlessToUri(const std::string& address,
                                 const std::string& echConfigList,
                                 const std::string& publicKey,
                                 const std::string& shortId) {
-    std::string query;
+std::string query;
     
+    // v2rayN parameter order
     query += "encryption=none";
-    
-    if (!flow.empty()) {
-        query += "&flow=" + flow;
-    }
     
     if (streamsecurity == "tls" || streamsecurity == "reality") {
         query += "&security=" + streamsecurity;
@@ -256,15 +253,19 @@ std::string ShareLink::vlessToUri(const std::string& address,
         replaceAll(echFormatted, "=", "%3D");
         query += "&ech=" + echFormatted;
     }
-    if (allowinsecure == "1") {
-        query += "&insecure=1&allowInSecure=1";
+    if (allowinsecure == "1" || allowinsecure == "true") {
+        query += "&insecure=1&allowInsecure=1";
+    }
+    
+    if (!flow.empty()) {
+        query += "&flow=" + flow;
     }
     
     query += "&type=" + (network.empty() ? "tcp" : network);
-    
-    std::string header = headertype.empty() ? "none" : headertype;
-    query += "&headerType=" + header;
-if (!requesthost.empty()) {
+    if (!headertype.empty() && headertype != "none") {
+        query += "&headerType=" + headertype;
+    }
+    if (!requesthost.empty()) {
         query += "&host=" + requesthost;
     }
     if (!path.empty() && path != "/") {
