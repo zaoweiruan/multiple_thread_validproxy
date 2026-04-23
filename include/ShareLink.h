@@ -24,7 +24,9 @@ public:
                                    const std::string& headertype,
                                    const std::string& streamsecurity,
                                    const std::string& remarks,
-                                   const std::string& echConfigList = "");
+                                   const std::string& echConfigList = "",
+                                   const std::string& publicKey = "",
+                                   const std::string& shortId = "");;
 
 private:
     static std::string vmessToUri(const std::string& address,
@@ -57,7 +59,9 @@ private:
                                   const std::string& fingerprint,
                                   const std::string& allowinsecure,
                                   const std::string& remarks,
-                                  const std::string& echConfigList = "");
+                                  const std::string& echConfigList = "",
+                                  const std::string& publicKey = "",
+                                  const std::string& shortId = "");
 
     static std::string trojanToUri(const std::string& address,
                                     const std::string& port,
