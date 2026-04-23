@@ -207,7 +207,7 @@ std::string ShareLink::vmessToUri(const std::string& address,
     }
     
     std::string b64 = base64Encode(json);
-    return "vmess://" + b64;
+    return "vmess://" + b64;  // No @address:port suffix per v2rayN format
 }
 
 std::string ShareLink::vlessToUri(const std::string& address,
@@ -227,9 +227,9 @@ std::string ShareLink::vlessToUri(const std::string& address,
                                 const std::string& echConfigList,
                                 const std::string& publicKey,
                                 const std::string& shortId) {
-std::string query;
+    std::string query;
     
-    // v2rayN parameter order
+    // v2rayN parameter order (matching v2rayN exactly)
     query += "encryption=none";
     
     if (streamsecurity == "tls" || streamsecurity == "reality") {
@@ -253,21 +253,72 @@ std::string query;
         replaceAll(echFormatted, "=", "%3D");
         query += "&ech=" + echFormatted;
     }
-    if (allowinsecure == "1" || allowinsecure == "true") {
-        query += "&insecure=1&allowInsecure=1";
-    }
+    
+    // v2rayN ALWAYS outputs insecure=0&allowInsecure=0 regardless of DB value
+    query += "&insecure=0&allowInsecure=0";
     
     if (!flow.empty()) {
         query += "&flow=" + flow;
     }
     
     query += "&type=" + (network.empty() ? "tcp" : network);
-    if (!headertype.empty() && headertype != "none") {
-        query += "&headerType=" + headertype;
-    }
+    
+    // v2rayN does NOT output headerType field
+    // (even when headertype has value, it's omitted from share link)
+    
     if (!requesthost.empty()) {
         query += "&host=" + requesthost;
     }
+    
+    if (!path.empty() && path != "/") {
+        std::string pathFormatted = urlEncode(path);
+        query += "&path=" + pathFormatted;
+    }
+    
+    std::string result = "vless://" + id + "@" + address + ":" + port + "?" + query;
+    
+    if (!remarks.empty()) {
+        std::string remarksFormatted = urlEncode(remarks);
+        result += "#" + remarksFormatted;
+    }
+    
+    return result;
+}
+    if (!sni.empty()) {
+        query += "&sni=" + sni;
+    }
+    if (!fingerprint.empty()) {
+        query += "&fp=" + fingerprint;
+    }
+    if (!publicKey.empty()) {
+        query += "&pbk=" + publicKey;
+    }
+    if (!shortId.empty()) {
+        query += "&sid=" + shortId;
+    }
+    if (!echConfigList.empty()) {
+        std::string echFormatted = echConfigList;
+        replaceAll(echFormatted, ";", "%3B");
+        replaceAll(echFormatted, "=", "%3D");
+        query += "&ech=" + echFormatted;
+    }
+    
+    // v2rayN ALWAYS outputs insecure=0&allowInsecure=0 regardless of DB value
+    query += "&insecure=0&allowInsecure=0";
+    
+    if (!flow.empty()) {
+        query += "&flow=" + flow;
+    }
+    
+    query += "&type=" + (network.empty() ? "tcp" : network);
+    
+    // v2rayN does NOT output headerType field
+    // (even when headertype has value, it's omitted from share link)
+    
+    if (!requesthost.empty()) {
+        query += "&host=" + requesthost;
+    }
+    
     if (!path.empty() && path != "/") {
         std::string pathFormatted = urlEncode(path);
         query += "&path=" + pathFormatted;
@@ -284,21 +335,22 @@ std::string query;
 }
 
 std::string ShareLink::trojanToUri(const std::string& address,
-                                   const std::string& port,
-                                   const std::string& password,
-                                   const std::string& flow,
-                                   const std::string& network,
-                                   const std::string& headertype,
-                                   const std::string& requesthost,
-                                   const std::string& path,
-                                   const std::string& streamsecurity,
-                                   const std::string& sni,
-                                   const std::string& alpn,
-                                   const std::string& fingerprint,
-                                   const std::string& allowinsecure,
-                                   const std::string& remarks) {
+                                    const std::string& port,
+                                    const std::string& password,
+                                    const std::string& flow,
+                                    const std::string& network,
+                                    const std::string& headertype,
+                                    const std::string& requesthost,
+                                    const std::string& path,
+                                    const std::string& streamsecurity,
+                                    const std::string& sni,
+                                    const std::string& alpn,
+                                    const std::string& fingerprint,
+                                    const std::string& allowinsecure,
+                                    const std::string& remarks) {
     std::string query;
     
+    // v2rayN parameter order (similar to VLESS but no encryption field)
     if (streamsecurity == "tls" || streamsecurity == "reality") {
         query += "security=" + streamsecurity;
     }
@@ -310,15 +362,22 @@ std::string ShareLink::trojanToUri(const std::string& address,
         if (!query.empty()) query += "&";
         query += "fp=" + fingerprint;
     }
-    query += "&insecure=0&allowInsecure=0";
+    
+    // v2rayN ALWAYS outputs insecure=0&allowInsecure=0
+    if (!query.empty()) query += "&";
+    query += "insecure=0&allowInsecure=0";
     
     std::string net = network.empty() ? "tcp" : network;
     if (net != "tcp") {
         query += "&type=" + net;
     }
+    
+    // v2rayN does NOT output headerType field
+    
     if (!requesthost.empty()) {
         query += "&host=" + requesthost;
     }
+    
     if (!path.empty()) {
         std::string pathFormatted = path;
         replaceAll(pathFormatted, ";", "%3B");
