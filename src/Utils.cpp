@@ -64,6 +64,16 @@ namespace utils {
             nid.uCallbackMessage = WM_USER;
             strncpy_s(nid.szTip, "validproxy", _TRUNCATE);
             Shell_NotifyIcon(NIM_ADD, &nid);
+            
+            atexit([]() {
+                NOTIFYICONDATA nid = {0};
+                nid.cbSize = sizeof(NOTIFYICONDATA);
+                nid.uID = 1;
+                nid.hWnd = GetConsoleWindow();
+                nid.uFlags = 0;
+                Shell_NotifyIcon(NIM_DELETE, &nid);
+            });
+            
             initialized = true;
         }
         
