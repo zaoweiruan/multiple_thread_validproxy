@@ -291,7 +291,7 @@ std::cout << "Usage: validproxy [options]\n"
         return 0;
     }
     
-if (commandMode == "find-proxy") {
+    if (commandMode == "find-proxy") {
         Logger::init(logDir.string(), commandMode);
         logInfo("validproxy starting...");
         
@@ -485,10 +485,10 @@ if (commandMode == "find-proxy") {
         db::models::ProfileexitemDAO exDao(db);
         
         std::string sql = R"(
-            SELECT p.*, COALESCE(pe.Delay, 0) as ExDelay 
-            FROM ProfileItem p 
-            LEFT JOIN ProfileExItem pe ON p.IndexId = pe.IndexId 
-            WHERE p.SubId != 'custom' AND CAST(COALESCE(pe.Delay, 0) AS INTEGER) > 0
+            SELECT p.*, COALESCE(pe.Delay, 0) as ExDelay
+            FROM ProfileItem p
+            LEFT JOIN ProfileExItem pe ON p.IndexId = pe.IndexId
+            WHERE CAST(COALESCE(pe.Delay, 0) AS INTEGER) > 0
             ORDER BY CAST(pe.Delay AS INTEGER) ASC
         )";
         
@@ -588,77 +588,6 @@ if (commandMode == "find-proxy") {
                                                   nullptr,
                                                   exeDir);
             result = subUpdaterV2.deduplicate();
-        } else if (commandMode == "tourl") {
-            sqlite3* db = nullptr;
-            curl_global_init(CURL_GLOBAL_DEFAULT);
-            
-            if (sqlite3_open(appConfig->database_path.c_str(), &db) != SQLITE_OK) {
-                std::cerr << "Failed to open database: " << sqlite3_errmsg(db) << std::endl;
-                return 1;
-            }
-            
-            db::models::ProfileitemDAO profileDao(db);
-            db::models::ProfileexitemDAO exDao(db);
-            
-            std::string sql = R"(
-                SELECT p.*, COALESCE(pe.Delay, 0) as ExDelay 
-                FROM ProfileItem p 
-                LEFT JOIN ProfileExItem pe ON p.IndexId = pe.IndexId 
-                WHERE p.IsSub = 'true' AND CAST(COALESCE(pe.Delay, 0) AS INTEGER) > 0
-                ORDER BY CAST(pe.Delay AS INTEGER) ASC
-            )";
-            
-            auto profiles = profileDao.getAll(sql);
-            std::cout << "Found " << profiles.size() << " proxies with delay > 0" << std::endl;
-            
-            std::string output;
-            for (const auto& profile : profiles) {
-                auto link = share::ShareLink::toShareUri(
-                    profile.configtype,
-                    profile.address,
-                    profile.port,
-                    profile.id,
-                    profile.security,
-                    profile.network,
-                    profile.flow,
-                    profile.sni,
-                    profile.alpn,
-                    profile.fingerprint,
-                    profile.allowinsecure,
-                    profile.path,
-                    profile.requesthost,
-                    profile.headertype,
-                    profile.streamsecurity,
-                    profile.remarks,
-                    profile.echconfiglist,
-                    profile.publickey,
-                    profile.shortid
-                );
-                if (!link.empty()) {
-                    output += link + "\n";
-                }
-            }
-            
-            if (!output.empty()) {
-                char timestamp[32];
-                time_t now = time(nullptr);
-                strftime(timestamp, sizeof(timestamp), "%Y%m%d_%H%M%S", localtime(&now));
-                
-                std::filesystem::path outPath = std::filesystem::path(exeDir) / "proxies" / ("proxies_" + std::string(timestamp) + ".txt");
-                std::filesystem::create_directories(outPath.parent_path());
-                
-                std::ofstream outFile(outPath, std::ios::binary);
-                outFile << output;
-                outFile.close();
-                
-                std::cout << "Exported to: " << outPath.string() << std::endl;
-                result = true;
-            } else {
-                std::cout << "No proxies to export" << std::endl;
-                result = false;
-            }
-            
-            sqlite3_close(db);
         } else {
             update::SubitemUpdaterV2 subUpdaterV2(db,
                                                   appConfig->xray_executable,
@@ -736,7 +665,7 @@ if (commandMode == "find-proxy") {
     sqlite3_exec(db, "PRAGMA journal_mode=WAL", nullptr, nullptr, nullptr);
     std::cout << "Database opened: " << appConfig->database_path << std::endl;
 
-ProxyBatchTester tester(db, *appConfig, exeDir, logOutStream.is_open() ? &logOutStream : nullptr);
+    ProxyBatchTester tester(db, *appConfig, exeDir, logOutStream.is_open() ? &logOutStream : nullptr);
     g_xrayManager = tester.getXrayManager();
     bool testResult = tester.run();
     
