@@ -224,10 +224,16 @@ std::string ShareLink::vlessToUri(const std::string& address,
                                 const std::string& fingerprint,
                                 const std::string& allowinsecure,
                                 const std::string& remarks,
-                                const std::string& echConfigList) {
+                                const std::string& echConfigList,
+                                const std::string& publicKey,
+                                const std::string& shortId) {
     std::string query;
     
     query += "encryption=none";
+    
+    if (!flow.empty()) {
+        query += "&flow=" + flow;
+    }
     
     if (streamsecurity == "tls" || streamsecurity == "reality") {
         query += "&security=" + streamsecurity;
@@ -238,22 +244,30 @@ std::string ShareLink::vlessToUri(const std::string& address,
     if (!fingerprint.empty()) {
         query += "&fp=" + fingerprint;
     }
+    if (!publicKey.empty()) {
+        query += "&pbk=" + publicKey;
+    }
+    if (!shortId.empty()) {
+        query += "&sid=" + shortId;
+    }
     if (!echConfigList.empty()) {
         std::string echFormatted = echConfigList;
         replaceAll(echFormatted, ";", "%3B");
         replaceAll(echFormatted, "=", "%3D");
         query += "&ech=" + echFormatted;
     }
-    query += "&insecure=0&allowInsecure=0";
-    
-    std::string net = network.empty() ? "tcp" : network;
-    if (net != "tcp") {
-        query += "&type=" + net;
+    if (allowinsecure == "1") {
+        query += "&insecure=1&allowInSecure=1";
     }
-    if (!requesthost.empty()) {
+    
+    query += "&type=" + (network.empty() ? "tcp" : network);
+    
+    std::string header = headertype.empty() ? "none" : headertype;
+    query += "&headerType=" + header;
+if (!requesthost.empty()) {
         query += "&host=" + requesthost;
     }
-    if (!path.empty()) {
+    if (!path.empty() && path != "/") {
         std::string pathFormatted = urlEncode(path);
         query += "&path=" + pathFormatted;
     }
@@ -398,22 +412,24 @@ std::string ShareLink::hysteria2ToUri(const std::string& address,
 }
 
 std::string ShareLink::toShareUri(const std::string& configType,
-                                 const std::string& address,
-                                 const std::string& port,
-                                 const std::string& id,
-                                 const std::string& security,
-                                 const std::string& network,
-                                 const std::string& flow,
-                                 const std::string& sni,
-                                 const std::string& alpn,
-                                 const std::string& fingerprint,
-                                 const std::string& allowinsecure,
-                                 const std::string& path,
-                                 const std::string& requesthost,
-                                 const std::string& headertype,
-                                 const std::string& streamsecurity,
-                                 const std::string& remarks,
-                                 const std::string& echConfigList) {
+                                  const std::string& address,
+                                  const std::string& port,
+                                  const std::string& id,
+                                  const std::string& security,
+                                  const std::string& network,
+                                  const std::string& flow,
+                                  const std::string& sni,
+                                  const std::string& alpn,
+                                  const std::string& fingerprint,
+                                  const std::string& allowinsecure,
+                                  const std::string& path,
+                                  const std::string& requesthost,
+                                  const std::string& headertype,
+                                  const std::string& streamsecurity,
+                                  const std::string& remarks,
+                                  const std::string& echConfigList,
+                                  const std::string& publicKey,
+                                  const std::string& shortId) {
     int type = std::stoi(configType);
     
     // v2rayN ConfigType: 1=VMess, 3=SS, 4=Socks, 5=VLESS, 6=Trojan, 7=Hysteria2, 8=TUIC, 9=WireGuard, 10=HTTP
@@ -431,7 +447,7 @@ std::string ShareLink::toShareUri(const std::string& configType,
         case 5: // VLESS
             return vlessToUri(address, port, id, flow, network, headertype,
                            requesthost, path, streamsecurity, sni, alpn, fingerprint,
-                           allowinsecure, remarks, echConfigList);
+                           allowinsecure, remarks, echConfigList, publicKey, shortId);
         case 6: // Trojan
             return trojanToUri(address, port, id, flow, network, headertype,
                              requesthost, path, streamsecurity, sni, alpn, fingerprint,
@@ -441,7 +457,7 @@ std::string ShareLink::toShareUri(const std::string& configType,
         case 8: // TUIC
             return vlessToUri(address, port, id, flow, network, headertype,
                            requesthost, path, streamsecurity, sni, alpn, fingerprint,
-                           allowinsecure, remarks, "");
+                           allowinsecure, remarks, "", publicKey, shortId);
         case 9: // WireGuard - not supported
             std::cerr << "WireGuard not supported: " << configType << std::endl;
             return "";

@@ -514,7 +514,9 @@ if (commandMode == "find-proxy") {
                 profile.headertype,
                 profile.streamsecurity,
                 profile.remarks,
-                profile.echconfiglist
+                profile.echconfiglist,
+                profile.publickey,
+                profile.shortid
             );
             if (!link.empty()) {
                 output += link + "\n";
@@ -628,7 +630,9 @@ if (commandMode == "find-proxy") {
                     profile.headertype,
                     profile.streamsecurity,
                     profile.remarks,
-                    profile.echconfiglist
+                    profile.echconfiglist,
+                    profile.publickey,
+                    profile.shortid
                 );
                 if (!link.empty()) {
                     output += link + "\n";
