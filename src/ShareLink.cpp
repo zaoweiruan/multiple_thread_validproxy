@@ -254,8 +254,10 @@ std::string ShareLink::vlessToUri(const std::string& address,
         query += "&ech=" + echFormatted;
     }
     
-    // v2rayN ALWAYS outputs insecure=0&allowInsecure=0 regardless of DB value
-    query += "&insecure=0&allowInsecure=0";
+    // v2rayN ALWAYS outputs both fields regardless of DB value
+    std::string insecureFlag = (allowinsecure == "true" || allowinsecure == "1") ? "1" : "0";
+    if (!query.empty()) query += "&";
+    query += "insecure=" + insecureFlag + "&allowInsecure=" + insecureFlag;
     
     if (!flow.empty()) {
         query += "&flow=" + flow;
@@ -271,10 +273,8 @@ std::string ShareLink::vlessToUri(const std::string& address,
     }
     
     if (!path.empty() && path != "/") {
-        // v2rayN path encoding: only encode ';' and '=', keep '/' '?' '\' unencoded
-        std::string pathFormatted = path;
-        replaceAll(pathFormatted, ";", "%3B");
-        replaceAll(pathFormatted, "=", "%3D");
+        // v2rayN fully percent-encodes path values
+        std::string pathFormatted = urlEncode(path);
         query += "&path=" + pathFormatted;
     }
     
@@ -316,9 +316,10 @@ std::string ShareLink::trojanToUri(const std::string& address,
         query += "fp=" + fingerprint;
     }
     
-    // v2rayN ALWAYS outputs insecure=0&allowInsecure=0
+    // v2rayN ALWAYS outputs both fields regardless of DB value
+    std::string insecureFlag = (allowinsecure == "true" || allowinsecure == "1") ? "1" : "0";
     if (!query.empty()) query += "&";
-    query += "insecure=0&allowInsecure=0";
+    query += "insecure=" + insecureFlag + "&allowInsecure=" + insecureFlag;
     
     std::string net = network.empty() ? "tcp" : network;
     if (net != "tcp") {
@@ -332,9 +333,8 @@ std::string ShareLink::trojanToUri(const std::string& address,
     }
     
     if (!path.empty()) {
-        std::string pathFormatted = path;
-        replaceAll(pathFormatted, ";", "%3B");
-        replaceAll(pathFormatted, "=", "%3D");
+        // v2rayN fully percent-encodes path values
+        std::string pathFormatted = urlEncode(path);
         query += "&path=" + pathFormatted;
     }
     
@@ -359,12 +359,16 @@ std::string ShareLink::ssToUri(const std::string& address,
                                 const std::string& remarks) {
     std::string userInfo = method + ":" + password;
     std::string encoded = base64Encode(userInfo);
+    // Strip trailing '=' padding to match v2rayN SS format
+    while (!encoded.empty() && encoded.back() == '=') {
+        encoded.pop_back();
+    }
     
     std::string result = "ss://" + encoded + "@" + address + ":" + port;
     std::string query;
     std::string pathFormatted = path;
-    replaceAll(pathFormatted, ";", "%3B");
-    replaceAll(pathFormatted, "=", "%3D");
+    replaceAll(pathFormatted, "=", "\\=");
+    pathFormatted = urlEncode(pathFormatted);
     
     if (network == "ws" || network == "websocket") {
         query = "plugin=v2ray-plugin";
