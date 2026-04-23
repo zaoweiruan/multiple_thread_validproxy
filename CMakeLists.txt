@@ -41,6 +41,7 @@ add_executable(validproxy
     src/ProxyBatchTester.cpp
     src/ProxyFinder.cpp
     src/Utils.cpp
+    src/ShareLink.cpp
 )
 
 target_link_libraries(validproxy PRIVATE

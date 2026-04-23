@@ -175,36 +175,29 @@ std::string ShareLink::vmessToUri(const std::string& address,
                                 const std::string& remarks) {
     std::string json;
     
-    if (id.length() > 100) {
-        std::string decoded = base64Decode(id);
-        if (!decoded.empty() && decoded.find("\"v\":") != std::string::npos) {
-            json = decoded;
-        } else {
-            json = id;
-        }
-    } else {
-        std::ostringstream oss;
-        oss << "{\n";
-        oss << "  \"v\": \"" << jsonEncode("2") << "\",\n";
-        oss << "  \"ps\": \"" << jsonEncode(remarks) << "\",\n";
-        oss << "  \"add\": \"" << jsonEncode(address) << "\",\n";
-        oss << "  \"port\": \"" << jsonEncode(port) << "\",\n";
-        oss << "  \"id\": \"" << jsonEncode(id) << "\",\n";
-        oss << "  \"aid\": \"" << jsonEncode(alterid) << "\",\n";
-        oss << "  \"scy\": \"" << jsonEncode(security) << "\",\n";
-        oss << "  \"net\": \"" << jsonEncode(network) << "\",\n";
-        oss << "  \"type\": \"" << jsonEncode(headertype) << "\",\n";
-        oss << "  \"host\": \"" << jsonEncode(requesthost) << "\",\n";
-        oss << "  \"path\": \"" << jsonEncode(path) << "\",\n";
-        oss << "  \"tls\": \"" << jsonEncode(streamsecurity) << "\",\n";
-        oss << "  \"sni\": \"" << jsonEncode(sni) << "\",\n";
-        oss << "  \"alpn\": \"" << jsonEncode(alpn) << "\",\n";
-        oss << "  \"fp\": \"" << jsonEncode(fingerprint) << "\",\n";
-        std::string insecureVal = allowinsecure.empty() ? "0" : allowinsecure;
-        oss << "  \"insecure\": \"" << jsonEncode(insecureVal) << "\"\n";
-        oss << "}";
-        json = oss.str();
-    }
+    // Always regenerate JSON from parameters to ensure consistency
+    // (don't trust potentially stale base64 content from database)
+    std::ostringstream oss;
+    oss << "{\n";
+    oss << "  \"v\": \"" << jsonEncode("2") << "\",\n";
+    oss << "  \"ps\": \"" << jsonEncode(remarks) << "\",\n";
+    oss << "  \"add\": \"" << jsonEncode(address) << "\",\n";
+    oss << "  \"port\": \"" << jsonEncode(port) << "\",\n";
+    oss << "  \"id\": \"" << jsonEncode(id) << "\",\n";
+    oss << "  \"aid\": \"" << jsonEncode(alterid) << "\",\n";
+    oss << "  \"scy\": \"" << jsonEncode(security) << "\",\n";
+    oss << "  \"net\": \"" << jsonEncode(network) << "\",\n";
+    oss << "  \"type\": \"" << jsonEncode(headertype) << "\",\n";
+    oss << "  \"host\": \"" << jsonEncode(requesthost) << "\",\n";
+    oss << "  \"path\": \"" << jsonEncode(path) << "\",\n";
+    oss << "  \"tls\": \"" << jsonEncode(streamsecurity) << "\",\n";
+    oss << "  \"sni\": \"" << jsonEncode(sni) << "\",\n";
+    oss << "  \"alpn\": \"" << jsonEncode(alpn) << "\",\n";
+    oss << "  \"fp\": \"" << jsonEncode(fingerprint) << "\",\n";
+    std::string insecureVal = allowinsecure.empty() ? "0" : allowinsecure;
+    oss << "  \"insecure\": \"" << jsonEncode(insecureVal) << "\"\n";
+    oss << "}";
+    json = oss.str();
     
     std::string b64 = base64Encode(json);
     return "vmess://" + b64;  // No @address:port suffix per v2rayN format
@@ -248,17 +241,16 @@ std::string ShareLink::vlessToUri(const std::string& address,
         query += "&sid=" + shortId;
     }
     if (!echConfigList.empty()) {
-        std::string echFormatted = echConfigList;
-        replaceAll(echFormatted, ";", "%3B");
-        replaceAll(echFormatted, "=", "%3D");
-        query += "&ech=" + echFormatted;
+        query += "&ech=" + urlEncode(echConfigList);
     }
-    
-    // v2rayN ALWAYS outputs both fields regardless of DB value
-    std::string insecureFlag = (allowinsecure == "true" || allowinsecure == "1") ? "1" : "0";
-    if (!query.empty()) query += "&";
-    query += "insecure=" + insecureFlag + "&allowInsecure=" + insecureFlag;
-    
+
+    // v2rayN outputs insecure fields only for TLS connections
+    if (streamsecurity == "tls" || streamsecurity == "reality") {
+        std::string insecureFlag = (allowinsecure == "true" || allowinsecure == "1") ? "1" : "0";
+        if (!query.empty()) query += "&";
+        query += "insecure=" + insecureFlag + "&allowInsecure=" + insecureFlag;
+    }
+
     if (!flow.empty()) {
         query += "&flow=" + flow;
     }
@@ -272,7 +264,7 @@ std::string ShareLink::vlessToUri(const std::string& address,
         query += "&host=" + requesthost;
     }
     
-    if (!path.empty() && path != "/") {
+    if (!path.empty()) {
         // v2rayN fully percent-encodes path values
         std::string pathFormatted = urlEncode(path);
         query += "&path=" + pathFormatted;
