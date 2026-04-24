@@ -141,6 +141,10 @@ int main(int argc, char* argv[]) {
                     syncSourceDb = syncParam;
                     // target will be read from config
                 }
+            } else {
+                std::cerr << "Error: -S/-sync requires a source database path" << std::endl;
+                std::cerr << "Usage: validproxy -S source.db[:target.db]" << std::endl;
+                return 1;
             }
         } else if (arg == "-h" || arg == "--help") {
 std::cout << "Usage: validproxy [options]\n"
