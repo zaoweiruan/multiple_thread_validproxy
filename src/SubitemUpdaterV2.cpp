@@ -1345,6 +1345,325 @@ void SubitemUpdaterV2::cleanupProfileExItem() {
     log("INFO: ProfileExItem cleaned: " + std::to_string(deleted) + " orphaned records");
 }
 
+bool SubitemUpdaterV2::migrateSubscription(sqlite3* srcDb, sqlite3* dstDb,
+                                             const std::string& subid) {
+    if (subid.empty()) {
+        return true; // No subscription to migrate
+    }
+    
+    // Check if subscription exists in target DB
+    std::string checkSql = "SELECT COUNT(*) FROM SubItem WHERE Id = ?";
+    sqlite3_stmt* checkStmt = nullptr;
+    bool exists = false;
+    
+    if (sqlite3_prepare_v2(dstDb, checkSql.c_str(), -1, &checkStmt, nullptr) == SQLITE_OK) {
+        sqlite3_bind_text(checkStmt, 1, subid.c_str(), -1, SQLITE_TRANSIENT);
+        if (sqlite3_step(checkStmt) == SQLITE_ROW) {
+            exists = sqlite3_column_int(checkStmt, 0) > 0;
+        }
+        sqlite3_finalize(checkStmt);
+    }
+    
+    if (exists) {
+        return true; // Already exists, skip
+    }
+    
+    // Get subscription from source DB
+    std::string srcSql = "SELECT * FROM SubItem WHERE Id = ?";
+    sqlite3_stmt* srcStmt = nullptr;
+    db::models::Subitem subitem;
+    
+    if (sqlite3_prepare_v2(srcDb, srcSql.c_str(), -1, &srcStmt, nullptr) == SQLITE_OK) {
+        sqlite3_bind_text(srcStmt, 1, subid.c_str(), -1, SQLITE_TRANSIENT);
+        if (sqlite3_step(srcStmt) == SQLITE_ROW) {
+            subitem = db::models::Subitem::fromStmt(srcStmt);
+        }
+        sqlite3_finalize(srcStmt);
+    } else {
+        return false;
+    }
+    
+    // Insert into target DB
+    std::string insertSql = "INSERT INTO SubItem (id, remarks, url, moreurl, enabled, useragent, sort, filter, autoupdateinterval, updatetime, converttarget, prevprofile, nextprofile, presocksport, memo) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+    
+    sqlite3_stmt* insertStmt = nullptr;
+    if (sqlite3_prepare_v2(dstDb, insertSql.c_str(), -1, &insertStmt, nullptr) != SQLITE_OK) {
+        return false;
+    }
+    
+    sqlite3_bind_text(insertStmt, 1, subitem.id.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(insertStmt, 2, subitem.remarks.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(insertStmt, 3, subitem.url.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(insertStmt, 4, subitem.moreurl.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(insertStmt, 5, subitem.enabled.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(insertStmt, 6, subitem.useragent.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(insertStmt, 7, subitem.sort.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(insertStmt, 8, subitem.filter.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(insertStmt, 9, subitem.autoupdateinterval.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(insertStmt, 10, subitem.updatetime.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(insertStmt, 11, subitem.converttarget.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(insertStmt, 12, subitem.prevprofile.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(insertStmt, 13, subitem.nextprofile.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(insertStmt, 14, subitem.presocksport.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(insertStmt, 15, subitem.memo.c_str(), -1, SQLITE_TRANSIENT);
+    
+    bool result = (sqlite3_step(insertStmt) == SQLITE_DONE);
+    sqlite3_finalize(insertStmt);
+    
+    return result;
+}
+
+bool SubitemUpdaterV2::migrateProxy(sqlite3* srcDb, sqlite3* dstDb,
+                                     const db::models::Profileitem& proxy) {
+    // Check if proxy exists in target DB
+    std::string checkSql = "SELECT COUNT(*) FROM ProfileItem WHERE IndexId = ?";
+    sqlite3_stmt* checkStmt = nullptr;
+    bool exists = false;
+    
+    if (sqlite3_prepare_v2(dstDb, checkSql.c_str(), -1, &checkStmt, nullptr) == SQLITE_OK) {
+        sqlite3_bind_text(checkStmt, 1, proxy.indexid.c_str(), -1, SQLITE_TRANSIENT);
+        if (sqlite3_step(checkStmt) == SQLITE_ROW) {
+            exists = sqlite3_column_int(checkStmt, 0) > 0;
+        }
+        sqlite3_finalize(checkStmt);
+    }
+    
+    if (exists) {
+        // UPDATE existing proxy
+        std::string updateSql = "UPDATE ProfileItem SET ConfigType = ?, ConfigVersion = ?, Address = ?, Port = ?, Ports = ?, Id = ?, AlterId = ?, Security = ?, Network = ?, Remarks = ?, HeaderType = ?, RequestHost = ?, Path = ?, StreamSecurity = ?, AllowInsecure = ?, SubId = ?, IsSub = ?, Flow = ?, Sni = ?, Alpn = ?, CoreType = ?, PreSocksPort = ?, Fingerprint = ?, DisplayLog = ?, PublicKey = ?, ShortId = ?, SpiderX = ?, Mldsa65Verify = ?, Extra = ?, MuxEnabled = ?, Cert = ?, CertSha = ?, EchConfigList = ?, EchForceQuery = ?, Username = ?, Endpoint = ? WHERE IndexId = ?";
+        
+        sqlite3_stmt* updateStmt = nullptr;
+        if (sqlite3_prepare_v2(dstDb, updateSql.c_str(), -1, &updateStmt, nullptr) != SQLITE_OK) {
+            return false;
+        }
+        
+        sqlite3_bind_text(updateStmt, 1, proxy.configtype.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(updateStmt, 2, proxy.configversion.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(updateStmt, 3, proxy.address.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(updateStmt, 4, proxy.port.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(updateStmt, 5, proxy.ports.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(updateStmt, 6, proxy.id.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(updateStmt, 7, proxy.alterid.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(updateStmt, 8, proxy.security.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(updateStmt, 9, proxy.network.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(updateStmt, 10, proxy.remarks.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(updateStmt, 11, proxy.headertype.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(updateStmt, 12, proxy.requesthost.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(updateStmt, 13, proxy.path.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(updateStmt, 14, proxy.streamsecurity.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(updateStmt, 15, proxy.allowinsecure.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(updateStmt, 16, proxy.subid.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(updateStmt, 17, proxy.issub.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(updateStmt, 18, proxy.flow.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(updateStmt, 19, proxy.sni.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(updateStmt, 20, proxy.alpn.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(updateStmt, 21, proxy.coretype.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(updateStmt, 22, proxy.presocksport.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(updateStmt, 23, proxy.fingerprint.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(updateStmt, 24, proxy.displaylog.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(updateStmt, 25, proxy.publickey.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(updateStmt, 26, proxy.shortid.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(updateStmt, 27, proxy.spiderx.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(updateStmt, 28, proxy.mldsa65verify.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(updateStmt, 29, proxy.extra.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(updateStmt, 30, proxy.muxenabled.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(updateStmt, 31, proxy.cert.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(updateStmt, 32, proxy.certsha.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(updateStmt, 33, proxy.echconfiglist.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(updateStmt, 34, proxy.echforcequery.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(updateStmt, 35, proxy.username.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(updateStmt, 36, proxy.endpoint.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(updateStmt, 37, proxy.indexid.c_str(), -1, SQLITE_TRANSIENT);
+        
+        bool result = (sqlite3_step(updateStmt) == SQLITE_DONE);
+        sqlite3_finalize(updateStmt);
+        
+        // Update ProfileExItem
+        migrateProfileExItem(srcDb, dstDb, proxy.indexid);
+        
+        return result;
+    } else {
+        // INSERT new proxy
+        std::string insertSql = "INSERT INTO ProfileItem (IndexId, ConfigType, ConfigVersion, Address, Port, Ports, Id, AlterId, Security, Network, Remarks, HeaderType, RequestHost, Path, StreamSecurity, AllowInsecure, SubId, IsSub, Flow, Sni, Alpn, CoreType, PreSocksPort, Fingerprint, DisplayLog, PublicKey, ShortId, SpiderX, Mldsa65Verify, Extra, MuxEnabled, Cert, CertSha, EchConfigList, EchForceQuery, Username, Endpoint) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+        
+        sqlite3_stmt* insertStmt = nullptr;
+        if (sqlite3_prepare_v2(dstDb, insertSql.c_str(), -1, &insertStmt, nullptr) != SQLITE_OK) {
+            return false;
+        }
+        
+        sqlite3_bind_text(insertStmt, 1, proxy.indexid.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(insertStmt, 2, proxy.configtype.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(insertStmt, 3, proxy.configversion.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(insertStmt, 4, proxy.address.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(insertStmt, 5, proxy.port.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(insertStmt, 6, proxy.ports.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(insertStmt, 7, proxy.id.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(insertStmt, 8, proxy.alterid.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(insertStmt, 9, proxy.security.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(insertStmt, 10, proxy.network.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(insertStmt, 11, proxy.remarks.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(insertStmt, 12, proxy.headertype.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(insertStmt, 13, proxy.requesthost.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(insertStmt, 14, proxy.path.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(insertStmt, 15, proxy.streamsecurity.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(insertStmt, 16, proxy.allowinsecure.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(insertStmt, 17, proxy.subid.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(insertStmt, 18, proxy.issub.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(insertStmt, 19, proxy.flow.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(insertStmt, 20, proxy.sni.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(insertStmt, 21, proxy.alpn.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(insertStmt, 22, proxy.coretype.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(insertStmt, 23, proxy.presocksport.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(insertStmt, 24, proxy.fingerprint.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(insertStmt, 25, proxy.displaylog.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(insertStmt, 26, proxy.publickey.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(insertStmt, 27, proxy.shortid.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(insertStmt, 28, proxy.spiderx.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(insertStmt, 29, proxy.mldsa65verify.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(insertStmt, 30, proxy.extra.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(insertStmt, 31, proxy.muxenabled.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(insertStmt, 32, proxy.cert.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(insertStmt, 33, proxy.certsha.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(insertStmt, 34, proxy.echconfiglist.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(insertStmt, 35, proxy.echforcequery.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(insertStmt, 36, proxy.username.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(insertStmt, 37, proxy.endpoint.c_str(), -1, SQLITE_TRANSIENT);
+        
+        bool result = (sqlite3_step(insertStmt) == SQLITE_DONE);
+        sqlite3_finalize(insertStmt);
+        
+        // Insert ProfileExItem
+        migrateProfileExItem(srcDb, dstDb, proxy.indexid);
+        
+        return result;
+    }
+}
+
+void SubitemUpdaterV2::migrateProfileExItem(sqlite3* srcDb, sqlite3* dstDb,
+                                                const std::string& indexid) {
+    // Get ProfileExItem from source
+    std::string srcSql = "SELECT * FROM ProfileExItem WHERE IndexId = ?";
+    sqlite3_stmt* srcStmt = nullptr;
+    db::models::Profileexitem exItem;
+    bool found = false;
+    
+    if (sqlite3_prepare_v2(srcDb, srcSql.c_str(), -1, &srcStmt, nullptr) == SQLITE_OK) {
+        sqlite3_bind_text(srcStmt, 1, indexid.c_str(), -1, SQLITE_TRANSIENT);
+        if (sqlite3_step(srcStmt) == SQLITE_ROW) {
+            exItem = db::models::Profileexitem::fromStmt(srcStmt);
+            found = true;
+        }
+        sqlite3_finalize(srcStmt);
+    }
+    
+    if (!found) {
+        return; // No extension item to migrate
+    }
+    
+    // Check if exists in target
+    std::string checkSql = "SELECT COUNT(*) FROM ProfileExItem WHERE IndexId = ?";
+    sqlite3_stmt* checkStmt = nullptr;
+    bool exists = false;
+    
+    if (sqlite3_prepare_v2(dstDb, checkSql.c_str(), -1, &checkStmt, nullptr) == SQLITE_OK) {
+        sqlite3_bind_text(checkStmt, 1, indexid.c_str(), -1, SQLITE_TRANSIENT);
+        if (sqlite3_step(checkStmt) == SQLITE_ROW) {
+            exists = sqlite3_column_int(checkStmt, 0) > 0;
+        }
+        sqlite3_finalize(checkStmt);
+    }
+    
+    if (exists) {
+        // UPDATE
+        std::string updateSql = "UPDATE ProfileExItem SET Delay = ?, Speed = ?, Sort = ?, Message = ? WHERE IndexId = ?";
+        sqlite3_stmt* updateStmt = nullptr;
+        if (sqlite3_prepare_v2(dstDb, updateSql.c_str(), -1, &updateStmt, nullptr) == SQLITE_OK) {
+            sqlite3_bind_text(updateStmt, 1, exItem.delay.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(updateStmt, 2, exItem.speed.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(updateStmt, 3, exItem.sort.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(updateStmt, 4, exItem.message.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(updateStmt, 5, indexid.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_step(updateStmt);
+            sqlite3_finalize(updateStmt);
+        }
+    } else {
+        // INSERT
+        std::string insertSql = "INSERT INTO ProfileExItem (IndexId, Delay, Speed, Sort, Message) VALUES (?, ?, ?, ?, ?)";
+        sqlite3_stmt* insertStmt = nullptr;
+        if (sqlite3_prepare_v2(dstDb, insertSql.c_str(), -1, &insertStmt, nullptr) == SQLITE_OK) {
+            sqlite3_bind_text(insertStmt, 1, indexid.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(insertStmt, 2, exItem.delay.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(insertStmt, 3, exItem.speed.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(insertStmt, 4, exItem.sort.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(insertStmt, 5, exItem.message.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_step(insertStmt);
+            sqlite3_finalize(insertStmt);
+        }
+    }
+}
+
+bool SubitemUpdaterV2::syncDatabases(const std::string& sourceDbPath,
+                                        const std::string& targetDbPath) {
+    sqlite3* srcDb = nullptr;
+    sqlite3* dstDb = nullptr;
+    
+    // 1. Open source database
+    if (sqlite3_open(sourceDbPath.c_str(), &srcDb) != SQLITE_OK) {
+        std::cerr << "Failed to open source database: " << sqlite3_errmsg(srcDb) << std::endl;
+        return false;
+    }
+    
+    // 2. Open target database
+    if (sqlite3_open(targetDbPath.c_str(), &dstDb) != SQLITE_OK) {
+        std::cerr << "Failed to open target database: " << sqlite3_errmsg(dstDb) << std::endl;
+        sqlite3_close(srcDb);
+        return false;
+    }
+    
+    // 3. Query valid proxies from source (delay > 0)
+    std::string sql = R"(
+        SELECT p.* FROM ProfileItem p
+        LEFT JOIN ProfileExItem pe ON p.IndexId = pe.IndexId
+        WHERE CAST(COALESCE(pe.Delay, 0) AS INTEGER) > 0
+        ORDER BY CAST(pe.Delay AS INTEGER) ASC
+    )";
+    
+    auto profiles = db::models::ProfileitemDAO(srcDb).getAll(sql);
+    std::cout << "Found " << profiles.size() << " valid proxies to migrate" << std::endl;
+    
+    int successCount = 0;
+    int failCount = 0;
+    
+    // 4. Migrate each proxy
+    for (const auto& profile : profiles) {
+        // Migrate subscription first
+        if (!profile.subid.empty()) {
+            if (!migrateSubscription(srcDb, dstDb, profile.subid)) {
+                std::cerr << "Warning: Failed to migrate subscription " << profile.subid << std::endl;
+            }
+        }
+        
+        // Migrate proxy
+        if (migrateProxy(srcDb, dstDb, profile)) {
+            successCount++;
+        } else {
+            std::cerr << "Failed to migrate proxy " << profile.indexid << std::endl;
+            failCount++;
+        }
+    }
+    
+    // 5. Output statistics
+    std::cout << "\nMigration complete:" << std::endl;
+    std::cout << "  Total proxies: " << profiles.size() << std::endl;
+    std::cout << "  Success: " << successCount << std::endl;
+    std::cout << "  Failed: " << failCount << std::endl;
+    
+    sqlite3_close(srcDb);
+    sqlite3_close(dstDb);
+    
+    return failCount == 0;
+}
+
 bool SubitemUpdaterV2::deduplicate() {
     log("========================================");
     log("INFO: Starting Deduplication");
