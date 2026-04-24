@@ -76,6 +76,8 @@ private:
                             const std::string& subid);
     bool migrateProxy(sqlite3* srcDb, sqlite3* dstDb, 
                      const db::models::Profileitem& proxy);
+    void migrateProfileExItem(sqlite3* srcDb, sqlite3* dstDb, 
+                              const std::string& indexid);
     std::string decodeBase64(const std::string& input);
     std::string urlDecode(const std::string& input);
     std::pair<std::string, std::string> parseAddressPort(const std::string& addrPart);
