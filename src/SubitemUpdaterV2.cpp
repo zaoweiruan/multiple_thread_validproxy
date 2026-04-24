@@ -1435,7 +1435,7 @@ bool SubitemUpdaterV2::migrateProxy(sqlite3* srcDb, sqlite3* dstDb,
     
     if (exists) {
         // UPDATE existing proxy
-        std::string updateSql = "UPDATE ProfileItem SET \"ConfigType\" = ?, \"ConfigVersion\" = ?, \"Address\" = ?, \"Port\" = ?, \"Ports\" = ?, \"Id\" = ?, \"AlterId\" = ?, \"Security\" = ?, \"Network\" = ?, \"Remarks\" = ?, \"HeaderType\" = ?, \"RequestHost\" = ?, \"Path\" = ?, \"StreamSecurity\" = ?, \"AllowInsecure\" = ?, \"SubId\" = ?, \"IsSub\" = ?, \"Flow\" = ?, \"Sni\" = ?, \"Alpn\" = ?, \"CoreType\" = ?, \"PreSocksPort\" = ?, \"Fingerprint\" = ?, \"DisplayLog\" = ?, \"PublicKey\" = ?, \"ShortId\" = ?, \"SpiderX\" = ?, \"Mldsa65Verify\" = ?, \"Extra\" = ?, \"MuxEnabled\" = ?, \"Cert\" = ?, \"CertSha\" = ?, \"EchConfigList\" = ?, \"EchForceQuery\" = ?, \"Username\" = ?, \"Endpoint\" = ? WHERE \"IndexId\" = ?";
+        std::string updateSql = "UPDATE ProfileItem SET ConfigType = ?, ConfigVersion = ?, Address = ?, Port = ?, Ports = ?, Id = ?, AlterId = ?, Security = ?, Network = ?, Remarks = ?, HeaderType = ?, RequestHost = ?, Path = ?, StreamSecurity = ?, AllowInsecure = ?, SubId = ?, IsSub = ?, Flow = ?, Sni = ?, Alpn = ?, CoreType = ?, PreSocksPort = ?, Fingerprint = ?, DisplayLog = ?, PublicKey = ?, ShortId = ?, SpiderX = ?, Mldsa65Verify = ?, Extra = ?, MuxEnabled = ?, Cert = ?, CertSha = ?, EchConfigList = ?, EchForceQuery = ? WHERE IndexId = ?";
         
         sqlite3_stmt* updateStmt = nullptr;
         if (sqlite3_prepare_v2(dstDb, updateSql.c_str(), -1, &updateStmt, nullptr) != SQLITE_OK) {
@@ -1475,11 +1475,8 @@ bool SubitemUpdaterV2::migrateProxy(sqlite3* srcDb, sqlite3* dstDb,
         sqlite3_bind_text(updateStmt, 30, proxy.muxenabled.c_str(), -1, SQLITE_TRANSIENT);
         sqlite3_bind_text(updateStmt, 31, proxy.cert.c_str(), -1, SQLITE_TRANSIENT);
         sqlite3_bind_text(updateStmt, 32, proxy.certsha.c_str(), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_text(updateStmt, 33, proxy.echconfiglist.c_str(), -1, SQLITE_TRANSIENT);
         sqlite3_bind_text(updateStmt, 34, proxy.echforcequery.c_str(), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_text(updateStmt, 35, proxy.username.c_str(), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_text(updateStmt, 36, proxy.endpoint.c_str(), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_text(updateStmt, 37, proxy.indexid.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(updateStmt, 35, proxy.indexid.c_str(), -1, SQLITE_TRANSIENT);
         
         bool result = (sqlite3_step(updateStmt) == SQLITE_DONE);
         if (!result) {
@@ -1496,7 +1493,7 @@ bool SubitemUpdaterV2::migrateProxy(sqlite3* srcDb, sqlite3* dstDb,
         return result;
     } else {
         // INSERT new proxy
-        std::string insertSql = "INSERT INTO ProfileItem (IndexId, ConfigType, ConfigVersion, Address, Port, Ports, Id, AlterId, Security, Network, Remarks, HeaderType, RequestHost, Path, StreamSecurity, AllowInsecure, SubId, IsSub, Flow, Sni, Alpn, CoreType, PreSocksPort, Fingerprint, DisplayLog, PublicKey, ShortId, SpiderX, Mldsa65Verify, Extra, MuxEnabled, Cert, CertSha, EchConfigList, EchForceQuery, Username, Endpoint) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+        std::string insertSql = "INSERT INTO ProfileItem (IndexId, ConfigType, ConfigVersion, Address, Port, Ports, Id, AlterId, Security, Network, Remarks, HeaderType, RequestHost, Path, StreamSecurity, AllowInsecure, SubId, IsSub, Flow, Sni, Alpn, CoreType, PreSocksPort, Fingerprint, DisplayLog, PublicKey, ShortId, SpiderX, Mldsa65Verify, Extra, MuxEnabled, Cert, CertSha, EchConfigList, EchForceQuery) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
         
         sqlite3_stmt* insertStmt = nullptr;
         if (sqlite3_prepare_v2(dstDb, insertSql.c_str(), -1, &insertStmt, nullptr) != SQLITE_OK) {
