@@ -185,12 +185,15 @@ std::optional<AppConfig> ConfigReader::load(const std::string& configPath) {
 
     // Read sync configuration
     if (obj.contains("sync")) {
-        auto syncJson = obj["sync"];
-        if (syncJson.contains("source_db") && syncJson["source_db"].is_string()) {
-            config.sync.source_db = syncJson["source_db"].get<std::string>();
-        }
-        if (syncJson.contains("target_db") && syncJson["target_db"].is_string()) {
-            config.sync.target_db = syncJson["target_db"].get<std::string>();
+        const auto& syncJson = obj["sync"];
+        if (syncJson.is_object()) {
+            const auto& syncObj = syncJson.as_object();
+            if (syncObj.contains("source_db") && syncObj.at("source_db").is_string()) {
+                config.sync.source_db = std::string(syncObj.at("source_db").as_string());
+            }
+            if (syncObj.contains("target_db") && syncObj.at("target_db").is_string()) {
+                config.sync.target_db = std::string(syncObj.at("target_db").as_string());
+            }
         }
     }
     
