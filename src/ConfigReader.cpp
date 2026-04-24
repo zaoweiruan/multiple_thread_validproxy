@@ -184,13 +184,13 @@ std::optional<AppConfig> ConfigReader::load(const std::string& configPath) {
     }
 
     // Read sync configuration
-    if (obj.contains("sync") && obj["sync"].is_object()) {
-        auto& syncJson = obj["sync"].as_object();
+    if (jv.contains("sync")) {
+        auto syncJson = jv["sync"];
         if (syncJson.contains("source_db") && syncJson["source_db"].is_string()) {
-            config.sync.source_db = resolvePath(syncJson["source_db"].as_string().c_str(), exeDir);
+            config.sync.source_db = syncJson["source_db"].get<std::string>();
         }
         if (syncJson.contains("target_db") && syncJson["target_db"].is_string()) {
-            config.sync.target_db = resolvePath(syncJson["target_db"].as_string().c_str(), exeDir);
+            config.sync.target_db = syncJson["target_db"].get<std::string>();
         }
     }
     
