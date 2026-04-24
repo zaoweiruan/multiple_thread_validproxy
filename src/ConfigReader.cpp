@@ -184,8 +184,8 @@ std::optional<AppConfig> ConfigReader::load(const std::string& configPath) {
     }
 
     // Read sync configuration
-    if (jv.contains("sync")) {
-        auto syncJson = jv["sync"];
+    if (obj.contains("sync")) {
+        auto syncJson = obj["sync"];
         if (syncJson.contains("source_db") && syncJson["source_db"].is_string()) {
             config.sync.source_db = syncJson["source_db"].get<std::string>();
         }
