@@ -26,6 +26,12 @@ struct AppConfig {
     bool notification_enabled;
     bool notification_on_update;
     bool notification_on_test;
+
+    // Sync configuration
+    struct {
+        std::string source_db;
+        std::string target_db;
+    } sync;
 };
 
 class ConfigReader {
