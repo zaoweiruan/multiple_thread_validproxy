@@ -1631,6 +1631,12 @@ bool SubitemUpdaterV2::syncDatabases(const std::string& sourceDbPath,
     sqlite3* dstDb = nullptr;
     
     // 0. Check if source and target are the same database
+    std::cout << "========================================" << std::endl;
+    std::cout << "Proxy Database Sync" << std::endl;
+    std::cout << "========================================" << std::endl;
+    std::cout << "Source:  " << sourceDbPath << std::endl;
+    std::cout << "Target:  " << targetDbPath << std::endl;
+    std::cout << "========================================" << std::endl;
     if (sourceDbPath == targetDbPath) {
         std::cerr << "Error: Source and target databases are the same: " << sourceDbPath << std::endl;
         std::cerr << "Please specify different databases for sync." << std::endl;
@@ -1640,15 +1646,19 @@ bool SubitemUpdaterV2::syncDatabases(const std::string& sourceDbPath,
     // 1. Open source database
     if (sqlite3_open(sourceDbPath.c_str(), &srcDb) != SQLITE_OK) {
         std::cerr << "Failed to open source database: " << sqlite3_errmsg(srcDb) << std::endl;
+        std::cerr << "Source path: " << sourceDbPath << std::endl;
         return false;
     }
+    std::cout << "Source database opened successfully." << std::endl;
     
     // 2. Open target database
     if (sqlite3_open(targetDbPath.c_str(), &dstDb) != SQLITE_OK) {
         std::cerr << "Failed to open target database: " << sqlite3_errmsg(dstDb) << std::endl;
+        std::cerr << "Target path: " << targetDbPath << std::endl;
         sqlite3_close(srcDb);
         return false;
     }
+    std::cout << "Target database opened successfully." << std::endl << std::endl;
     
     // 3. Query valid proxies from source (delay > 0)
     std::string sql = R"(
