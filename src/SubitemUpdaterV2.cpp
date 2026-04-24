@@ -1435,7 +1435,7 @@ bool SubitemUpdaterV2::migrateProxy(sqlite3* srcDb, sqlite3* dstDb,
     
     if (exists) {
         // UPDATE existing proxy
-        std::string updateSql = "UPDATE ProfileItem SET ConfigType = ?, ConfigVersion = ?, Address = ?, Port = ?, Ports = ?, Id = ?, AlterId = ?, Security = ?, Network = ?, Remarks = ?, HeaderType = ?, RequestHost = ?, Path = ?, StreamSecurity = ?, AllowInsecure = ?, SubId = ?, IsSub = ?, Flow = ?, Sni = ?, Alpn = ?, CoreType = ?, PreSocksPort = ?, Fingerprint = ?, DisplayLog = ?, PublicKey = ?, ShortId = ?, SpiderX = ?, Mldsa65Verify = ?, Extra = ?, MuxEnabled = ?, Cert = ?, CertSha = ?, EchConfigList = ?, EchForceQuery = ?, Username = ?, Endpoint = ? WHERE IndexId = ?";
+        std::string updateSql = "UPDATE ProfileItem SET \"ConfigType\" = ?, \"ConfigVersion\" = ?, \"Address\" = ?, \"Port\" = ?, \"Ports\" = ?, \"Id\" = ?, \"AlterId\" = ?, \"Security\" = ?, \"Network\" = ?, \"Remarks\" = ?, \"HeaderType\" = ?, \"RequestHost\" = ?, \"Path\" = ?, \"StreamSecurity\" = ?, \"AllowInsecure\" = ?, \"SubId\" = ?, \"IsSub\" = ?, \"Flow\" = ?, \"Sni\" = ?, \"Alpn\" = ?, \"CoreType\" = ?, \"PreSocksPort\" = ?, \"Fingerprint\" = ?, \"DisplayLog\" = ?, \"PublicKey\" = ?, \"ShortId\" = ?, \"SpiderX\" = ?, \"Mldsa65Verify\" = ?, \"Extra\" = ?, \"MuxEnabled\" = ?, \"Cert\" = ?, \"CertSha\" = ?, \"EchConfigList\" = ?, \"EchForceQuery\" = ?, \"Username\" = ?, \"Endpoint\" = ? WHERE \"IndexId\" = ?";
         
         sqlite3_stmt* updateStmt = nullptr;
         if (sqlite3_prepare_v2(dstDb, updateSql.c_str(), -1, &updateStmt, nullptr) != SQLITE_OK) {
@@ -1482,6 +1482,9 @@ bool SubitemUpdaterV2::migrateProxy(sqlite3* srcDb, sqlite3* dstDb,
         sqlite3_bind_text(updateStmt, 37, proxy.indexid.c_str(), -1, SQLITE_TRANSIENT);
         
         bool result = (sqlite3_step(updateStmt) == SQLITE_DONE);
+        if (!result) {
+            std::cerr << "UPDATE failed for proxy " << proxy.indexid << ": " << sqlite3_errmsg(dstDb) << std::endl;
+        }
         sqlite3_finalize(updateStmt);
         
         // Update ProfileExItem
