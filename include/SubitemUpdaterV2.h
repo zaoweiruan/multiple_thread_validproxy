@@ -34,6 +34,10 @@ public:
     bool runSingleWithProxy(const std::string& subId, int socksPort);
     bool deduplicate();
 
+    // Sync databases - migrate valid proxies from source to target
+    bool syncDatabases(const std::string& sourceDbPath, 
+                       const std::string& targetDbPath);
+
 private:
     enum class Strategy {
         DirectFirst,
@@ -66,6 +70,12 @@ private:
     Strategy parseStrategy(const std::string& mode);
     std::string getCurrentTimestamp();
     void log(const std::string& msg);
+
+    // Helper methods for sync
+    bool migrateSubscription(sqlite3* srcDb, sqlite3* dstDb, 
+                            const std::string& subid);
+    bool migrateProxy(sqlite3* srcDb, sqlite3* dstDb, 
+                     const db::models::Profileitem& proxy);
     std::string decodeBase64(const std::string& input);
     std::string urlDecode(const std::string& input);
     std::pair<std::string, std::string> parseAddressPort(const std::string& addrPart);
