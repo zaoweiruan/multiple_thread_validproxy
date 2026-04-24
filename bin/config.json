@@ -16,8 +16,8 @@
     },
     "log": {
         "enabled": true,
-        "network_failures": true,
-        "level": "WARN",
+        "network_failures": false,
+        "level": "INFO",
         "console_level": "INFO",
         "file_level": "DEBUG"
     },
@@ -34,5 +34,9 @@
         "enabled": false,
         "on_update": false,
         "on_test": false
+    },
+    "sync": {
+        "source_db": "E:/eclipse_workspace/multiple_thread_validproxy/bin/worker/guiNDB.db",
+        "target_db": "E:/v2rayN-windows-64/guiConfigs/guiNDB.db"
     }
 }

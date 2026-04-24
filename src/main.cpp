@@ -129,9 +129,9 @@ int main(int argc, char* argv[]) {
         } else if (arg == "-TU" || arg == "-tourl" || arg == "--tourl") {
             commandMode = "tourl";
         } else if (arg == "-S" || arg == "-sync" || arg == "--sync") {
+            commandMode = "sync";
             if (i + 1 < argc) {
                 std::string syncParam = argv[++i];
-                commandMode = "sync";
                 // Parse "source:target" or just "source"
                 size_t colonPos = syncParam.find(':');
                 if (colonPos != std::string::npos) {
@@ -141,11 +141,8 @@ int main(int argc, char* argv[]) {
                     syncSourceDb = syncParam;
                     // target will be read from config
                 }
-            } else {
-                std::cerr << "Error: -S/-sync requires a source database path" << std::endl;
-                std::cerr << "Usage: validproxy -S source.db[:target.db]" << std::endl;
-                return 1;
             }
+            // If no argument provided, source and target will be read from config
         } else if (arg == "-h" || arg == "--help") {
 std::cout << "Usage: validproxy [options]\n"
                       << "Options:\n"
@@ -159,7 +156,7 @@ std::cout << "Usage: validproxy [options]\n"
                       << "  -T, -test-sub <id>   Test proxies from subscription by ID\n"
                       << "  -D, -dedup           Remove duplicate proxies from database\n"
                        << "  -TU, -tourl         Export proxies (delay>0) to share links file\n"
-                       << "  -S, -sync <src:dst> Sync valid proxies from source to target DB\n"
+                       << "  -S, -sync [src[:dst]] Sync valid proxies from source to target DB\n"
                        << "  -h, --help           Show this help\n";
             return 0;
         } else if (arg.find(".json") != std::string::npos) {
