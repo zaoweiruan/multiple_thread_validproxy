@@ -1439,6 +1439,7 @@ bool SubitemUpdaterV2::migrateProxy(sqlite3* srcDb, sqlite3* dstDb,
         
         sqlite3_stmt* updateStmt = nullptr;
         if (sqlite3_prepare_v2(dstDb, updateSql.c_str(), -1, &updateStmt, nullptr) != SQLITE_OK) {
+            std::cerr << "UPDATE prepare failed: " << sqlite3_errmsg(dstDb) << std::endl;
             return false;
         }
         
@@ -1625,9 +1626,16 @@ bool SubitemUpdaterV2::migrateProfileExItem(sqlite3* srcDb, sqlite3* dstDb,
 }
 
 bool SubitemUpdaterV2::syncDatabases(const std::string& sourceDbPath,
-                                        const std::string& targetDbPath) {
+                                         const std::string& targetDbPath) {
     sqlite3* srcDb = nullptr;
     sqlite3* dstDb = nullptr;
+    
+    // 0. Check if source and target are the same database
+    if (sourceDbPath == targetDbPath) {
+        std::cerr << "Error: Source and target databases are the same: " << sourceDbPath << std::endl;
+        std::cerr << "Please specify different databases for sync." << std::endl;
+        return false;
+    }
     
     // 1. Open source database
     if (sqlite3_open(sourceDbPath.c_str(), &srcDb) != SQLITE_OK) {
