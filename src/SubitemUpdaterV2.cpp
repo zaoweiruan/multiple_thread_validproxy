@@ -1356,13 +1356,14 @@ bool SubitemUpdaterV2::migrateSubscription(sqlite3* srcDb, sqlite3* dstDb,
     sqlite3_stmt* checkStmt = nullptr;
     bool exists = false;
     
-    if (sqlite3_prepare_v2(dstDb, checkSql.c_str(), -1, &checkStmt, nullptr) == SQLITE_OK) {
-        sqlite3_bind_text(checkStmt, 1, subid.c_str(), -1, SQLITE_TRANSIENT);
-        if (sqlite3_step(checkStmt) == SQLITE_ROW) {
-            exists = sqlite3_column_int(checkStmt, 0) > 0;
-        }
-        sqlite3_finalize(checkStmt);
+    if (sqlite3_prepare_v2(dstDb, checkSql.c_str(), -1, &checkStmt, nullptr) != SQLITE_OK) {
+        return false;
     }
+    sqlite3_bind_text(checkStmt, 1, subid.c_str(), -1, SQLITE_TRANSIENT);
+    if (sqlite3_step(checkStmt) == SQLITE_ROW) {
+        exists = sqlite3_column_int(checkStmt, 0) > 0;
+    }
+    sqlite3_finalize(checkStmt);
     
     if (exists) {
         return true; // Already exists, skip
@@ -1379,11 +1380,15 @@ bool SubitemUpdaterV2::migrateSubscription(sqlite3* srcDb, sqlite3* dstDb,
             subitem = db::models::Subitem::fromStmt(srcStmt);
         }
         sqlite3_finalize(srcStmt);
-    } else {
-        return false;
-    }
-    
-    // Insert into target DB
+} else {
+    return false;
+}
+
+if (subitem.id.empty()) {
+    return false; // No valid subscription found
+}
+
+// Insert into target DB
     std::string insertSql = "INSERT INTO SubItem (id, remarks, url, moreurl, enabled, useragent, sort, filter, autoupdateinterval, updatetime, converttarget, prevprofile, nextprofile, presocksport, memo) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
     
     sqlite3_stmt* insertStmt = nullptr;
@@ -1479,7 +1484,10 @@ bool SubitemUpdaterV2::migrateProxy(sqlite3* srcDb, sqlite3* dstDb,
         sqlite3_finalize(updateStmt);
         
         // Update ProfileExItem
-        migrateProfileExItem(srcDb, dstDb, proxy.indexid);
+        bool exResult = migrateProfileExItem(srcDb, dstDb, proxy.indexid);
+        if (!exResult) {
+            return false;
+        }
         
         return result;
     } else {
@@ -1533,31 +1541,35 @@ bool SubitemUpdaterV2::migrateProxy(sqlite3* srcDb, sqlite3* dstDb,
         sqlite3_finalize(insertStmt);
         
         // Insert ProfileExItem
-        migrateProfileExItem(srcDb, dstDb, proxy.indexid);
+        bool exResult = migrateProfileExItem(srcDb, dstDb, proxy.indexid);
+        if (!exResult) {
+            return false;
+        }
         
         return result;
     }
 }
 
-void SubitemUpdaterV2::migrateProfileExItem(sqlite3* srcDb, sqlite3* dstDb,
-                                                const std::string& indexid) {
+bool SubitemUpdaterV2::migrateProfileExItem(sqlite3* srcDb, sqlite3* dstDb,
+                                                 const std::string& indexid) {
     // Get ProfileExItem from source
     std::string srcSql = "SELECT * FROM ProfileExItem WHERE IndexId = ?";
     sqlite3_stmt* srcStmt = nullptr;
     db::models::Profileexitem exItem;
     bool found = false;
     
-    if (sqlite3_prepare_v2(srcDb, srcSql.c_str(), -1, &srcStmt, nullptr) == SQLITE_OK) {
-        sqlite3_bind_text(srcStmt, 1, indexid.c_str(), -1, SQLITE_TRANSIENT);
-        if (sqlite3_step(srcStmt) == SQLITE_ROW) {
-            exItem = db::models::Profileexitem::fromStmt(srcStmt);
-            found = true;
-        }
-        sqlite3_finalize(srcStmt);
+    if (sqlite3_prepare_v2(srcDb, srcSql.c_str(), -1, &srcStmt, nullptr) != SQLITE_OK) {
+        return false;
     }
+    sqlite3_bind_text(srcStmt, 1, indexid.c_str(), -1, SQLITE_TRANSIENT);
+    if (sqlite3_step(srcStmt) == SQLITE_ROW) {
+        exItem = db::models::Profileexitem::fromStmt(srcStmt);
+        found = true;
+    }
+    sqlite3_finalize(srcStmt);
     
     if (!found) {
-        return; // No extension item to migrate
+        return true; // No extension item to migrate
     }
     
     // Check if exists in target
@@ -1565,41 +1577,51 @@ void SubitemUpdaterV2::migrateProfileExItem(sqlite3* srcDb, sqlite3* dstDb,
     sqlite3_stmt* checkStmt = nullptr;
     bool exists = false;
     
-    if (sqlite3_prepare_v2(dstDb, checkSql.c_str(), -1, &checkStmt, nullptr) == SQLITE_OK) {
-        sqlite3_bind_text(checkStmt, 1, indexid.c_str(), -1, SQLITE_TRANSIENT);
-        if (sqlite3_step(checkStmt) == SQLITE_ROW) {
-            exists = sqlite3_column_int(checkStmt, 0) > 0;
-        }
-        sqlite3_finalize(checkStmt);
+    if (sqlite3_prepare_v2(dstDb, checkSql.c_str(), -1, &checkStmt, nullptr) != SQLITE_OK) {
+        return false;
     }
+    sqlite3_bind_text(checkStmt, 1, indexid.c_str(), -1, SQLITE_TRANSIENT);
+    if (sqlite3_step(checkStmt) == SQLITE_ROW) {
+        exists = sqlite3_column_int(checkStmt, 0) > 0;
+    }
+    sqlite3_finalize(checkStmt);
     
     if (exists) {
         // UPDATE
         std::string updateSql = "UPDATE ProfileExItem SET Delay = ?, Speed = ?, Sort = ?, Message = ? WHERE IndexId = ?";
         sqlite3_stmt* updateStmt = nullptr;
-        if (sqlite3_prepare_v2(dstDb, updateSql.c_str(), -1, &updateStmt, nullptr) == SQLITE_OK) {
-            sqlite3_bind_text(updateStmt, 1, exItem.delay.c_str(), -1, SQLITE_TRANSIENT);
-            sqlite3_bind_text(updateStmt, 2, exItem.speed.c_str(), -1, SQLITE_TRANSIENT);
-            sqlite3_bind_text(updateStmt, 3, exItem.sort.c_str(), -1, SQLITE_TRANSIENT);
-            sqlite3_bind_text(updateStmt, 4, exItem.message.c_str(), -1, SQLITE_TRANSIENT);
-            sqlite3_bind_text(updateStmt, 5, indexid.c_str(), -1, SQLITE_TRANSIENT);
-            sqlite3_step(updateStmt);
-            sqlite3_finalize(updateStmt);
+        if (sqlite3_prepare_v2(dstDb, updateSql.c_str(), -1, &updateStmt, nullptr) != SQLITE_OK) {
+            return false;
+        }
+        sqlite3_bind_text(updateStmt, 1, exItem.delay.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(updateStmt, 2, exItem.speed.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(updateStmt, 3, exItem.sort.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(updateStmt, 4, exItem.message.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(updateStmt, 5, indexid.c_str(), -1, SQLITE_TRANSIENT);
+        bool result = (sqlite3_step(updateStmt) == SQLITE_DONE);
+        sqlite3_finalize(updateStmt);
+        if (!result) {
+            return false;
         }
     } else {
         // INSERT
         std::string insertSql = "INSERT INTO ProfileExItem (IndexId, Delay, Speed, Sort, Message) VALUES (?, ?, ?, ?, ?)";
         sqlite3_stmt* insertStmt = nullptr;
-        if (sqlite3_prepare_v2(dstDb, insertSql.c_str(), -1, &insertStmt, nullptr) == SQLITE_OK) {
-            sqlite3_bind_text(insertStmt, 1, indexid.c_str(), -1, SQLITE_TRANSIENT);
-            sqlite3_bind_text(insertStmt, 2, exItem.delay.c_str(), -1, SQLITE_TRANSIENT);
-            sqlite3_bind_text(insertStmt, 3, exItem.speed.c_str(), -1, SQLITE_TRANSIENT);
-            sqlite3_bind_text(insertStmt, 4, exItem.sort.c_str(), -1, SQLITE_TRANSIENT);
-            sqlite3_bind_text(insertStmt, 5, exItem.message.c_str(), -1, SQLITE_TRANSIENT);
-            sqlite3_step(insertStmt);
-            sqlite3_finalize(insertStmt);
+        if (sqlite3_prepare_v2(dstDb, insertSql.c_str(), -1, &insertStmt, nullptr) != SQLITE_OK) {
+            return false;
+        }
+        sqlite3_bind_text(insertStmt, 1, indexid.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(insertStmt, 2, exItem.delay.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(insertStmt, 3, exItem.speed.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(insertStmt, 4, exItem.sort.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(insertStmt, 5, exItem.message.c_str(), -1, SQLITE_TRANSIENT);
+        bool result = (sqlite3_step(insertStmt) == SQLITE_DONE);
+        sqlite3_finalize(insertStmt);
+        if (!result) {
+            return false;
         }
     }
+    return true;
 }
 
 bool SubitemUpdaterV2::syncDatabases(const std::string& sourceDbPath,
