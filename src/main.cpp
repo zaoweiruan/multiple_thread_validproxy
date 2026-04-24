@@ -33,6 +33,8 @@ namespace {
 
 XrayManager* g_xrayManager = nullptr;
 std::string g_commandMode;
+std::string syncSourceDb;
+std::string syncTargetDb;
 
 std::string getTimestamp() {
     auto now = std::chrono::system_clock::now();
@@ -126,6 +128,20 @@ int main(int argc, char* argv[]) {
             commandMode = "dedup";
         } else if (arg == "-TU" || arg == "-tourl" || arg == "--tourl") {
             commandMode = "tourl";
+        } else if (arg == "-S" || arg == "-sync" || arg == "--sync") {
+            if (i + 1 < argc) {
+                std::string syncParam = argv[++i];
+                commandMode = "sync";
+                // Parse "source:target" or just "source"
+                size_t colonPos = syncParam.find(':');
+                if (colonPos != std::string::npos) {
+                    syncSourceDb = syncParam.substr(0, colonPos);
+                    syncTargetDb = syncParam.substr(colonPos + 1);
+                } else {
+                    syncSourceDb = syncParam;
+                    // target will be read from config
+                }
+            }
         } else if (arg == "-h" || arg == "--help") {
 std::cout << "Usage: validproxy [options]\n"
                       << "Options:\n"
