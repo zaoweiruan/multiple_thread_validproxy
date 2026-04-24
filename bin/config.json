@@ -37,6 +37,6 @@
     },
     "sync": {
         "source_db": "E:/v2rayN-windows-64/guiConfigs/guiNDB.db",
-        "target_db": "E:/eclipse_workspace/multiple_thread_validproxy/bin/worker/guiNDB.db"
+        "target_db": "E:/eclipse_workspace/multiple_thread_validproxy/bin/worker/test_sync_target.db"
     }
 }

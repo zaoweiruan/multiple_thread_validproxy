@@ -852,10 +852,12 @@ TEST(ExportTest, UriGeneration) {
 3. 同时迁移 `profile_exitems` 扩展信息（delay, speed等）
 
 ### 实现方案
+
 - 扩展 `SubitemUpdaterV2` 类，添加 `syncDatabases()` 方法
 - 在 `main.cpp` 中添加 `-S`/`-sync` 参数解析
 - 在 `ConfigReader` 中添加 `sync` 配置节支持
 - 参数解析后调用 `SubitemUpdaterV2::syncDatabases(source, target)`
+- **2026-04-24 修复**: INSERT/UPDATE SQL 中的列名数量不匹配 - 错误包含了不在表结构中的 Username/Endpoint 字段，已修正为使用34列的正确结构
 
 ### 成功标准
 - 源库中 delay>0 的代理成功复制到目标库
