@@ -158,8 +158,9 @@ std::cout << "Usage: validproxy [options]\n"
                       << "  -UA, -update-all     Update all enabled subscriptions\n"
                       << "  -T, -test-sub <id>   Test proxies from subscription by ID\n"
                       << "  -D, -dedup           Remove duplicate proxies from database\n"
-                      << "  -TU, -tourl         Export proxies (delay>0) to share links file\n"
-                      << "  -h, --help           Show this help\n";
+                       << "  -TU, -tourl         Export proxies (delay>0) to share links file\n"
+                       << "  -S, -sync <src:dst> Sync valid proxies from source to target DB\n"
+                       << "  -h, --help           Show this help\n";
             return 0;
         } else if (arg.find(".json") != std::string::npos) {
             std::filesystem::path p(arg);
@@ -568,7 +569,35 @@ std::cout << "Usage: validproxy [options]\n"
         logInfo(result ? "completed" : "failed");
         return result ? 0 : 1;
     }
-    
+
+    if (commandMode == "sync") {
+        Logger::init(logDir.string(), commandMode);
+        logInfo("validproxy starting sync...");
+        
+        auto appConfig = config::ConfigReader::load(configPath);
+        if (!appConfig) {
+            logError("Failed to load config from: " + configPath);
+            return 1;
+        }
+        
+        // Determine source and target databases
+        std::string sourceDb = !syncSourceDb.empty() ? syncSourceDb : appConfig->sync.source_db;
+        std::string targetDb = !syncTargetDb.empty() ? syncTargetDb : appConfig->sync.target_db;
+        
+        if (sourceDb.empty() || targetDb.empty()) {
+            logError("Source or target database not specified");
+            std::cerr << "Usage: validproxy -S source.db:target.db" << std::endl;
+            std::cerr << "   or: validproxy -S source.db (target from config)" << std::endl;
+            return 1;
+        }
+        
+        update::SubitemUpdaterV2 updater(nullptr, "", *appConfig, nullptr, exeDir);
+        bool result = updater.syncDatabases(sourceDb, targetDb);
+        
+        logInfo(result ? "sync completed" : "sync failed");
+        return result ? 0 : 1;
+    }
+
     if (!singleSubId.empty()) {
         Logger::init(logDir.string(), commandMode.empty() ? "test" : commandMode);
         logInfo("validproxy starting...");
