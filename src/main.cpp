@@ -403,7 +403,12 @@ std::cout << "Usage: validproxy [options]\n"
         std::string configDirStr = configDirFs.string();
         logInfo("Using log file: " + Logger::getLogDir() + "/" + Logger::getPrefix() + "_" + timestamp + ".log");
         
-        XrayManager* xrayMgr = XrayManager::getInstance(appConfig->xray_executable, configDirStr, appConfig->xray_workers, nullptr);
+        std::string logFileName = "findmin_proxy_" + std::string(timestamp) + ".log";
+        std::string logFile = (logDir / logFileName).string();
+        std::ofstream logOutStream(logFile, std::ios::out | std::ios::trunc);
+        std::cout << "Log file: " << logFile << std::endl;
+        
+        XrayManager* xrayMgr = XrayManager::getInstance(appConfig->xray_executable, configDirStr, appConfig->xray_workers, logOutStream.is_open() ? &logOutStream : nullptr);
         int started = xrayMgr->start(1, appConfig->xray_start_port, appConfig->xray_api_port);
         
         if (started == 0) {
@@ -413,12 +418,12 @@ std::cout << "Usage: validproxy [options]\n"
             return 1;
         }
         
-        ProxyFinder finder(db, xrayMgr, appConfig->xray_executable, appConfig->test_url, "", appConfig->test_timeout_ms, nullptr);
+        ProxyFinder finder(db, xrayMgr, appConfig->xray_executable, appConfig->test_url, "", appConfig->test_timeout_ms, logOutStream.is_open() ? &logOutStream : nullptr);
         auto ports = finder.findFirstWorkingProxy();
         
         if (ports.first > 0) {
             auto res = finder.getLastResult();
-            std::cout << "\n=== Working Proxy ===" << std::endl;
+            std::cout << "\n=== Working Proxy (Minimum Delay) ===" << std::endl;
             std::cout << "IndexId: " << res.indexId << std::endl;
             std::cout << "Address: " << res.address << ":" << res.port << std::endl;
             std::cout << "Delay: " << res.latencyMs << "ms" << std::endl;
@@ -430,6 +435,10 @@ std::cout << "Usage: validproxy [options]\n"
         
         finder.release();
         XrayManager::release();
+        
+        if (logOutStream.is_open()) {
+            logOutStream.close();
+        }
         
         sqlite3_close(db);
         curl_global_cleanup();
@@ -464,15 +473,18 @@ std::cout << "Usage: validproxy [options]\n"
         std::ofstream logOut(logFile, std::ios::out | std::ios::trunc);
         
         std::cout << "Mode: " << commandMode << std::endl;
+        std::cout << "Log file: " << logFile << std::endl;
         
         update::SubitemUpdaterV2 subUpdaterV2(db,
                                               appConfig->xray_executable,
                                               *appConfig,
-                                              nullptr,
+                                              logOut.is_open() ? &logOut : nullptr,
                                               exeDir);
         bool result = subUpdaterV2.deduplicate();
         
-        
+        if (logOut.is_open()) {
+            logOut.close();
+        }
         
         sqlite3_close(db);
         curl_global_cleanup();
@@ -617,11 +629,17 @@ std::cout << "Usage: validproxy [options]\n"
         time_t now = time(nullptr);
         strftime(timestamp, sizeof(timestamp), "%Y%m%d_%H%M%S", localtime(&now));
         
+        std::string logFileName = commandMode + "_" + std::string(timestamp) + ".log";
+        std::string logFile = (logDir / logFileName).string();
+        std::ofstream logOut(logFile, std::ios::out | std::ios::trunc);
+        std::cout << "Log file: " << logFile << std::endl;
+        
         logInfo("Mode: " + commandMode + ", subscription: " + singleSubId);
+        Logger::enableConsoleOnly();
         
         bool result;
         if (commandMode == "test-sub") {
-            ProxyBatchTester tester(db, *appConfig, exeDir, nullptr);
+            ProxyBatchTester tester(db, *appConfig, exeDir, logOut.is_open() ? &logOut : nullptr);
             g_xrayManager = tester.getXrayManager();
             result = tester.runWithSubId(singleSubId);
             if (appConfig->notification_enabled && appConfig->notification_on_test) {
@@ -631,14 +649,14 @@ std::cout << "Usage: validproxy [options]\n"
             update::SubitemUpdaterV2 subUpdaterV2(db,
                                                   appConfig->xray_executable,
                                                   *appConfig,
-                                                  nullptr,
+                                                  logOut.is_open() ? &logOut : nullptr,
                                                   exeDir);
             result = subUpdaterV2.deduplicate();
         } else {
             update::SubitemUpdaterV2 subUpdaterV2(db,
                                                   appConfig->xray_executable,
                                                   *appConfig,
-                                                  nullptr,
+                                                  logOut.is_open() ? &logOut : nullptr,
                                                   exeDir);
             if (singleSubId == "__all__") {
                 result = subUpdaterV2.run();
@@ -650,7 +668,9 @@ std::cout << "Usage: validproxy [options]\n"
             }
         }
         
-        
+        if (logOut.is_open()) {
+            logOut.close();
+        }
         
         sqlite3_close(db);
         curl_global_cleanup();
