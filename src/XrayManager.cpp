@@ -41,7 +41,6 @@ int XrayManager::start(int count, int startPort, int apiPort) {
         count = workers_;
     }
     
-    std::cout << "XrayManager::start: testCount=" << count << ", workers=" << workers_ << ", startPort=" << startPort << ", apiPort=" << apiPort << std::endl;
     if (logOut_) {
         *logOut_ << "XrayManager::start: count=" << count << ", startPort=" << startPort << ", apiPort=" << apiPort << ", configDir=" << configDir_ << std::endl;
     }
@@ -53,26 +52,27 @@ int XrayManager::start(int count, int startPort, int apiPort) {
         int socksPort = PortManager::findAvailable(startPort + i, 1000);
         int apiPortAddr = PortManager::findAvailable(apiPort + i, 1000);
         
-        std::cout << "XrayManager: trying ports socks=" << socksPort << ", api=" << apiPortAddr << std::endl;
-        
         if (socksPort <= 0 || apiPortAddr <= 0) {
-            std::cerr << "XrayManager: failed to find available ports" << std::endl;
+            if (logOut_) {
+                *logOut_ << "XrayManager: failed to find available ports" << std::endl;
+            }
             break;
         }
         
-        auto instance = std::make_unique<XrayInstance>(xrayPath_, socksPort, apiPortAddr, configDir_);
+        auto instance = std::make_unique<XrayInstance>(xrayPath_, socksPort, apiPortAddr, configDir_, logOut_);
         if (instance->start()) {
             instances_.push_back(std::move(instance));
             actualCount++;
             std::this_thread::sleep_for(std::chrono::milliseconds(500));
         } else {
-            std::cerr << "XrayManager: failed to start instance " << i << std::endl;
             if (logOut_) {
                 *logOut_ << "XrayManager: failed to start instance " << i << std::endl;
             }
         }
     }
-    std::cout << "XrayManager::start: actualCount=" << actualCount << std::endl;
+    if (logOut_) {
+        *logOut_ << "XrayManager::start: actualCount=" << actualCount << std::endl;
+    }
     return actualCount;
 }
 

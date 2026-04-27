@@ -13,13 +13,25 @@ namespace config {
 
 bool isValidNetwork(const std::string& network);
 
-ConfigGenerator::ConfigGenerator(sqlite3* db) : db_(db) {}
+ConfigGenerator::ConfigGenerator(sqlite3* db, std::ostream* logOut) : db_(db), logOut_(logOut) {}
+
+void ConfigGenerator::setLogOut(std::ostream* logOut) {
+    logOut_ = logOut;
+}
+
+void ConfigGenerator::writeLog(const std::string& msg) {
+    if (logOut_ && logOut_->good()) {
+        *logOut_ << msg << std::endl;
+        logOut_->flush();
+    }
+    std::cout << msg << std::endl;
+}
 
 std::vector<db::models::Profileitem> ConfigGenerator::loadProfiles(const std::string& sqlQuery) {
     db::models::ProfileitemDAO dao(db_);
     auto profiles = dao.getAll(sqlQuery);
     
-    std::cout << "[ConfigGenerator] SQL returned " << profiles.size() << " profiles" << std::endl;
+    writeLog("[ConfigGenerator] SQL returned " + std::to_string(profiles.size()) + " profiles");
     
     std::vector<db::models::Profileitem> validProfiles;
     for (auto& p : profiles) {
@@ -28,19 +40,19 @@ std::vector<db::models::Profileitem> ConfigGenerator::loadProfiles(const std::st
         }
         
         if (p.network.empty()) {
-            std::cout << "[ConfigGenerator] Skipping " << p.address << ":" << p.port << " - empty network" << std::endl;
+            writeLog("[ConfigGenerator] Skipping " + p.address + ":" + p.port + " - empty network");
             continue;
         }
         
         if (!isValidNetwork(p.network)) {
-            std::cout << "[ConfigGenerator] Skipping " << p.address << ":" << p.port << " - invalid network: '" << p.network << "'" << std::endl;
+            writeLog("[ConfigGenerator] Skipping " + p.address + ":" + p.port + " - invalid network: '" + p.network + "'");
             continue;
         }
         
         validProfiles.push_back(p);
     }
     
-    std::cout << "[ConfigGenerator] Valid profiles: " << validProfiles.size() << std::endl;
+    writeLog("[ConfigGenerator] Valid profiles: " + std::to_string(validProfiles.size()));
     return validProfiles;
 }
 
