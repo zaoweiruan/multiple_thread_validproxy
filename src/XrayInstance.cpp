@@ -21,10 +21,6 @@ void XrayInstance::setLogOut(std::ostream* logOut) {
 }
 
 void XrayInstance::writeLog(const std::string& msg) {
-    if (logOut_ && logOut_->good()) {
-        *logOut_ << msg << std::endl;
-        logOut_->flush();
-    }
     std::cout << msg << std::endl;
 }
 

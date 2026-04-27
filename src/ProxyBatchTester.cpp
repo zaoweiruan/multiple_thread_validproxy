@@ -26,9 +26,12 @@ void ProxyBatchTester::writeLog(const std::string& msg) {
     static std::mutex logMutex;
     std::lock_guard<std::mutex> lock(logMutex);
     if (logOut_ && logOut_->is_open()) {
-        *logOut_ << msg << std::endl;
-        logOut_->flush();
+        if (config_.log_network_failures) {
+            *logOut_ << msg << std::endl;
+            logOut_->flush();
+        }
     }
+    std::cout << msg << std::endl;
 }
 
 static std::mutex coutMutex;
@@ -39,7 +42,7 @@ void ProxyBatchTester::logToConsole(const std::string& msg) {
 }
 
 std::vector<db::models::Profileitem> ProxyBatchTester::loadProxies(const std::string& subId) {
-    config::ConfigGenerator configGen(db_);
+    config::ConfigGenerator configGen(db_, logOut_);
     std::string sql;
     
     if (!subId.empty() && !config_.sql_by_subid.empty()) {
@@ -69,7 +72,7 @@ void ProxyBatchTester::workerThreadFunc(int workerId, int socksPort, int apiPort
     std::string xrayApiAddr = "127.0.0.1:" + std::to_string(apiPort);
     xray::XrayApi xrayApi(config_.xray_executable, xrayApiAddr);
     db::models::ProfileexitemDAO exItemDao(db_);
-    config::ConfigGenerator configGen(db_);
+    config::ConfigGenerator configGen(db_, logOut_);
     
     while (true) {
         int profileIdx = -1;
