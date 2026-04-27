@@ -35,13 +35,9 @@ std::vector<db::models::Profileitem> ConfigGenerator::loadProfiles(const std::st
     
     std::vector<db::models::Profileitem> validProfiles;
     for (auto& p : profiles) {
-        if (p.network.empty() && p.configtype == "3") {
-            p.network = "tcp";
-        }
-        
         if (p.network.empty()) {
-            writeLog("[ConfigGenerator] Skipping " + p.address + ":" + p.port + " - empty network");
-            continue;
+            writeLog("[ConfigGenerator] Using default network 'tcp' for " + p.address + ":" + p.port);
+            p.network = "tcp";
         }
         
         if (!isValidNetwork(p.network)) {
