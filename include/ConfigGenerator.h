@@ -19,14 +19,17 @@ struct XrayConfig {
 
 class ConfigGenerator {
 public:
-    explicit ConfigGenerator(sqlite3* db);
+    explicit ConfigGenerator(sqlite3* db, std::ostream* logOut = nullptr);
+    void setLogOut(std::ostream* logOut);
     std::vector<db::models::Profileitem> loadProfiles(const std::string& sqlQuery = "");
     std::vector<db::models::Profileexitem> loadProfileExItems();
     XrayConfig generateConfig(const db::models::Profileitem& profile);
     bool updateProfileExItem(const db::models::Profileexitem& exitem);
 
 private:
+    void writeLog(const std::string& msg);
     sqlite3* db_;
+    std::ostream* logOut_;
     boost::json::object buildStreamSettings(const db::models::Profileitem& p);
     boost::json::object buildVLESSOutbound(const db::models::Profileitem& p, const std::string& outboundTag);
     boost::json::object buildVMessOutbound(const db::models::Profileitem& p, const std::string& outboundTag);

@@ -4,8 +4,8 @@
 #include <thread>
 #include <chrono>
 
-XrayInstance::XrayInstance(const std::string& xrayPath, int socksPort, int apiPort, const std::string& configDir)
-    : xrayPath_(xrayPath), socksPort_(socksPort), apiPort_(apiPort), running_(false) {
+XrayInstance::XrayInstance(const std::string& xrayPath, int socksPort, int apiPort, const std::string& configDir, std::ostream* logOut)
+    : xrayPath_(xrayPath), socksPort_(socksPort), apiPort_(apiPort), running_(false), logOut_(logOut) {
     
     configPath_ = configDir + "/xray_config_" + std::to_string(socksPort) + ".json";
     processHandle_ = nullptr;
@@ -16,16 +16,28 @@ XrayInstance::~XrayInstance() {
     stop();
 }
 
+void XrayInstance::setLogOut(std::ostream* logOut) {
+    logOut_ = logOut;
+}
+
+void XrayInstance::writeLog(const std::string& msg) {
+    if (logOut_ && logOut_->good()) {
+        *logOut_ << msg << std::endl;
+        logOut_->flush();
+    }
+    std::cout << msg << std::endl;
+}
+
 bool XrayInstance::start() {
-    std::cout << "[XrayInstance] Creating config: " << configPath_ << std::endl;
+    writeLog("[XrayInstance] Creating config: " + configPath_);
     if (!createConfigFile()) {
-        std::cerr << "[XrayInstance] Failed to create config file" << std::endl;
+        writeLog("[XrayInstance] Failed to create config file");
         return false;
     }
     
     jobObject_ = CreateJobObjectA(NULL, NULL);
     if (!jobObject_) {
-        std::cerr << "[XrayInstance] Failed to create job object: " << GetLastError() << std::endl;
+        writeLog("[XrayInstance] Failed to create job object: " + std::to_string(GetLastError()));
         return false;
     }
     
@@ -34,7 +46,7 @@ bool XrayInstance::start() {
     SetInformationJobObject(jobObject_, JobObjectExtendedLimitInformation, &jobLimit, sizeof(jobLimit));
     
     std::string cmd = "\"" + xrayPath_ + "\" run -c \"" + configPath_ + "\"";
-    std::cout << "[XrayInstance] Executing: " << cmd << std::endl;
+    writeLog("[XrayInstance] Executing: " + cmd);
     
     STARTUPINFOA si = {0};
     si.cb = sizeof(si);
@@ -43,14 +55,14 @@ bool XrayInstance::start() {
     BOOL created = CreateProcessA(NULL, (LPSTR)cmd.c_str(), NULL, NULL, FALSE, CREATE_SUSPENDED | CREATE_NO_WINDOW, NULL, NULL, &si, &pi);
     if (!created) {
         DWORD err = GetLastError();
-        std::cerr << "[XrayInstance] Failed to create process: " << err << std::endl;
+        writeLog("[XrayInstance] Failed to create process: " + std::to_string(err));
         CloseHandle(jobObject_);
         jobObject_ = nullptr;
         return false;
     }
     
     if (!AssignProcessToJobObject(jobObject_, pi.hProcess)) {
-        std::cerr << "[XrayInstance] Failed to assign to job: " << GetLastError() << std::endl;
+        writeLog("[XrayInstance] Failed to assign to job: " + std::to_string(GetLastError()));
     }
     
     ResumeThread(pi.hThread);
@@ -60,7 +72,7 @@ bool XrayInstance::start() {
     processHandle_ = pi.hProcess;
     std::this_thread::sleep_for(std::chrono::seconds(2));
     running_ = true;
-    std::cout << "[XrayInstance] Started successfully, socks=" << socksPort_ << ", api=" << apiPort_ << std::endl;
+    writeLog("[XrayInstance] Started successfully, socks=" + std::to_string(socksPort_) + ", api=" + std::to_string(apiPort_));
     return true;
 }
 
