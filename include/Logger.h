@@ -33,8 +33,10 @@ public:
     static LogLevel getLevel();
     static LogLevel getFileLevel();
     static LogLevel getConsoleLevel();
-    static std::string levelToString(LogLevel level);
+static std::string levelToString(LogLevel level);
     static LogLevel stringToLevel(const std::string& str);
+    static void disableFile();
+    static void enableConsoleOnly();
 
 private:
     static std::string logDir_;

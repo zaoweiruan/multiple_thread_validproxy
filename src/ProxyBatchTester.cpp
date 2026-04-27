@@ -23,6 +23,8 @@ ProxyBatchTester::~ProxyBatchTester() {
 }
 
 void ProxyBatchTester::writeLog(const std::string& msg) {
+    static std::mutex logMutex;
+    std::lock_guard<std::mutex> lock(logMutex);
     if (logOut_ && logOut_->is_open()) {
         *logOut_ << msg << std::endl;
         logOut_->flush();

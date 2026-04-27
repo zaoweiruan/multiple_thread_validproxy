@@ -48,6 +48,38 @@
 ```bash
 # 导出所有有效代理
 ./validproxy -TU
+```
+
+## 📡 订阅更新策略 (priority_mode)
+
+**配置文件**: `config.json` → `priority_mode`
+
+**支持策略列表**:
+
+| 配置值 | 策略 | 行为 | 状态 |
+|--------|------|------|------|
+| `proxy_first` | ProxyFirst | 先用代理获取，失败再用直连 | ✅ |
+| `direct_only` | DirectOnly | 仅使用直连，不使用代理 | ✅ |
+| `direct_first` | DirectFirst | 先用直连获取，失败再用代理 | ✅ |
+| `proxy_only` | DirectFirst | 会降级为 direct_first | ❌ 待支持 |
+
+**代码位置**: `src/SubitemUpdaterV2.cpp:978-982`
+
+**当前实现**:
+```cpp
+SubitemUpdaterV2::Strategy SubitemUpdaterV2::parseStrategy(const std::string& mode) {
+    if (mode == "proxy_first") return Strategy::ProxyFirst;
+    if (mode == "direct_only") return Strategy::DirectOnly;
+    return Strategy::DirectFirst;  // 默认值
+}
+```
+
+**日志示例**:
+```
+[INFO] Priority mode: proxy_only  // 注意：实际按 direct_first 运行
+```
+
+**待修复**: 添加 `proxy_only` 支持（仅使用代理，不尝试直连）
 
 # 或使用长格式
 ./validproxy -tourl

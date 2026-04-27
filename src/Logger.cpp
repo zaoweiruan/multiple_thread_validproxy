@@ -172,3 +172,12 @@ LogLevel Logger::stringToLevel(const std::string& str) {
     if (s == "error") return LogLevel::LOG_ERROR;
     return LogLevel::INFO;
 }
+
+void Logger::disableFile() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    fileLevel_ = static_cast<LogLevel>(100);
+}
+
+void Logger::enableConsoleOnly() {
+    disableFile();
+}
