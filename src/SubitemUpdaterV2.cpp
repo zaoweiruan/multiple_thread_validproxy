@@ -1463,7 +1463,12 @@ bool SubitemUpdaterV2::migrateProxy(sqlite3* srcDb, sqlite3* dstDb,
         sqlite3_bind_text(updateStmt, 18, proxy.flow.c_str(), -1, SQLITE_TRANSIENT);
         sqlite3_bind_text(updateStmt, 19, proxy.sni.c_str(), -1, SQLITE_TRANSIENT);
         sqlite3_bind_text(updateStmt, 20, proxy.alpn.c_str(), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_text(updateStmt, 21, proxy.coretype.c_str(), -1, SQLITE_TRANSIENT);
+        // CoreType - 如果为空则写入 NULL
+        if (proxy.coretype.empty()) {
+            sqlite3_bind_null(updateStmt, 21);
+        } else {
+            sqlite3_bind_text(updateStmt, 21, proxy.coretype.c_str(), -1, SQLITE_TRANSIENT);
+        }
         sqlite3_bind_text(updateStmt, 22, proxy.presocksport.c_str(), -1, SQLITE_TRANSIENT);
         sqlite3_bind_text(updateStmt, 23, proxy.fingerprint.c_str(), -1, SQLITE_TRANSIENT);
         sqlite3_bind_text(updateStmt, 24, proxy.displaylog.c_str(), -1, SQLITE_TRANSIENT);
@@ -1521,7 +1526,12 @@ bool SubitemUpdaterV2::migrateProxy(sqlite3* srcDb, sqlite3* dstDb,
         sqlite3_bind_text(insertStmt, 19, proxy.flow.c_str(), -1, SQLITE_TRANSIENT);
         sqlite3_bind_text(insertStmt, 20, proxy.sni.c_str(), -1, SQLITE_TRANSIENT);
         sqlite3_bind_text(insertStmt, 21, proxy.alpn.c_str(), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_text(insertStmt, 22, proxy.coretype.c_str(), -1, SQLITE_TRANSIENT);
+        // CoreType - 如果为空则写入 NULL
+        if (proxy.coretype.empty()) {
+            sqlite3_bind_null(insertStmt, 22);
+        } else {
+            sqlite3_bind_text(insertStmt, 22, proxy.coretype.c_str(), -1, SQLITE_TRANSIENT);
+        }
         sqlite3_bind_text(insertStmt, 23, proxy.presocksport.c_str(), -1, SQLITE_TRANSIENT);
         sqlite3_bind_text(insertStmt, 24, proxy.fingerprint.c_str(), -1, SQLITE_TRANSIENT);
         sqlite3_bind_text(insertStmt, 25, proxy.displaylog.c_str(), -1, SQLITE_TRANSIENT);

@@ -721,6 +721,7 @@ TEST(ExportTest, UriGeneration) {
 - 在 `ConfigReader` 中添加 `sync` 配置节支持
 - 参数解析后调用 `SubitemUpdaterV2::syncDatabases(source, target)`
 - **2026-04-24 修复**: INSERT/UPDATE SQL 中的列名数量不匹配 - 错误包含了不在表结构中的 Username/Endpoint 字段，已修正为使用34列的正确结构
+- **2026-04-28 修复**: CoreType 空值处理 - 当 CoreType 为空字符串时，使用 `sqlite3_bind_null()` 写入 NULL 而非空字符串，确保 v2rayN 正确识别代理（v2rayN 的 ECoreType 枚举中 0/NULL 表示无效，空字符串会被过滤）
 
 ### 成功标准
 - 源库中 delay>0 的代理成功复制到目标库
