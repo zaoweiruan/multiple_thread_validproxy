@@ -25,8 +25,13 @@ ProxyBatchTester::~ProxyBatchTester() {
 void ProxyBatchTester::writeLog(const std::string& msg) {
     static std::mutex logMutex;
     std::lock_guard<std::mutex> lock(logMutex);
+    
+    // 判断是否为错误消息（包含 ERROR 关键字）
+    bool isError = (msg.find("ERROR") != std::string::npos);
+    
     if (logOut_ && logOut_->is_open()) {
-        if (config_.log_network_failures) {
+        // 错误总是写入文件，其他消息受 log_network_failures 控制
+        if (isError || config_.log_network_failures) {
             *logOut_ << msg << std::endl;
             logOut_->flush();
         }
@@ -132,6 +137,7 @@ db::models::Profileitem configProfile = profile;
             }
             
             if (!addSuccess) {
+                writeLog("[Worker-" + std::to_string(workerId) + "] 注入xray outbound 错误: " + xrayApi.getLastError());
                 writeLog("[Worker-" + std::to_string(workerId) + "] XRAY_ERROR - " + profile.indexid + " - " + xrayApi.getLastError());
                 writeLog("  Xray output: " + addResult);
                 writeLog("  Outbound JSON: " + config.outbound_json);
@@ -175,6 +181,7 @@ db::models::Profileitem configProfile = profile;
             
         } catch (const std::exception& e) {
             std::cerr << "[Worker-" << workerId << "] Exception: " << e.what() << std::endl;
+            writeLog("[Worker-" + std::to_string(workerId) + "] failed to build conf: " + e.what());
             writeLog("[Worker-" + std::to_string(workerId) + "] EXCEPTION - " + profile.indexid + " - " + e.what());
             {
                 std::lock_guard<std::mutex> lock(queueMutex_);
@@ -207,11 +214,6 @@ void ProxyBatchTester::testProxiesMultiThreaded() {
 }
 
 void ProxyBatchTester::printSummary() {
-    std::cout << "========================================" << std::endl;
-    std::cout << "Total: " << totalProxies_ << std::endl;
-    std::cout << "Success: " << successCount_ << std::endl;
-    std::cout << "Failed: " << failedCount_ << std::endl;
-    std::cout << "========================================" << std::endl;
     writeLog("========================================");
     writeLog("Total: " + std::to_string(totalProxies_));
     writeLog("Success: " + std::to_string(successCount_));
