@@ -273,6 +273,44 @@ if (commandMode == "import-sub") {
 }
 ```
 
+### 5.4 日志方式
+**使用 `SubitemUpdaterV2::log()` 方法**（src/SubitemUpdaterV2.cpp:1028-1035）
+
+**理由**：
+1. **一致性**：与现有的 `syncDatabases()` 功能使用相同的日志方式
+2. **功能完整**：`log()` 方法同时输出到：
+   - 控制台（std::cout）
+   - `logOut_` 文件流（如果有效）
+   - `Logger` 系统（统一日志，带时间戳和级别）
+3. **代码复用**：无需重新实现日志逻辑
+
+**示例用法**：
+```cpp
+bool SubitemUpdaterV2::importSubitemsFromFile(const std::string& filePath) {
+    log("========================================");
+    log("Subitem Import Starting...");
+    log("File: " + filePath);
+    log("========================================");
+    
+    // ...
+    
+    if (!isValidUrlFormat(url)) {
+        log("ERROR: Invalid URL format: " + url);
+        continue;
+    }
+    
+    log("Imported: [" + subitem.remarks + "] " + url);
+    
+    // ...
+    
+    log("========================================");
+    log("Import Summary: Success=" + std::to_string(successCount) + 
+        ", Skipped=" + std::to_string(skippedCount) + 
+        ", Failed=" + std::to_string(failedCount));
+    log("========================================");
+}
+```
+
 ---
 
 ## 6. 输出格式
