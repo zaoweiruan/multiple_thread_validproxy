@@ -20,13 +20,14 @@
 | -UA | --update-all | 更新全部 |
 | -T | --test-sub | 测试订阅 |
 | -D | --dedup | 移除重复代理 |
+| -S | -sync [src[:dst]] | 同步数据库 |
+| -IS | -import-sub-config <file\|url> | 批量导入subitem |
 | -h | --help | 显示帮助 |
-| -v | --version | 显示版本 |
 
 ### 技术架构
 - **数据库**: SQLite
 - **配置读取**: bin/config.json → database.path
-- **日志系统**: log/ + bin/worker/logs/
+- **日志系统**: Logger 类（统一日志，带时间戳和级别）
 - **单例模式**: XrayManager 管理 xray 实例
 - **线程安全**: Mutex + Atomic 操作
 
@@ -50,640 +51,73 @@
 ./validproxy -TU
 ```
 
-## 📡 订阅更新策略 (priority_mode)
+## 🔄 批量导入 Subitem 功能 (-IS/-import-sub-config)
 
-**配置文件**: `config.json` → `priority_mode`
+**官方描述**: `Batch import subitems from file or URL`
 
-**支持策略列表**:
+**功能逻辑**:
+- 自动判断输入是**文件路径**还是 **URL**
+  - 以 `http://` 或 `https://` 开头 → 作为单个 URL 导入
+  - 否则 → 作为文件处理（每行一个 URL）
+- 支持 `.txt` 文件，每行格式：`URL [空格备注]`
+- 自动生成 remarks（从 URL 提取：域名后路径+文件名）
+- 默认值：enabled=1, autoupdateinterval=1440, updatetime=0, sort 递增
+- URL 校验（必须 http/https 开头，包含有效域名）
+- 重复 URL 跳过（基于 url 字段检查）
+- 详细摘要输出（成功/跳过/失败统计）
 
-| 配置值 | 策略 | 行为 | 状态 |
-|--------|------|------|------|
-| `proxy_first` | ProxyFirst | 先用代理获取，失败再用直连 | ✅ |
-| `direct_only` | DirectOnly | 仅使用直连，不使用代理 | ✅ |
-| `direct_first` | DirectFirst | 先用直连获取，失败再用代理 | ✅ |
-| `proxy_only` | DirectFirst | 会降级为 direct_first | ❌ 待支持 |
-
-**代码位置**: `src/SubitemUpdaterV2.cpp:978-982`
-
-**当前实现**:
-```cpp
-SubitemUpdaterV2::Strategy SubitemUpdaterV2::parseStrategy(const std::string& mode) {
-    if (mode == "proxy_first") return Strategy::ProxyFirst;
-    if (mode == "direct_only") return Strategy::DirectOnly;
-    return Strategy::DirectFirst;  // 默认值
-}
-```
-
-**日志示例**:
-```
-[INFO] Priority mode: proxy_only  // 注意：实际按 direct_first 运行
-```
-
-**待修复**: 添加 `proxy_only` 支持（仅使用代理，不尝试直连）
-
-# 或使用长格式
-./validproxy -tourl
-```
-
-**实现细节**:
-- 依赖 `ShareLink::exportConfig()` 方法
-- 过滤条件: `ProfileExItem.delay > 0`
-- 格式转换: JSON → 可读链接格式
-- 文件命名: `share_link_{YYYYMMDD}_{HHMMSS}.txt`
-
-## ⚙️ 配置文件结构
-
-### bin/config.json 关键字段
-```json
-{
-    "database": {
-        "path": "E:/v2rayN-windows-64/guiConfigs/guiNDB.db"
-    },
-    "log": {
-        "path": "log",
-        "enabled": true,
-        "level": "INFO",
-        "rotation": {
-            "enabled": true,
-            "max_size_mb": 100,
-            "max_files": 7
-        }
-    },
-    "export": {
-        "enabled": true,
-        "export_dir": "exports",
-        "backup_count": 50
-    }
-}
-```
-
-### 日志目录结构
-```
-log/
-├── app.log              # 主应用日志
-├── error.log           # 错误日志  
-└── debug.log           # 调试日志
-
-bin/worker/logs/
-└── worker_{id}.log     # 工作线程日志
-
-build/logs/
-└── build.log           # 构建日志
-```
-
-**日志级别**: TRACE(0), DEBUG(1), INFO(2), WARN(3), ERROR(4)
-
-## 🏗️ 项目架构
-
-### 核心模块
-1. **XrayManager** (单例) - xray 实例生命周期管理
-   - 线程安全初始化
-   - 资源自动释放
-   - 多实例防护
-
-2. **ProxyFinder** - 代理发现与测试
-   - HTTP/HTTPS 连通性测试
-   - 并发请求控制
-   - 超时处理机制
-
-3. **ConfigGenerator** - 配置生成
-   - 支持 vmess/vless/ss/trojan 协议
-   - 动态构建 outbound 配置
-   - 加密算法自动选择
-
-4. **ConfigReader** - 配置文件读取
-   - JSON 解析
-   - 路径优先级处理
-   - 环境变量覆盖
-
-5. **SubitemUpdaterV2** - 订阅更新
-   - 批量下载订阅源
-   - 数据标准化处理
-   - 增量更新支持
-
-6. **DatabaseHelper** - 数据库操作
-   - SQLite 封装
-   - DAO 模式实现
-   - 事务管理
-
-### 数据流
-```
-订阅源 → SubitemUpdater → SQLite → ConfigGenerator → 验证 → Export
-                                          ↓
-                                       ProxyFinder
-```
-
-### 线程架构
-- **主线程**: UI/CLI 交互
-- **工作线程池**: 并发代理测试 (默认4线程)
-- **IO线程**: 文件读写和数据库操作
-- **异步回调**: 结果通知机制
-
-
+**使用示例**:
 ```bash
-# Debug 模式
-cmake .. -G "Ninja" -DCMAKE_BUILD_TYPE=debug
-cmake --build . --parallel 8
+# 从文件导入
+./validproxy -IS bin/subitem-20260428.txt
 
-# Release 模式  
-cmake .. -G "Ninja" -DCMAKE_BUILD_TYPE=release
-cmake --build . --parallel 8
-
-# 自定义构建目录
-mkdir build && cd build
-cmake .. -G "Ninja" -DCMAKE_BUILD_TYPE=debug
-cmake --build . --jobs $(nproc)
+# 直接导入单个 URL
+./validproxy -IS https://raw.githubusercontent.com/owner/repo/main/sub.txt
 ```
 
-### 运行指令
-```bash
-# 基本运行
-./validproxy
-
-# 带参数运行
-./validproxy -c config.json -TU -show-sub
-
-# 后台运行
-nohup ./validproxy -UA > /dev/null 2>&1 &
-
-# 调试模式
-./validproxy -T sub_id -G index_id
-```
-
-### 日志管理
-- **轮转策略**: logrotate 配置
-- **归档格式**: .gz 压缩
-- **保留策略**: 最近 30 天
-- **监控告警**: ERROR 级别邮件通知
-- **日志分析**: grep/awk 日志处理
-- **Shell 兼容性**: 根据 $SHELL_TYPE 选择 bash 或 pwsh 命令
-
-### 性能基准
-- 启动时间: < 2秒
-- 内存占用: < 100MB
-- 代理测试: 并发 4 线程
-- 数据库查询: < 10ms (有索引)
-- 日志写入: < 1ms 延迟
-
-### 系统要求
-- **CPU**: 2核以上
-- **内存**: 512MB 最低 (推荐1GB+)
-- **磁盘**: 100MB 可用空间
-- **网络**: 出站 HTTP/HTTPS 访问
-
-### 监控指标
-- 进程存活状态
-- 日志文件大小
-- 数据库连接数
-- 内存使用率
-- 任务队列长度
-
-### Shell 环境检测
-```bash
-# 检测当前 Shell 类型
-if command -v pwsh &> /dev/null && [[ "$SHELL" == *"pwsh"* ]]; then
-    SHELL_TYPE="powershell"
-else
-    SHELL_TYPE="bash"
-fi
-echo "当前 Shell: ${SHELL_TYPE}"
-```
-
-### 跨平台兼容性处理
-```bash
-# 示例: 条件执行基于 Shell 类型
-if [[ "$SHELL_TYPE" == "powershell" ]]; then
-    # PowerShell 命令
-    Get-ChildItem log/*.log | Remove-Item
-else
-    # Bash 命令
-    find log/ -name "*.log" -delete
-fi
-```
-
-## ⚠️ 注意事项
-
-1. **数据库路径优先级**: 环境变量 > config.json > 默认值
-   - `V2RAYN_DB_PATH` 环境变量优先级最高
+**复用技术**:
+1. **ID 生成**: `utils::generateUniqueId()` (src/Utils.cpp:21-32)
+   - 生成 19 位数字 ID（4 或 5 开头）
+   - 格式：`{4|5}{18位随机数}`
+   - 例如：`419283746565049382`
    
-2. **日志轮转策略**:
-   - 保留最近 7-30 天日志
-   - 单文件大小限制 100MB
-   - 自动清理旧文件
+2. **统一日志系统**: `Logger` 类（src/Logger.cpp, include/Logger.h）
+   - 支持级别：TRACE、DEBUG、INFO、WARN、LOG_ERROR
+   - 自动添加时间戳：`[2026-04-29 10:30:43] [INFO] message`
+   - 同时输出到：控制台 + 日志文件
+   - 线程安全（使用 `std::mutex`）
    
-3. **导出文件安全**:
-   - 包含敏感代理信息，请妥善保管
-   - 建议加密存储
-   - 定期清理过期导出文件
+   **日志使用示例**:
+   ```cpp
+   Logger::init(logDir, prefix);          // 初始化
+   Logger::write("message");                 // INFO 级别
+   Logger::write("error", LogLevel::LOG_ERROR); // ERROR 级别
+   logInfo("message");    // 使用辅助函数（main.cpp）
+   logError("error");      // 使用辅助函数（main.cpp）
+   ```
    
-4. **并发安全机制**:
-   - 多线程环境下使用互斥锁保护共享资源
-   - SQLite 每线程独立连接
-   - 原子操作保证数据一致性
-   
-5. **错误处理**:
-   - 所有数据库操作都有事务回滚机制
-   - 异常情况下自动清理资源
-   - 详细的错误日志记录
-
-6. **性能优化**:
-   - 数据库连接池 (最大10连接)
-   - 批量插入优化
-    - 索引加速查询
-    - 异步日志写入
-    - 连接复用机制
-    - 预编译语句优化
-
-## 🔧 部署与运维
-
-### 编译指令
-```bash
-# Debug 模式
-cmake .. -G "Ninja" -DCMAKE_BUILD_TYPE=debug
-cmake --build . --parallel 8
-
-# Release 模式  
-cmake .. -G "Ninja" -DCMAKE_BUILD_TYPE=release
-cmake --build . --parallel 8
-```
-
-### 运行指令
-```bash
-# 基本运行
-./validproxy
-
-# 带参数运行
-./validproxy -c config.json -TU -show-sub
-
-# 后台运行
-nohup ./validproxy -UA > /dev/null 2>&1 &
-```
-
-### 日志管理
-- **轮转策略**: logrotate 配置
-- **归档格式**: .gz 压缩
-- **保留策略**: 最近 30 天
-- **监控告警**: ERROR 级别邮件通知
-
-### 性能基准
-- 启动时间: < 2秒
-- 内存占用: < 100MB
-- 代理测试: 并发 4 线程
-- 数据库查询: < 10ms (有索引)
-## 🔧 部署与运维
-
-### 编译指令
-```bash
-# Debug 模式
-cmake .. -G "Ninja" -DCMAKE_BUILD_TYPE=debug
-cmake --build . --parallel 8
-
-# Release 模式  
-cmake .. -G "Ninja" -DCMAKE_BUILD_TYPE=release
-cmake --build . --parallel 8
-
-# 自定义构建目录
-mkdir build && cd build
-cmake .. -G "Ninja" -DCMAKE_BUILD_TYPE=debug
-cmake --build . --jobs $(nproc)
-```
-
-### 运行指令
-```bash
-# 基本运行
-./validproxy
-
-# 带参数运行
-./validproxy -c config.json -TU -show-sub
-
-# 后台运行
-nohup ./validproxy -UA > /dev/null 2>&1 &
-
-# 调试模式
-./validproxy -T sub_id -G index_id
-```
-
-### 日志管理
-- **轮转策略**: logrotate 配置
-- **归档格式**: .gz 压缩
-- **保留策略**: 最近 30 天
-- **监控告警**: ERROR 级别邮件通知
-- **日志分析**: grep/awk 日志处理
-- **Shell 兼容性**: 根据 $SHELL_TYPE 选择 bash 或 pwsh 命令
-
-### 性能基准
-- 启动时间: < 2秒
-- 内存占用: < 100MB
-- 代理测试: 并发 4 线程
-- 数据库查询: < 10ms (有索引)
-- 日志写入: < 1ms 延迟
-
-### 系统要求
-- **CPU**: 2核以上
-- **内存**: 512MB 最低 (推荐1GB+)
-- **磁盘**: 100MB 可用空间
-- **网络**: 出站 HTTP/HTTPS 访问
-
-### 监控指标
-- 进程存活状态
-- 日志文件大小
-- 数据库连接数
-- 内存使用率
-- 任务队列长度
-
-### Shell 环境检测
-```bash
-# 检测当前 Shell 类型
-if command -v pwsh &> /dev/null && [[ "$SHELL" == *"pwsh"* ]]; then
-    SHELL_TYPE="powershell"
-else
-    SHELL_TYPE="bash"
-fi
-echo "当前 Shell: ${SHELL_TYPE}"
-```
-
-### 跨平台兼容性处理
-```bash
-# 示例: 条件执行基于 Shell 类型
-if [[ "$SHELL_TYPE" == "powershell" ]]; then
-    # PowerShell 命令
-    Get-ChildItem log/*.log | Remove-Item
-else
-    # Bash 命令
-    find log/ -name "*.log" -delete
-fi
-```
-
-## 📊 持续集成
-
-### 测试流程
-```bash
-# 运行单元测试
-ctest -V ./build/tests/
-
-# 检查代码风格
-make lint
-
-# 编译检查
-cmake --build . --target all
-```
-
-### 版本发布
-- 自动检测版本文件
-- 生成变更日志
-- 创建发布标签
-- 推送至远程仓库
-
-## 📋 导出分享链接与有效代理逻辑分析
-
-### 功能定位
-**导出分享链接 (-TU/-tourl)** 是获取有效代理的核心逻辑入口
-
-```
-用户命令: ./validproxy -TU sub_id
-    ↓
-1. 参数解析 → 启用 tourl 模式
-    ↓
-2. 加载配置 (config.json)
-    ↓
-3. 数据库查询 → 过滤 delay > 0 的代理
-    ↓
-4. 生成分享链接 URI
-    ↓
-5. 输出到 proxies/ 目录
-```
-
-### 与有效代理获取的差异
-
-| 特性 | 导出分享链接 (-TU) | 有效代理获取 (-FMIN) |
-|------|-------------------|---------------------|
-| **目的** | 生成可分享的 URI | 获取真实可用代理 |
-| **测试** | 无 (仅静态筛选) | 有 (实际连接测试) |
-| **排序** | 无 (按数据库顺序) | 有 (按延迟升序) |
-| **输出** | URI 文本文件 | 单个最优代理 |
-| **延迟** | 数据库记录值 | 实际测试测量值 |
-
-### 关键代码组件
-
-#### 1. 数据库查询逻辑 (ProxyFinder.cpp)
-```cpp
-// 查询条件: 仅选择 delay > 0 的代理
-std::string sql = "SELECT pi.Address, pi.Port, pe.Delay "
-                 "FROM profile_items pi "
-                 "JOIN profile_exitems pe ON pi.IndexId = pe.IndexId "
-                 "WHERE pe.Delay > 0 "   // 关键过滤条件
-                 "ORDER BY CAST(pe.Delay AS INTEGER) ASC";
-```
-
-#### 2. 分享链接生成 (ShareLink.h/.cpp)
-```cpp
-std::string ShareLink::toShareUri(const ProxyConfig& config) {
-    // 根据 config.type 生成对应 URI 格式
-    switch(config.type) {
-        case VMess:    return buildVmessUri(config);    // vmess://
-        case VLESS:    return buildVlessUri(config);    // vless://
-        case Trojan:   return buildTrojanUri(config);   // trojan://
-        case Shadowsocks: return buildSsUri(config);    // ss://
-    }
-}
-```
-
-#### 3. 文件输出逻辑
-```cpp
-// 输出到: bin/exports/share_links_{timestamp}.txt
-std::ofstream exportFile(filename);
-for (const auto& proxy : validProxies) {
-    std::string uri = ShareLink::toShareUri(proxy);
-    exportFile << uri << std::endl;  // 每行一个 URI
-}
-```
-
-### 错误处理与日志
-
-#### 常见错误模式
-
-| 错误模式 | 发生阶段 | 原因 | 日志特征 |
-|----------|----------|------|----------|
-| `SQLITE_ERROR` | 数据库查询 | SQL 语法错误/表不存在 | `SQL错误: ...` |
-| `NO_VALID_PROXY` | 过滤阶段 | 所有代理 delay=0 | `未找到有效代理` |
-| `FILE_OPEN_FAIL` | 文件输出 | 目录不存在/权限不足 | `无法创建文件` |
-| `URI_GEN_FAIL` | 生成阶段 | 未知协议类型 | `不支持的协议` |
-
-#### 日志记录点
-
-```cpp
-// 1. 查询前日志
-log("ProxyFinder: SQL查询: " + sql);
-
-// 2. 过滤结果日志  
-log("找到 " + std::to_string(proxies.size()) + " 个代理，其中 " + 
-    std::to_string(validCount) + " 个有效(delay>0)");
-
-// 3. 文件输出日志
-log("导出文件已生成: " + filename);
-```
-
-### 修复计划 (代码级改进)
-
-#### 改进 1: 统一代理处理逻辑
-```cpp
-// 提取公共方法: 加载+过滤+测试
-std::vector<ProxyConfig> loadAndFilterProxies() {
-    auto allProxies = ProfileitemDAO::getAll();
-    std::vector<ProxyConfig> filtered;
-    
-    for (const auto& proxy : allProxies) {
-        if (proxy.delay > 0) {  // 关键过滤
-            filtered.push_back(proxy);
-        }
-    }
-    return filtered;
-}
-```
-
-#### 改进 2: 增强错误日志
-```cpp
-bool exportShareLinks(const std::vector<ProxyConfig>& proxies) {
-    if (proxies.empty()) {
-        log("警告: 无代理可导出，可能原因:");
-        log("  - 所有代理的 Delay 字段为 0");
-        log("  - 数据库查询失败");
-        return false;
-    }
-    // ... 导出逻辑
-}
-```
-
-#### 改进 3: 数据库索引优化
-```sql
--- 确保以下索引存在 (在数据库初始化时执行)
-CREATE INDEX IF NOT EXISTS idx_profiles_sub ON profile_items(is_sub);
-CREATE INDEX IF NOT EXISTS idx_exitem_delay ON profile_exitems(delay);
-CREATE INDEX IF NOT EXISTS idx_exitem_profile ON profile_exitems(indexid);
-```
-
-## 🔧 ShareLink 导出修复 (2026-04-23)
-
-### 修复背景
-经过详细比较 `v2rayn_sharelink.txt` 与代码导出文件，发现了5个关键格式兼容性问题，导致生成的分享链接无法被v2rayN等客户端正确识别。
-
-### 修复内容
-
-#### 1. 路径参数保留修复 ✅
-- **问题**: 代码错误移除 `path=%2F` 参数，破坏代理连接
-- **修复**: 修改 `vlessToUri()` 移除 `&& path != "/"` 条件
-- **影响**: 11行代理恢复正常连接能力
-- **文件**: `src/ShareLink.cpp:275`
-
-#### 2. ECH参数URL编码修复 ✅
-- **问题**: ECH参数使用未编码字符 (`+` 而非 `%2B`)
-- **修复**: 替换手动编码为 `urlEncode(echConfigList)`
-- **影响**: 6行代理符合RFC 3986标准
-- **文件**: `src/ShareLink.cpp:250-254`
-
-#### 3. TLS参数逻辑修复 ✅
-- **问题**: 为非TLS连接错误添加 `insecure` 参数
-- **修复**: 仅在 `security == "tls/reality"` 时添加参数
-- **影响**: 9行代理不再包含语义错误的参数
-- **文件**: `src/ShareLink.cpp:257-260`
-
-#### 4. VMess负载完整性修复 ✅
-- **问题**: VMess JSON `insecure` 标志被错误修改
-- **修复**: 强制重新生成JSON而非使用过时base64内容
-- **影响**: 2行代理保持正确的安全配置
-- **文件**: `src/ShareLink.cpp:178-201`
-
-#### 5. 路径查询参数格式修复 ✅
-- **问题**: 路径参数缺少 `?` 分隔符导致URL格式错误
-- **修复**: 确保路径编码逻辑正确处理查询参数
-- **影响**: 1行代理URL格式规范化
-- **文件**: `src/ShareLink.cpp:275-279`
-
-### 验证结果
-- **对比文件**: `v2rayn_sharelink.txt` vs `proxies_20260423_163601.txt`
-- **修复状态**: 所有5个问题已解决 ✅
-- **兼容性**: 完全符合v2rayN分享链接格式
-- **测试**: 代码编译通过，功能正常运行
-
-### 技术细节
-- **提交**: `5e7ae16` - "Fix share link export issues for v2rayN compatibility"
-- **修改文件**: `src/ShareLink.cpp`, `CMakeLists.txt`, `bin/config.json`
-- **影响范围**: vless/vmess/trojan协议的分享链接生成
-- **向后兼容**: 保持现有功能不变
-
-### 修复验证命令
-```bash
-# 生成新的分享链接
-./validproxy -TU
-
-# 对比验证
-diff v2rayn_sharelink.txt proxies_TIMESTAMP.txt
-```
-
----
-
-### 测试验证方案
-
-#### 单元测试
-```cpp
-// 测试用例: 数据库查询过滤
-TEST(ExportTest, FilterDelayGreaterThanZero) {
-    // 模拟数据库返回不同 Delay 值
-    MockDatabase db;
-    db.addMockRow(/* delay = 0 */);
-    db.addMockRow(/* delay = 100 */);
-    db.addMockRow(/* delay = -1 */);
-    
-    auto result = loadAndFilterProxies(db);
-    ASSERT_EQ(result.size(), 1);  // 仅保留 delay=100
-}
-
-// 测试用例: URI 生成
-TEST(ExportTest, UriGeneration) {
-    ProxyConfig config{VMess, "server", 443, "uuid"};
-    std::string uri = ShareLink::toShareUri(config);
-    EXPECT_TRUE(uri.find("vmess://") == 0);  // 以 vmess:// 开头
-}
-```
-
-#### 集成测试
-```bash
-# 测试导出功能
-./validproxy -c test_config.json -TU test_sub_id
-# 验证: bin/exports/share_links_*.txt 应包含 URI
-
-# 测试有效代理获取  
-./validproxy -c test_config.json -FMIN test_sub_id  
-# 验证: 返回代理应具有实际延迟值
-```
-
-### 部署注意事项
-
-#### 1. 数据库兼容性
-- 确保 `profile_exitems.Delay` 字段存在且可查询
-- 旧版本数据库可能需要迁移脚本添加索引
-
-#### 2. 权限要求
-```bash
-# 程序需要以下目录的写入权限
-./bin/exports/        # 导出文件目录
-./log/                # 日志目录  
-./proxies/            # 临时代理文件目录
-```
-
-#### 3. 性能优化
-- 对大型数据库 (超过 1000 条代理)，建议添加分页查询
-- 考虑在 `findWorkingProxy` 中实现并发测试以加速处理
-
-## 📤 代理同步功能（2026-04-24 新增）
-
-### 功能概述
-通过命令行参数或配置文件，将有效代理从一个数据库同步（迁移）到另一个数据库。
-
-### 命令行参数
-- `-S` 或 `-sync` - 触发代理同步功能
-
-### 参数格式
+   **SubitemUpdaterV2 中的日志**:
+   - 使用 `Logger::write()` 而非 `SubitemUpdaterV2::log()`
+   - 确保日志统一到 Logger 系统
+
+**实现文件**:
+- `include/SubitemUpdaterV2.h` - `importSubitemsFromFile()`、`importSingleUrl()` 声明
+- `src/SubitemUpdaterV2.cpp` - 实现导入逻辑、辅助函数
+- `src/main.cpp` - 参数解析、`-IS` 处理
+- `src/Utils.cpp` - `generateUniqueId()` 复用
+
+## 🔄 数据库同步功能 (-S/-sync)
+
+**官方描述**: `Sync valid proxies from source to target DB`
+
+**功能逻辑**:
+- 从源库查询 `delay > 0` 的有效代理（静态筛选）
+- 对每条代理：
+  - 检查订阅（subid）在目标库是否存在，不存在则先插入
+  - 检查代理 indexid 是否存在，存在则 UPDATE，不存在则 INSERT
+- 同时迁移 `profile_exitems` 扩展信息
+
+**参数格式**:
 ```bash
 # 方式1：仅指定源数据库（目标库从配置读取）
 ./validproxy -S /path/to/source.db
@@ -692,7 +126,7 @@ TEST(ExportTest, UriGeneration) {
 ./validproxy -S /path/to/source.db:/path/to/target.db
 ```
 
-### 配置文件
+**配置文件**:
 ```json
 {
   "sync": {
@@ -702,29 +136,123 @@ TEST(ExportTest, UriGeneration) {
 }
 ```
 
-### 优先级
+**优先级**:
 1. 命令行 `-S source:target`（最高）
-2. 命令行 `-S source`（target从配置读取）
+2. 命令行 `-S source`（target 从配置读取）
 3. 配置文件 `sync.source_db` + `sync.target_db`
 
-### 迁移逻辑
-1. 从源库查询 `delay > 0` 的有效代理（静态筛选，类似 `-TU` 逻辑）
-2. 对每条代理：
-   - 检查订阅（subid）在目标库是否存在，不存在则先插入订阅信息
-   - 检查代理 indexid 是否存在，存在则 UPDATE（覆盖模式），不存在则 INSERT
-3. 同时迁移 `profile_exitems` 扩展信息（delay, speed等）
+## 🖥️ 日志系统
 
-### 实现方案
+### Logger 类（统一日志）
 
-- 扩展 `SubitemUpdaterV2` 类，添加 `syncDatabases()` 方法
-- 在 `main.cpp` 中添加 `-S`/`-sync` 参数解析
-- 在 `ConfigReader` 中添加 `sync` 配置节支持
-- 参数解析后调用 `SubitemUpdaterV2::syncDatabases(source, target)`
-- **2026-04-24 修复**: INSERT/UPDATE SQL 中的列名数量不匹配 - 错误包含了不在表结构中的 Username/Endpoint 字段，已修正为使用34列的正确结构
-- **2026-04-28 修复**: CoreType 空值处理 - 当 CoreType 为空字符串时，使用 `sqlite3_bind_null()` 写入 NULL 而非空字符串，确保 v2rayN 正确识别代理（v2rayN 的 ECoreType 枚举中 0/NULL 表示无效，空字符串会被过滤）
+**文件**: `include/Logger.h`、`src/Logger.cpp`
 
-### 成功标准
-- 源库中 delay>0 的代理成功复制到目标库
-- 关联订阅信息同步创建
-- 扩展信息（profile_exitems）完整迁移
-- 相同 indexid 的代理在目标库中覆盖更新
+**功能**:
+- 静态方法，全局可用
+- 支持 5 个级别：TRACE、DEBUG、INFO、WARN、LOG_ERROR
+- 自动添加时间戳和级别前缀
+- 同时输出到控制台和日志文件
+- 线程安全（使用 `std::mutex`）
+
+**使用示例**:
+```cpp
+// 初始化（在 main.cpp 中）
+Logger::init(logDir, commandMode);
+
+// 写入日志
+Logger::write("message");                     // INFO 级别
+Logger::write("error", LogLevel::LOG_ERROR);    // ERROR 级别
+Logger::write("debug", LogLevel::DEBUG);       // DEBUG 级别
+
+// 辅助函数（main.cpp）
+logInfo("message");     // 自动带时间戳和模式前缀
+logError("error");     // 自动带时间戳和模式前缀
+
+// 刷新和关闭
+Logger::flush();
+Logger::close();
+```
+
+**日志文件位置**: `bin/{commandMode}_{timestamp}.log`
+
+### SubitemUpdaterV2::log() 方法（已弃用）
+
+**文件**: `src/SubitemUpdaterV2.cpp:1028-1035`
+
+**注意**: 新代码应直接使用 `Logger::write()`，而非此方法。
+
+## 🔧 常用工具和模式
+
+### ID 生成
+```cpp
+// 文件：src/Utils.cpp:21-32
+std::string utils::generateUniqueId() {
+    static std::mt19937_64 rng(std::chrono::steady_clock::now().time_since_epoch().count());
+    static std::uniform_int_distribution<int> firstDist(0, 1);
+    static std::uniform_int_distribution<long long> restDist(0, 999999999999999999);
+    
+    int first = 4 + firstDist(rng);  // 4 或 5 开头
+    long long rest = restDist(rng);
+    
+    std::ostringstream oss;
+    oss << first << std::setw(18) << std::setfill('0') << rest;
+    return oss.str();  // 19 位数字
+}
+```
+
+**使用场景**:
+- Profileitem 的 `indexid`
+- Subitem 的 `id`（批量导入功能）
+
+### URL 解析和校验
+- `isValidUrlFormat(url)` - 检查 http/https 开头 + 有效域名
+- `hasValidPath(url)` - 检查是否有路径部分
+- `extractRemarksFromUrl(url)` - 从 URL 提取 remarks
+
+## 📝 最近变更
+
+### 2026-04-29：批量导入 Subitem 完善
+- 自动判断输入是文件还是 URL
+- 添加 `importSingleUrl()` 方法
+- 统一使用 Logger 日志系统
+- 修复：无效 URL 格式正确处理
+
+### 2026-04-28：批量导入 Subitem 功能
+- 实现 `-IS`/`-import-sub-config` 参数
+- 支持从 `.txt` 文件批量导入订阅
+- 自动生成 remarks、ID、默认值
+- URL 校验和重复检测
+
+### 2026-04-28：日志修复
+- 修改 `writeLog()` 确保错误总是写入文件
+- 添加明确的错误消息："failed to build conf"、"注入xray outbound 错误"
+- 修复问题：之前错误只显示在控制台，不写入日志文件
+
+### 2026-04-28：CoreType NULL 处理
+- 在 `migrateProxy()` 的 UPDATE 和 INSERT 语句中
+- 当 CoreType 为空时使用 `sqlite3_bind_null()` 写入 NULL
+- 确保 v2rayN 正确识别代理
+
+### 2026-04-24：数据库同步功能
+- 实现 `-S`/`-sync` 参数
+- 从源数据库同步有效代理（delay>0）到目标数据库
+- 迁移 SubItem、ProfileItem、ProfileExItem 三张表
+
+## 🗂️ 相关文件索引
+
+### 核心头文件
+- `include/SubitemUpdaterV2.h` - 订阅更新器（含导入功能）
+- `include/Utils.h` - 工具函数（ID 生成）
+- `include/Logger.h` - 统一日志系统
+- `include/Subitem.h` - Subitem 数据模型
+- `include/Profileitem.h` - Profileitem 数据模型
+
+### 实现文件
+- `src/SubitemUpdaterV2.cpp` - 订阅更新 + 导入 + 同步
+- `src/Utils.cpp` - `generateUniqueId()` 实现
+- `src/Logger.cpp` - Logger 类实现
+- `src/main.cpp` - 主程序 + 参数解析
+
+### 文档
+- `docs/superpowers/specs/2026-04-28-subitem-batch-import-design.md` - 批量导入设计文档
+- `memory/project_knowledge.md` - 本文件（长期记忆）
