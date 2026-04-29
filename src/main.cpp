@@ -35,6 +35,7 @@ XrayManager* g_xrayManager = nullptr;
 std::string g_commandMode;
 std::string syncSourceDb;
 std::string syncTargetDb;
+std::string importFilePath;
 
 std::string getTimestamp() {
     auto now = std::chrono::system_clock::now();
@@ -129,7 +130,7 @@ int main(int argc, char* argv[]) {
         } else if (arg == "-TU" || arg == "-tourl" || arg == "--tourl") {
             commandMode = "tourl";
         } else if (arg == "-S" || arg == "-sync" || arg == "--sync") {
-            commandMode = "sync";
+             commandMode = "sync";
             if (i + 1 < argc) {
                 std::string syncParam = argv[++i];
                 // Parse "source:target" or just "source"
@@ -143,6 +144,14 @@ int main(int argc, char* argv[]) {
                 }
             }
             // If no argument provided, source and target will be read from config
+        } else if (arg == "-IS" || arg == "-import-sub-config") {
+            commandMode = "import-sub";
+            if (i + 1 < argc) {
+                importFilePath = argv[++i];
+            } else {
+                std::cerr << "Error: -IS requires a file path" << std::endl;
+                return 1;
+            }
         } else if (arg == "-h" || arg == "--help") {
 std::cout << "Usage: validproxy [options]\n"
                       << "Options:\n"
@@ -155,9 +164,10 @@ std::cout << "Usage: validproxy [options]\n"
                       << "  -UA, -update-all     Update all enabled subscriptions\n"
                       << "  -T, -test-sub <id>   Test proxies from subscription by ID\n"
                       << "  -D, -dedup           Remove duplicate proxies from database\n"
-                       << "  -TU, -tourl         Export proxies (delay>0) to share links file\n"
-                       << "  -S, -sync [src[:dst]] Sync valid proxies from source to target DB\n"
-                       << "  -h, --help           Show this help\n";
+                        << "  -TU, -tourl         Export proxies (delay>0) to share links file\n"
+                        << "  -S, -sync [src[:dst]] Sync valid proxies from source to target DB\n"
+                        << "  -IS, -import-sub-config <file>  Batch import subitems from file\n"
+                        << "  -h, --help           Show this help\n";
             return 0;
         } else if (arg.find(".json") != std::string::npos) {
             std::filesystem::path p(arg);
@@ -606,7 +616,36 @@ std::cout << "Usage: validproxy [options]\n"
         logInfo(result ? "sync completed" : "sync failed");
         return result ? 0 : 1;
     }
-
+    
+    if (commandMode == "import-sub") {
+        Logger::init(logDir.string(), commandMode);
+        logInfo("validproxy starting import...");
+        
+        auto appConfig = config::ConfigReader::load(configPath);
+        if (!appConfig) {
+            logError("Failed to load config from: " + configPath);
+            return 1;
+        }
+        
+        sqlite3* db = nullptr;
+        curl_global_init(CURL_GLOBAL_DEFAULT);
+        
+        if (sqlite3_open(appConfig->database_path.c_str(), &db) != SQLITE_OK) {
+            logError("Failed to open database: " + std::string(sqlite3_errmsg(db)));
+            return 1;
+        }
+        
+        update::SubitemUpdaterV2 updater(db, appConfig->xray_executable, *appConfig, 
+                                         nullptr, exeDir);
+        bool result = updater.importSubitemsFromFile(importFilePath);
+        
+        logInfo(result ? "import completed" : "import failed");
+        
+        sqlite3_close(db);
+        curl_global_cleanup();
+        return result ? 0 : 1;
+    }
+    
     if (!singleSubId.empty()) {
         Logger::init(logDir.string(), commandMode.empty() ? "test" : commandMode);
         logInfo("validproxy starting...");

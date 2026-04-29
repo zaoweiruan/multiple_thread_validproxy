@@ -1773,4 +1773,300 @@ bool SubitemUpdaterV2::deduplicate() {
     return true;
 }
 
+// Helper function: extract remarks from URL
+std::string SubitemUpdaterV2::extractRemarksFromUrl(const std::string& url) {
+    // Format: domain first path - filename (without extension)
+    // Example: https://github.com/a/b.txt -> a-b
+    
+    size_t schemeEnd = url.find("://");
+    if (schemeEnd == std::string::npos) return "imported";
+    
+    std::string pathPart = url.substr(schemeEnd + 3);
+    size_t pathStart = pathPart.find('/');
+    if (pathStart == std::string::npos || pathStart == 0) {
+        // Only domain, no path
+        return "imported";
+    }
+    
+    std::string path = pathPart.substr(pathStart + 1);
+    std::string domain = pathPart.substr(0, pathStart);
+    
+    // Get first path segment
+    size_t segEnd = path.find('/');
+    std::string firstSeg = (segEnd != std::string::npos) ? path.substr(0, segEnd) : path;
+    
+    // Get filename without extension
+    std::string filename = firstSeg;
+    size_t lastSlash = firstSeg.find_last_of('/');
+    if (lastSlash != std::string::npos) {
+        filename = firstSeg.substr(lastSlash + 1);
+    }
+    
+    // Remove extension
+    size_t dotPos = filename.find_last_of('.');
+    if (dotPos != std::string::npos) {
+        filename = filename.substr(0, dotPos);
+    }
+    
+    // Also process firstSeg to remove extension
+    dotPos = firstSeg.find_last_of('.');
+    if (dotPos != std::string::npos) {
+        firstSeg = firstSeg.substr(0, dotPos);
+    }
+    
+    // Extract last path segment (for remarks)
+    std::string lastSeg = path;
+    size_t lastSlash2 = path.find_last_of('/');
+    if (lastSlash2 != std::string::npos) {
+        lastSeg = path.substr(lastSlash2 + 1);
+    }
+    dotPos = lastSeg.find_last_of('.');
+    if (dotPos != std::string::npos) {
+        lastSeg = lastSeg.substr(0, dotPos);
+    }
+    
+    // Combine: first path segment - last filename
+    std::string remarks = firstSeg;
+    if (!lastSeg.empty() && lastSeg != firstSeg) {
+        remarks = firstSeg + "-" + lastSeg;
+    }
+    
+    // If still empty, use domain
+    if (remarks.empty()) {
+        remarks = domain;
+    }
+    
+    return remarks;
+}
+
+// Helper function: get next sort value (max + 10)
+int SubitemUpdaterV2::getNextSortValue() {
+    std::string sql = "SELECT MAX(CAST(Sort AS INTEGER)) FROM SubItem";
+    sqlite3_stmt* stmt = nullptr;
+    int maxSort = 0;
+    
+    if (sqlite3_prepare_v2(db_, sql.c_str(), -1, &stmt, nullptr) == SQLITE_OK) {
+        if (sqlite3_step(stmt) == SQLITE_ROW) {
+            maxSort = sqlite3_column_int(stmt, 0);
+        }
+        sqlite3_finalize(stmt);
+    }
+    
+    return maxSort + 10;
+}
+
+// Helper function: check if URL already exists
+bool SubitemUpdaterV2::isUrlExists(const std::string& url) {
+    std::string sql = "SELECT COUNT(*) FROM SubItem WHERE Url = ?";
+    sqlite3_stmt* stmt = nullptr;
+    bool exists = false;
+    
+    if (sqlite3_prepare_v2(db_, sql.c_str(), -1, &stmt, nullptr) == SQLITE_OK) {
+        sqlite3_bind_text(stmt, 1, url.c_str(), -1, SQLITE_TRANSIENT);
+        if (sqlite3_step(stmt) == SQLITE_ROW) {
+            exists = sqlite3_column_int(stmt, 0) > 0;
+        }
+        sqlite3_finalize(stmt);
+    }
+    
+    return exists;
+}
+
+// Helper function: validate URL format
+bool SubitemUpdaterV2::isValidUrlFormat(const std::string& url) {
+    // Must start with http:// or https://
+    if (url.find("http://") != 0 && url.find("https://") != 0) {
+        return false;
+    }
+    
+    // Must have domain with at least one dot
+    size_t schemeEnd = url.find("://");
+    if (schemeEnd == std::string::npos) return false;
+    
+    std::string hostPart = url.substr(schemeEnd + 3);
+    size_t pathStart = hostPart.find('/');
+    std::string domain = (pathStart != std::string::npos) 
+                        ? hostPart.substr(0, pathStart) 
+                        : hostPart;
+    
+    // Domain must contain at least one dot
+    return domain.find('.') != std::string::npos;
+}
+
+// Helper function: check if URL has valid path
+bool SubitemUpdaterV2::hasValidPath(const std::string& url) {
+    size_t schemeEnd = url.find("://");
+    if (schemeEnd == std::string::npos) return false;
+    
+    std::string hostPart = url.substr(schemeEnd + 3);
+    size_t pathStart = hostPart.find('/');
+    
+    // Must have a path after domain
+    return (pathStart != std::string::npos && pathStart > 0);
+}
+
+// Import subitems from file
+bool SubitemUpdaterV2::importSubitemsFromFile(const std::string& filePath, 
+                                              const std::string& baseDir) {
+    // Open file
+    std::ifstream file(filePath);
+    if (!file.is_open()) {
+        log("ERROR: Cannot open file: " + filePath);
+        return false;
+    }
+    
+    log("========================================");
+    log("Subitem Import Starting...");
+    log("File: " + filePath);
+    log("========================================");
+    
+    // Initialize counters
+    int totalLines = 0;
+    int successCount = 0;
+    int skippedCount = 0;
+    int failedCount = 0;
+    std::vector<std::string> importedList;
+    std::vector<std::string> skippedList;
+    std::vector<std::string> failedList;
+    
+    // Get next sort value
+    int nextSort = getNextSortValue();
+    
+    // Read file line by line
+    std::string line;
+    while (std::getline(file, line)) {
+        totalLines++;
+        
+        // Remove carriage return if present
+        if (!line.empty() && line.back() == '\r') {
+            line.pop_back();
+        }
+        
+        // Skip empty lines
+        if (line.empty()) continue;
+        
+        // Parse: URL [space remarks]
+        std::string url = line;
+        std::string remarks;
+        
+        size_t spacePos = line.find(' ');
+        if (spacePos != std::string::npos) {
+            url = line.substr(0, spacePos);
+            remarks = line.substr(spacePos + 1);
+        }
+        
+        // Validate URL format
+        if (!isValidUrlFormat(url)) {
+            failedCount++;
+            failedList.push_back(url + " (invalid format - no valid domain)");
+            log("ERROR: Invalid URL format: " + url);
+            continue;
+        }
+        
+        // Check if URL has valid path (warning only)
+        if (!hasValidPath(url)) {
+            log("WARN: URL has only domain, no path: " + url);
+        }
+        
+        // Check for duplicates
+        if (isUrlExists(url)) {
+            skippedCount++;
+            skippedList.push_back(url + " (already exists)");
+            log("SKIPPED: URL already exists: " + url);
+            continue;
+        }
+        
+        // Generate subitem
+        db::models::Subitem subitem;
+        subitem.id = utils::generateUniqueId();
+        subitem.remarks = remarks.empty() ? extractRemarksFromUrl(url) : remarks;
+        subitem.url = url;
+        subitem.enabled = "1";
+        subitem.autoupdateinterval = "1440";
+        subitem.updatetime = "0";
+        subitem.sort = std::to_string(nextSort);
+        
+        // Insert into database
+        std::string insertSql = 
+            "INSERT INTO SubItem (Id, Remarks, Url, MoreUrl, Enabled, "
+            "UserAgent, Sort, Filter, AutoUpdateInterval, UpdateTime, "
+            "ConvertTarget, PrevProfile, NextProfile, PreSocksPort, Memo) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+        
+        sqlite3_stmt* stmt = nullptr;
+        bool insertSuccess = false;
+        
+        if (sqlite3_prepare_v2(db_, insertSql.c_str(), -1, &stmt, nullptr) == SQLITE_OK) {
+            sqlite3_bind_text(stmt, 1, subitem.id.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(stmt, 2, subitem.remarks.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(stmt, 3, subitem.url.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(stmt, 4, subitem.moreurl.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(stmt, 5, subitem.enabled.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(stmt, 6, subitem.useragent.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(stmt, 7, subitem.sort.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(stmt, 8, subitem.filter.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(stmt, 9, subitem.autoupdateinterval.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(stmt, 10, subitem.updatetime.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(stmt, 11, subitem.converttarget.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(stmt, 12, subitem.prevprofile.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(stmt, 13, subitem.nextprofile.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(stmt, 14, subitem.presocksport.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(stmt, 15, subitem.memo.c_str(), -1, SQLITE_TRANSIENT);
+            
+            insertSuccess = (sqlite3_step(stmt) == SQLITE_DONE);
+            sqlite3_finalize(stmt);
+        }
+        
+        if (insertSuccess) {
+            successCount++;
+            importedList.push_back("[" + subitem.remarks + "] " + url);
+            log("Imported: [" + subitem.remarks + "] " + url);
+            nextSort += 10;
+        } else {
+            failedCount++;
+            failedList.push_back(url + " (database insert failed)");
+            log("ERROR: Failed to insert: " + url);
+        }
+    }
+    
+    file.close();
+    
+    // Print summary
+    log("========================================");
+    log("Subitem Import Summary");
+    log("========================================");
+    log("Total lines: " + std::to_string(totalLines));
+    log("Success: " + std::to_string(successCount));
+    log("Skipped (duplicates): " + std::to_string(skippedCount));
+    log("Failed (invalid format): " + std::to_string(failedCount));
+    log("========================================");
+    
+    if (!importedList.empty()) {
+        log("Imported URLs:");
+        for (size_t i = 0; i < importedList.size(); i++) {
+            log("  " + std::to_string(i + 1) + ". " + importedList[i]);
+        }
+    }
+    
+    if (!skippedList.empty()) {
+        log("========================================");
+        log("Skipped URLs (duplicates):");
+        for (size_t i = 0; i < skippedList.size(); i++) {
+            log("  " + std::to_string(i + 1) + ". " + skippedList[i]);
+        }
+    }
+    
+    if (!failedList.empty()) {
+        log("========================================");
+        log("Failed URLs (invalid format):");
+        for (size_t i = 0; i < failedList.size(); i++) {
+            log("  " + std::to_string(i + 1) + ". " + failedList[i]);
+        }
+    }
+    
+    log("========================================");
+    
+    return failedCount == 0;
+}
+
 } // namespace update
