@@ -42,6 +42,9 @@ public:
     bool importSubitemsFromFile(const std::string& filePath, 
                                 const std::string& baseDir = "");
 
+    // Import single URL directly
+    bool importSingleUrl(const std::string& url);
+
 private:
     enum class Strategy {
         DirectFirst,

@@ -1907,18 +1907,18 @@ bool SubitemUpdaterV2::hasValidPath(const std::string& url) {
 
 // Import subitems from file
 bool SubitemUpdaterV2::importSubitemsFromFile(const std::string& filePath, 
-                                              const std::string& baseDir) {
+                                               const std::string& baseDir) {
     // Open file
     std::ifstream file(filePath);
     if (!file.is_open()) {
-        log("ERROR: Cannot open file: " + filePath);
+        Logger::write("ERROR: Cannot open file: " + filePath, LogLevel::LOG_ERROR);
         return false;
     }
     
-    log("========================================");
-    log("Subitem Import Starting...");
-    log("File: " + filePath);
-    log("========================================");
+    Logger::write("========================================");
+    Logger::write("Subitem Import Starting...");
+    Logger::write("File: " + filePath);
+    Logger::write("========================================");
     
     // Initialize counters
     int totalLines = 0;
@@ -1959,20 +1959,20 @@ bool SubitemUpdaterV2::importSubitemsFromFile(const std::string& filePath,
         if (!isValidUrlFormat(url)) {
             failedCount++;
             failedList.push_back(url + " (invalid format - no valid domain)");
-            log("ERROR: Invalid URL format: " + url);
+            Logger::write("ERROR: Invalid URL format: " + url, LogLevel::LOG_ERROR);
             continue;
         }
         
         // Check if URL has valid path (warning only)
         if (!hasValidPath(url)) {
-            log("WARN: URL has only domain, no path: " + url);
+            Logger::write("WARN: URL has only domain, no path: " + url, LogLevel::WARN);
         }
         
         // Check for duplicates
         if (isUrlExists(url)) {
             skippedCount++;
             skippedList.push_back(url + " (already exists)");
-            log("SKIPPED: URL already exists: " + url);
+            Logger::write("SKIPPED: URL already exists: " + url);
             continue;
         }
         
@@ -2020,53 +2020,143 @@ bool SubitemUpdaterV2::importSubitemsFromFile(const std::string& filePath,
         if (insertSuccess) {
             successCount++;
             importedList.push_back("[" + subitem.remarks + "] " + url);
-            log("Imported: [" + subitem.remarks + "] " + url);
+            Logger::write("Imported: [" + subitem.remarks + "] " + url);
             nextSort += 10;
         } else {
             failedCount++;
             failedList.push_back(url + " (database insert failed)");
-            log("ERROR: Failed to insert: " + url);
+            Logger::write("ERROR: Failed to insert: " + url, LogLevel::LOG_ERROR);
         }
     }
     
     file.close();
     
     // Print summary
-    log("========================================");
-    log("Subitem Import Summary");
-    log("========================================");
-    log("Total lines: " + std::to_string(totalLines));
-    log("Success: " + std::to_string(successCount));
-    log("Skipped (duplicates): " + std::to_string(skippedCount));
-    log("Failed (invalid format): " + std::to_string(failedCount));
-    log("========================================");
+    Logger::write("========================================");
+    Logger::write("Subitem Import Summary");
+    Logger::write("========================================");
+    Logger::write("Total lines: " + std::to_string(totalLines));
+    Logger::write("Success: " + std::to_string(successCount));
+    Logger::write("Skipped (duplicates): " + std::to_string(skippedCount));
+    Logger::write("Failed (invalid format): " + std::to_string(failedCount));
+    Logger::write("========================================");
     
     if (!importedList.empty()) {
-        log("Imported URLs:");
+        Logger::write("Imported URLs:");
         for (size_t i = 0; i < importedList.size(); i++) {
-            log("  " + std::to_string(i + 1) + ". " + importedList[i]);
+            Logger::write("  " + std::to_string(i + 1) + ". " + importedList[i]);
         }
     }
     
     if (!skippedList.empty()) {
-        log("========================================");
-        log("Skipped URLs (duplicates):");
+        Logger::write("========================================");
+        Logger::write("Skipped URLs (duplicates):");
         for (size_t i = 0; i < skippedList.size(); i++) {
-            log("  " + std::to_string(i + 1) + ". " + skippedList[i]);
+            Logger::write("  " + std::to_string(i + 1) + ". " + skippedList[i]);
         }
     }
     
     if (!failedList.empty()) {
-        log("========================================");
-        log("Failed URLs (invalid format):");
+        Logger::write("========================================");
+        Logger::write("Failed URLs (invalid format):");
         for (size_t i = 0; i < failedList.size(); i++) {
-            log("  " + std::to_string(i + 1) + ". " + failedList[i]);
+            Logger::write("  " + std::to_string(i + 1) + ". " + failedList[i]);
         }
     }
     
-    log("========================================");
+    Logger::write("========================================");
     
     return failedCount == 0;
+}
+
+// Import single URL directly
+bool SubitemUpdaterV2::importSingleUrl(const std::string& url) {
+    Logger::write("========================================");
+    Logger::write("Subitem Import Starting (Single URL)...");
+    Logger::write("URL: " + url);
+    Logger::write("========================================");
+    
+    // 1. Validate URL format
+    if (!isValidUrlFormat(url)) {
+        Logger::write("ERROR: Invalid URL format: " + url, LogLevel::LOG_ERROR);
+        Logger::write("========================================");
+        Logger::write("Import Summary: Success=0, Skipped=0, Failed=1");
+        Logger::write("========================================");
+        return false;
+    }
+    
+    // 2. Check if URL has valid path (warning only)
+    if (!hasValidPath(url)) {
+        Logger::write("WARN: URL has only domain, no path: " + url, LogLevel::WARN);
+    }
+    
+    // 3. Check for duplicates
+    if (isUrlExists(url)) {
+        Logger::write("SKIPPED: URL already exists: " + url);
+        Logger::write("========================================");
+        Logger::write("Import Summary: Success=0, Skipped=1, Failed=0");
+        Logger::write("========================================");
+        return true; // Not an error, just skipped
+    }
+    
+    // 4. Get next sort value
+    int nextSort = getNextSortValue();
+    
+    // 5. Generate subitem
+    db::models::Subitem subitem;
+    subitem.id = utils::generateUniqueId();
+    subitem.remarks = extractRemarksFromUrl(url);
+    subitem.url = url;
+    subitem.enabled = "1";
+    subitem.autoupdateinterval = "1440";
+    subitem.updatetime = "0";
+    subitem.sort = std::to_string(nextSort);
+    
+    // 6. Insert into database
+    std::string insertSql = 
+        "INSERT INTO SubItem (Id, Remarks, Url, MoreUrl, Enabled, "
+        "UserAgent, Sort, Filter, AutoUpdateInterval, UpdateTime, "
+        "ConvertTarget, PrevProfile, NextProfile, PreSocksPort, Memo) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+    
+    sqlite3_stmt* stmt = nullptr;
+    bool insertSuccess = false;
+    
+    if (sqlite3_prepare_v2(db_, insertSql.c_str(), -1, &stmt, nullptr) == SQLITE_OK) {
+        sqlite3_bind_text(stmt, 1, subitem.id.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, 2, subitem.remarks.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, 3, subitem.url.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, 4, subitem.moreurl.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, 5, subitem.enabled.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, 6, subitem.useragent.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, 7, subitem.sort.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, 8, subitem.filter.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, 9, subitem.autoupdateinterval.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, 10, subitem.updatetime.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, 11, subitem.converttarget.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, 12, subitem.prevprofile.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, 13, subitem.nextprofile.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, 14, subitem.presocksport.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, 15, subitem.memo.c_str(), -1, SQLITE_TRANSIENT);
+        
+        insertSuccess = (sqlite3_step(stmt) == SQLITE_DONE);
+        sqlite3_finalize(stmt);
+    }
+    
+    // 7. Output result
+    if (insertSuccess) {
+        Logger::write("Imported: [" + subitem.remarks + "] " + url);
+        Logger::write("========================================");
+        Logger::write("Import Summary: Success=1, Skipped=0, Failed=0");
+        Logger::write("========================================");
+        return true;
+    } else {
+        Logger::write("ERROR: Failed to insert: " + url, LogLevel::LOG_ERROR);
+        Logger::write("========================================");
+        Logger::write("Import Summary: Success=0, Skipped=0, Failed=1");
+        Logger::write("========================================");
+        return false;
+    }
 }
 
 } // namespace update
