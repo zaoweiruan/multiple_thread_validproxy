@@ -149,7 +149,7 @@ int main(int argc, char* argv[]) {
             if (i + 1 < argc) {
                 importFilePath = argv[++i];
             } else {
-                std::cerr << "Error: -IS requires a file path" << std::endl;
+                std::cerr << "Error: -IS requires a file path or URL" << std::endl;
                 return 1;
             }
         } else if (arg == "-h" || arg == "--help") {
@@ -165,9 +165,9 @@ std::cout << "Usage: validproxy [options]\n"
                       << "  -T, -test-sub <id>   Test proxies from subscription by ID\n"
                       << "  -D, -dedup           Remove duplicate proxies from database\n"
                         << "  -TU, -tourl         Export proxies (delay>0) to share links file\n"
-                        << "  -S, -sync [src[:dst]] Sync valid proxies from source to target DB\n"
-                        << "  -IS, -import-sub-config <file>  Batch import subitems from file\n"
-                        << "  -h, --help           Show this help\n";
+                      << "  -S, -sync [src[:dst]] Sync valid proxies from source to target DB\n"
+                      << "  -IS, -import-sub-config <file|url>  Batch import subitems from file or URL\n"
+                      << "  -h, --help           Show this help\n";
             return 0;
         } else if (arg.find(".json") != std::string::npos) {
             std::filesystem::path p(arg);
@@ -621,29 +621,71 @@ std::cout << "Usage: validproxy [options]\n"
         Logger::init(logDir.string(), commandMode);
         logInfo("validproxy starting import...");
         
-        auto appConfig = config::ConfigReader::load(configPath);
-        if (!appConfig) {
-            logError("Failed to load config from: " + configPath);
-            return 1;
-        }
+        // 判断是 URL 还是文件
+        bool isUrl = (importFilePath.rfind("http://", 0) == 0 || 
+                       importFilePath.rfind("https://", 0) == 0);
         
-        sqlite3* db = nullptr;
-        curl_global_init(CURL_GLOBAL_DEFAULT);
-        
-        if (sqlite3_open(appConfig->database_path.c_str(), &db) != SQLITE_OK) {
-            logError("Failed to open database: " + std::string(sqlite3_errmsg(db)));
-            return 1;
-        }
-        
-        update::SubitemUpdaterV2 updater(db, appConfig->xray_executable, *appConfig, 
-                                         nullptr, exeDir);
-        bool result = updater.importSubitemsFromFile(importFilePath);
-        
-        logInfo(result ? "import completed" : "import failed");
-        
-        sqlite3_close(db);
-        curl_global_cleanup();
-        return result ? 0 : 1;
+        if (isUrl) {
+            // 直接作为单个 URL 导入
+            sqlite3* db = nullptr;
+            curl_global_init(CURL_GLOBAL_DEFAULT);
+            
+            auto appConfig = config::ConfigReader::load(configPath);
+            if (!appConfig) {
+                logError("Failed to load config from: " + configPath);
+                return 1;
+            }
+            
+            if (sqlite3_open(appConfig->database_path.c_str(), &db) != SQLITE_OK) {
+                logError("Failed to open database: " + std::string(sqlite3_errmsg(db)));
+                return 1;
+            }
+            
+            update::SubitemUpdaterV2 updater(db, appConfig->xray_executable, *appConfig, 
+                                                     nullptr, exeDir);
+            bool result = updater.importSingleUrl(importFilePath);
+            
+            logInfo(result ? "import completed" : "import failed");
+            
+            sqlite3_close(db);
+            curl_global_cleanup();
+            return result ? 0 : 1;
+            
+            } else {
+                // 作为文件处理
+                // 检查文件是否存在
+                std::filesystem::path filePath(importFilePath);
+                if (!std::filesystem::exists(filePath)) {
+                    std::cerr << "Error: File not found: " << importFilePath << std::endl;
+                    Logger::write("ERROR: File not found: " + importFilePath, LogLevel::LOG_ERROR);
+                    return 1;
+                }
+                
+                // 现有文件导入逻辑
+                auto appConfig = config::ConfigReader::load(configPath);
+                if (!appConfig) {
+                    logError("Failed to load config from: " + configPath);
+                    return 1;
+                }
+                
+                sqlite3* db = nullptr;
+                curl_global_init(CURL_GLOBAL_DEFAULT);
+                
+                if (sqlite3_open(appConfig->database_path.c_str(), &db) != SQLITE_OK) {
+                    logError("Failed to open database: " + std::string(sqlite3_errmsg(db)));
+                    return 1;
+                }
+                
+                update::SubitemUpdaterV2 updater(db, appConfig->xray_executable, *appConfig, 
+                                                     nullptr, exeDir);
+                bool result = updater.importSubitemsFromFile(importFilePath);
+                
+                logInfo(result ? "import completed" : "import failed");
+                
+                sqlite3_close(db);
+                curl_global_cleanup();
+                return result ? 0 : 1;
+            }
     }
     
     if (!singleSubId.empty()) {
