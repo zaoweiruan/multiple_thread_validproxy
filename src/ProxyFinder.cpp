@@ -314,7 +314,7 @@ bool ProxyFinder::injectProxyToXray(const std::string& indexId) {
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
     
     if (!xrayApi.addOutbound(config.outbound_json, tag, addResult)) {
-        log("ERROR: addOutbound failed: " + xrayApi.getLastError());
+        log("ERROR: 注入xray outbound 错误: " + xrayApi.getLastError());
         return false;
     }
     
