@@ -38,39 +38,43 @@ public:
     bool syncDatabases(const std::string& sourceDbPath, 
                        const std::string& targetDbPath);
 
+    // Import subitems from file (batch import)
+    bool importSubitemsFromFile(const std::string& filePath, 
+                                const std::string& baseDir = "");
+
 private:
     enum class Strategy {
         DirectFirst,
         ProxyFirst,
         DirectOnly
     };
-
+    
     bool updateWithStrategy(const std::string& subUrl, const std::string& subId, Strategy strategy);
     std::string fetchUrl(const std::string& url);
-
+    
     std::optional<db::models::Subitem> getSubscription(const std::string& subId);
     std::string fetchUrlViaProxy(const std::string& url, int socksPort);
-
+    
     std::vector<db::models::Profileitem> parseSubscription(const std::string& content, const std::string& subid);
     bool updateProfileItems(const std::string& subid, const std::vector<db::models::Profileitem>& profiles);
-
+    
     std::pair<int, int> getProxyPorts(const std::string& targetUrl = "");
     void releaseProxyPorts();
-
+    
     bool startXray(const std::string& indexId, int socksPort, int apiPort);
     void cleanupXray();
-
+    
     int deduplicatePhase0();
     int deduplicatePhase1();
     int deduplicatePhase2();
     int deduplicatePhase3();
     int deduplicatePhase4();
     void cleanupProfileExItem();
-
+    
     Strategy parseStrategy(const std::string& mode);
     std::string getCurrentTimestamp();
     void log(const std::string& msg);
-
+    
     // Helper methods for sync
     bool migrateSubscription(sqlite3* srcDb, sqlite3* dstDb, 
                             const std::string& subid);
@@ -81,6 +85,13 @@ private:
     std::string decodeBase64(const std::string& input);
     std::string urlDecode(const std::string& input);
     std::pair<std::string, std::string> parseAddressPort(const std::string& addrPart);
+    
+    // Helper methods for import
+    std::string extractRemarksFromUrl(const std::string& url);
+    int getNextSortValue();
+    bool isUrlExists(const std::string& url);
+    bool isValidUrlFormat(const std::string& url);
+    bool hasValidPath(const std::string& url);
 
     sqlite3* db_;
     std::string xrayPath_;

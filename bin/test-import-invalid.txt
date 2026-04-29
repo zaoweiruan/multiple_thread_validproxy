@@ -1,0 +1,4 @@
+https://example.com
+htp://bad-protocol.com
+test-invalid
+https://github.com/a/b.txt
