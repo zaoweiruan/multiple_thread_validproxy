@@ -636,11 +636,18 @@ std::cout << "Usage: validproxy [options]\n"
         
         logInfo("Mode: " + commandMode + ", subscription: " + singleSubId);
         
-        bool result;
+        bool result = false;
+        
         if (commandMode == "test-sub") {
             ProxyBatchTester tester(db, *appConfig, exeDir);
             g_xrayManager = tester.getXrayManager();
             result = tester.runWithSubId(singleSubId);
+            
+            if (appConfig->notification_enabled && appConfig->notification_on_test) {
+                utils::sendNotification("Proxy Test Complete", result ? "Test completed successfully" : "Test failed");
+            }
+        } 
+        else if (commandMode == "update") {
             update::SubitemUpdaterV2 subUpdaterV2(db,
                                                    appConfig->xray_executable,
                                                    *appConfig,
@@ -650,6 +657,7 @@ std::cout << "Usage: validproxy [options]\n"
             } else {
                 result = subUpdaterV2.runSingle(singleSubId);
             }
+            
             if (appConfig->notification_enabled && appConfig->notification_on_update) {
                 utils::sendNotification("Subscription Update Complete", result ? "Update completed successfully" : "Update failed");
             }
