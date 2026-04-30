@@ -38,6 +38,14 @@ namespace {
         return defaultVal;
     }
 
+    void bindTextOrNull(sqlite3_stmt* stmt, int idx, const std::string& val) {
+        if (val.empty()) {
+            sqlite3_bind_null(stmt, idx);
+        } else {
+            sqlite3_bind_text(stmt, idx, val.c_str(), -1, SQLITE_TRANSIENT);
+        }
+    }
+
     bool insertSubItem(sqlite3* db, const db::models::Subitem& subitem) {
         std::string sql = "INSERT INTO SubItem (Id, Remarks, Url, MoreUrl, Enabled, "
                          "UserAgent, Sort, Filter, AutoUpdateInterval, UpdateTime, "
@@ -49,21 +57,24 @@ namespace {
             return false;
         }
         
+        // 必须字段：不允许 NULL
         sqlite3_bind_text(stmt, 1, subitem.id.c_str(), -1, SQLITE_TRANSIENT);
         sqlite3_bind_text(stmt, 2, subitem.remarks.c_str(), -1, SQLITE_TRANSIENT);
         sqlite3_bind_text(stmt, 3, subitem.url.c_str(), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_text(stmt, 4, subitem.moreurl.c_str(), -1, SQLITE_TRANSIENT);
         sqlite3_bind_text(stmt, 5, subitem.enabled.c_str(), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_text(stmt, 6, subitem.useragent.c_str(), -1, SQLITE_TRANSIENT);
         sqlite3_bind_text(stmt, 7, subitem.sort.c_str(), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_text(stmt, 8, subitem.filter.c_str(), -1, SQLITE_TRANSIENT);
         sqlite3_bind_text(stmt, 9, subitem.autoupdateinterval.c_str(), -1, SQLITE_TRANSIENT);
         sqlite3_bind_text(stmt, 10, subitem.updatetime.c_str(), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_text(stmt, 11, subitem.converttarget.c_str(), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_text(stmt, 12, subitem.prevprofile.c_str(), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_text(stmt, 13, subitem.nextprofile.c_str(), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_text(stmt, 14, subitem.presocksport.c_str(), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_text(stmt, 15, subitem.memo.c_str(), -1, SQLITE_TRANSIENT);
+        
+        // 可选字段：空字符串绑定为 NULL
+        bindTextOrNull(stmt, 4, subitem.moreurl);
+        bindTextOrNull(stmt, 6, subitem.useragent);
+        bindTextOrNull(stmt, 8, subitem.filter);
+        bindTextOrNull(stmt, 11, subitem.converttarget);
+        bindTextOrNull(stmt, 12, subitem.prevprofile);
+        bindTextOrNull(stmt, 13, subitem.nextprofile);
+        bindTextOrNull(stmt, 14, subitem.presocksport);
+        bindTextOrNull(stmt, 15, subitem.memo);
         
         bool success = (sqlite3_step(stmt) == SQLITE_DONE);
         sqlite3_finalize(stmt);
