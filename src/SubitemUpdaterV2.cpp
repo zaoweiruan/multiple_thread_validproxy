@@ -37,6 +37,38 @@ namespace {
         } catch (...) {}
         return defaultVal;
     }
+
+    bool insertSubItem(sqlite3* db, const db::models::Subitem& subitem) {
+        std::string sql = "INSERT INTO SubItem (Id, Remarks, Url, MoreUrl, Enabled, "
+                         "UserAgent, Sort, Filter, AutoUpdateInterval, UpdateTime, "
+                         "ConvertTarget, PrevProfile, NextProfile, PreSocksPort, Memo) "
+                         "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+        
+        sqlite3_stmt* stmt = nullptr;
+        if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
+            return false;
+        }
+        
+        sqlite3_bind_text(stmt, 1, subitem.id.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, 2, subitem.remarks.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, 3, subitem.url.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, 4, subitem.moreurl.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, 5, subitem.enabled.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, 6, subitem.useragent.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, 7, subitem.sort.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, 8, subitem.filter.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, 9, subitem.autoupdateinterval.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, 10, subitem.updatetime.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, 11, subitem.converttarget.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, 12, subitem.prevprofile.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, 13, subitem.nextprofile.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, 14, subitem.presocksport.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, 15, subitem.memo.c_str(), -1, SQLITE_TRANSIENT);
+        
+        bool success = (sqlite3_step(stmt) == SQLITE_DONE);
+        sqlite3_finalize(stmt);
+        return success;
+    }
 }
 
 SubitemUpdaterV2::SubitemUpdaterV2(sqlite3* db,
@@ -1373,38 +1405,11 @@ bool SubitemUpdaterV2::migrateSubscription(sqlite3* srcDb, sqlite3* dstDb,
     return false;
 }
 
-if (subitem.id.empty()) {
-    return false; // No valid subscription found
-}
-
-// Insert into target DB
-    std::string insertSql = "INSERT INTO SubItem (id, remarks, url, moreurl, enabled, useragent, sort, filter, autoupdateinterval, updatetime, converttarget, prevprofile, nextprofile, presocksport, memo) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
-    
-    sqlite3_stmt* insertStmt = nullptr;
-    if (sqlite3_prepare_v2(dstDb, insertSql.c_str(), -1, &insertStmt, nullptr) != SQLITE_OK) {
-        return false;
+    if (subitem.id.empty()) {
+        return false; // No valid subscription found
     }
     
-    sqlite3_bind_text(insertStmt, 1, subitem.id.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(insertStmt, 2, subitem.remarks.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(insertStmt, 3, subitem.url.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(insertStmt, 4, subitem.moreurl.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(insertStmt, 5, subitem.enabled.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(insertStmt, 6, subitem.useragent.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(insertStmt, 7, subitem.sort.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(insertStmt, 8, subitem.filter.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(insertStmt, 9, subitem.autoupdateinterval.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(insertStmt, 10, subitem.updatetime.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(insertStmt, 11, subitem.converttarget.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(insertStmt, 12, subitem.prevprofile.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(insertStmt, 13, subitem.nextprofile.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(insertStmt, 14, subitem.presocksport.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(insertStmt, 15, subitem.memo.c_str(), -1, SQLITE_TRANSIENT);
-    
-    bool result = (sqlite3_step(insertStmt) == SQLITE_DONE);
-    sqlite3_finalize(insertStmt);
-    
-    return result;
+    return insertSubItem(dstDb, subitem);
 }
 
 bool SubitemUpdaterV2::migrateProxy(sqlite3* srcDb, sqlite3* dstDb,
@@ -1977,35 +1982,7 @@ bool SubitemUpdaterV2::importSubitemsFromFile(const std::string& filePath,
         subitem.sort = std::to_string(nextSort);
         
         // Insert into database
-        std::string insertSql = 
-            "INSERT INTO SubItem (Id, Remarks, Url, MoreUrl, Enabled, "
-            "UserAgent, Sort, Filter, AutoUpdateInterval, UpdateTime, "
-            "ConvertTarget, PrevProfile, NextProfile, PreSocksPort, Memo) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
-        
-        sqlite3_stmt* stmt = nullptr;
-        bool insertSuccess = false;
-        
-        if (sqlite3_prepare_v2(db_, insertSql.c_str(), -1, &stmt, nullptr) == SQLITE_OK) {
-            sqlite3_bind_text(stmt, 1, subitem.id.c_str(), -1, SQLITE_TRANSIENT);
-            sqlite3_bind_text(stmt, 2, subitem.remarks.c_str(), -1, SQLITE_TRANSIENT);
-            sqlite3_bind_text(stmt, 3, subitem.url.c_str(), -1, SQLITE_TRANSIENT);
-            sqlite3_bind_text(stmt, 4, subitem.moreurl.c_str(), -1, SQLITE_TRANSIENT);
-            sqlite3_bind_text(stmt, 5, subitem.enabled.c_str(), -1, SQLITE_TRANSIENT);
-            sqlite3_bind_text(stmt, 6, subitem.useragent.c_str(), -1, SQLITE_TRANSIENT);
-            sqlite3_bind_text(stmt, 7, subitem.sort.c_str(), -1, SQLITE_TRANSIENT);
-            sqlite3_bind_text(stmt, 8, subitem.filter.c_str(), -1, SQLITE_TRANSIENT);
-            sqlite3_bind_text(stmt, 9, subitem.autoupdateinterval.c_str(), -1, SQLITE_TRANSIENT);
-            sqlite3_bind_text(stmt, 10, subitem.updatetime.c_str(), -1, SQLITE_TRANSIENT);
-            sqlite3_bind_text(stmt, 11, subitem.converttarget.c_str(), -1, SQLITE_TRANSIENT);
-            sqlite3_bind_text(stmt, 12, subitem.prevprofile.c_str(), -1, SQLITE_TRANSIENT);
-            sqlite3_bind_text(stmt, 13, subitem.nextprofile.c_str(), -1, SQLITE_TRANSIENT);
-            sqlite3_bind_text(stmt, 14, subitem.presocksport.c_str(), -1, SQLITE_TRANSIENT);
-            sqlite3_bind_text(stmt, 15, subitem.memo.c_str(), -1, SQLITE_TRANSIENT);
-            
-            insertSuccess = (sqlite3_step(stmt) == SQLITE_DONE);
-            sqlite3_finalize(stmt);
-        }
+        bool insertSuccess = insertSubItem(db_, subitem);
         
         if (insertSuccess) {
             successCount++;
@@ -2103,35 +2080,7 @@ bool SubitemUpdaterV2::importSingleUrl(const std::string& url) {
     subitem.sort = std::to_string(nextSort);
     
     // 6. Insert into database
-    std::string insertSql = 
-        "INSERT INTO SubItem (Id, Remarks, Url, MoreUrl, Enabled, "
-        "UserAgent, Sort, Filter, AutoUpdateInterval, UpdateTime, "
-        "ConvertTarget, PrevProfile, NextProfile, PreSocksPort, Memo) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
-    
-    sqlite3_stmt* stmt = nullptr;
-    bool insertSuccess = false;
-    
-    if (sqlite3_prepare_v2(db_, insertSql.c_str(), -1, &stmt, nullptr) == SQLITE_OK) {
-        sqlite3_bind_text(stmt, 1, subitem.id.c_str(), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_text(stmt, 2, subitem.remarks.c_str(), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_text(stmt, 3, subitem.url.c_str(), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_text(stmt, 4, subitem.moreurl.c_str(), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_text(stmt, 5, subitem.enabled.c_str(), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_text(stmt, 6, subitem.useragent.c_str(), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_text(stmt, 7, subitem.sort.c_str(), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_text(stmt, 8, subitem.filter.c_str(), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_text(stmt, 9, subitem.autoupdateinterval.c_str(), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_text(stmt, 10, subitem.updatetime.c_str(), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_text(stmt, 11, subitem.converttarget.c_str(), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_text(stmt, 12, subitem.prevprofile.c_str(), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_text(stmt, 13, subitem.nextprofile.c_str(), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_text(stmt, 14, subitem.presocksport.c_str(), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_text(stmt, 15, subitem.memo.c_str(), -1, SQLITE_TRANSIENT);
-        
-        insertSuccess = (sqlite3_step(stmt) == SQLITE_DONE);
-        sqlite3_finalize(stmt);
-    }
+    bool insertSuccess = insertSubItem(db_, subitem);
     
     // 7. Output result
     if (insertSuccess) {
