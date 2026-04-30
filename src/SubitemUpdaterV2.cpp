@@ -85,8 +85,9 @@ namespace {
 SubitemUpdaterV2::SubitemUpdaterV2(sqlite3* db,
                                     const std::string& xrayPath,
                                     const config::AppConfig& config,
+                                    std::ofstream* logOut,
                                     const std::string& baseDir)
-    : db_(db), xrayPath_(xrayPath), config_(config), baseDir_(baseDir),
+    : db_(db), xrayPath_(xrayPath), config_(config), logOut_(logOut), baseDir_(baseDir),
       xrayMgr_(nullptr), proxyFinder_(nullptr), xrayProcessId_(0), xrayJob_(nullptr) {
 }
 
@@ -900,7 +901,7 @@ bool SubitemUpdaterV2::updateProfileItems(const std::string& subid, const std::v
                      "AllowInsecure, Subid, IsSub, Flow, Sni, Alpn, CoreType, PreSocksPort, Fingerprint, "
                      "DisplayLog, PublicKey, ShortId, SpiderX, Mldsa65Verify, EchConfigList, Extra, MuxEnabled, Cert, "
                       "CertSha, EchForceQuery) "
-                     "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                     "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
     
     for (const auto& p : profiles) {
         sqlite3_stmt* stmt = nullptr;

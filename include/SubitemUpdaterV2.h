@@ -22,6 +22,7 @@ public:
     SubitemUpdaterV2(sqlite3* db,
                     const std::string& xrayPath,
                     const config::AppConfig& config,
+                    std::ofstream* logOut = nullptr,
                     const std::string& baseDir = "");
 
     ~SubitemUpdaterV2() {
@@ -97,6 +98,7 @@ private:
     sqlite3* db_;
     std::string xrayPath_;
     config::AppConfig config_;
+    std::ofstream* logOut_;
     std::string baseDir_;
 
     XrayManager* xrayMgr_;
