@@ -494,7 +494,7 @@ std::cout << "Usage: validproxy [options]\n"
             return 1;
         }
         
-        update::SubitemUpdaterV2 updater(nullptr, "", *appConfig, exeDir);
+        update::SubitemUpdaterV2 updater(nullptr, "", *appConfig, nullptr, exeDir);
         bool result = updater.syncDatabases(sourceDb, targetDb);
         
         logInfo(result ? "sync completed" : "sync failed");
@@ -526,7 +526,7 @@ std::cout << "Usage: validproxy [options]\n"
             }
             
                 update::SubitemUpdaterV2 updater(db, appConfig->xray_executable, *appConfig, 
-                                                      exeDir);
+                                                      nullptr, exeDir);
             bool result = updater.importSingleUrl(importFilePath);
             
             logInfo(result ? "import completed" : "import failed");
@@ -563,7 +563,7 @@ std::cout << "Usage: validproxy [options]\n"
                 }
                 
             update::SubitemUpdaterV2 updater(db, appConfig->xray_executable, *appConfig, 
-                                                      exeDir);
+                                                      nullptr, exeDir);
                 bool result = updater.importSubitemsFromFile(importFilePath);
                 
                 logInfo(result ? "import completed" : "import failed");
@@ -594,10 +594,17 @@ std::cout << "Usage: validproxy [options]\n"
             return 1;
         }
         
+        char timestamp[32];
+        time_t now = time(nullptr);
+        strftime(timestamp, sizeof(timestamp), "%Y%m%d_%H%M%S", localtime(&now));
+        std::string logFileName = "dedup_" + std::string(timestamp) + ".log";
+        std::string logFile = (logDir / logFileName).string();
+        std::ofstream logOut(logFile, std::ios::out | std::ios::trunc);
         update::SubitemUpdaterV2 subUpdaterV2(db,
-                                               appConfig->xray_executable,
-                                               *appConfig,
-                                               exeDir);
+                                              appConfig->xray_executable,
+                                              *appConfig,
+                                              &logOut,
+                                              exeDir);
         bool result = subUpdaterV2.deduplicate();
         
         sqlite3_close(db);
@@ -648,10 +655,11 @@ std::cout << "Usage: validproxy [options]\n"
             }
         } 
         else if (commandMode == "update") {
-            update::SubitemUpdaterV2 subUpdaterV2(db,
-                                                   appConfig->xray_executable,
-                                                   *appConfig,
-                                                   exeDir);
+             update::SubitemUpdaterV2 subUpdaterV2(db,
+                                                    appConfig->xray_executable,
+                                                    *appConfig,
+                                                    nullptr,
+                                                    exeDir);
             if (singleSubId == "__all__") {
                 result = subUpdaterV2.run();
             } else {
