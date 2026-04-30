@@ -40,29 +40,28 @@ namespace {
 }
 
 SubitemUpdaterV2::SubitemUpdaterV2(sqlite3* db,
-                                   const std::string& xrayPath,
-                                   const config::AppConfig& config,
-                                   std::ofstream* logOut,
-                                   const std::string& baseDir)
-    : db_(db), xrayPath_(xrayPath), config_(config), logOut_(logOut), baseDir_(baseDir),
+                                    const std::string& xrayPath,
+                                    const config::AppConfig& config,
+                                    const std::string& baseDir)
+    : db_(db), xrayPath_(xrayPath), config_(config), baseDir_(baseDir),
       xrayMgr_(nullptr), proxyFinder_(nullptr), xrayProcessId_(0), xrayJob_(nullptr) {
 }
 
 bool SubitemUpdaterV2::run() {
-    log("========================================");
-    log("INFO: Starting SubitemUpdaterV2");
-    log("INFO: Priority mode: " + config_.priority_mode);
-    log("========================================");
+    Logger::write("========================================", LogLevel::INFO);
+    Logger::write("INFO: Starting SubitemUpdaterV2", LogLevel::INFO);
+    Logger::write("INFO: Priority mode: " + config_.priority_mode, LogLevel::INFO);
+    Logger::write("========================================", LogLevel::INFO);
 
     db::models::SubitemDAO subDao(db_);
     auto enabledSubs = subDao.getEnabledSubscriptions();
 
     if (enabledSubs.empty()) {
-        log("INFO: No enabled subscriptions found");
+        Logger::write("INFO: No enabled subscriptions found", LogLevel::INFO);
         return false;
     }
 
-    log("INFO: Found " + std::to_string(enabledSubs.size()) + " enabled subscriptions");
+    Logger::write("INFO: Found " + std::to_string(enabledSubs.size()) + " enabled subscriptions", LogLevel::INFO);
 
     Strategy strategy = parseStrategy(config_.priority_mode);
     
@@ -74,17 +73,17 @@ bool SubitemUpdaterV2::run() {
     if (strategy != Strategy::DirectOnly && !enabledSubs.empty()) {
         std::string testUrl = enabledSubs[0].url;
         if (strategy == Strategy::DirectFirst) {
-            log("INFO: Pre-finding fallback proxy (direct_first mode)...");
+            Logger::write("INFO: Pre-finding fallback proxy (direct_first mode)...", LogLevel::INFO);
         } else {
-            log("INFO: Pre-finding proxy (proxy_first mode)...");
+            Logger::write("INFO: Pre-finding proxy (proxy_first mode)...", LogLevel::INFO);
         }
         auto result = getProxyPorts(testUrl);
         proxySocksPort = result.first;
         proxyApiPort = result.second;
         if (proxySocksPort > 0) {
-            log("INFO: Pre-found working proxy, socks=" + std::to_string(proxySocksPort));
+            Logger::write("INFO: Pre-found working proxy, socks=" + std::to_string(proxySocksPort), LogLevel::INFO);
         } else {
-            log("WARN: Failed to find working proxy");
+            Logger::write("WARN: Failed to find working proxy", LogLevel::WARN);
         }
     }
 
@@ -100,72 +99,72 @@ bool SubitemUpdaterV2::run() {
     bool runProxyPhase = (strategy != Strategy::DirectOnly && proxySocksPort > 0);
 
     if (runDirectPhase) {
-        log("========================================");
-        log("INFO: Phase 1/2 - Direct connection");
-        log("========================================");
+        Logger::write("========================================", LogLevel::INFO);
+        Logger::write("INFO: Phase 1/2 - Direct connection", LogLevel::INFO);
+        Logger::write("========================================", LogLevel::INFO);
         
         for (size_t i = 0; i < enabledSubs.size(); ++i) {
             const auto& sub = enabledSubs[i];
-            log("INFO: [" + std::to_string(i + 1) + "/" + std::to_string(totalSubs) + "] Processing: " + sub.url);
+            Logger::write("INFO: [" + std::to_string(i + 1) + "/" + std::to_string(totalSubs) + "] Processing: " + sub.url, LogLevel::INFO);
             
             std::string content = fetchUrl(sub.url);
             if (!content.empty()) {
-                log("INFO: Direct connection successful");
+                Logger::write("INFO: Direct connection successful", LogLevel::INFO);
                 auto profiles = parseSubscription(content, sub.id);
                 if (!profiles.empty()) {
                     updateProfileItems(sub.id, profiles);
                     successCount++;
                     directSuccessCount++;
-                    log("INFO: Updated successfully: " + sub.id);
+                    Logger::write("INFO: Updated successfully: " + sub.id, LogLevel::INFO);
                 } else {
                     directFailCount++;
                     failedSubs.push_back({sub.id, sub.remarks, sub.url});
-                    log("ERROR: Parse failed: " + sub.id);
+                    Logger::write("ERROR: Parse failed: " + sub.id, LogLevel::LOG_ERROR);
                 }
             } else {
-                log("WARN: Direct connection failed");
+                Logger::write("WARN: Direct connection failed", LogLevel::WARN);
                 directFailCount++;
                 failedSubs.push_back({sub.id, sub.remarks, sub.url});
-                log("ERROR: Failed to update: " + sub.id);
+                Logger::write("ERROR: Failed to update: " + sub.id, LogLevel::LOG_ERROR);
             }
         }
     } else if (runProxyPhase) {
         for (const auto& sub : enabledSubs) {
             failedSubs.push_back({sub.id, sub.remarks, sub.url});
         }
-        log("INFO: Phase 1/1 - Proxy only mode, queuing " + std::to_string(failedSubs.size()) + " subscriptions");
+        Logger::write("INFO: Phase 1/1 - Proxy only mode, queuing " + std::to_string(failedSubs.size()) + " subscriptions", LogLevel::INFO);
     }
     
     if (runProxyPhase && !failedSubs.empty()) {
-        log("========================================");
-        log("INFO: Phase 2/2 - Proxy connection (" + std::to_string(failedSubs.size()) + " failed subscriptions)");
-        log("========================================");
+        Logger::write("========================================", LogLevel::INFO);
+        Logger::write("INFO: Phase 2/2 - Proxy connection (" + std::to_string(failedSubs.size()) + " failed subscriptions)", LogLevel::INFO);
+        Logger::write("========================================", LogLevel::INFO);
         
         std::vector<std::tuple<std::string, std::string, std::string>> stillFailedSubs;
         
         for (size_t i = 0; i < failedSubs.size(); ++i) {
             const auto& sub = failedSubs[i];
-            log("INFO: [" + std::to_string(i + 1) + "/" + std::to_string(failedSubs.size()) + "] Trying via proxy: " + std::get<2>(sub));
+            Logger::write("INFO: [" + std::to_string(i + 1) + "/" + std::to_string(failedSubs.size()) + "] Trying via proxy: " + std::get<2>(sub), LogLevel::INFO);
             
             std::string content = fetchUrlViaProxy(std::get<2>(sub), proxySocksPort);
             if (!content.empty()) {
-                log("INFO: Proxy connection successful");
+                Logger::write("INFO: Proxy connection successful", LogLevel::INFO);
                 auto profiles = parseSubscription(content, std::get<0>(sub));
                 if (!profiles.empty()) {
                     updateProfileItems(std::get<0>(sub), profiles);
                     successCount++;
                     proxySuccessCount++;
-                    log("INFO: Updated successfully: " + std::get<0>(sub));
+                    Logger::write("INFO: Updated successfully: " + std::get<0>(sub), LogLevel::INFO);
                 } else {
                     proxyFailCount++;
                     stillFailedSubs.push_back(sub);
-                    log("ERROR: Parse failed: " + std::get<0>(sub));
+                    Logger::write("ERROR: Parse failed: " + std::get<0>(sub), LogLevel::LOG_ERROR);
                 }
             } else {
-                log("WARN: Proxy connection failed");
+                Logger::write("WARN: Proxy connection failed", LogLevel::WARN);
                 proxyFailCount++;
                 stillFailedSubs.push_back(sub);
-                log("ERROR: Failed to update: " + std::get<0>(sub));
+                Logger::write("ERROR: Failed to update: " + std::get<0>(sub), LogLevel::LOG_ERROR);
             }
         }
         failedSubs = stillFailedSubs;
@@ -173,26 +172,26 @@ bool SubitemUpdaterV2::run() {
 
     releaseProxyPorts();
 
-    log("========================================");
-    log("INFO: Update Summary");
-    log("INFO: Total subscriptions: " + std::to_string(totalSubs));
-    log("INFO: Phase 1 (Direct) - Success: " + std::to_string(directSuccessCount) + ", Failed: " + std::to_string(directFailCount));
+    Logger::write("========================================", LogLevel::INFO);
+    Logger::write("INFO: Update Summary", LogLevel::INFO);
+    Logger::write("INFO: Total subscriptions: " + std::to_string(totalSubs), LogLevel::INFO);
+    Logger::write("INFO: Phase 1 (Direct) - Success: " + std::to_string(directSuccessCount) + ", Failed: " + std::to_string(directFailCount), LogLevel::INFO);
     if (runProxyPhase) {
-        log("INFO: Phase 2 (Proxy) - Success: " + std::to_string(proxySuccessCount) + ", Failed: " + std::to_string(proxyFailCount));
+        Logger::write("INFO: Phase 2 (Proxy) - Success: " + std::to_string(proxySuccessCount) + ", Failed: " + std::to_string(proxyFailCount), LogLevel::INFO);
     }
-    log("INFO: Total - Success: " + std::to_string(successCount) + ", Failed: " + std::to_string(totalSubs - successCount));
+    Logger::write("INFO: Total - Success: " + std::to_string(successCount) + ", Failed: " + std::to_string(totalSubs - successCount), LogLevel::INFO);
     
     if (!failedSubs.empty()) {
-        log("========================================");
-        log("INFO: Failed subscriptions:");
+        Logger::write("========================================", LogLevel::INFO);
+        Logger::write("INFO: Failed subscriptions:", LogLevel::INFO);
         for (const auto& sub : failedSubs) {
-            log("INFO:   Id: " + std::get<0>(sub) + ", Remarks: " + std::get<1>(sub) + ", URL: " + std::get<2>(sub));
+            Logger::write("INFO:   Id: " + std::get<0>(sub) + ", Remarks: " + std::get<1>(sub) + ", URL: " + std::get<2>(sub), LogLevel::INFO);
         }
     }
-    log("========================================");
+    Logger::write("========================================", LogLevel::INFO);
 
     if (config_.dedup_after_update && config_.dedup_enabled) {
-        log("INFO: Running dedup after subscription update...");
+        Logger::write("INFO: Running dedup after subscription update...", LogLevel::INFO);
         deduplicate();
     }
 
@@ -200,17 +199,17 @@ bool SubitemUpdaterV2::run() {
 }
 
 bool SubitemUpdaterV2::runSingle(const std::string& subId) {
-    log("INFO: runSingle - subId: " + subId);
+    Logger::write("INFO: runSingle - subId: " + subId, LogLevel::INFO);
 
     auto optSub = getSubscription(subId);
     if (!optSub) {
-        log("ERROR: Subscription not found: " + subId);
+        Logger::write("ERROR: Subscription not found: " + subId, LogLevel::LOG_ERROR);
         return false;
     }
     const auto& sub = *optSub;
 
     if (sub.enabled != "1") {
-        log("ERROR: Subscription is disabled: " + subId);
+        Logger::write("ERROR: Subscription is disabled: " + subId, LogLevel::LOG_ERROR);
         return false;
     }
 
@@ -220,7 +219,7 @@ bool SubitemUpdaterV2::runSingle(const std::string& subId) {
     releaseProxyPorts();
 
     if (config_.dedup_after_update && config_.dedup_enabled) {
-        log("INFO: Running dedup after subscription update...");
+        Logger::write("INFO: Running dedup after subscription update...", LogLevel::INFO);
         deduplicate();
     }
 
@@ -228,23 +227,23 @@ bool SubitemUpdaterV2::runSingle(const std::string& subId) {
 }
 
 bool SubitemUpdaterV2::runSingleWithProxy(const std::string& subId, int socksPort) {
-    log("INFO: runSingleWithProxy - subId: " + subId + ", socksPort: " + std::to_string(socksPort));
+    Logger::write("INFO: runSingleWithProxy - subId: " + subId + ", socksPort: " + std::to_string(socksPort), LogLevel::INFO);
 
     auto optSub = getSubscription(subId);
     if (!optSub) {
-        log("ERROR: Subscription not found: " + subId);
+        Logger::write("ERROR: Subscription not found: " + subId, LogLevel::LOG_ERROR);
         return false;
     }
     const auto& sub = *optSub;
 
     if (sub.enabled != "1") {
-        log("ERROR: Subscription is disabled: " + subId);
+        Logger::write("ERROR: Subscription is disabled: " + subId, LogLevel::LOG_ERROR);
         return false;
     }
 
     std::string content = fetchUrlViaProxy(sub.url, socksPort);
     if (content.empty()) {
-        log("ERROR: Failed to fetch via proxy");
+        Logger::write("ERROR: Failed to fetch via proxy", LogLevel::LOG_ERROR);
         return false;
     }
 
@@ -256,7 +255,7 @@ std::optional<db::models::Subitem> SubitemUpdaterV2::getSubscription(const std::
     std::string sql = "SELECT * FROM SubItem WHERE Id = '" + subId + "';";
     sqlite3_stmt* stmt = nullptr;
     if (sqlite3_prepare_v2(db_, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
-        log("ERROR: SQL prepare failed - " + std::string(sqlite3_errmsg(db_)));
+        Logger::write("ERROR: SQL prepare failed - " + std::string(sqlite3_errmsg(db_)), LogLevel::LOG_ERROR);
         return std::nullopt;
     }
 
@@ -277,26 +276,26 @@ bool SubitemUpdaterV2::updateWithStrategy(const std::string& subUrl, const std::
     bool tryProxy = (strategy != Strategy::DirectOnly);
 
     if (tryDirect) {
-        log("INFO: Trying direct connection...");
+        Logger::write("INFO: Trying direct connection...", LogLevel::INFO);
         std::string content = fetchUrl(subUrl);
         if (!content.empty()) {
-            log("INFO: Direct connection successful");
+            Logger::write("INFO: Direct connection successful", LogLevel::INFO);
             auto profiles = parseSubscription(content, subId);
             if (!profiles.empty()) {
                 return updateProfileItems(subId, profiles);
             }
         }
-        log("WARN: Direct connection failed");
+        Logger::write("WARN: Direct connection failed", LogLevel::WARN);
     }
 
     if (tryProxy && !tryDirect) {
-        log("INFO: Trying proxy connection...");
+        Logger::write("INFO: Trying proxy connection...", LogLevel::INFO);
         auto [socksPort, apiPort] = getProxyPorts(subUrl);
         if (socksPort > 0) {
-            log("INFO: Using proxy at socks port: " + std::to_string(socksPort));
+            Logger::write("INFO: Using proxy at socks port: " + std::to_string(socksPort), LogLevel::INFO);
             std::string content = fetchUrlViaProxy(subUrl, socksPort);
             if (!content.empty()) {
-                log("INFO: Proxy connection successful");
+                Logger::write("INFO: Proxy connection successful", LogLevel::INFO);
                 auto profiles = parseSubscription(content, subId);
                 if (!profiles.empty()) {
                     return updateProfileItems(subId, profiles);
@@ -325,7 +324,7 @@ std::string SubitemUpdaterV2::fetchUrl(const std::string& url) {
     curl_easy_cleanup(curl);
 
     if (res != CURLE_OK) {
-        log("ERROR: fetchUrl failed - " + std::string(curl_easy_strerror(res)));
+        Logger::write("ERROR: fetchUrl failed - " + std::string(curl_easy_strerror(res)), LogLevel::LOG_ERROR);
         return "";
     }
 
@@ -352,7 +351,7 @@ std::string SubitemUpdaterV2::fetchUrlViaProxy(const std::string& url, int socks
     curl_easy_cleanup(curl);
 
     if (res != CURLE_OK) {
-        log("ERROR: fetchUrlViaProxy failed - " + std::string(curl_easy_strerror(res)));
+        Logger::write("ERROR: fetchUrlViaProxy failed - " + std::string(curl_easy_strerror(res)), LogLevel::LOG_ERROR);
         return "";
     }
 
@@ -366,19 +365,19 @@ std::vector<db::models::Profileitem> SubitemUpdaterV2::parseSubscription(const s
     std::string decoded;
     
     if (hasProtocol) {
-        log("INFO: Content appears to be plain text share links");
+        Logger::write("INFO: Content appears to be plain text share links", LogLevel::INFO);
         decoded = content;
     } else {
-        log("INFO: Attempting base64 decode...");
+        Logger::write("INFO: Attempting base64 decode...", LogLevel::INFO);
         decoded = decodeBase64(content);
         
         if (decoded.length() < 10 || decoded.find("://") == std::string::npos) {
-            log("WARN: Base64 decode produced invalid content, using original");
+            Logger::write("WARN: Base64 decode produced invalid content, using original", LogLevel::WARN);
             decoded = content;
         }
     }
     
-    log("INFO: Final content length: " + std::to_string(decoded.length()));
+    Logger::write("INFO: Final content length: " + std::to_string(decoded.length()), LogLevel::INFO);
     
     std::istringstream stream(decoded);
     std::string line;
@@ -493,7 +492,7 @@ std::vector<db::models::Profileitem> SubitemUpdaterV2::parseSubscription(const s
                     }
                 }
                 if (!parseSuccess) {
-                    log("WARN: Failed to parse vmess: " + errMsg);
+                    Logger::write("WARN: Failed to parse vmess: " + errMsg, LogLevel::WARN);
                 }
             }
             if (!parseSuccess) continue;
@@ -823,7 +822,7 @@ if (!profile.extra.empty() && profile.extra.front() == ',') {
         validCount++;
     }
     
-    log("INFO: Parsed " + std::to_string(validCount) + " valid profiles from " + std::to_string(lineCount) + " lines");
+    Logger::write("INFO: Parsed " + std::to_string(validCount) + " valid profiles from " + std::to_string(lineCount) + " lines", LogLevel::INFO);
     return profiles;
 }
 
@@ -837,7 +836,7 @@ bool SubitemUpdaterV2::updateProfileItems(const std::string& subid, const std::v
     std::string deleteExSql = "DELETE FROM ProfileExItem WHERE IndexId IN "
                                "(SELECT IndexId FROM ProfileItem WHERE Subid = '" + subid + "');";
     if (sqlite3_exec(db_, deleteExSql.c_str(), nullptr, nullptr, &errMsg) != SQLITE_OK) {
-        log("ERROR: Failed to delete old profileex items - " + std::string(errMsg));
+        Logger::write("ERROR: Failed to delete old profileex items - " + std::string(errMsg), LogLevel::LOG_ERROR);
         sqlite3_free(errMsg);
         sqlite3_exec(db_, "ROLLBACK;", nullptr, nullptr, nullptr);
         return false;
@@ -845,7 +844,7 @@ bool SubitemUpdaterV2::updateProfileItems(const std::string& subid, const std::v
 
     std::string deleteSql = "DELETE FROM ProfileItem WHERE Subid = '" + subid + "';";
     if (sqlite3_exec(db_, deleteSql.c_str(), nullptr, nullptr, &errMsg) != SQLITE_OK) {
-        log("ERROR: Failed to delete old profiles - " + std::string(errMsg));
+        Logger::write("ERROR: Failed to delete old profiles - " + std::string(errMsg), LogLevel::LOG_ERROR);
         sqlite3_free(errMsg);
         sqlite3_exec(db_, "ROLLBACK;", nullptr, nullptr, nullptr);
         return false;
@@ -893,7 +892,7 @@ bool SubitemUpdaterV2::updateProfileItems(const std::string& subid, const std::v
         oss << "'" << p.cert << "');";
 
         if (sqlite3_exec(db_, oss.str().c_str(), nullptr, nullptr, &errMsg) != SQLITE_OK) {
-            log("WARN: Insert failed - " + std::string(errMsg));
+            Logger::write("WARN: Insert failed - " + std::string(errMsg), LogLevel::WARN);
             sqlite3_free(errMsg);
         } else {
             inserted++;
@@ -906,39 +905,38 @@ bool SubitemUpdaterV2::updateProfileItems(const std::string& subid, const std::v
             exOss << "'0', ";
             exOss << "'NOT_TESTED')";
             if (sqlite3_exec(db_, exOss.str().c_str(), nullptr, nullptr, &errMsg) != SQLITE_OK) {
-                log("DEBUG: Failed to insert ProfileExItem - " + std::string(errMsg));
+                Logger::write("DEBUG: Failed to insert ProfileExItem - " + std::string(errMsg), LogLevel::INFO);
                 sqlite3_free(errMsg);
             }
         }
     }
 
     sqlite3_exec(db_, "COMMIT;", nullptr, nullptr, nullptr);
-    log("INFO: Inserted " + std::to_string(inserted) + " profiles");
+    Logger::write("INFO: Inserted " + std::to_string(inserted) + " profiles", LogLevel::INFO);
     return inserted > 0;
 }
 
 std::pair<int, int> SubitemUpdaterV2::getProxyPorts(const std::string& targetUrl) {
-    log("INFO: Getting proxy ports via ProxyFinder...");
+    Logger::write("INFO: Getting proxy ports via ProxyFinder...", LogLevel::INFO);
 
     std::string configDir = baseDir_.empty() ? "bin/config" : baseDir_ + "/config";
-    xrayMgr_ = XrayManager::getInstance(xrayPath_, configDir, config_.xray_workers, logOut_);
+    xrayMgr_ = XrayManager::getInstance(xrayPath_, configDir, config_.xray_workers);
 
     int started = xrayMgr_->start(1, config_.xray_start_port, config_.xray_api_port);
     if (started == 0) {
-        log("ERROR: Failed to start xray instance");
+        Logger::write("ERROR: Failed to start xray instance", LogLevel::LOG_ERROR);
         XrayManager::release();
         xrayMgr_ = nullptr;
         return {-1, -1};
     }
 
     proxyFinder_ = new ProxyFinder(db_, xrayMgr_, xrayPath_,
-                                   config_.test_url,
-                                   targetUrl,
-                                   config_.test_timeout_ms,
-                                   logOut_);
+                                    config_.test_url,
+                                    targetUrl,
+                                    config_.test_timeout_ms);
 
     auto result = proxyFinder_->findFirstWorkingProxy(targetUrl);
-    log("INFO: ProxyFinder returned socks=" + std::to_string(result.first) + ", api=" + std::to_string(result.second));
+    Logger::write("INFO: ProxyFinder returned socks=" + std::to_string(result.first) + ", api=" + std::to_string(result.second), LogLevel::INFO);
 
     return result;
 }
@@ -947,7 +945,7 @@ void SubitemUpdaterV2::releaseProxyPorts() {
     if (!xrayMgr_ && !proxyFinder_) {
         return;
     }
-    log("INFO: Releasing proxy ports...");
+    Logger::write("INFO: Releasing proxy ports...", LogLevel::INFO);
 
     if (proxyFinder_) {
         proxyFinder_->release();
@@ -961,7 +959,7 @@ void SubitemUpdaterV2::releaseProxyPorts() {
         xrayMgr_ = nullptr;
     }
 
-    log("INFO: Proxy ports released");
+    Logger::write("INFO: Proxy ports released", LogLevel::INFO);
 }
 
 bool SubitemUpdaterV2::startXray(const std::string& indexId, int socksPort, int apiPort) {
@@ -1023,15 +1021,6 @@ std::pair<std::string, std::string> SubitemUpdaterV2::parseAddressPort(const std
     std::string addr = addrPart.substr(0, colonPos);
     std::string port = trimTrailingSlash(addrPart.substr(colonPos + 1));
     return {addr, port};
-}
-
-void SubitemUpdaterV2::log(const std::string& msg) {
-    std::cout << msg << std::endl;
-    if (logOut_ && !logOut_->fail()) {
-        *logOut_ << msg << std::endl;
-        logOut_->flush();
-    }
-    Logger::write(msg);
 }
 
 std::string SubitemUpdaterV2::decodeBase64(const std::string& input) {
@@ -1131,7 +1120,7 @@ std::string SubitemUpdaterV2::urlDecode(const std::string& input) {
 
 int SubitemUpdaterV2::deduplicatePhase0() {
     if (config_.dedup_subids.empty()) {
-        log("INFO: Phase 0 skipped - no dedup_subids configured");
+        Logger::write("INFO: Phase 0 skipped - no dedup_subids configured", LogLevel::INFO);
         return 0;
     }
     
@@ -1143,7 +1132,7 @@ int SubitemUpdaterV2::deduplicatePhase0() {
     
     char* errMsg = nullptr;
     if (sqlite3_exec(db_, sql.c_str(), nullptr, nullptr, &errMsg) != SQLITE_OK) {
-        log("ERROR: Phase0 update failed - " + std::string(errMsg));
+        Logger::write("ERROR: Phase0 update failed - " + std::string(errMsg), LogLevel::LOG_ERROR);
         sqlite3_free(errMsg);
         return 0;
     }
@@ -1156,15 +1145,15 @@ int SubitemUpdaterV2::deduplicatePhase0() {
         sql = "UPDATE ProfileItem SET SubId = '" + fallbackSubId + "' WHERE SubId = '" + protectedSubId + "' AND IndexId IN (SELECT pi.IndexId FROM ProfileItem pi JOIN ProfileExItem pe ON pi.IndexId = pe.IndexId WHERE pe.Delay <= 0 OR pe.Delay = '-1')";
         
         if (sqlite3_exec(db_, sql.c_str(), nullptr, nullptr, &errMsg) != SQLITE_OK) {
-            log("ERROR: Phase0 fallback update failed - " + std::string(errMsg));
+            Logger::write("ERROR: Phase0 fallback update failed - " + std::string(errMsg), LogLevel::LOG_ERROR);
             sqlite3_free(errMsg);
             return updated;
         }
         
         updated += sqlite3_changes(db_);
-        log("INFO: Phase 0 updated: " + std::to_string(updated) + " proxies (protected: " + protectedSubId + ", fallback: " + fallbackSubId + ")");
+        Logger::write("INFO: Phase 0 updated: " + std::to_string(updated) + " proxies (protected: " + protectedSubId + ", fallback: " + fallbackSubId + ")", LogLevel::INFO);
     } else {
-        log("INFO: Phase 0 updated: " + std::to_string(updated) + " proxies to subid: " + protectedSubId);
+        Logger::write("INFO: Phase 0 updated: " + std::to_string(updated) + " proxies to subid: " + protectedSubId, LogLevel::INFO);
     }
     
     return updated;
@@ -1199,14 +1188,14 @@ int SubitemUpdaterV2::deduplicatePhase1() {
     
     char* errMsg = nullptr;
     if (sqlite3_exec(db_, sql.c_str(), nullptr, nullptr, &errMsg) != SQLITE_OK) {
-        log("ERROR: Phase1 dedup failed - " + std::string(errMsg));
-        log("ERROR: SQL: " + sql);
+        Logger::write("ERROR: Phase1 dedup failed - " + std::string(errMsg), LogLevel::LOG_ERROR);
+        Logger::write("ERROR: SQL: " + sql, LogLevel::LOG_ERROR);
         sqlite3_free(errMsg);
         return 0;
     }
     
     int deleted = sqlite3_changes(db_);
-    log("INFO: Phase 1 deleted: " + std::to_string(deleted) + " (invalid addresses)");
+    Logger::write("INFO: Phase 1 deleted: " + std::to_string(deleted) + " (invalid addresses)", LogLevel::INFO);
     
     if (!config_.dedup_subids.empty()) {
         std::string sql2 = "DELETE FROM ProfileItem WHERE (";
@@ -1215,11 +1204,11 @@ int SubitemUpdaterV2::deduplicatePhase1() {
         
         char* errMsg2 = nullptr;
         if (sqlite3_exec(db_, sql2.c_str(), nullptr, nullptr, &errMsg2) != SQLITE_OK) {
-            log("ERROR: Phase1b dedup failed - " + std::string(errMsg2));
+            Logger::write("ERROR: Phase1b dedup failed - " + std::string(errMsg2), LogLevel::LOG_ERROR);
             sqlite3_free(errMsg2);
         } else {
             int deleted2 = sqlite3_changes(db_);
-            log("INFO: Phase 1b deleted: " + std::to_string(deleted2) + " (invalid ports)");
+            Logger::write("INFO: Phase 1b deleted: " + std::to_string(deleted2) + " (invalid ports)", LogLevel::INFO);
         }
     }
     
@@ -1228,7 +1217,7 @@ int SubitemUpdaterV2::deduplicatePhase1() {
 
 int SubitemUpdaterV2::deduplicatePhase2() {
     if (config_.dedup_subids.empty()) {
-        log("INFO: Phase 2 skipped: no dedup_subids configured");
+        Logger::write("INFO: Phase 2 skipped: no dedup_subids configured", LogLevel::INFO);
         return 0;
     }
     
@@ -1249,19 +1238,19 @@ int SubitemUpdaterV2::deduplicatePhase2() {
     
     char* errMsg = nullptr;
     if (sqlite3_exec(db_, sql.c_str(), nullptr, nullptr, &errMsg) != SQLITE_OK) {
-        log("ERROR: Phase2 dedup failed - " + std::string(errMsg));
+        Logger::write("ERROR: Phase2 dedup failed - " + std::string(errMsg), LogLevel::LOG_ERROR);
         sqlite3_free(errMsg);
         return 0;
     }
     
     int deleted = sqlite3_changes(db_);
-    log("INFO: Phase 2 deleted: " + std::to_string(deleted) + " (remove non-dedup duplicates with dedup_subids)");
+    Logger::write("INFO: Phase 2 deleted: " + std::to_string(deleted) + " (remove non-dedup duplicates with dedup_subids)", LogLevel::INFO);
     return deleted;
 }
 
 int SubitemUpdaterV2::deduplicatePhase3() {
     if (config_.dedup_subids.empty()) {
-        log("INFO: Phase 3 skipped: no dedup_subids configured");
+        Logger::write("INFO: Phase 3 skipped: no dedup_subids configured", LogLevel::INFO);
         return 0;
     }
     
@@ -1288,19 +1277,19 @@ int SubitemUpdaterV2::deduplicatePhase3() {
     
     char* errMsg = nullptr;
     if (sqlite3_exec(db_, sql.c_str(), nullptr, nullptr, &errMsg) != SQLITE_OK) {
-        log("ERROR: Phase3 dedup failed - " + std::string(errMsg));
+        Logger::write("ERROR: Phase3 dedup failed - " + std::string(errMsg), LogLevel::LOG_ERROR);
         sqlite3_free(errMsg);
         return 0;
     }
     
     int deleted = sqlite3_changes(db_);
-    log("INFO: Phase 3 deleted: " + std::to_string(deleted) + " (dedup_subids internal, keep delay>0)");
+    Logger::write("INFO: Phase 3 deleted: " + std::to_string(deleted) + " (dedup_subids internal, keep delay>0)", LogLevel::INFO);
     return deleted;
 }
 
 int SubitemUpdaterV2::deduplicatePhase4() {
     if (config_.dedup_subids.empty()) {
-        log("INFO: Phase 4 skipped: no dedup_subids configured");
+        Logger::write("INFO: Phase 4 skipped: no dedup_subids configured", LogLevel::INFO);
         return 0;
     }
     
@@ -1321,13 +1310,13 @@ int SubitemUpdaterV2::deduplicatePhase4() {
     
     char* errMsg = nullptr;
     if (sqlite3_exec(db_, sql.c_str(), nullptr, nullptr, &errMsg) != SQLITE_OK) {
-        log("ERROR: Phase4 dedup failed - " + std::string(errMsg));
+        Logger::write("ERROR: Phase4 dedup failed - " + std::string(errMsg), LogLevel::LOG_ERROR);
         sqlite3_free(errMsg);
         return 0;
     }
     
     int deleted = sqlite3_changes(db_);
-    log("INFO: Phase 4 deleted: " + std::to_string(deleted) + " (full table dedup non-dedup_subids)");
+    Logger::write("INFO: Phase 4 deleted: " + std::to_string(deleted) + " (full table dedup non-dedup_subids)", LogLevel::INFO);
     return deleted;
 }
 
@@ -1336,13 +1325,13 @@ void SubitemUpdaterV2::cleanupProfileExItem() {
     
     char* errMsg = nullptr;
     if (sqlite3_exec(db_, sql.c_str(), nullptr, nullptr, &errMsg) != SQLITE_OK) {
-        log("ERROR: ProfileExItem cleanup failed - " + std::string(errMsg));
+        Logger::write("ERROR: ProfileExItem cleanup failed - " + std::string(errMsg), LogLevel::LOG_ERROR);
         sqlite3_free(errMsg);
         return;
     }
     
     int deleted = sqlite3_changes(db_);
-    log("INFO: ProfileExItem cleaned: " + std::to_string(deleted) + " orphaned records");
+    Logger::write("INFO: ProfileExItem cleaned: " + std::to_string(deleted) + " orphaned records", LogLevel::INFO);
 }
 
 bool SubitemUpdaterV2::migrateSubscription(sqlite3* srcDb, sqlite3* dstDb,
@@ -1715,9 +1704,9 @@ bool SubitemUpdaterV2::syncDatabases(const std::string& sourceDbPath,
 }
 
 bool SubitemUpdaterV2::deduplicate() {
-    log("========================================");
-    log("INFO: Starting Deduplication");
-    log("========================================");
+    Logger::write("========================================", LogLevel::INFO);
+    Logger::write("INFO: Starting Deduplication", LogLevel::INFO);
+    Logger::write("========================================", LogLevel::INFO);
     
     std::string countSql = "SELECT COUNT(*) FROM ProfileItem";
     sqlite3_stmt* stmt = nullptr;
@@ -1728,29 +1717,29 @@ bool SubitemUpdaterV2::deduplicate() {
         }
         sqlite3_finalize(stmt);
     }
-    log("INFO: Total proxies before: " + std::to_string(totalBefore));
+    Logger::write("INFO: Total proxies before: " + std::to_string(totalBefore), LogLevel::INFO);
     
-    log("INFO: Phase 0/5 - Marking working proxies with protected subid");
+    Logger::write("INFO: Phase 0/5 - Marking working proxies with protected subid", LogLevel::INFO);
     int p0 = deduplicatePhase0();
-    log("INFO: Phase 0 completed: " + std::to_string(p0) + " proxies marked");
+    Logger::write("INFO: Phase 0 completed: " + std::to_string(p0) + " proxies marked", LogLevel::INFO);
     
-    log("INFO: Phase 1/5 - Removing invalid addresses (private IPs)");
+    Logger::write("INFO: Phase 1/5 - Removing invalid addresses (private IPs)", LogLevel::INFO);
     int p1 = deduplicatePhase1();
-    log("INFO: Phase 1 completed: removed " + std::to_string(p1) + " proxies");
+    Logger::write("INFO: Phase 1 completed: removed " + std::to_string(p1) + " proxies", LogLevel::INFO);
     
-    log("INFO: Phase 2/5 - Removing duplicates with delay>0 proxies");
+    Logger::write("INFO: Phase 2/5 - Removing duplicates with delay>0 proxies", LogLevel::INFO);
     int p2 = deduplicatePhase2();
-    log("INFO: Phase 2 completed: removed " + std::to_string(p2) + " proxies");
+    Logger::write("INFO: Phase 2 completed: removed " + std::to_string(p2) + " proxies", LogLevel::INFO);
     
-    log("INFO: Phase 3/5 - Keeping dedup_subids, removing duplicates");
+    Logger::write("INFO: Phase 3/5 - Keeping dedup_subids, removing duplicates", LogLevel::INFO);
     int p3 = deduplicatePhase3();
-    log("INFO: Phase 3 completed: removed " + std::to_string(p3) + " proxies");
+    Logger::write("INFO: Phase 3 completed: removed " + std::to_string(p3) + " proxies", LogLevel::INFO);
     
-    log("INFO: Phase 4/5 - Full deduplication excluding subids");
+    Logger::write("INFO: Phase 4/5 - Full deduplication excluding subids", LogLevel::INFO);
     int p4 = deduplicatePhase4();
-    log("INFO: Phase 4 completed: removed " + std::to_string(p4) + " proxies");
+    Logger::write("INFO: Phase 4 completed: removed " + std::to_string(p4) + " proxies", LogLevel::INFO);
     
-    log("INFO: Cleaning up ProfileExItem...");
+    Logger::write("INFO: Cleaning up ProfileExItem...", LogLevel::INFO);
     cleanupProfileExItem();
     
     int totalAfter = 0;
@@ -1763,12 +1752,12 @@ bool SubitemUpdaterV2::deduplicate() {
     
     int totalDeleted = totalBefore - totalAfter;
     
-    log("========================================");
-    log("INFO: Deduplication Summary");
-    log("========================================");
-    log("INFO: Total deleted: " + std::to_string(totalDeleted));
-    log("INFO: Total remaining: " + std::to_string(totalAfter));
-    log("INFO: Dedup completed successfully");
+    Logger::write("========================================", LogLevel::INFO);
+    Logger::write("INFO: Deduplication Summary", LogLevel::INFO);
+    Logger::write("========================================", LogLevel::INFO);
+    Logger::write("INFO: Total deleted: " + std::to_string(totalDeleted), LogLevel::INFO);
+    Logger::write("INFO: Total remaining: " + std::to_string(totalAfter), LogLevel::INFO);
+    Logger::write("INFO: Dedup completed successfully", LogLevel::INFO);
     
     return true;
 }

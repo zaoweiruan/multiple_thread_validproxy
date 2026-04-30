@@ -3,11 +3,10 @@
 
 #include <string>
 #include <windows.h>
-#include <ostream>
 
 class XrayInstance {
 public:
-    XrayInstance(const std::string& xrayPath, int socksPort, int apiPort, const std::string& configDir, std::ostream* logOut = nullptr);
+    XrayInstance(const std::string& xrayPath, int socksPort, int apiPort, const std::string& configDir);
     ~XrayInstance();
     
     bool start();
@@ -16,10 +15,8 @@ public:
     int getSocksPort() const;
     int getApiPort() const;
     std::string getConfigPath() const;
-    void setLogOut(std::ostream* logOut);
 
 private:
-    void writeLog(const std::string& msg);
     std::string xrayPath_;
     int socksPort_;
     int apiPort_;
@@ -27,7 +24,6 @@ private:
     HANDLE processHandle_;
     HANDLE jobObject_;
     bool running_;
-    std::ostream* logOut_;
     
     bool createConfigFile();
 };

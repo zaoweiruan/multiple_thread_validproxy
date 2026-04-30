@@ -10,6 +10,7 @@ std::string Logger::prefix_;
 std::ofstream* Logger::outFile_ = nullptr;
 std::mutex Logger::mutex_;
 bool Logger::enabled_ = false;
+bool Logger::fileEnabled_ = true;
 LogLevel Logger::fileLevel_ = LogLevel::DEBUG;
 LogLevel Logger::consoleLevel_ = LogLevel::INFO;
 
@@ -60,7 +61,7 @@ void Logger::write(const std::string& msg, LogLevel level) {
         std::cout << fullMsg << std::endl;
     }
     
-    if (static_cast<int>(level) >= static_cast<int>(fileLevel_)) {
+    if (fileEnabled_ && static_cast<int>(level) >= static_cast<int>(fileLevel_)) {
         *outFile_ << fullMsg << std::endl;
         outFile_->flush();
     }
@@ -86,7 +87,7 @@ void Logger::writeTimestamp(const std::string& msg, LogLevel level) {
         std::cout << fullMsg << std::endl;
     }
     
-    if (static_cast<int>(level) >= static_cast<int>(fileLevel_)) {
+    if (fileEnabled_ && static_cast<int>(level) >= static_cast<int>(fileLevel_)) {
         *outFile_ << fullMsg << std::endl;
         outFile_->flush();
     }
@@ -150,6 +151,15 @@ LogLevel Logger::getConsoleLevel() {
     return consoleLevel_;
 }
 
+void Logger::setFileEnabled(bool enabled) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    fileEnabled_ = enabled;
+}
+
+bool Logger::isFileEnabled() {
+    return fileEnabled_;
+}
+
 std::string Logger::levelToString(LogLevel level) {
     switch (level) {
         case LogLevel::TRACE: return "TRACE";
@@ -179,5 +189,6 @@ void Logger::disableFile() {
 }
 
 void Logger::enableConsoleOnly() {
-    disableFile();
+    // 不再禁用文件日志，仅保留控制台输出
+    // 如需禁用文件，使用 setFileEnabled(false)
 }
