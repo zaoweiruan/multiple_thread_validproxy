@@ -8,43 +8,36 @@
 #include "ConfigGenerator.h"
 #include "Profileitem.h"
 #include "Profileexitem.h"
+#include "Logger.h"
 
 namespace config {
 
 bool isValidNetwork(const std::string& network);
 
-ConfigGenerator::ConfigGenerator(sqlite3* db, std::ostream* logOut) : db_(db), logOut_(logOut) {}
-
-void ConfigGenerator::setLogOut(std::ostream* logOut) {
-    logOut_ = logOut;
-}
-
-void ConfigGenerator::writeLog(const std::string& msg) {
-    std::cout << msg << std::endl;
-}
+ConfigGenerator::ConfigGenerator(sqlite3* db) : db_(db) {}
 
 std::vector<db::models::Profileitem> ConfigGenerator::loadProfiles(const std::string& sqlQuery) {
     db::models::ProfileitemDAO dao(db_);
     auto profiles = dao.getAll(sqlQuery);
     
-    writeLog("[ConfigGenerator] SQL returned " + std::to_string(profiles.size()) + " profiles");
+    Logger::write("[ConfigGenerator] SQL returned " + std::to_string(profiles.size()) + " profiles");
     
     std::vector<db::models::Profileitem> validProfiles;
     for (auto& p : profiles) {
         if (p.network.empty()) {
-            writeLog("[ConfigGenerator] Using default network 'tcp' for " + p.address + ":" + p.port);
+            Logger::write("[ConfigGenerator] Using default network 'tcp' for " + p.address + ":" + p.port);
             p.network = "tcp";
         }
         
         if (!isValidNetwork(p.network)) {
-            writeLog("[ConfigGenerator] Skipping " + p.address + ":" + p.port + " - invalid network: '" + p.network + "'");
+            Logger::write("[ConfigGenerator] Skipping " + p.address + ":" + p.port + " - invalid network: '" + p.network + "'");
             continue;
         }
         
         validProfiles.push_back(p);
     }
     
-    writeLog("[ConfigGenerator] Valid profiles: " + std::to_string(validProfiles.size()));
+    Logger::write("[ConfigGenerator] Valid profiles: " + std::to_string(validProfiles.size()));
     return validProfiles;
 }
 

@@ -11,20 +11,11 @@
 #include <chrono>
 #include <algorithm>
 
-void ProxyFinder::log(const std::string& msg) {
-    std::cout << msg << std::endl;
-    if (logOut_ && !logOut_->fail()) {
-        *logOut_ << msg << std::endl;
-        logOut_->flush();
-    }
-    Logger::write(msg);
-}
-
 ProxyFinder::ProxyFinder(sqlite3* db, XrayManager* manager, const std::string& xrayPath, 
                          const std::string& testUrl, const std::string& targetUrl, 
-                         int timeoutMs, std::ostream* logOut)
+                         int timeoutMs)
     : db_(db), manager_(manager), xrayPath_(xrayPath), testUrl_(testUrl), targetUrl_(targetUrl),
-      timeoutMs_(timeoutMs), currentSocksPort_(-1), currentApiPort_(-1), logOut_(logOut) {
+      timeoutMs_(timeoutMs), currentSocksPort_(-1), currentApiPort_(-1) {
     lastResult_ = {false, -1, "", "", "", 0, 0};
 }
 
@@ -40,7 +31,7 @@ std::pair<int, int> ProxyFinder::findFirstWorkingProxy(const std::string& target
         return result;
     }
     
-    auto proxies = loadFallbackProxies(100);
+    auto proxies = loadFallbackProxies();
     auto validProxies = proxies;
     validProxies.erase(
         std::remove_if(validProxies.begin(), validProxies.end(),
@@ -102,7 +93,7 @@ std::pair<int, int> ProxyFinder::findWorkingProxy(const std::string& targetUrl) 
         return result;
     }
     
-    auto proxies = loadFallbackProxies(100);
+    auto proxies = loadFallbackProxies();
     auto validProxies = proxies;
     validProxies.erase(
         std::remove_if(validProxies.begin(), validProxies.end(),
@@ -240,10 +231,14 @@ std::vector<ProxyFinder::FallbackProxy> ProxyFinder::loadFallbackProxies(int max
                   "WHERE pi.Address IS NOT NULL AND pi.Address != '' "
                   "AND pi.ConfigType IN ('1', '3', '4', '5', '6', '7', '8', '9', '10') "
                   "AND COALESCE(pe.Delay, 0) > 0 "
-                  "ORDER BY CAST(pe.Delay AS INTEGER) ASC "
-                  "LIMIT " + std::to_string(maxCount) + ";";
+                  "ORDER BY CAST(pe.Delay AS INTEGER) ASC";
     
-    log("ProxyFinder: SQL: " + sql);
+    if (maxCount > 0) {
+        sql += " LIMIT " + std::to_string(maxCount);
+    }
+    sql += ";";
+    
+    Logger::write("ProxyFinder: SQL: " + sql);
     
     sqlite3_stmt* stmt = nullptr;
     if (sqlite3_prepare_v2(db_, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
@@ -274,7 +269,7 @@ std::vector<ProxyFinder::FallbackProxy> ProxyFinder::loadFallbackProxies(int max
     }
     
     sqlite3_finalize(stmt);
-    log("ProxyFinder: Loaded " + std::to_string(proxies.size()) + " proxies from database");
+    Logger::write("ProxyFinder: Loaded " + std::to_string(proxies.size()) + " proxies from database");
     return proxies;
 }
 
@@ -314,7 +309,7 @@ bool ProxyFinder::injectProxyToXray(const std::string& indexId) {
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
     
     if (!xrayApi.addOutbound(config.outbound_json, tag, addResult)) {
-        log("ERROR: 注入xray outbound 错误: " + xrayApi.getLastError());
+        Logger::write("ERROR: 注入xray outbound 错误: " + xrayApi.getLastError());
         return false;
     }
     

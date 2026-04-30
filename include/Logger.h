@@ -30,6 +30,8 @@ public:
     static void setLevel(LogLevel level);
     static void setFileLevel(LogLevel level);
     static void setConsoleLevel(LogLevel level);
+    static void setFileEnabled(bool enabled);
+    static bool isFileEnabled();
     static LogLevel getLevel();
     static LogLevel getFileLevel();
     static LogLevel getConsoleLevel();
@@ -44,6 +46,7 @@ private:
     static std::ofstream* outFile_;
     static std::mutex mutex_;
     static bool enabled_;
+    static bool fileEnabled_;
     static LogLevel fileLevel_;
     static LogLevel consoleLevel_;
 };

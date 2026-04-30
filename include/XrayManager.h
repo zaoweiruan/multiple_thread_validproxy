@@ -4,16 +4,15 @@
 #include <string>
 #include <vector>
 #include <memory>
-#include <fstream>
 #include "XrayInstance.h"
 
 class XrayManager {
 public:
     static XrayManager* getInstance();
-    static XrayManager* getInstance(const std::string& xrayPath, const std::string& configDir, int workers, std::ofstream* logOut = nullptr);
+    static XrayManager* getInstance(const std::string& xrayPath, const std::string& configDir, int workers);
     static void release();
     
-    XrayManager(const std::string& xrayPath, const std::string& configDir, int workers = 4, std::ofstream* logOut = nullptr);
+    XrayManager(const std::string& xrayPath, const std::string& configDir, int workers = 4);
     ~XrayManager();
     
     int start(int testCount, int startPort, int apiPort);
@@ -30,7 +29,6 @@ private:
     std::string xrayPath_;
     std::string configDir_;
     int workers_;
-    std::ofstream* logOut_;
     
     static XrayManager* instance_;
 };
