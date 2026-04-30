@@ -1469,6 +1469,7 @@ bool SubitemUpdaterV2::migrateProxy(sqlite3* srcDb, sqlite3* dstDb,
         sqlite3_bind_text(updateStmt, 30, proxy.muxenabled.c_str(), -1, SQLITE_TRANSIENT);
         sqlite3_bind_text(updateStmt, 31, proxy.cert.c_str(), -1, SQLITE_TRANSIENT);
         sqlite3_bind_text(updateStmt, 32, proxy.certsha.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(updateStmt, 33, proxy.echconfiglist.c_str(), -1, SQLITE_TRANSIENT);
         sqlite3_bind_text(updateStmt, 34, proxy.echforcequery.c_str(), -1, SQLITE_TRANSIENT);
         sqlite3_bind_text(updateStmt, 35, proxy.indexid.c_str(), -1, SQLITE_TRANSIENT);
         
@@ -2106,7 +2107,7 @@ bool SubitemUpdaterV2::importSingleUrl(const std::string& url) {
         "INSERT INTO SubItem (Id, Remarks, Url, MoreUrl, Enabled, "
         "UserAgent, Sort, Filter, AutoUpdateInterval, UpdateTime, "
         "ConvertTarget, PrevProfile, NextProfile, PreSocksPort, Memo) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
     
     sqlite3_stmt* stmt = nullptr;
     bool insertSuccess = false;
