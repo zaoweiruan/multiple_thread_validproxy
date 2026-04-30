@@ -899,7 +899,7 @@ bool SubitemUpdaterV2::updateProfileItems(const std::string& subid, const std::v
                      "AlterId, Security, Network, Remarks, HeaderType, RequestHost, Path, StreamSecurity, "
                      "AllowInsecure, Subid, IsSub, Flow, Sni, Alpn, CoreType, PreSocksPort, Fingerprint, "
                      "DisplayLog, PublicKey, ShortId, SpiderX, Mldsa65Verify, EchConfigList, Extra, MuxEnabled, Cert, "
-                     "CertSha, EchForceQuery, Username, Endpoint) "
+                      "CertSha, EchForceQuery) "
                      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
     
     for (const auto& p : profiles) {
@@ -945,8 +945,6 @@ bool SubitemUpdaterV2::updateProfileItems(const std::string& subid, const std::v
         bindTextOrNull(stmt, 33, p.cert);
         bindTextOrNull(stmt, 34, p.certsha);
         bindTextOrNull(stmt, 35, p.echforcequery);
-        bindTextOrNull(stmt, 36, p.username);
-        bindTextOrNull(stmt, 37, p.endpoint);
         
         if (sqlite3_step(stmt) == SQLITE_DONE) {
             inserted++;
