@@ -895,15 +895,17 @@ bool SubitemUpdaterV2::updateProfileItems(const std::string& subid, const std::v
 
     int inserted = 0;
     
-    std::string sql = "INSERT INTO ProfileItem (IndexId, ConfigType, ConfigVersion, Address, Port, Id, "
+    std::string sql = "INSERT INTO ProfileItem (IndexId, ConfigType, ConfigVersion, Address, Port, Ports, Id, "
                      "AlterId, Security, Network, Remarks, HeaderType, RequestHost, Path, StreamSecurity, "
                      "AllowInsecure, Subid, IsSub, Flow, Sni, Alpn, CoreType, PreSocksPort, Fingerprint, "
-                     "DisplayLog, PublicKey, ShortId, SpiderX, Mldsa65Verify, EchConfigList, Extra, Ports, MuxEnabled, Cert) "
-                     "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                     "DisplayLog, PublicKey, ShortId, SpiderX, Mldsa65Verify, EchConfigList, Extra, MuxEnabled, Cert, "
+                     "CertSha, EchForceQuery, Username, Endpoint) "
+                     "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
     
     for (const auto& p : profiles) {
         sqlite3_stmt* stmt = nullptr;
         if (sqlite3_prepare_v2(db_, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
+            Logger::write("ERROR: Prepare failed for " + p.indexid + " - " + sqlite3_errmsg(db_), LogLevel::LOG_ERROR);
             continue;
         }
         
@@ -941,6 +943,10 @@ bool SubitemUpdaterV2::updateProfileItems(const std::string& subid, const std::v
         bindTextOrNull(stmt, 31, p.ports);
         bindTextOrNull(stmt, 32, p.muxenabled);
         bindTextOrNull(stmt, 33, p.cert);
+        bindTextOrNull(stmt, 34, p.certsha);
+        bindTextOrNull(stmt, 35, p.echforcequery);
+        bindTextOrNull(stmt, 36, p.username);
+        bindTextOrNull(stmt, 37, p.endpoint);
         
         if (sqlite3_step(stmt) == SQLITE_DONE) {
             inserted++;
@@ -958,7 +964,7 @@ bool SubitemUpdaterV2::updateProfileItems(const std::string& subid, const std::v
                 sqlite3_finalize(exStmt);
             }
         } else {
-            Logger::write("WARN: Insert failed for " + p.indexid, LogLevel::WARN);
+            Logger::write("ERROR: Insert failed for " + p.indexid + " - " + sqlite3_errmsg(db_), LogLevel::LOG_ERROR);
         }
         sqlite3_finalize(stmt);
     }
