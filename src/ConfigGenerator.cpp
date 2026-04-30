@@ -12,6 +12,14 @@
 
 namespace config {
 
+void bindTextOrNull(sqlite3_stmt* stmt, int idx, const std::string& val) {
+    if (val.empty()) {
+        sqlite3_bind_null(stmt, idx);
+    } else {
+        sqlite3_bind_text(stmt, idx, val.c_str(), -1, SQLITE_TRANSIENT);
+    }
+}
+
 bool isValidNetwork(const std::string& network);
 
 ConfigGenerator::ConfigGenerator(sqlite3* db) : db_(db) {}
@@ -56,10 +64,10 @@ bool ConfigGenerator::updateProfileExItem(const db::models::Profileexitem& exite
     }
     
     sqlite3_bind_text(stmt, 1, exitem.indexid.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt, 2, exitem.delay.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt, 3, exitem.speed.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt, 4, exitem.sort.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt, 5, exitem.message.c_str(), -1, SQLITE_TRANSIENT);
+    bindTextOrNull(stmt, 2, exitem.delay);
+    bindTextOrNull(stmt, 3, exitem.speed);
+    bindTextOrNull(stmt, 4, exitem.sort);
+    bindTextOrNull(stmt, 5, exitem.message);
     
     bool success = sqlite3_step(stmt) == SQLITE_DONE;
     sqlite3_finalize(stmt);
