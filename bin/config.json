@@ -22,7 +22,7 @@
         "file_level": "DEBUG"
     },
     "subscription": {
-        "priority_mode": "direct_only",
+        "priority_mode": "proxy_first",
         "update_subscription": true
     },
     "dedup": {
@@ -37,6 +37,6 @@
     },
     "sync": {
         "source_db": "E:/v2rayN-windows-64/guiConfigs/guiNDB.db",
-        "target_db": "E:/eclipse_workspace/multiple_thread_validproxy/bin/worker/test_sync_target.db"
+        "target_db": "E:/eclipse_workspace/multiple_thread_validproxy/bin/worker/guiNDB.db"
     }
 }
