@@ -17,44 +17,43 @@ namespace db {
 namespace models {
 
 struct Profileitem {
-  std::string indexid;  // IndexId
-  std::string configtype;  // ConfigType
-  std::string configversion;  // ConfigVersion
-  std::string address;  // Address
-  std::string port;  // Port
-  std::string id;  // Id
-  std::string alterid;  // AlterId
-  std::string security;  // Security
-  std::string network;  // Network
-  std::string remarks;  // Remarks
-  std::string headertype;  // HeaderType
-  std::string requesthost;  // RequestHost
-  std::string path;  // Path
-  std::string streamsecurity;  // StreamSecurity
-  std::string allowinsecure;  // AllowInsecure
-  std::string subid;  // Subid
-  std::string issub;  // IsSub
-  std::string flow;  // Flow
-  std::string sni;  // Sni
-  std::string alpn;  // Alpn
-  std::string coretype;  // CoreType
-  std::string presocksport;  // PreSocksPort
-  std::string username;  // Username
-  std::string endpoint;  // Endpoint
-  std::string fingerprint;  // Fingerprint
-  std::string displaylog;  // DisplayLog
-  std::string publickey;  // PublicKey
-  std::string shortid;  // ShortId
-  std::string spiderx;  // SpiderX
-  std::string extra;  // Extra
-  std::string ports;  // Ports
-  std::string mldsa65verify;  // Mldsa65Verify
-  std::string muxenabled;  // MuxEnabled
-  std::string cert;  // Cert
-  std::string certsha;  // CertSha
-  std::string echconfiglist;  // EchConfigList
-  std::string echforcequery;  // EchForceQuery
-  // gRPC
+  std::string indexid;         // 0: IndexId
+  std::string configtype;       // 1: ConfigType
+  std::string configversion;    // 2: ConfigVersion
+  std::string address;          // 3: Address
+  std::string port;             // 4: Port
+  std::string ports;            // 5: Ports
+  std::string id;               // 6: Id
+  std::string alterid;         // 7: AlterId
+  std::string security;        // 8: Security
+  std::string network;         // 9: Network
+  std::string remarks;         // 10: Remarks
+  std::string headertype;      // 11: HeaderType
+  std::string requesthost;     // 12: RequestHost
+  std::string path;             // 13: Path
+  std::string streamsecurity;  // 14: StreamSecurity
+  std::string allowinsecure;   // 15: AllowInsecure
+  std::string subid;           // 16: Subid
+  std::string issub;            // 17: IsSub
+  std::string flow;             // 18: Flow
+  std::string sni;              // 19: Sni
+  std::string alpn;             // 20: Alpn
+  std::string coretype;        // 21: CoreType
+  std::string presocksport;    // 22: PreSocksPort
+  std::string fingerprint;     // 23: Fingerprint
+  std::string displaylog;      // 24: DisplayLog
+  std::string publickey;       // 25: PublicKey
+  std::string shortid;         // 26: ShortId
+  std::string spiderx;         // 27: SpiderX
+  std::string mldsa65verify;   // 28: Mldsa65Verify
+  std::string extra;            // 29: Extra
+  std::string muxenabled;      // 30: MuxEnabled
+  std::string cert;             // 31: Cert
+  std::string certsha;         // 32: CertSha
+  std::string echconfiglist;   // 33: EchConfigList
+  std::string echforcequery;   // 34: EchForceQuery
+  
+  // 非数据库字段
   int grpcMultiMode = 0;
   // KCP
   int kcpMtu = 1350;
@@ -64,9 +63,10 @@ struct Profileitem {
   int kcpCongestion = 0;
   int kcpReadBufferSize = 2;
   int kcpWriteBufferSize = 2;
-
+  
   std::string kcpHeaderType = "none";
-  int muxEnabled;
+  int muxEnabled;  // KCP 配置复用
+  
   Profileitem() = default;
   
   void checkRequired() const {
@@ -95,119 +95,114 @@ struct Profileitem {
   static Profileitem fromStmt(sqlite3_stmt* stmt) {
     Profileitem obj;
     const char* text;
-    // SQL字段顺序: IndexId, ConfigType, ConfigVersion, Address, Port, Ports, Id, AlterId, Security, Network, Remarks, HeaderType, RequestHost, Path, StreamSecurity, AllowInsecure, Subid, IsSub, Flow, Sni, Alpn, CoreType, PreSocksPort, Fingerprint, DisplayLog, PublicKey, ShortId, SpiderX, Mldsa65Verify, Extra, MuxEnabled, Cert, CertSha, EchConfigList, EchForceQuery, Username, Endpoint
-    // 索引:        0          1          2              3       4      5      6     7        8        9       10        11          12          13    14              15            16      17     18    19    20    21        22           23          24         25       26       27             28           29      30         31       32          33            34           35
-    // IndexId
+    // SQL字段顺序（必须和结构体字段顺序一致）: IndexId(0), ConfigType(1), ConfigVersion(2), Address(3), Port(4), Ports(5), Id(6), AlterId(7), Security(8), Network(9), Remarks(10), HeaderType(11), RequestHost(12), Path(13), StreamSecurity(14), AllowInsecure(15), Subid(16), IsSub(17), Flow(18), Sni(19), Alpn(20), CoreType(21), PreSocksPort(22), Fingerprint(23), DisplayLog(24), PublicKey(25), ShortId(26), SpiderX(27), Mldsa65Verify(28), Extra(29), MuxEnabled(30), Cert(31), CertSha(32), EchConfigList(33), EchForceQuery(34)
+    
+    // IndexId(0)
     text = (const char*)sqlite3_column_text(stmt, 0);
     obj.indexid = text ? text : "";
-    // ConfigType
+    // ConfigType(1)
     text = (const char*)sqlite3_column_text(stmt, 1);
     obj.configtype = text ? text : "";
-    // ConfigVersion
+    // ConfigVersion(2)
     text = (const char*)sqlite3_column_text(stmt, 2);
     obj.configversion = text ? text : "";
-    // Address
+    // Address(3)
     text = (const char*)sqlite3_column_text(stmt, 3);
     obj.address = text ? text : "";
-    // Port
+    // Port(4)
     text = (const char*)sqlite3_column_text(stmt, 4);
     obj.port = text ? text : "";
-    // Ports
+    // Ports(5)
     text = (const char*)sqlite3_column_text(stmt, 5);
     obj.ports = text ? text : "";
-    // Id
+    // Id(6)
     text = (const char*)sqlite3_column_text(stmt, 6);
     obj.id = text ? text : "";
-    // AlterId
+    // AlterId(7)
     text = (const char*)sqlite3_column_text(stmt, 7);
     obj.alterid = text ? text : "";
-    // Security
+    // Security(8)
     text = (const char*)sqlite3_column_text(stmt, 8);
     obj.security = text ? text : "";
-    // Network
+    // Network(9)
     text = (const char*)sqlite3_column_text(stmt, 9);
     obj.network = text ? text : "";
-    // Remarks
+    // Remarks(10)
     text = (const char*)sqlite3_column_text(stmt, 10);
     obj.remarks = text ? text : "";
-    // HeaderType
+    // HeaderType(11)
     text = (const char*)sqlite3_column_text(stmt, 11);
     obj.headertype = text ? text : "";
-    // RequestHost
+    // RequestHost(12)
     text = (const char*)sqlite3_column_text(stmt, 12);
     obj.requesthost = text ? text : "";
-    // Path
+    // Path(13)
     text = (const char*)sqlite3_column_text(stmt, 13);
     obj.path = text ? text : "";
-    // StreamSecurity
+    // StreamSecurity(14)
     text = (const char*)sqlite3_column_text(stmt, 14);
     obj.streamsecurity = text ? text : "";
-    // AllowInsecure
+    // AllowInsecure(15)
     text = (const char*)sqlite3_column_text(stmt, 15);
     obj.allowinsecure = text ? text : "";
-    // Subid
+    // Subid(16)
     text = (const char*)sqlite3_column_text(stmt, 16);
     obj.subid = text ? text : "";
-    // IsSub
+    // IsSub(17)
     text = (const char*)sqlite3_column_text(stmt, 17);
     obj.issub = text ? text : "";
-    // Flow
+    // Flow(18)
     text = (const char*)sqlite3_column_text(stmt, 18);
     obj.flow = text ? text : "";
-    // Sni
+    // Sni(19)
     text = (const char*)sqlite3_column_text(stmt, 19);
     obj.sni = text ? text : "";
-    // Alpn
+    // Alpn(20)
     text = (const char*)sqlite3_column_text(stmt, 20);
     obj.alpn = text ? text : "";
-    // CoreType
+    // CoreType(21)
     text = (const char*)sqlite3_column_text(stmt, 21);
     obj.coretype = text ? text : "";
-    // PreSocksPort
+    // PreSocksPort(22)
     text = (const char*)sqlite3_column_text(stmt, 22);
     obj.presocksport = text ? text : "";
-    // Fingerprint
+    // Fingerprint(23)
     text = (const char*)sqlite3_column_text(stmt, 23);
     obj.fingerprint = text ? text : "";
-    // Username
-    text = (const char*)sqlite3_column_text(stmt, 35);
-    obj.username = text ? text : "";
-    // Endpoint (for WireGuard)
-    text = (const char*)sqlite3_column_text(stmt, 36);
-    obj.endpoint = text ? text : "";
-    // DisplayLog
+    // DisplayLog(24)
     text = (const char*)sqlite3_column_text(stmt, 24);
     obj.displaylog = text ? text : "";
-    // PublicKey
+    // PublicKey(25)
     text = (const char*)sqlite3_column_text(stmt, 25);
     obj.publickey = text ? text : "";
-    // ShortId
+    // ShortId(26)
     text = (const char*)sqlite3_column_text(stmt, 26);
     obj.shortid = text ? text : "";
-    // SpiderX
+    // SpiderX(27)
     text = (const char*)sqlite3_column_text(stmt, 27);
     obj.spiderx = text ? text : "";
-    // Mldsa65Verify
+    // Mldsa65Verify(28)
     text = (const char*)sqlite3_column_text(stmt, 28);
     obj.mldsa65verify = text ? text : "";
-    // Extra
+    // Extra(29)
     text = (const char*)sqlite3_column_text(stmt, 29);
     obj.extra = text ? text : "";
-    // MuxEnabled
+    // MuxEnabled(30)
     text = (const char*)sqlite3_column_text(stmt, 30);
     obj.muxenabled = text ? text : "";
-    // Cert
+    // Cert(31)
     text = (const char*)sqlite3_column_text(stmt, 31);
     obj.cert = text ? text : "";
-    // CertSha
+    // CertSha(32)
     text = (const char*)sqlite3_column_text(stmt, 32);
     obj.certsha = text ? text : "";
-    // EchConfigList
+    // EchConfigList(33)
     text = (const char*)sqlite3_column_text(stmt, 33);
     obj.echconfiglist = text ? text : "";
-    // EchForceQuery
+    // EchForceQuery(34)
     text = (const char*)sqlite3_column_text(stmt, 34);
     obj.echforcequery = text ? text : "";
+    
     return obj;
   }
 

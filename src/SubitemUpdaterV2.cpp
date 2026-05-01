@@ -461,7 +461,7 @@ std::vector<db::models::Profileitem> SubitemUpdaterV2::parseSubscription(const s
                 profile.configversion = "2";
                 profile.alterid = "0";
                 profile.network = "tcp";
-                profile.coretype = "0";
+                profile.coretype = "";
                 profile.muxenabled = "0";
                 profile.address = getJsonValueString(obj, "add", "");
                 
@@ -524,7 +524,7 @@ std::vector<db::models::Profileitem> SubitemUpdaterV2::parseSubscription(const s
                                 profile.configversion = "2";
                                 profile.alterid = "0";
                                 profile.network = "tcp";
-                                profile.coretype = "0";
+                                profile.coretype = "";
                                 profile.muxenabled = "0";
                                 profile.address = getJsonValueString(obj, "add", "");
                                 profile.id = getJsonValueString(obj, "id", "");
@@ -549,7 +549,7 @@ std::vector<db::models::Profileitem> SubitemUpdaterV2::parseSubscription(const s
             profile.configversion = "2";
             profile.alterid = "0";
             profile.network = "tcp";
-            profile.coretype = "0";
+            profile.coretype = "";
             profile.muxenabled = "0";
             profile.security = "none";
             profile.id = uri.substr(0, atPos);
@@ -617,7 +617,7 @@ std::vector<db::models::Profileitem> SubitemUpdaterV2::parseSubscription(const s
             profile.configversion = "2";
             profile.alterid = "0";
             profile.network = "";
-            profile.coretype = "0";
+            profile.coretype = "";
             profile.muxenabled = "0";
             
             std::string userInfo = uri.substr(0, atPos);
@@ -731,7 +731,7 @@ std::vector<db::models::Profileitem> SubitemUpdaterV2::parseSubscription(const s
             profile.configversion = "2";
             profile.alterid = "0";
             profile.network = "";
-            profile.coretype = "0";
+            profile.coretype = "";
             profile.muxenabled = "0";
             profile.id = uri.substr(0, atPos);
             if (!profile.id.empty() && profile.id.front() == '/') {
@@ -795,7 +795,7 @@ if (!profile.extra.empty() && profile.extra.front() == ',') {
             profile.configversion = "2";
             profile.alterid = "0";
             profile.network = "";
-            profile.coretype = "0";
+            profile.coretype = "";
             profile.muxenabled = "0";
             profile.id = uri.substr(0, atPos);
             if (!profile.id.empty() && profile.id.front() == '/') {
@@ -916,32 +916,32 @@ bool SubitemUpdaterV2::updateProfileItems(const std::string& subid, const std::v
         bindTextOrNull(stmt, 3, p.configversion);
         sqlite3_bind_text(stmt, 4, p.address.c_str(), -1, SQLITE_TRANSIENT);
         sqlite3_bind_text(stmt, 5, p.port.c_str(), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_text(stmt, 6, p.id.c_str(), -1, SQLITE_TRANSIENT);
-        bindTextOrNull(stmt, 7, p.alterid);
-        bindTextOrNull(stmt, 8, p.security);
-        bindTextOrNull(stmt, 9, p.network);
-        bindTextOrNull(stmt, 10, p.remarks);
-        bindTextOrNull(stmt, 11, p.headertype);
-        bindTextOrNull(stmt, 12, p.requesthost);
-        bindTextOrNull(stmt, 13, p.path);
-        bindTextOrNull(stmt, 14, p.streamsecurity);
-        bindTextOrNull(stmt, 15, p.allowinsecure);
-        bindTextOrNull(stmt, 16, p.subid);
-        bindTextOrNull(stmt, 17, p.issub);
-        bindTextOrNull(stmt, 18, p.flow);
-        bindTextOrNull(stmt, 19, p.sni);
-        bindTextOrNull(stmt, 20, p.alpn);
-        bindTextOrNull(stmt, 21, p.coretype);
-        bindTextOrNull(stmt, 22, p.presocksport);
-        bindTextOrNull(stmt, 23, p.fingerprint);
-        bindTextOrNull(stmt, 24, p.displaylog);
-        bindTextOrNull(stmt, 25, p.publickey);
-        bindTextOrNull(stmt, 26, p.shortid);
-        bindTextOrNull(stmt, 27, p.spiderx);
-        bindTextOrNull(stmt, 28, p.mldsa65verify);
-        bindTextOrNull(stmt, 29, p.echconfiglist);
-        bindTextOrNull(stmt, 30, p.extra);
-        bindTextOrNull(stmt, 31, p.ports);
+        bindTextOrNull(stmt, 6, p.ports);
+        sqlite3_bind_text(stmt, 7, p.id.c_str(), -1, SQLITE_TRANSIENT);
+        bindTextOrNull(stmt, 8, p.alterid);
+        bindTextOrNull(stmt, 9, p.security);
+        bindTextOrNull(stmt, 10, p.network);
+        bindTextOrNull(stmt, 11, p.remarks);
+        bindTextOrNull(stmt, 12, p.headertype);
+        bindTextOrNull(stmt, 13, p.requesthost);
+        bindTextOrNull(stmt, 14, p.path);
+        bindTextOrNull(stmt, 15, p.streamsecurity);
+        bindTextOrNull(stmt, 16, p.allowinsecure);
+        bindTextOrNull(stmt, 17, p.subid);
+        bindTextOrNull(stmt, 18, p.issub);
+        bindTextOrNull(stmt, 19, p.flow);
+        bindTextOrNull(stmt, 20, p.sni);
+        bindTextOrNull(stmt, 21, p.alpn);
+        bindTextOrNull(stmt, 22, p.coretype);
+        bindTextOrNull(stmt, 23, p.presocksport);
+        bindTextOrNull(stmt, 24, p.fingerprint);
+        bindTextOrNull(stmt, 25, p.displaylog);
+        bindTextOrNull(stmt, 26, p.publickey);
+        bindTextOrNull(stmt, 27, p.shortid);
+        bindTextOrNull(stmt, 28, p.spiderx);
+        bindTextOrNull(stmt, 29, p.mldsa65verify);
+        bindTextOrNull(stmt, 30, p.echconfiglist);
+        bindTextOrNull(stmt, 31, p.extra);
         bindTextOrNull(stmt, 32, p.muxenabled);
         bindTextOrNull(stmt, 33, p.cert);
         bindTextOrNull(stmt, 34, p.certsha);
@@ -1557,8 +1557,6 @@ bool SubitemUpdaterV2::migrateProxy(sqlite3* srcDb, sqlite3* dstDb,
         bindTextOrNull(insertStmt, 33, proxy.certsha);
         bindTextOrNull(insertStmt, 34, proxy.echconfiglist);
         bindTextOrNull(insertStmt, 35, proxy.echforcequery);
-        bindTextOrNull(insertStmt, 36, proxy.username);
-        bindTextOrNull(insertStmt, 37, proxy.endpoint);
         
         bool result = (sqlite3_step(insertStmt) == SQLITE_DONE);
         sqlite3_finalize(insertStmt);

@@ -415,20 +415,28 @@ boost::json::object ConfigGenerator::buildSOCKSOutbound(const db::models::Profil
     boost::json::object server;
     server["address"] = p.address;
     server["port"] = std::stoi(p.port);
-
-    if (!p.username.empty() && !p.id.empty()) {
+    
+    if (!p.security.empty() && !p.id.empty()) {
         boost::json::object user;
-        user["user"] = p.username;
+        user["user"] = p.security;
         user["pass"] = p.id;
         boost::json::array usersArr;
         usersArr.push_back(user);
         server["users"] = usersArr;
     }
-
+    
+    if (!p.requesthost.empty()) {
+        server["headers"] = boost::json::object({ {"host", p.requesthost} });
+    }
+    
     serversArr.push_back(server);
     settings["servers"] = serversArr;
     outbound["settings"] = settings;
-
+    
+    if (!p.streamsecurity.empty() && (p.streamsecurity == "tls" || p.streamsecurity == "reality")) {
+        outbound["streamSettings"] = buildStreamSettings(p);
+    }
+    
     return outbound;
 }
 
@@ -443,8 +451,8 @@ boost::json::object ConfigGenerator::buildHTTPOutbound(const db::models::Profile
     server["address"] = p.address;
     server["port"] = std::stoi(p.port);
 
-    if (!p.username.empty() && !p.id.empty()) {
-        server["user"] = p.username;
+    if (!p.security.empty() && !p.id.empty()) {
+        server["user"] = p.security;
         server["pass"] = p.id;
     }
 
@@ -546,7 +554,7 @@ boost::json::object ConfigGenerator::buildHysteria2Outbound(const db::models::Pr
     boost::json::object mux;
     mux["enabled"] = false;
     outbound["mux"] = mux;
-
+    
     return outbound;
 }
 
@@ -560,10 +568,6 @@ boost::json::object ConfigGenerator::buildTUICOutbound(const db::models::Profile
     settings["port"] = std::stoi(p.port);
     settings["password"] = p.id;
     settings["uuid"] = p.id;
-
-    if (!p.username.empty()) {
-        settings["username"] = p.username;
-    }
 
     if (!p.sni.empty()) {
         settings["sni"] = p.sni;
@@ -615,10 +619,6 @@ boost::json::object ConfigGenerator::buildWireGuardOutbound(const db::models::Pr
     boost::json::object peer;
     peer["publicKey"] = p.publickey;
     peer["endpoint"] = p.address + ":" + p.port;
-
-    if (!p.endpoint.empty()) {
-        peer["endpoint"] = p.endpoint;
-    }
 
     if (!p.presocksport.empty()) {
         boost::json::array reserved;
