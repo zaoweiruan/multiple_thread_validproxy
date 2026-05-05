@@ -10,7 +10,7 @@
 
 #include "Subitem.h"
 #include "Profileitem.h"
-#include "Profileexitem.h"
+#include "ProfileExItem.h"
 #include "XrayManager.h"
 #include "ProxyFinder.h"
 #include "ConfigReader.h"

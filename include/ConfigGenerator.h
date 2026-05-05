@@ -8,7 +8,7 @@
 #include <boost/json.hpp>
 
 #include "Profileitem.h"
-#include "Profileexitem.h"
+#include "ProfileExItem.h"
 
 namespace config {
 
@@ -21,9 +21,9 @@ class ConfigGenerator {
 public:
     explicit ConfigGenerator(sqlite3* db);
     std::vector<db::models::Profileitem> loadProfiles(const std::string& sqlQuery = "");
-    std::vector<db::models::Profileexitem> loadProfileExItems();
+    std::vector<db::models::ProfileExItem> loadProfileExItems();
     XrayConfig generateConfig(const db::models::Profileitem& profile);
-    bool updateProfileExItem(const db::models::Profileexitem& exitem);
+    bool updateProfileExItem(const db::models::ProfileExItem& exitem);
 
 private:
     sqlite3* db_;

@@ -17,7 +17,7 @@
 #include <random>
 
 #include "Profileitem.h"
-#include "Profileexitem.h"
+#include "ProfileExItem.h"
 #include "ConfigGenerator.h"
 #include "ProxyFinder.h"
 #include "ConfigReader.h"
@@ -406,7 +406,7 @@ std::cout << "Usage: validproxy [options]\n"
         }
         
         db::models::ProfileitemDAO profileDao(db);
-        db::models::ProfileexitemDAO exDao(db);
+        db::models::ProfileExItemDAO exDao(db);
         
         std::string sql = R"(
             SELECT p.*, COALESCE(pe.Delay, 0) as ExDelay

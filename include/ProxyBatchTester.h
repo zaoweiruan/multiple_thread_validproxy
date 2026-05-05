@@ -9,7 +9,7 @@
 #include <atomic>
 #include <thread>
 #include "Profileitem.h"
-#include "Profileexitem.h"
+#include "ProfileExItem.h"
 #include "ConfigReader.h"
 #include "XrayManager.h"
 #include "ProxyTester.h"

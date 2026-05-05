@@ -60,7 +60,7 @@ bool ProxyBatchTester::startXrayInstances(int count) {
 void ProxyBatchTester::workerThreadFunc(int workerId, int socksPort, int apiPort) {
     std::string xrayApiAddr = "127.0.0.1:" + std::to_string(apiPort);
     xray::XrayApi xrayApi(config_.xray_executable, xrayApiAddr);
-    db::models::ProfileexitemDAO exItemDao(db_);
+    db::models::ProfileExItemDAO exItemDao(db_);
     config::ConfigGenerator configGen(db_);
     
     while (true) {
