@@ -78,6 +78,123 @@ std::optional<AppConfig> ConfigReader::load(const std::string& configPath) {
         }
     }
     
+    if (obj.contains("xray") && obj["xray"].is_object()) {
+        auto& xray = obj["xray"].as_object();
+        if (xray.contains("executable")) {
+            config.xray_executable = resolvePath(xray["executable"].as_string().c_str(), exeDir);
+        }
+        if (xray.contains("workers")) {
+            config.xray_workers = static_cast<int>(xray["workers"].as_int64());
+        } else {
+            config.xray_workers = 1;
+        }
+        if (xray.contains("start_port")) {
+            config.xray_start_port = static_cast<int>(xray["start_port"].as_int64());
+        } else {
+            config.xray_start_port = 1083;
+        }
+        if (xray.contains("api_port")) {
+            config.xray_api_port = static_cast<int>(xray["api_port"].as_int64());
+        }
+    }
+    
+    if (obj.contains("test") && obj["test"].is_object()) {
+        auto& test = obj["test"].as_object();
+        if (test.contains("url")) {
+            config.test_url = test["url"].as_string().c_str();
+        }
+        if (test.contains("timeout_ms")) {
+            config.test_timeout_ms = static_cast<int>(test["timeout_ms"].as_int64());
+        } else {
+            config.test_timeout_ms = 5000;
+        }
+    }
+    
+    if (obj.contains("log") && obj["log"].is_object()) {
+        auto& log = obj["log"].as_object();
+        if (log.contains("enabled")) {
+            config.log_enabled = log["enabled"].as_bool();
+        } else {
+            config.log_enabled = true;
+        }
+        if (log.contains("network_failures")) {
+            config.log_network_failures = log["network_failures"].as_bool();
+        } else {
+            config.log_network_failures = false;
+        }
+    } else {
+        config.log_enabled = true;
+        config.log_network_failures = false;
+    }
+    
+    if (obj.contains("subscription") && obj["subscription"].is_object()) {
+        auto& sub = obj["subscription"].as_object();
+        if (sub.contains("priority_mode")) {
+            config.priority_mode = sub["priority_mode"].as_string().c_str();
+        } else {
+            config.priority_mode = "direct_first";
+        }
+        if (sub.contains("check_auto_update_interval")) {
+            config.check_auto_update_interval = sub["check_auto_update_interval"].as_bool();
+        } else {
+            config.check_auto_update_interval = false;
+        }
+    } else {
+        config.priority_mode = "direct_first";
+        config.check_auto_update_interval = false;
+    }
+    
+    if (obj.contains("dedup") && obj["dedup"].is_object()) {
+        auto& dedup = obj["dedup"].as_object();
+        if (dedup.contains("enabled")) {
+            config.dedup_enabled = dedup["enabled"].as_bool();
+        } else {
+            config.dedup_enabled = false;
+        }
+        if (dedup.contains("dedup_after_update")) {
+            config.dedup_after_update = dedup["dedup_after_update"].as_bool();
+        } else {
+            config.dedup_after_update = false;
+        }
+        if (dedup.contains("blacklist_threshold")) {
+            config.blacklist_threshold = static_cast<int>(dedup["blacklist_threshold"].as_int64());
+        } else {
+            config.blacklist_threshold = 5;
+        }
+        if (dedup.contains("subids") && dedup["subids"].is_array()) {
+            for (const auto& sid : dedup["subids"].as_array()) {
+                config.dedup_subids.push_back(sid.as_string().c_str());
+            }
+        }
+    } else {
+        config.dedup_enabled = false;
+        config.dedup_after_update = false;
+        config.blacklist_threshold = 5;
+    }
+    
+    if (obj.contains("notification") && obj["notification"].is_object()) {
+        auto& notif = obj["notification"].as_object();
+        if (notif.contains("enabled")) {
+            config.notification_enabled = notif["enabled"].as_bool();
+        } else {
+            config.notification_enabled = false;
+        }
+        if (notif.contains("on_update")) {
+            config.notification_on_update = notif["on_update"].as_bool();
+        } else {
+            config.notification_on_update = false;
+        }
+        if (notif.contains("on_test")) {
+            config.notification_on_test = notif["on_test"].as_bool();
+        } else {
+            config.notification_on_test = false;
+        }
+    } else {
+        config.notification_enabled = false;
+        config.notification_on_update = false;
+        config.notification_on_test = false;
+    }
+    
     // Replace placeholder {blacklist_threshold} in SQL queries
     auto replacePlaceholder = [&](std::string& sql, const std::string& placeholder, int value) {
         size_t pos = sql.find(placeholder);

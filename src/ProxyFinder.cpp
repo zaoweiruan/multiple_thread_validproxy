@@ -4,7 +4,7 @@
 #include "ConfigGenerator.h"
 #include "XrayApi.h"
 #include "Profileitem.h"
-#include "Profileexitem.h"
+#include "ProfileExItem.h"
 #include "Logger.h"
 #include <iostream>
 #include <thread>
@@ -66,7 +66,7 @@ std::pair<int, int> ProxyFinder::findFirstWorkingProxy(const std::string& target
         
         auto testRes = testProxyConnectivity(currentSocksPort_, testUrl);
         
-        db::models::ProfileexitemDAO exDao(db_);
+        db::models::ProfileExItemDAO exDao(db_);
         exDao.updateTestResult(proxy.indexId, testRes.latencyMs, testRes.success, testRes.errorMsg);
         
         if (testRes.success) {
@@ -131,7 +131,7 @@ std::pair<int, int> ProxyFinder::findWorkingProxy(const std::string& targetUrl) 
         
         auto testRes = testProxyConnectivity(currentSocksPort_, testUrl);
         
-        db::models::ProfileexitemDAO exDao(db_);
+        db::models::ProfileExItemDAO exDao(db_);
         exDao.updateTestResult(proxy.indexId, testRes.latencyMs, testRes.success, testRes.errorMsg);
         
         if (testRes.success) {

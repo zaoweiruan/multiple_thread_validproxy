@@ -274,6 +274,55 @@ std::string utils::generateUniqueId() {
 
 ## 📝 最近变更
 
+### 2026-05-05：使用可配置阈值替代硬编码数字5
+
+#### 设计变更
+- **问题**：SQL 查询中硬编码阈值5（`consecutive_failures < 5`），修改 `blacklist_threshold` 配置不生效
+- **解决方案**：在 `config.json` 的 SQL 中使用占位符 `{blacklist_threshold}`
+- **实现**：在 `ConfigReader.cpp` 中添加占位符替换逻辑，读取配置后自动替换
+
+#### 修改内容
+- `bin/config.json`：`sql` 和 `sql_by_subid` 查询中的 `< 5` 改为 `< {blacklist_threshold}`
+- `src/ConfigReader.cpp`：添加 `replacePlaceholder()` lambda，自动替换占位符
+- `bin/worker/config.json`：更新 SQL 查询，移除旧的 `blacklisted` 字段引用
+
+#### 工作原理
+1. `config.json` 中配置 `"blacklist_threshold": 5`
+2. SQL 查询使用占位符：`... AND (pe.consecutive_failures < {blacklist_threshold})`
+3. `ConfigReader.cpp` 读取配置后，自动替换占位符为实际值
+4. 用户修改配置后，SQL 查询自动使用新阈值
+
+#### 修改文件清单
+- `bin/config.json`
+- `src/ConfigReader.cpp`
+- `bin/worker/config.json`（运行时配置）
+
+### 2026-05-05：移除 blacklisted 字段，简化黑名单逻辑
+
+#### 设计变更
+- **移除** `blacklisted` 字段（冗余，只是 `consecutive_failures >= threshold` 的存储）
+- **直接使用** `consecutive_failures < threshold` 判断是否为黑名单
+- 简化逻辑：避免冗余字段维护和数据不一致
+
+#### 修改内容
+- `ProfileExItem` 结构体：移除 `int blacklisted` 成员
+- `fromStmt()`：移除 `blacklisted` 读取（column 6）
+- `toString()`：移除 `blacklisted` 输出
+- `migrateTable()`：移除添加 `blacklisted` 列的迁移代码
+- `updateTestResult()`：移除 `blacklisted` 计算和 INSERT SQL
+- `ConfigGenerator::updateProfileExItem()`：移除 `blacklisted` 参数绑定
+- `SubitemUpdaterV2::updateProfileItems()`：移除 INSERT 中的 `blacklisted`
+- `SubitemUpdaterV2::migrateProfileExItem()`：移除 UPDATE/INSERT 中的 `blacklisted`
+- `config.json`：过滤条件改为 `pe.consecutive_failures IS NULL OR pe.consecutive_failures < 5`
+- `create_test_db.sql`：CREATE TABLE 移除 `blacklisted` 字段
+
+#### 修改文件清单
+- `include/ProfileExItem.h`
+- `src/ConfigGenerator.cpp`
+- `src/SubitemUpdaterV2.cpp`
+- `bin/config.json`
+- `create_test_db.sql`
+
 ### 2026-05-05：去重机制统一与失败逻辑修复
 
 #### `updateProfileItems()` 返回值逻辑修复

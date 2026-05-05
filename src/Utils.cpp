@@ -7,6 +7,15 @@
 #include <chrono>
 
 namespace utils {
+    std::string getCurrentTimestamp() {
+        auto now = std::chrono::system_clock::now();
+        auto timestamp = std::chrono::duration_cast<std::chrono::seconds>(
+            now.time_since_epoch()).count();
+        return std::to_string(timestamp);
+    }
+}
+
+namespace utils {
     std::string getExecutableDir() {
         char buffer[MAX_PATH];
         GetModuleFileNameA(NULL, buffer, MAX_PATH);

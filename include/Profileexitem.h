@@ -11,33 +11,36 @@
 namespace db {
 namespace models {
 
-struct Profileexitem {
+struct ProfileExItem {
   std::string indexid;  // IndexId
   std::string delay;  // Delay
   std::string speed;  // Speed
   std::string sort;  // Sort
   std::string message;  // Message
+  int consecutive_failures = 0;  // 连续失败次数（>=阈值则视为黑名单）
 
-  Profileexitem() = default;
+  ProfileExItem() = default;
 
-  static Profileexitem fromStmt(sqlite3_stmt* stmt) {
-    Profileexitem obj;
+  static ProfileExItem fromStmt(sqlite3_stmt* stmt) {
+    ProfileExItem obj;
     const char* text;
-    // IndexId
+    // IndexId (column 0)
     text = (const char*)sqlite3_column_text(stmt, 0);
     obj.indexid = text ? text : "";
-    // Delay
+    // Delay (column 1)
     text = (const char*)sqlite3_column_text(stmt, 1);
     obj.delay = text ? text : "";
-    // Speed
+    // Speed (column 2)
     text = (const char*)sqlite3_column_text(stmt, 2);
     obj.speed = text ? text : "";
-    // Sort
+    // Sort (column 3)
     text = (const char*)sqlite3_column_text(stmt, 3);
     obj.sort = text ? text : "";
-    // Message
+    // Message (column 4)
     text = (const char*)sqlite3_column_text(stmt, 4);
     obj.message = text ? text : "";
+    // consecutive_failures (column 5)
+    obj.consecutive_failures = sqlite3_column_int(stmt, 5);
     return obj;
   }
 
@@ -45,33 +48,49 @@ struct Profileexitem {
     std::ostringstream oss;
     oss << "{";
     oss << "\"IndexId\": ";
-    oss << indexid;  // 简化输出
+    oss << indexid;
     oss << ", ";
     oss << "\"Delay\": ";
-    oss << delay;  // 简化输出
+    oss << delay;
     oss << ", ";
     oss << "\"Speed\": ";
-    oss << speed;  // 简化输出
+    oss << speed;
     oss << ", ";
     oss << "\"Sort\": ";
-    oss << sort;  // 简化输出
+    oss << sort;
     oss << ", ";
     oss << "\"Message\": ";
-    oss << message;  // 简化输出
+    oss << message;
+    oss << ", ";
+    oss << "\"consecutive_failures\": ";
+    oss << consecutive_failures;
     oss << "}";
     return oss.str();
   }
 };
 
-class ProfileexitemDAO {
+class ProfileExItemDAO {
 private:
   sqlite3* db_;
 
 public:
-  explicit ProfileexitemDAO(sqlite3* db) : db_(db) {}
+  explicit ProfileExItemDAO(sqlite3* db) : db_(db) {
+        // Auto-migrate on construction
+        migrateTable(db);
+    }
 
-  std::vector<Profileexitem> getAll() {
-    std::vector<Profileexitem> result;
+  // Migrate table: add missing columns if not exist
+  static void migrateTable(sqlite3* db) {
+      const char* addCols[] = {
+          "ALTER TABLE ProfileExItem ADD COLUMN consecutive_failures INTEGER DEFAULT 0"
+      };
+      for (const auto& sql : addCols) {
+          sqlite3_exec(db, sql, nullptr, nullptr, nullptr); // ignore error if column exists
+      }
+  }
+
+  std::vector<ProfileExItem> getAll() {
+    std::vector<ProfileExItem> result;
     const char* sql = "SELECT * FROM ProfileExItem;";
 
     sqlite3_stmt* stmt = nullptr;
@@ -81,14 +100,14 @@ public:
     }
 
     while (sqlite3_step(stmt) == SQLITE_ROW) {
-      result.push_back(Profileexitem::fromStmt(stmt));
+      result.push_back(ProfileExItem::fromStmt(stmt));
     }
 
     sqlite3_finalize(stmt);
     return result;
   }
 
-  bool updateTestResult(const std::string& indexid, long latencyMs, bool success, const std::string& curlMsg) {
+  bool updateTestResult(const std::string& indexid, long latencyMs, bool success, const std::string& curlMsg, sqlite3* db = nullptr) {
     std::string message;
     if (success) {
       message = "OK";
@@ -100,16 +119,36 @@ public:
       }
     }
     
+    // 先查询当前连续失败次数
+    int currentFailures = 0;
+    sqlite3_stmt* selectStmt = nullptr;
+    const char* selectSql = "SELECT consecutive_failures FROM ProfileExItem WHERE IndexId = ?";
+    sqlite3* execDb = db ? db : db_;
+    
+    if (sqlite3_prepare_v2(execDb, selectSql, -1, &selectStmt, nullptr) == SQLITE_OK) {
+      sqlite3_bind_text(selectStmt, 1, indexid.c_str(), -1, SQLITE_TRANSIENT);
+      if (sqlite3_step(selectStmt) == SQLITE_ROW) {
+        currentFailures = sqlite3_column_int(selectStmt, 0);
+      }
+      sqlite3_finalize(selectStmt);
+    } else {
+      // Prepare failed, log error and use default
+      std::cerr << "SQL prepare failed for select: " << sqlite3_errmsg(execDb) << std::endl;
+    }
+    
+    int newFailures = success ? 0 : currentFailures + 1;
+    
     std::ostringstream oss;
-    oss << "INSERT OR REPLACE INTO ProfileExItem (indexid, delay, speed, sort, message) VALUES (";
+    oss << "INSERT OR REPLACE INTO ProfileExItem (indexid, delay, speed, sort, message, consecutive_failures) VALUES (";
     oss << "'" << indexid << "', ";
     oss << "'" << (success && latencyMs >= 0 ? std::to_string(latencyMs / 10) : "-1") << "', ";
     oss << "'0', '0', ";
-    oss << "'" << message << "')";
+    oss << "'" << message << "', ";
+    oss << newFailures << ")";
     
     std::string sql = oss.str();
     char* errMsg = nullptr;
-    if (sqlite3_exec(db_, sql.c_str(), nullptr, nullptr, &errMsg) != SQLITE_OK) {
+    if (sqlite3_exec(execDb, sql.c_str(), nullptr, nullptr, &errMsg) != SQLITE_OK) {
       std::cerr << "SQL insert error: " << errMsg << std::endl;
       sqlite3_free(errMsg);
       return false;
