@@ -20,9 +20,11 @@ struct AppConfig {
     bool log_network_failures;
     bool update_subscription;
     std::string priority_mode;
+    bool check_auto_update_interval;
     bool dedup_enabled;
     bool dedup_after_update;
     std::vector<std::string> dedup_subids;
+    int blacklist_threshold;  // Number of consecutive failures before blacklisting
     bool notification_enabled;
     bool notification_on_update;
     bool notification_on_test;

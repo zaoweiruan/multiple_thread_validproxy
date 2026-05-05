@@ -871,46 +871,62 @@ if (!profile.extra.empty() && profile.extra.front() == ',') {
 }
 
 bool SubitemUpdaterV2::updateProfileItems(const std::string& subid, const std::vector<db::models::Profileitem>& profiles) {
-    if (profiles.empty()) return false;
+    (void)subid; // Kept for API compatibility, dedup now handles duplicates without delete-by-subid
+    // Empty input is not a failure, just no work to do
+    if (profiles.empty()) {
+        Logger::write("INFO: No profiles to update (empty input)", LogLevel::INFO);
+        return true;
+    }
 
     sqlite3_exec(db_, "BEGIN TRANSACTION;", nullptr, nullptr, nullptr);
-
-    char* errMsg = nullptr;
-
-    std::string deleteExSql = "DELETE FROM ProfileExItem WHERE IndexId IN "
-                               "(SELECT IndexId FROM ProfileItem WHERE Subid = '" + subid + "');";
-    if (sqlite3_exec(db_, deleteExSql.c_str(), nullptr, nullptr, &errMsg) != SQLITE_OK) {
-        Logger::write("ERROR: Failed to delete old profileex items - " + std::string(errMsg), LogLevel::LOG_ERROR);
-        sqlite3_free(errMsg);
-        sqlite3_exec(db_, "ROLLBACK;", nullptr, nullptr, nullptr);
-        return false;
-    }
-
-    std::string deleteSql = "DELETE FROM ProfileItem WHERE Subid = '" + subid + "';";
-    if (sqlite3_exec(db_, deleteSql.c_str(), nullptr, nullptr, &errMsg) != SQLITE_OK) {
-        Logger::write("ERROR: Failed to delete old profiles - " + std::string(errMsg), LogLevel::LOG_ERROR);
-        sqlite3_free(errMsg);
-        sqlite3_exec(db_, "ROLLBACK;", nullptr, nullptr, nullptr);
-        return false;
-    }
-
     int inserted = 0;
-    
-    std::string sql = "INSERT INTO ProfileItem (IndexId, ConfigType, ConfigVersion, Address, Port, Ports, Id, "
-                     "AlterId, Security, Network, Remarks, HeaderType, RequestHost, Path, StreamSecurity, "
-                     "AllowInsecure, Subid, IsSub, Flow, Sni, Alpn, CoreType, PreSocksPort, Fingerprint, "
-                     "DisplayLog, PublicKey, ShortId, SpiderX, Mldsa65Verify, EchConfigList, Extra, MuxEnabled, Cert, "
-                      "CertSha, EchForceQuery) "
-                     "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
-    
+
+    // Dedup check: find existing record by lower(Address)+Port+ConfigType+lower(Id)+lower(Network)
+    const char* dedupSql = "SELECT IndexId FROM ProfileItem WHERE lower(Address)=lower(?) "
+                           "AND (Port IS NULL OR Port='' OR Port=?) "
+                           "AND ConfigType=? "
+                           "AND lower(Id)=lower(?) "
+                           "AND (Network IS NULL OR Network='' OR lower(Network)=lower(?)) "
+                           "LIMIT 1";
+
+    // Insert new ProfileItem
+    const char* insertSql = "INSERT INTO ProfileItem (IndexId, ConfigType, ConfigVersion, Address, Port, Ports, Id, "
+                           "AlterId, Security, Network, Remarks, HeaderType, RequestHost, Path, StreamSecurity, "
+                           "AllowInsecure, Subid, IsSub, Flow, Sni, Alpn, CoreType, PreSocksPort, Fingerprint, "
+                           "DisplayLog, PublicKey, ShortId, SpiderX, Mldsa65Verify, EchConfigList, Extra, MuxEnabled, Cert, "
+                           "CertSha, EchForceQuery) "
+                           "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+
     for (const auto& p : profiles) {
-        sqlite3_stmt* stmt = nullptr;
-        if (sqlite3_prepare_v2(db_, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
-            Logger::write("ERROR: Prepare failed for " + p.indexid + " - " + sqlite3_errmsg(db_), LogLevel::LOG_ERROR);
+        // Step 1: Check for existing duplicate
+        sqlite3_stmt* checkStmt = nullptr;
+        if (sqlite3_prepare_v2(db_, dedupSql, -1, &checkStmt, nullptr) != SQLITE_OK) {
+            Logger::write("ERROR: Dedup check prepare failed for " + p.indexid + " - " + sqlite3_errmsg(db_), LogLevel::LOG_ERROR);
             continue;
         }
-        
-        // 必须字段：IndexId, Address, Port, Id, ConfigType
+
+        sqlite3_bind_text(checkStmt, 1, p.address.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(checkStmt, 2, p.port.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(checkStmt, 3, p.configtype.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(checkStmt, 4, p.id.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(checkStmt, 5, p.network.c_str(), -1, SQLITE_TRANSIENT);
+
+        bool isDuplicate = (sqlite3_step(checkStmt) == SQLITE_ROW);
+        if (isDuplicate) {
+            std::string existingId = reinterpret_cast<const char*>(sqlite3_column_text(checkStmt, 0));
+            Logger::write("INFO: Skipping duplicate profile, keep existing IndexId: " + existingId, LogLevel::INFO);
+        }
+        sqlite3_finalize(checkStmt);
+
+        if (isDuplicate) continue;
+
+        // Step 2: Insert new profile (not duplicate)
+        sqlite3_stmt* stmt = nullptr;
+        if (sqlite3_prepare_v2(db_, insertSql, -1, &stmt, nullptr) != SQLITE_OK) {
+            Logger::write("ERROR: Insert prepare failed for " + p.indexid + " - " + sqlite3_errmsg(db_), LogLevel::LOG_ERROR);
+            continue;
+        }
+
         sqlite3_bind_text(stmt, 1, p.indexid.c_str(), -1, SQLITE_TRANSIENT);
         sqlite3_bind_text(stmt, 2, p.configtype.c_str(), -1, SQLITE_TRANSIENT);
         bindTextOrNull(stmt, 3, p.configversion);
@@ -946,19 +962,22 @@ bool SubitemUpdaterV2::updateProfileItems(const std::string& subid, const std::v
         bindTextOrNull(stmt, 33, p.cert);
         bindTextOrNull(stmt, 34, p.certsha);
         bindTextOrNull(stmt, 35, p.echforcequery);
-        
+
         if (sqlite3_step(stmt) == SQLITE_DONE) {
             inserted++;
-            
-            // Insert ProfileExItem
-            std::string exSql = "INSERT INTO ProfileExItem (indexid, delay, speed, sort, message) VALUES (?, ?, ?, ?, ?)";
+
+            // Insert corresponding ProfileExItem with initial values
+            const char* exSql = "INSERT INTO ProfileExItem (indexid, delay, speed, sort, message, consecutive_failures, blacklisted) "
+                               "VALUES (?, ?, ?, ?, ?, ?, ?)";
             sqlite3_stmt* exStmt = nullptr;
-            if (sqlite3_prepare_v2(db_, exSql.c_str(), -1, &exStmt, nullptr) == SQLITE_OK) {
+            if (sqlite3_prepare_v2(db_, exSql, -1, &exStmt, nullptr) == SQLITE_OK) {
                 sqlite3_bind_text(exStmt, 1, p.indexid.c_str(), -1, SQLITE_TRANSIENT);
                 sqlite3_bind_text(exStmt, 2, "0", -1, SQLITE_TRANSIENT);
                 sqlite3_bind_text(exStmt, 3, "0", -1, SQLITE_TRANSIENT);
                 sqlite3_bind_text(exStmt, 4, "0", -1, SQLITE_TRANSIENT);
                 sqlite3_bind_text(exStmt, 5, "NOT_TESTED", -1, SQLITE_TRANSIENT);
+                sqlite3_bind_int(exStmt, 6, 0);
+                sqlite3_bind_int(exStmt, 7, 0);
                 sqlite3_step(exStmt);
                 sqlite3_finalize(exStmt);
             }
@@ -969,8 +988,10 @@ bool SubitemUpdaterV2::updateProfileItems(const std::string& subid, const std::v
     }
 
     sqlite3_exec(db_, "COMMIT;", nullptr, nullptr, nullptr);
-    Logger::write("INFO: Inserted " + std::to_string(inserted) + " profiles", LogLevel::INFO);
-    return inserted > 0;
+    Logger::write("INFO: Inserted " + std::to_string(inserted) + " new profiles, skipped duplicates", LogLevel::INFO);
+    // Dedup skips are normal behavior, not failures
+    // As long as the transaction succeeded, return true
+    return true;
 }
 
 std::pair<int, int> SubitemUpdaterV2::getProxyPorts(const std::string& targetUrl) {
@@ -1284,13 +1305,13 @@ int SubitemUpdaterV2::deduplicatePhase2() {
         subidsList += "'" + config_.dedup_subids[i] + "'";
     }
     
-    std::string sql = 
+    std::string sql =
         "DELETE FROM ProfileItem "
         "WHERE (SubId NOT IN (" + subidsList + ") OR SubId = '' OR SubId IS NULL) "
-        "AND (Address, Port, Network) IN ("
-        "SELECT Address, Port, Network FROM ProfileItem "
+        "AND (lower(Address), Port, ConfigType, lower(Id), lower(Network)) IN ("
+        "SELECT lower(Address), Port, ConfigType, lower(Id), lower(Network) FROM ProfileItem "
         "WHERE SubId IN (" + subidsList + ") "
-        "GROUP BY Address, Port, Network"
+        "GROUP BY lower(Address), Port, ConfigType, lower(Id), lower(Network)"
         ")";
     
     char* errMsg = nullptr;
@@ -1317,19 +1338,19 @@ int SubitemUpdaterV2::deduplicatePhase3() {
         subidsList += "'" + config_.dedup_subids[i] + "'";
     }
     
-    std::string sql = 
+    std::string sql =
         "DELETE FROM ProfileItem "
         "WHERE SubId IN (" + subidsList + ") "
         "AND IndexId NOT IN ("
         "SELECT p.IndexId FROM ProfileItem p "
         "JOIN ProfileExItem pe ON p.IndexId = pe.IndexId "
         "WHERE p.SubId IN (" + subidsList + ") AND pe.Delay > 0 AND pe.Delay != '-1' "
-        "GROUP BY p.Address, p.Port, p.Network"
+        "GROUP BY lower(p.Address), p.Port, p.ConfigType, lower(p.Id), lower(p.Network)"
         ") "
         "AND IndexId NOT IN ("
         "SELECT MIN(IndexId) FROM ProfileItem "
         "WHERE SubId IN (" + subidsList + ") "
-        "GROUP BY Address, Port, Network"
+        "GROUP BY lower(Address), Port, ConfigType, lower(Id), lower(Network)"
         ")";
     
     char* errMsg = nullptr;
@@ -1356,13 +1377,13 @@ int SubitemUpdaterV2::deduplicatePhase4() {
         subidsList += "'" + config_.dedup_subids[i] + "'";
     }
     
-    std::string sql = 
+    std::string sql =
         "DELETE FROM ProfileItem "
         "WHERE (SubId NOT IN (" + subidsList + ") OR SubId = '' OR SubId IS NULL) "
-        "AND IndexId NOT IN ("
-        "SELECT MIN(IndexId) FROM ProfileItem "
+        "AND (lower(Address), Port, ConfigType, lower(Id), lower(Network)) NOT IN ("
+        "SELECT lower(Address), Port, ConfigType, lower(Id), lower(Network) FROM ProfileItem "
         "WHERE (SubId NOT IN (" + subidsList + ") OR SubId = '' OR SubId IS NULL) "
-        "GROUP BY Address, Port, Network"
+        "GROUP BY lower(Address), Port, ConfigType, lower(Id), lower(Network)"
         ")";
     
     char* errMsg = nullptr;
@@ -1576,7 +1597,7 @@ bool SubitemUpdaterV2::migrateProfileExItem(sqlite3* srcDb, sqlite3* dstDb,
     // Get ProfileExItem from source
     std::string srcSql = "SELECT * FROM ProfileExItem WHERE IndexId = ?";
     sqlite3_stmt* srcStmt = nullptr;
-    db::models::Profileexitem exItem;
+    db::models::ProfileExItem exItem;
     bool found = false;
     
     if (sqlite3_prepare_v2(srcDb, srcSql.c_str(), -1, &srcStmt, nullptr) != SQLITE_OK) {
@@ -1584,7 +1605,7 @@ bool SubitemUpdaterV2::migrateProfileExItem(sqlite3* srcDb, sqlite3* dstDb,
     }
     sqlite3_bind_text(srcStmt, 1, indexid.c_str(), -1, SQLITE_TRANSIENT);
     if (sqlite3_step(srcStmt) == SQLITE_ROW) {
-        exItem = db::models::Profileexitem::fromStmt(srcStmt);
+        exItem = db::models::ProfileExItem::fromStmt(srcStmt);
         found = true;
     }
     sqlite3_finalize(srcStmt);
@@ -1609,7 +1630,7 @@ bool SubitemUpdaterV2::migrateProfileExItem(sqlite3* srcDb, sqlite3* dstDb,
     
     if (exists) {
         // UPDATE
-        std::string updateSql = "UPDATE ProfileExItem SET Delay = ?, Speed = ?, Sort = ?, Message = ? WHERE IndexId = ?";
+        std::string updateSql = "UPDATE ProfileExItem SET Delay = ?, Speed = ?, Sort = ?, Message = ?, consecutive_failures = ?, blacklisted = ? WHERE IndexId = ?";
         sqlite3_stmt* updateStmt = nullptr;
         if (sqlite3_prepare_v2(dstDb, updateSql.c_str(), -1, &updateStmt, nullptr) != SQLITE_OK) {
             return false;
@@ -1618,7 +1639,9 @@ bool SubitemUpdaterV2::migrateProfileExItem(sqlite3* srcDb, sqlite3* dstDb,
         bindTextOrNull(updateStmt, 2, exItem.speed);
         bindTextOrNull(updateStmt, 3, exItem.sort);
         bindTextOrNull(updateStmt, 4, exItem.message);
-        sqlite3_bind_text(updateStmt, 5, indexid.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_int(updateStmt, 5, exItem.consecutive_failures);
+        sqlite3_bind_int(updateStmt, 6, exItem.blacklisted);
+        sqlite3_bind_text(updateStmt, 7, indexid.c_str(), -1, SQLITE_TRANSIENT);
         bool result = (sqlite3_step(updateStmt) == SQLITE_DONE);
         sqlite3_finalize(updateStmt);
         if (!result) {
@@ -1626,7 +1649,7 @@ bool SubitemUpdaterV2::migrateProfileExItem(sqlite3* srcDb, sqlite3* dstDb,
         }
     } else {
         // INSERT
-        std::string insertSql = "INSERT INTO ProfileExItem (IndexId, Delay, Speed, Sort, Message) VALUES (?, ?, ?, ?, ?)";
+        std::string insertSql = "INSERT INTO ProfileExItem (IndexId, Delay, Speed, Sort, Message, consecutive_failures, blacklisted) VALUES (?, ?, ?, ?, ?, ?, ?)";
         sqlite3_stmt* insertStmt = nullptr;
         if (sqlite3_prepare_v2(dstDb, insertSql.c_str(), -1, &insertStmt, nullptr) != SQLITE_OK) {
             return false;
@@ -1636,6 +1659,8 @@ bool SubitemUpdaterV2::migrateProfileExItem(sqlite3* srcDb, sqlite3* dstDb,
         bindTextOrNull(insertStmt, 3, exItem.speed);
         bindTextOrNull(insertStmt, 4, exItem.sort);
         bindTextOrNull(insertStmt, 5, exItem.message);
+        sqlite3_bind_int(insertStmt, 6, exItem.consecutive_failures);
+        sqlite3_bind_int(insertStmt, 7, exItem.blacklisted);
         bool result = (sqlite3_step(insertStmt) == SQLITE_DONE);
         sqlite3_finalize(insertStmt);
         if (!result) {

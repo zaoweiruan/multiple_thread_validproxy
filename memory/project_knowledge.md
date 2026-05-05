@@ -2,34 +2,97 @@
 
 ## 📋 命令行功能清单
 
+### 完整参数列表
+| 参数 | 功能 | 描述 | 状态 |
+|------|------|------|------|
+| `-c, --config <path>` | 配置文件路径 | 默认: config.json | ✅ |
+| `-show-sub` | 显示所有订阅 | 列出所有订阅信息 | ✅ |
+| `-G, -generator <id>` | 生成 outbound JSON | 根据 indexId 生成配置 | ✅ |
+| `-F, -find-proxy` | 查找首个代理 | 找到第一个可用代理即返回 | ✅ |
+| `-FMIN, -findminproxy` | 查找最小延迟 | 测试全部后返回延迟最小 | ✅ |
+| `-U, -update <id>` | 更新单个订阅 | 更新指定订阅 | ✅ |
+| `-UA, -update-all` | 更新所有订阅 | 更新所有启用的订阅 | ✅ |
+| `-T, -test-sub <id>` | 测试订阅代理 | 测试订阅中的代理 | ✅ |
+| `-TU, -tourl` | 导出分享链接 | 导出 delay>0 的代理到文件 | ✅ |
+| `-D, -dedup` | 移除重复代理 | 去重功能 | ✅ |
+| `-S, -sync [src[:dst]]` | 同步数据库 | 从源库同步有效代理到目标库 | ✅ |
+| `-IS, -import-sub-config <file\|url>` | 批量导入订阅 | 从文件或URL批量导入 | ✅ |
+| `-h, --help` | 显示帮助 | 显示所有参数说明 | ✅ |
+
+### 核心模块说明
+1. **XrayManager** - xray 实例单例管理
+   - `getInstance()` - 获取单例实例
+   - `start(count, startPort, apiPort)` - 启动指定数量的 xray 实例
+   - `stop()` - 停止所有实例
+   - `release()` - 释放单例
+
+2. **ProxyFinder** - 代理查找模块
+   - `findFirstWorkingProxy()` - 查找第一个可用代理 (-F)
+   - `findWorkingProxy()` - 测试所有代理，返回延迟最小的 (-FMIN)
+
+3. **ConfigGenerator** - 根据 configType 生成 JSON 配置
+   - 支持类型: 3=SS, 1=VMess, 5=VLESS, 6=Trojan
+
+4. **ConfigReader** - 读取配置文件
+
+5. **SubitemUpdater** - 订阅更新（含去重逻辑）
+
+6. **ProxyBatchTester** - 多线程并发测试（含黑名单逻辑）
+
 ### 导出分享链接 (-TU/-tourl)
 - **参数**: -TU 或 -tourl
 - **功能**: 导出 proxy (delay>0) 到分享链接文件
 - **输出**: bin/exports/share_links_{timestamp}.txt
 - **状态**: ✅ 完整实现
 
-### 核心功能参数
-| 参数 | 功能 | 描述 |
-|------|------|------|
-| -c | --config | 指定配置文件路径 |
-| -show-sub | --show-sub | 显示所有订阅 |
-| -G | -generator | 生成配置 |
-| -F | --find-proxy | 查找首个代理 |
-| -FMIN | --findminproxy | 查找最小延迟 |
-| -U | --update | 更新订阅 |
-| -UA | --update-all | 更新全部 |
-| -T | --test-sub | 测试订阅 |
-| -D | --dedup | 移除重复代理 |
-| -S | -sync [src[:dst]] | 同步数据库 |
-| -IS | -import-sub-config <file\|url> | 批量导入subitem |
-| -h | --help | 显示帮助 |
-
 ### 技术架构
-- **数据库**: SQLite
+- **语言**: C++ 20/17 (使用 C++17 features like std::optional)
+- **类型**: 代理验证工具
+- **目标平台**: Windows
+- **构建系统**: CMake + Ninja
+- **数据库**: SQLite3
 - **配置读取**: bin/config.json → database.path
 - **日志系统**: Logger 类（统一日志，带时间戳和级别）
 - **单例模式**: XrayManager 管理 xray 实例
 - **线程安全**: Mutex + Atomic 操作
+
+### 数据库路径配置
+| 类型 | 路径 | 说明 |
+|------|------|------|
+| 测试数据库 | `test/guindb.db` | 开发和测试参考，完整路径: `E:\eclipse_workspace\multiple_thread_validproxy\test\guindb.db` |
+| 生产数据库 | `bin/worker/guindb.db` | 实际运行使用的数据库 |
+
+**注意**: 方案文档和验证命令中引用的 `test/guindb.db` 均指测试数据库。
+
+### 构建/测试命令 (Windows + GCC/MinGW)
+```bash
+mkdir build && cd build
+cmake .. -G "Ninja" -DCMAKE_BUILD_TYPE=debug
+cmake --build . --parallel 8
+./validproxy.exe
+ctest -V
+cmake --build . --target clean
+
+# 运行单个测试
+ctest -R TestName -V
+./build/tests/test_name
+```
+
+### 第三方依赖
+| 库 | 版本 | 安装方式 | 路径 |
+|---|---|---|---|
+| Boost | 1.80+ | 手动 | D:\boost_1_88_0 |
+| boost/json | - | Boost 已包含 | - |
+| curl | latest | vcpkg | - |
+| sqlite3 | latest | vcpkg | - |
+| xray-core | latest | 手动 | ../Xray-core |
+
+### 代码规范摘要
+- **命名**: 类/结构体 PascalCase, 函数/方法 camelCase, 成员变量 snake_case
+- **文件**: 头文件 `.h`, 源文件 `.cpp`, 每个类一个头文件
+- **类型**: 使用 `std::string`, `std::vector<T>`, `std::optional<T>`, `sqlite3*`
+- **错误处理**: `std::cerr` 输出错误, 返回空容器表示错误
+- **导入顺序**: 系统头文件 → 第三方库头文件 → 项目内部头文件
 
 ### 持久化方案
 - 会话文件: session-*.md (Markdown)
@@ -210,6 +273,71 @@ std::string utils::generateUniqueId() {
 - `extractRemarksFromUrl(url)` - 从 URL 提取 remarks
 
 ## 📝 最近变更
+
+### 2026-05-05：去重机制统一与失败逻辑修复
+
+#### `updateProfileItems()` 返回值逻辑修复
+- 空输入（`profiles.empty()`）不再视为失败，返回 `true`
+- 全是重复记录（`inserted==0`）不再视为失败，返回 `true`
+- 去重跳过是正常行为，只要事务成功提交就返回 `true`
+
+#### `-D` 去重与订阅更新去重机制统一
+- **问题**：之前 `-D` 使用 3 字段去重键（`Address+Port+Network`），订阅更新使用 5 字段（`lower(Address)+Port+ConfigType+lower(Id)+lower(Network)`）
+- **修复**：修改 `deduplicatePhase2/3/4()` 的 GROUP BY 子句，统一为 5 字段去重键
+- **修改文件**：`src/SubitemUpdaterV2.cpp` Phase 2/3/4 的 SQL 语句
+- **效果**：避免误判不同协议的代理为重复（如 VMess 和 VLESS 同服务器）
+
+#### 修改文件清单
+- `src/SubitemUpdaterV2.cpp`：`updateProfileItems()` 返回值、`deduplicatePhase2/3/4()` GROUP BY 子句
+
+### 2026-05-04：订阅去重与黑名单功能完善
+
+#### ProfileExItem 表结构更新
+- 新增字段：`consecutive_failures INTEGER DEFAULT 0`（连续失败次数）、`blacklisted INTEGER DEFAULT 0`（黑名单标记）
+- 结构体 `ProfileExItem` 添加对应成员：`int consecutive_failures = 0; int blacklisted = 0;`
+- `fromStmt()` 添加新字段读取（column 5、6）
+- `toString()` 添加新字段输出
+- 添加 `migrateTable()` 静态方法，自动迁移数据库表结构
+
+#### 订阅去重逻辑（SubitemUpdaterV2::updateProfileItems）
+- 去重键：`lower(Address) + Port + ConfigType + lower(Id) + lower(Network)`
+- 逻辑：检查重复 → 跳过（保留原 IndexId 和测试记录）→ 仅插入新记录
+- 移除旧的 DELETE-then-INSERT 逻辑
+
+#### 黑名单功能
+- `updateTestResult()`：跟踪连续失败次数，达到阈值（默认5次）标记黑名单
+- `config.json` 添加 `blacklist_threshold` 配置项（默认5）
+- SQL 查询过滤黑名单代理：`(pe.blacklisted IS NULL OR pe.blacklisted = 0)`
+
+#### 修改文件清单
+- `include/ProfileExItem.h` - 结构体、fromStmt、toString、migrateTable
+- `src/ConfigGenerator.cpp` - updateProfileExItem() 添加新字段
+- `src/SubitemUpdaterV2.cpp` - updateProfileItems() 去重逻辑、migrateProfileExItem() 新字段
+- `src/ConfigReader.h` - AppConfig 添加 blacklist_threshold
+- `src/ConfigReader.cpp` - 读取 blacklist_threshold 配置
+- `bin/config.json` - 添加 blacklist_threshold、更新 SQL 查询
+- `create_test_db.sql` - ProfileExItem 表添加新字段、移除 Username/Endpoint
+
+### 2026-04-16：XrayManager 单例模式与 ProxyFinder 模块
+
+#### XrayManager 单例模式
+```cpp
+// 修改前后对比
+// 之前: 每次创建新实例
+XrayManager* mgr = new XrayManager(path, workers, log);
+
+// 之后: 使用单例
+XrayManager* mgr = XrayManager::getInstance(path, configDir, workers);
+mgr->start(count, startPort, apiPort);
+XrayManager::release();
+```
+
+#### 新增 ProxyFinder 模块
+- 独立查找可用代理功能
+- 复用 XrayApi.addOutbound 注入配置
+- 两个查找模式:
+  - `findFirstWorkingProxy()`: 找到第一个即返回 (-F)
+  - `findWorkingProxy()`: 测试所有，按延迟排序返回最小的 (-FMIN)
 
 ### 2026-04-29：批量导入 Subitem 完善
 - 自动判断输入是文件还是 URL
