@@ -44,7 +44,6 @@ CREATE TABLE ProfileExItem (
     Speed TEXT,
     Sort TEXT,
     Message TEXT,
-    consecutive_failures INTEGER DEFAULT 0,
-    blacklisted INTEGER DEFAULT 0
+    consecutive_failures INTEGER DEFAULT 0
 );
 INSERT INTO ProfileExItem (IndexId, Delay, Speed, Sort, Message) VALUES ('test001', '100', '0', '0', 'NOT_TESTED');

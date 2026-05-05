@@ -56,7 +56,7 @@ std::vector<db::models::ProfileExItem> ConfigGenerator::loadProfileExItems() {
 
 bool ConfigGenerator::updateProfileExItem(const db::models::ProfileExItem& exitem) {
     std::ostringstream sql;
-    sql << "INSERT OR REPLACE INTO ProfileExItem (IndexId, Delay, Speed, Sort, Message, consecutive_failures, blacklisted) VALUES (?, ?, ?, ?, ?, ?, ?)";
+    sql << "INSERT OR REPLACE INTO ProfileExItem (IndexId, Delay, Speed, Sort, Message, consecutive_failures) VALUES (?, ?, ?, ?, ?, ?)";
 
     sqlite3_stmt* stmt = nullptr;
     if (sqlite3_prepare_v2(db_, sql.str().c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
@@ -69,7 +69,6 @@ bool ConfigGenerator::updateProfileExItem(const db::models::ProfileExItem& exite
     bindTextOrNull(stmt, 4, exitem.sort);
     bindTextOrNull(stmt, 5, exitem.message);
     sqlite3_bind_int(stmt, 6, exitem.consecutive_failures);
-    sqlite3_bind_int(stmt, 7, exitem.blacklisted);
 
     bool success = sqlite3_step(stmt) == SQLITE_DONE;
     sqlite3_finalize(stmt);
