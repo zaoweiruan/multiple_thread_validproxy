@@ -967,8 +967,8 @@ bool SubitemUpdaterV2::updateProfileItems(const std::string& subid, const std::v
             inserted++;
 
             // Insert corresponding ProfileExItem with initial values
-            const char* exSql = "INSERT INTO ProfileExItem (indexid, delay, speed, sort, message, consecutive_failures, blacklisted) "
-                               "VALUES (?, ?, ?, ?, ?, ?, ?)";
+            const char* exSql = "INSERT INTO ProfileExItem (indexid, delay, speed, sort, message, consecutive_failures) "
+                               "VALUES (?, ?, ?, ?, ?, ?)";
             sqlite3_stmt* exStmt = nullptr;
             if (sqlite3_prepare_v2(db_, exSql, -1, &exStmt, nullptr) == SQLITE_OK) {
                 sqlite3_bind_text(exStmt, 1, p.indexid.c_str(), -1, SQLITE_TRANSIENT);
@@ -977,7 +977,6 @@ bool SubitemUpdaterV2::updateProfileItems(const std::string& subid, const std::v
                 sqlite3_bind_text(exStmt, 4, "0", -1, SQLITE_TRANSIENT);
                 sqlite3_bind_text(exStmt, 5, "NOT_TESTED", -1, SQLITE_TRANSIENT);
                 sqlite3_bind_int(exStmt, 6, 0);
-                sqlite3_bind_int(exStmt, 7, 0);
                 sqlite3_step(exStmt);
                 sqlite3_finalize(exStmt);
             }
@@ -1630,7 +1629,7 @@ bool SubitemUpdaterV2::migrateProfileExItem(sqlite3* srcDb, sqlite3* dstDb,
     
     if (exists) {
         // UPDATE
-        std::string updateSql = "UPDATE ProfileExItem SET Delay = ?, Speed = ?, Sort = ?, Message = ?, consecutive_failures = ?, blacklisted = ? WHERE IndexId = ?";
+        std::string updateSql = "UPDATE ProfileExItem SET Delay = ?, Speed = ?, Sort = ?, Message = ?, consecutive_failures = ? WHERE IndexId = ?";
         sqlite3_stmt* updateStmt = nullptr;
         if (sqlite3_prepare_v2(dstDb, updateSql.c_str(), -1, &updateStmt, nullptr) != SQLITE_OK) {
             return false;
@@ -1640,8 +1639,7 @@ bool SubitemUpdaterV2::migrateProfileExItem(sqlite3* srcDb, sqlite3* dstDb,
         bindTextOrNull(updateStmt, 3, exItem.sort);
         bindTextOrNull(updateStmt, 4, exItem.message);
         sqlite3_bind_int(updateStmt, 5, exItem.consecutive_failures);
-        sqlite3_bind_int(updateStmt, 6, exItem.blacklisted);
-        sqlite3_bind_text(updateStmt, 7, indexid.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(updateStmt, 6, indexid.c_str(), -1, SQLITE_TRANSIENT);
         bool result = (sqlite3_step(updateStmt) == SQLITE_DONE);
         sqlite3_finalize(updateStmt);
         if (!result) {
@@ -1649,7 +1647,7 @@ bool SubitemUpdaterV2::migrateProfileExItem(sqlite3* srcDb, sqlite3* dstDb,
         }
     } else {
         // INSERT
-        std::string insertSql = "INSERT INTO ProfileExItem (IndexId, Delay, Speed, Sort, Message, consecutive_failures, blacklisted) VALUES (?, ?, ?, ?, ?, ?, ?)";
+        std::string insertSql = "INSERT INTO ProfileExItem (IndexId, Delay, Speed, Sort, Message, consecutive_failures) VALUES (?, ?, ?, ?, ?, ?)";
         sqlite3_stmt* insertStmt = nullptr;
         if (sqlite3_prepare_v2(dstDb, insertSql.c_str(), -1, &insertStmt, nullptr) != SQLITE_OK) {
             return false;
@@ -1660,7 +1658,6 @@ bool SubitemUpdaterV2::migrateProfileExItem(sqlite3* srcDb, sqlite3* dstDb,
         bindTextOrNull(insertStmt, 4, exItem.sort);
         bindTextOrNull(insertStmt, 5, exItem.message);
         sqlite3_bind_int(insertStmt, 6, exItem.consecutive_failures);
-        sqlite3_bind_int(insertStmt, 7, exItem.blacklisted);
         bool result = (sqlite3_step(insertStmt) == SQLITE_DONE);
         sqlite3_finalize(insertStmt);
         if (!result) {
