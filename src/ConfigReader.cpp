@@ -195,6 +195,17 @@ std::optional<AppConfig> ConfigReader::load(const std::string& configPath) {
         config.notification_on_test = false;
     }
     
+    // Read sync configuration
+    if (obj.contains("sync") && obj["sync"].is_object()) {
+        auto& sync = obj["sync"].as_object();
+        if (sync.contains("source_db")) {
+            config.sync.source_db = resolvePath(sync["source_db"].as_string().c_str(), exeDir);
+        }
+        if (sync.contains("target_db")) {
+            config.sync.target_db = resolvePath(sync["target_db"].as_string().c_str(), exeDir);
+        }
+    }
+    
     // Replace placeholder {blacklist_threshold} in SQL queries
     auto replacePlaceholder = [&](std::string& sql, const std::string& placeholder, int value) {
         size_t pos = sql.find(placeholder);
