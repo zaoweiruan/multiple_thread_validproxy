@@ -195,15 +195,22 @@ std::optional<AppConfig> ConfigReader::load(const std::string& configPath) {
         config.notification_on_test = false;
     }
     
+    std::cerr << "[DEBUG] Reached sync section check, JSON has " << obj.size() << " keys" << std::endl;
+    
     // Read sync configuration
+    fprintf(stderr, "[DEBUG] Contains sync: %s\n", obj.contains("sync") ? "yes" : "no");
     if (obj.contains("sync") && obj["sync"].is_object()) {
         auto& sync = obj["sync"].as_object();
         if (sync.contains("source_db")) {
             config.sync.source_db = resolvePath(sync["source_db"].as_string().c_str(), exeDir);
+            std::cerr << "[DEBUG] sync.source_db loaded: " << config.sync.source_db << std::endl;
         }
         if (sync.contains("target_db")) {
             config.sync.target_db = resolvePath(sync["target_db"].as_string().c_str(), exeDir);
+            std::cerr << "[DEBUG] sync.target_db loaded: " << config.sync.target_db << std::endl;
         }
+    } else {
+        std::cerr << "[DEBUG] No sync section found in config" << std::endl;
     }
     
     // Replace placeholder {blacklist_threshold} in SQL queries
