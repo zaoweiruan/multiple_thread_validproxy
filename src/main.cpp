@@ -37,24 +37,12 @@ std::string syncSourceDb;
 std::string syncTargetDb;
 std::string importFilePath;
 
-std::string getTimestamp() {
-    auto now = std::chrono::system_clock::now();
-    time_t t = std::chrono::system_clock::to_time_t(now);
-    char buf[32];
-    strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", localtime(&t));
-    return std::string(buf);
-}
-
 void logInfo(const std::string& msg, LogLevel level = LogLevel::INFO) {
-    std::string mode = g_commandMode.empty() ? "main" : g_commandMode;
-    std::string output = "[" + getTimestamp() + "] [" + mode + "] " + msg;
-    Logger::write(output, level);
+    Logger::write(msg, level);
 }
 
 void logError(const std::string& msg, LogLevel level = LogLevel::LOG_ERROR) {
-    std::string mode = g_commandMode.empty() ? "main" : g_commandMode;
-    std::string output = "[" + getTimestamp() + "] [" + mode + "] " + msg;
-    Logger::write(output, level);
+    Logger::write(msg, level);
 }
 
 BOOL WINAPI consoleCtrlHandler(DWORD ctrlType) {
@@ -130,11 +118,34 @@ int main(int argc, char* argv[]) {
         } else if (arg == "-TU" || arg == "-tourl" || arg == "--tourl") {
             commandMode = "tourl";
         } else if (arg == "-S" || arg == "-sync" || arg == "--sync") {
-             commandMode = "sync";
+            commandMode = "sync";
             if (i + 1 < argc) {
                 std::string syncParam = argv[++i];
                 // Parse "source:target" or just "source"
-                size_t colonPos = syncParam.find(':');
+                // Must skip Windows drive letter colon (e.g., C:\) when searching for separator
+                size_t colonPos = std::string::npos;
+                size_t searchFrom = 0;
+                while (true) {
+                    size_t pos = syncParam.find(':', searchFrom);
+                    if (pos == std::string::npos) break;
+                    // Check if this colon is part of a Windows drive letter (e.g., C:\ or D:/)
+                    bool isDriveLetter = false;
+                    if (pos > 0) {
+                        char before = syncParam[pos - 1];
+                        bool isLetter = (before >= 'A' && before <= 'Z') || (before >= 'a' && before <= 'z');
+                        if (isLetter && pos + 1 < syncParam.length()) {
+                            char after = syncParam[pos + 1];
+                            if (after == '\\' || after == '/') {
+                                isDriveLetter = true;
+                            }
+                        }
+                    }
+                    if (!isDriveLetter) {
+                        colonPos = pos;
+                        break;
+                    }
+                    searchFrom = pos + 1;
+                }
                 if (colonPos != std::string::npos) {
                     syncSourceDb = syncParam.substr(0, colonPos);
                     syncTargetDb = syncParam.substr(colonPos + 1);
@@ -397,6 +408,10 @@ std::cout << "Usage: validproxy [options]\n"
             return 1;
         }
         
+        Logger::setFileEnabled(appConfig->log_enabled);
+        Logger::setFileLevel(Logger::stringToLevel(appConfig->log_file_level));
+        Logger::setConsoleLevel(Logger::stringToLevel(appConfig->log_console_level));
+        
         sqlite3* db = nullptr;
         curl_global_init(CURL_GLOBAL_DEFAULT);
         
@@ -483,10 +498,6 @@ std::cout << "Usage: validproxy [options]\n"
             return 1;
         }
         
-        // Debug: check sync config
-        fprintf(stderr, "[DEBUG] sync.source_db = %s\n", appConfig->sync.source_db.c_str());
-        fprintf(stderr, "[DEBUG] sync.target_db = %s\n", appConfig->sync.target_db.c_str());
-        
         // Determine source and target databases
         std::string sourceDb = !syncSourceDb.empty() ? syncSourceDb : appConfig->sync.source_db;
         std::string targetDb = !syncTargetDb.empty() ? syncTargetDb : appConfig->sync.target_db;
@@ -523,6 +534,10 @@ std::cout << "Usage: validproxy [options]\n"
                 logError("Failed to load config from: " + configPath);
                 return 1;
             }
+            
+            Logger::setFileEnabled(appConfig->log_enabled);
+            Logger::setFileLevel(Logger::stringToLevel(appConfig->log_file_level));
+            Logger::setConsoleLevel(Logger::stringToLevel(appConfig->log_console_level));
             
             if (sqlite3_open(appConfig->database_path.c_str(), &db) != SQLITE_OK) {
                 logError("Failed to open database: " + std::string(sqlite3_errmsg(db)));
@@ -627,6 +642,10 @@ std::cout << "Usage: validproxy [options]\n"
             logError("Failed to load config from: " + configPath);
             return 1;
         }
+        
+        Logger::setFileEnabled(appConfig->log_enabled);
+        Logger::setFileLevel(Logger::stringToLevel(appConfig->log_file_level));
+        Logger::setConsoleLevel(Logger::stringToLevel(appConfig->log_console_level));
         
         sqlite3* db = nullptr;
         curl_global_init(CURL_GLOBAL_DEFAULT);

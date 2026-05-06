@@ -274,6 +274,114 @@ std::string utils::generateUniqueId() {
 
 ## 📝 最近变更
 
+### 2026-05-06：修复日志双重时间戳及清理 debug 输出
+
+#### 问题
+- **双重时间戳**：`logInfo()`/`logError()` 手动添加 `[timestamp] [mode]` 前缀，然后 `Logger::write()` 又添加一次时间戳，导致日志出现重复时间戳（如 `[2026-05-06 08:43:24] [INFO] [2026-05-06 08:43:24] [sync] ...`）
+- **多余 debug 输出**：`ConfigReader.cpp` 和 `main.cpp` 中存在多处 `std::cerr`/`fprintf(stderr, ...)` debug 输出，未使用统一日志系统
+- **未使用函数**：`getTimestamp()` 函数因日志修复后不再使用，产生编译 warning
+
+#### 修复内容
+- 重写 `logInfo()`/`logError()`，移除手动时间戳和模式前缀，统一由 `Logger::write()` 处理
+- 移除 `ConfigReader.cpp` 中所有 `std::cerr` debug 输出（sync 配置读取相关）
+- 移除 `main.cpp` sync 段中的 `fprintf(stderr, "[DEBUG] ...")` 调试代码
+- 删除未使用的 `getTimestamp()` 函数
+
+#### 修改文件
+- `src/main.cpp`：`logInfo()`、`logError()` 重写，删除 `getTimestamp()`
+- `src/ConfigReader.cpp`：移除 sync 段 debug 输出
+
+#### 验证结果
+- ✅ 构建成功，无 warning
+- ✅ 日志格式正常：`[2026-05-06 08:43:24] [INFO] [sync] message`
+
+### 2026-05-06：废弃 update_subscription 和 check_auto_update_interval 字段，完善 Logger 配置
+
+#### 问题
+- **废弃字段未清理**：`update_subscription`（ConfigReader.h:21）和 `check_auto_update_interval`（ConfigReader.h:23）从未被使用，属于死代码
+  - `update_subscription`：声明但未解析
+  - `check_auto_update_interval`：已解析但从未被读取使用
+- **Logger 配置未应用**：`config.json` 中包含 `level`、`console_level`、`file_level`，但 `ConfigReader.cpp` 未解析，导致配置无效
+- **Logger::setFileEnabled() 缺失**：以下命令模式未调用 `Logger::setFileEnabled()`，导致 `log_enabled` 配置不生效：
+  - `-TU` (tourl) 模式
+  - `-IS` (import-sub) URL 分支
+  - `-T`/`-U`/`-UA` 模式
+
+#### 修复内容
+1. **废弃字段清理**：
+   - 删除 `AppConfig` 中的 `update_subscription` 和 `check_auto_update_interval` 字段
+   - 删除 `ConfigReader.cpp` 中 `check_auto_update_interval` 的解析代码（第 137-144 行）
+   - 删除 `bin/config.json` 和 `bin/worker/config.json` 中的 `update_subscription` 和 `check_auto_update_interval` 键
+
+2. **Logger 级别配置解析与应用**：
+   - `AppConfig` 新增字段：`log_level`、`log_console_level`、`log_file_level`
+   - `ConfigReader.cpp` 添加对 `log.level`、`log.console_level`、`log.file_level` 的解析
+   - `main.cpp` 中添加 `Logger::setFileLevel()` 和 `Logger::setConsoleLevel()` 调用
+
+3. **完善 Logger::setFileEnabled() 调用**：
+   - `-TU` 模式：在 `appConfig` 加载后添加调用
+   - `-IS` URL 分支：在 `appConfig` 加载后添加调用
+   - `-T`/`-U`/`-UA` 模式：在 `appConfig` 加载后添加调用
+
+#### 修改文件清单
+- `include/ConfigReader.h`：删除 2 个废弃字段，新增 3 个日志级别字段
+- `src/ConfigReader.cpp`：删除 `check_auto_update_interval` 解析，新增日志级别解析
+- `src/main.cpp`：添加 3 处 `Logger::setFileEnabled()`，应用日志级别配置
+- `bin/config.json`：删除废弃字段
+- `bin/worker/config.json`：删除废弃字段
+
+#### 验证结果
+- ✅ 构建成功（无新增 warning）
+- ✅ `update_subscription` 和 `check_auto_update_interval` 已完全移除
+- ✅ Logger 配置（`level`、`console_level`、`file_level`）现在会被解析和应用
+- ✅ 所有命令模式的 `log_enabled` 配置现在都会生效
+
+### 2026-05-06：修复 -S 参数解析 Windows 盘符冒号冲突
+
+#### 问题
+- **根因**：`-S` 参数使用 `syncParam.find(':')` 查找第一个冒号作为源/目标分隔符，但 Windows 绝对路径中的盘符（如 `E:\path`）也包含冒号
+- **错误示例**：
+  - `-S E:\source.db` → 错误解析为 source=`E`, target=`\source.db`
+  - `-S E:\s.db:E:\t.db` → 错误解析为 source=`E`, target=`\s.db:E:\t.db`
+- **后果**：`sourceDb` 或 `targetDb` 为空，触发 `Source or target database not specified` 错误
+
+#### 修复内容
+- 重写冒号查找逻辑，迭代查找所有冒号并跳过 Windows 盘符冒号（`[A-Za-z]:\` 或 `[A-Za-z]:/` 模式）
+- 仅将非盘符冒号视为源/目标分隔符
+
+#### 修改文件
+- `src/main.cpp`：修复 `-S` 参数解析逻辑（约第 120-154 行）
+
+#### 验证结果
+- ✅ 构建成功
+- ✅ `-S E:\source.db` 正确解析为 source=`E:\source.db`, target=``
+- ✅ `-S E:\s.db:E:\t.db` 正确解析为 source=`E:\s.db`, target=`E:\t.db`
+
+### 2026-05-05：修复 ConfigReader 配置解析
+
+#### 问题
+- **根本原因**：`ConfigReader::load()` 只解析 `database` 节，未解析 `xray`、`test`、`log`、`dedup`、`notification` 等节
+- **导致后果**：`config.xray_executable` 始终为空字符串，调用 `CreateProcessA()` 时参数无效（错误码 87 = ERROR_INVALID_PARAMETER）
+- **错误日志**：`ERROR: Failed to create process` + `ERROR_INVALID_PARAMETER (87)`
+
+#### 修复内容
+- 完善 `ConfigReader::load()` 函数，添加对所有配置节的解析：
+  - `xray` 节：`executable`、`workers`、`start_port`、`api_port`
+  - `test` 节：`url`、`timeout_ms`
+  - `log` 节：`enabled`、`network_failures`
+  - `subscription` 节：`priority_mode`、`check_auto_update_interval`
+  - `dedup` 节：`enabled`、`dedup_after_update`、`blacklist_threshold`、`subids`
+  - `notification` 节：`enabled`、`on_update`、`on_test`
+- 添加默认值处理（else 分支）
+
+#### 修改文件
+- `src/ConfigReader.cpp`：重写 `ConfigReader::load()` 函数
+
+#### 验证结果
+- ✅ 配置加载成功：`Config loaded successfully`
+- ✅ `xray_executable` 正确设置：`E:/v2rayN-windows-64/bin/xray/xray.exe`
+- ✅ 无 `ERROR_INVALID_PARAMETER (87)` 错误
+
 ### 2026-05-05：使用可配置阈值替代硬编码数字5
 
 #### 设计变更
