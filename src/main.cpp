@@ -483,6 +483,10 @@ std::cout << "Usage: validproxy [options]\n"
             return 1;
         }
         
+        // Debug: check sync config
+        fprintf(stderr, "[DEBUG] sync.source_db = %s\n", appConfig->sync.source_db.c_str());
+        fprintf(stderr, "[DEBUG] sync.target_db = %s\n", appConfig->sync.target_db.c_str());
+        
         // Determine source and target databases
         std::string sourceDb = !syncSourceDb.empty() ? syncSourceDb : appConfig->sync.source_db;
         std::string targetDb = !syncTargetDb.empty() ? syncTargetDb : appConfig->sync.target_db;
