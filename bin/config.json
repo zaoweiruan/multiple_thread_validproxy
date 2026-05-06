@@ -22,9 +22,7 @@
         "file_level": "LOG_ERROR"
     },
     "subscription": {
-        "priority_mode": "proxy_first",
-        "update_subscription": true,
-        "check_auto_update_interval": true
+        "priority_mode": "proxy_first"
     },
     "dedup": {
         "enabled": true,

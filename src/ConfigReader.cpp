@@ -122,9 +122,27 @@ std::optional<AppConfig> ConfigReader::load(const std::string& configPath) {
         } else {
             config.log_network_failures = false;
         }
+        if (log.contains("level")) {
+            config.log_level = log["level"].as_string().c_str();
+        } else {
+            config.log_level = "INFO";
+        }
+        if (log.contains("console_level")) {
+            config.log_console_level = log["console_level"].as_string().c_str();
+        } else {
+            config.log_console_level = "INFO";
+        }
+        if (log.contains("file_level")) {
+            config.log_file_level = log["file_level"].as_string().c_str();
+        } else {
+            config.log_file_level = "DEBUG";
+        }
     } else {
         config.log_enabled = true;
         config.log_network_failures = false;
+        config.log_level = "INFO";
+        config.log_console_level = "INFO";
+        config.log_file_level = "DEBUG";
     }
     
     if (obj.contains("subscription") && obj["subscription"].is_object()) {
@@ -134,14 +152,8 @@ std::optional<AppConfig> ConfigReader::load(const std::string& configPath) {
         } else {
             config.priority_mode = "direct_first";
         }
-        if (sub.contains("check_auto_update_interval")) {
-            config.check_auto_update_interval = sub["check_auto_update_interval"].as_bool();
-        } else {
-            config.check_auto_update_interval = false;
-        }
     } else {
         config.priority_mode = "direct_first";
-        config.check_auto_update_interval = false;
     }
     
     if (obj.contains("dedup") && obj["dedup"].is_object()) {
@@ -195,22 +207,15 @@ std::optional<AppConfig> ConfigReader::load(const std::string& configPath) {
         config.notification_on_test = false;
     }
     
-    std::cerr << "[DEBUG] Reached sync section check, JSON has " << obj.size() << " keys" << std::endl;
-    
     // Read sync configuration
-    fprintf(stderr, "[DEBUG] Contains sync: %s\n", obj.contains("sync") ? "yes" : "no");
     if (obj.contains("sync") && obj["sync"].is_object()) {
         auto& sync = obj["sync"].as_object();
         if (sync.contains("source_db")) {
             config.sync.source_db = resolvePath(sync["source_db"].as_string().c_str(), exeDir);
-            std::cerr << "[DEBUG] sync.source_db loaded: " << config.sync.source_db << std::endl;
         }
         if (sync.contains("target_db")) {
             config.sync.target_db = resolvePath(sync["target_db"].as_string().c_str(), exeDir);
-            std::cerr << "[DEBUG] sync.target_db loaded: " << config.sync.target_db << std::endl;
         }
-    } else {
-        std::cerr << "[DEBUG] No sync section found in config" << std::endl;
     }
     
     // Replace placeholder {blacklist_threshold} in SQL queries

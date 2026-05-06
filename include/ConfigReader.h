@@ -18,9 +18,10 @@ struct AppConfig {
     int test_timeout_ms;
     bool log_enabled;
     bool log_network_failures;
-    bool update_subscription;
+    std::string log_level;
+    std::string log_console_level;
+    std::string log_file_level;
     std::string priority_mode;
-    bool check_auto_update_interval;
     bool dedup_enabled;
     bool dedup_after_update;
     std::vector<std::string> dedup_subids;
