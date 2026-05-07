@@ -19,7 +19,7 @@
         "network_failures": false,
         "level": "INFO",
         "console_level": "INFO",
-        "file_level": "LOG_ERROR"
+        "file_level": "ERROR"
     },
     "subscription": {
         "priority_mode": "proxy_first"

@@ -205,6 +205,8 @@ std::cout << "Usage: validproxy [options]\n"
         }
         
         Logger::setFileEnabled(appConfig->log_enabled);
+        Logger::setFileLevel(Logger::stringToLevel(appConfig->log_file_level));
+        Logger::setConsoleLevel(Logger::stringToLevel(appConfig->log_console_level));
         
         sqlite3* db = nullptr;
         if (sqlite3_open(appConfig->database_path.c_str(), &db) != SQLITE_OK) {
@@ -253,6 +255,8 @@ std::cout << "Usage: validproxy [options]\n"
         }
         
         Logger::setFileEnabled(appConfig->log_enabled);
+        Logger::setFileLevel(Logger::stringToLevel(appConfig->log_file_level));
+        Logger::setConsoleLevel(Logger::stringToLevel(appConfig->log_console_level));
         
         sqlite3* db = nullptr;
         curl_global_init(CURL_GLOBAL_DEFAULT);
@@ -345,6 +349,8 @@ std::cout << "Usage: validproxy [options]\n"
         }
         
         Logger::setFileEnabled(appConfig->log_enabled);
+        Logger::setFileLevel(Logger::stringToLevel(appConfig->log_file_level));
+        Logger::setConsoleLevel(Logger::stringToLevel(appConfig->log_console_level));
         
         sqlite3* db = nullptr;
         curl_global_init(CURL_GLOBAL_DEFAULT);
@@ -498,6 +504,10 @@ std::cout << "Usage: validproxy [options]\n"
             return 1;
         }
         
+        Logger::setFileEnabled(appConfig->log_enabled);
+        Logger::setFileLevel(Logger::stringToLevel(appConfig->log_file_level));
+        Logger::setConsoleLevel(Logger::stringToLevel(appConfig->log_console_level));
+        
         // Determine source and target databases
         std::string sourceDb = !syncSourceDb.empty() ? syncSourceDb : appConfig->sync.source_db;
         std::string targetDb = !syncTargetDb.empty() ? syncTargetDb : appConfig->sync.target_db;
@@ -572,6 +582,8 @@ std::cout << "Usage: validproxy [options]\n"
         }
         
         Logger::setFileEnabled(appConfig->log_enabled);
+        Logger::setFileLevel(Logger::stringToLevel(appConfig->log_file_level));
+        Logger::setConsoleLevel(Logger::stringToLevel(appConfig->log_console_level));
         
         sqlite3* db = nullptr;
                 curl_global_init(CURL_GLOBAL_DEFAULT);
@@ -604,6 +616,8 @@ std::cout << "Usage: validproxy [options]\n"
         }
         
         Logger::setFileEnabled(appConfig->log_enabled);
+        Logger::setFileLevel(Logger::stringToLevel(appConfig->log_file_level));
+        Logger::setConsoleLevel(Logger::stringToLevel(appConfig->log_console_level));
         
         sqlite3* db = nullptr;
         curl_global_init(CURL_GLOBAL_DEFAULT);
@@ -714,6 +728,8 @@ std::cout << "Usage: validproxy [options]\n"
     
     Logger::init(logDir.string(), "test");
     Logger::setFileEnabled(appConfig->log_enabled);
+    Logger::setFileLevel(Logger::stringToLevel(appConfig->log_file_level));
+    Logger::setConsoleLevel(Logger::stringToLevel(appConfig->log_console_level));
     logInfo("validproxy starting...");
     logInfo("Config loaded from: " + configPath);
     logInfo("Database path: " + appConfig->database_path);
