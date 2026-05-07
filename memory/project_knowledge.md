@@ -336,6 +336,31 @@ std::string utils::generateUniqueId() {
 - ✅ Logger 配置（`level`、`console_level`、`file_level`）现在会被解析和应用
 - ✅ 所有命令模式的 `log_enabled` 配置现在都会生效
 
+### 2026-05-06：修复 LOG_ERROR 解析 bug，补全所有命令模式日志级别设置
+
+#### 问题
+- **LOG_ERROR 解析 bug**：`Logger::stringToLevel()` 将 `"LOG_ERROR"` 转为小写 `"log_error"`，但匹配的是 `"error"`，导致 `config.json` 中 `"file_level": "LOG_ERROR"` 被错误解析为 `LogLevel::INFO`
+- **日志级别未在所有模式应用**：以下命令模式未调用 `setFileLevel()` 和 `setConsoleLevel()`：
+  - `generator`、`show-sub`、`find-proxy`/`findminproxy`、`sync`、`dedup`、`import-sub` (文件分支)、`default` 模式
+- **config.json 格式问题**：`"file_level": "LOG_ERROR"` 应改为 `"ERROR"` 以匹配枚举命名
+
+#### 修复内容
+1. **修复 `stringToLevel()`**：添加对 `"log_"` 前缀的处理（如 `"log_error"` → `"error"`），同时兼容带和不带 `LOG_` 前缀的格式
+2. **补全所有命令模式日志级别设置**：在 `Logger::init()` + `setFileEnabled()` 后添加 `setFileLevel()` 和 `setConsoleLevel()` 调用
+3. **修正 config.json**：`"file_level": "LOG_ERROR"` → `"ERROR"`（`bin/config.json` 和 `bin/worker/config.json`）
+
+#### 修改文件清单
+- `src/Logger.cpp`：修复 `stringToLevel()` 函数（添加 `log_` 前缀移除逻辑）
+- `src/main.cpp`：为 `generator`、`show-sub`、`find-proxy`、`sync`、`dedup`、`import-sub`(文件)、`default` 模式添加日志级别设置
+- `bin/config.json`：修正 `file_level` 值为 `"ERROR"`
+- `bin/worker/config.json`：修正 `file_level` 值为 `"ERROR"`
+
+#### 验证结果
+- ✅ 构建成功，无 warning
+- ✅ `"LOG_ERROR"` 和 `"ERROR"` 都能正确解析为 `LogLevel::LOG_ERROR`
+- ✅ 所有 10 个命令模式都正确应用日志级别配置
+- ✅ `config.json` 中的 `file_level` 格式现已标准化
+
 ### 2026-05-06：修复 -S 参数解析 Windows 盘符冒号冲突
 
 #### 问题

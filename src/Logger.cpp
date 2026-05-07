@@ -175,6 +175,11 @@ LogLevel Logger::stringToLevel(const std::string& str) {
     std::string s = str;
     for (auto& c : s) c = std::tolower(c);
     
+    // Remove "log_" prefix if present (e.g., "log_error" → "error")
+    if (s.size() > 4 && s.substr(0, 4) == "log_") {
+        s = s.substr(4);
+    }
+    
     if (s == "trace") return LogLevel::TRACE;
     if (s == "debug") return LogLevel::DEBUG;
     if (s == "info") return LogLevel::INFO;
