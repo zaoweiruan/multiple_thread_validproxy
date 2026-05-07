@@ -201,36 +201,39 @@ std::cout << "Usage: validproxy [options]\n"
         auto appConfig = config::ConfigReader::load(configPath);
         if (!appConfig) {
             std::cerr << "Failed to load config from: " << configPath << std::endl;
+            Logger::close();
             return 1;
         }
-        
+
         Logger::setFileEnabled(appConfig->log_enabled);
         Logger::setFileLevel(Logger::stringToLevel(appConfig->log_file_level));
         Logger::setConsoleLevel(Logger::stringToLevel(appConfig->log_console_level));
-        
+
         sqlite3* db = nullptr;
         if (sqlite3_open(appConfig->database_path.c_str(), &db) != SQLITE_OK) {
             std::cerr << "Failed to open database: " << sqlite3_errmsg(db) << std::endl;
+            Logger::close();
             return 1;
         }
-        
+
         db::models::ProfileitemDAO profileDao(db);
         auto profileOpt = profileDao.getByIndexId(generatorIndexId);
-        
+
         if (!profileOpt) {
             std::cerr << "Profile not found: " << generatorIndexId << std::endl;
             sqlite3_close(db);
+            Logger::close();
             return 1;
         }
-        
+
         config::ConfigGenerator configGen(db);
         auto config = configGen.generateConfig(*profileOpt);
-        
+
         std::cout << "\n=== Generated Outbound JSON ===" << std::endl;
         std::cout << config.outbound_json << std::endl;
-        
+
         std::string outFile = (configDir / (generatorIndexId + ".json")).string();
-        
+
         std::ofstream out(outFile);
         if (out.is_open()) {
             out << config.outbound_json;
@@ -239,8 +242,9 @@ std::cout << "Usage: validproxy [options]\n"
         } else {
             std::cerr << "Failed to write file: " << outFile << std::endl;
         }
-        
+
         sqlite3_close(db);
+        Logger::close();
         return 0;
     }
     
@@ -251,6 +255,7 @@ std::cout << "Usage: validproxy [options]\n"
         auto appConfig = config::ConfigReader::load(configPath);
         if (!appConfig) {
             logError("Failed to load config from: " + configPath);
+            Logger::close();
             return 1;
         }
         
@@ -263,6 +268,8 @@ std::cout << "Usage: validproxy [options]\n"
         
         if (sqlite3_open(appConfig->database_path.c_str(), &db) != SQLITE_OK) {
             logError("Failed to open database: " + std::string(sqlite3_errmsg(db)));
+            curl_global_cleanup();
+            Logger::close();
             return 1;
         }
         
@@ -329,11 +336,9 @@ std::cout << "Usage: validproxy [options]\n"
             std::cout << std::setw(10) << type << " | " << std::setw(5) << count << " | " << desc << "\n";
         }
         
-        std::cout << "-----------+-------+-------------\n";
-        std::cout << "Total      | " << std::setw(5) << totalCount << " | All profiles\n";
-        
         sqlite3_close(db);
         curl_global_cleanup();
+        Logger::close();
         
         return 0;
     }
@@ -345,6 +350,7 @@ std::cout << "Usage: validproxy [options]\n"
         auto appConfig = config::ConfigReader::load(configPath);
         if (!appConfig) {
             logError("Failed to load config from: " + configPath);
+            Logger::close();
             return 1;
         }
         
@@ -357,6 +363,8 @@ std::cout << "Usage: validproxy [options]\n"
         
         if (sqlite3_open(appConfig->database_path.c_str(), &db) != SQLITE_OK) {
             logError("Failed to open database: " + std::string(sqlite3_errmsg(db)));
+            curl_global_cleanup();
+            Logger::close();
             return 1;
         }
         
@@ -371,6 +379,7 @@ std::cout << "Usage: validproxy [options]\n"
             logError("Failed to start xray instance");
             sqlite3_close(db);
             curl_global_cleanup();
+            Logger::close();
             return 1;
         }
         
@@ -400,6 +409,7 @@ std::cout << "Usage: validproxy [options]\n"
         
         sqlite3_close(db);
         curl_global_cleanup();
+        Logger::close();
         
         return ports.first > 0 ? 0 : 1;
     }
@@ -411,6 +421,7 @@ std::cout << "Usage: validproxy [options]\n"
         auto appConfig = config::ConfigReader::load(configPath);
         if (!appConfig) {
             logError("Failed to load config from: " + configPath);
+            Logger::close();
             return 1;
         }
         
@@ -423,6 +434,8 @@ std::cout << "Usage: validproxy [options]\n"
         
         if (sqlite3_open(appConfig->database_path.c_str(), &db) != SQLITE_OK) {
             logError("Failed to open database: " + std::string(sqlite3_errmsg(db)));
+            curl_global_cleanup();
+            Logger::close();
             return 1;
         }
         
@@ -489,11 +502,12 @@ std::cout << "Usage: validproxy [options]\n"
         
         sqlite3_close(db);
         curl_global_cleanup();
+        Logger::close();
         
         logInfo(result ? "completed" : "failed");
         return result ? 0 : 1;
     }
-
+    
     if (commandMode == "sync") {
         Logger::init(logDir.string(), commandMode);
         logInfo("validproxy starting sync...");
@@ -501,6 +515,7 @@ std::cout << "Usage: validproxy [options]\n"
         auto appConfig = config::ConfigReader::load(configPath);
         if (!appConfig) {
             logError("Failed to load config from: " + configPath);
+            Logger::close();
             return 1;
         }
         
@@ -516,6 +531,7 @@ std::cout << "Usage: validproxy [options]\n"
             logError("Source or target database not specified");
             std::cerr << "Usage: validproxy -S source.db:target.db" << std::endl;
             std::cerr << "   or: validproxy -S source.db (target from config)" << std::endl;
+            Logger::close();
             return 1;
         }
         
@@ -523,6 +539,7 @@ std::cout << "Usage: validproxy [options]\n"
         bool result = updater.syncDatabases(sourceDb, targetDb);
         
         logInfo(result ? "sync completed" : "sync failed");
+        Logger::close();
         return result ? 0 : 1;
     }
     
@@ -534,50 +551,14 @@ std::cout << "Usage: validproxy [options]\n"
         bool isUrl = (importFilePath.rfind("http://", 0) == 0 || 
                        importFilePath.rfind("https://", 0) == 0);
         
-        if (isUrl) {
-            // 直接作为单个 URL 导入
-            sqlite3* db = nullptr;
-            curl_global_init(CURL_GLOBAL_DEFAULT);
-            
-            auto appConfig = config::ConfigReader::load(configPath);
-            if (!appConfig) {
-                logError("Failed to load config from: " + configPath);
-                return 1;
-            }
-            
-            Logger::setFileEnabled(appConfig->log_enabled);
-            Logger::setFileLevel(Logger::stringToLevel(appConfig->log_file_level));
-            Logger::setConsoleLevel(Logger::stringToLevel(appConfig->log_console_level));
-            
-            if (sqlite3_open(appConfig->database_path.c_str(), &db) != SQLITE_OK) {
-                logError("Failed to open database: " + std::string(sqlite3_errmsg(db)));
-                return 1;
-            }
-            
-                update::SubitemUpdaterV2 updater(db, appConfig->xray_executable, *appConfig, 
-                                                      nullptr, exeDir);
-            bool result = updater.importSingleUrl(importFilePath);
-            
-            logInfo(result ? "import completed" : "import failed");
-            
-            sqlite3_close(db);
-            curl_global_cleanup();
-            return result ? 0 : 1;
-            
-            } else {
-                // 作为文件处理
-                // 检查文件是否存在
-                std::filesystem::path filePath(importFilePath);
-                if (!std::filesystem::exists(filePath)) {
-                    std::cerr << "Error: File not found: " << importFilePath << std::endl;
-                    Logger::write("ERROR: File not found: " + importFilePath, LogLevel::LOG_ERROR);
-                    return 1;
-                }
-                
-                // 现有文件导入逻辑
+        sqlite3* db = nullptr;
+        curl_global_init(CURL_GLOBAL_DEFAULT);
+        
         auto appConfig = config::ConfigReader::load(configPath);
         if (!appConfig) {
             logError("Failed to load config from: " + configPath);
+            curl_global_cleanup();
+            Logger::close();
             return 1;
         }
         
@@ -585,24 +566,37 @@ std::cout << "Usage: validproxy [options]\n"
         Logger::setFileLevel(Logger::stringToLevel(appConfig->log_file_level));
         Logger::setConsoleLevel(Logger::stringToLevel(appConfig->log_console_level));
         
-        sqlite3* db = nullptr;
-                curl_global_init(CURL_GLOBAL_DEFAULT);
-                
-                if (sqlite3_open(appConfig->database_path.c_str(), &db) != SQLITE_OK) {
-                    logError("Failed to open database: " + std::string(sqlite3_errmsg(db)));
-                    return 1;
-                }
-                
-            update::SubitemUpdaterV2 updater(db, appConfig->xray_executable, *appConfig, 
-                                                      nullptr, exeDir);
-                bool result = updater.importSubitemsFromFile(importFilePath);
-                
-                logInfo(result ? "import completed" : "import failed");
-                
+        if (sqlite3_open(appConfig->database_path.c_str(), &db) != SQLITE_OK) {
+            logError("Failed to open database: " + std::string(sqlite3_errmsg(db)));
+            curl_global_cleanup();
+            Logger::close();
+            return 1;
+        }
+        
+        update::SubitemUpdaterV2 updater(db, appConfig->xray_executable, *appConfig, 
+                                                          nullptr, exeDir);
+        
+        bool result = false;
+        if (isUrl) {
+            result = updater.importSingleUrl(importFilePath);
+        } else {
+            // 作为文件处理
+            std::filesystem::path filePath(importFilePath);
+            if (!std::filesystem::exists(filePath)) {
+                logError("File not found: " + importFilePath);
                 sqlite3_close(db);
                 curl_global_cleanup();
-                return result ? 0 : 1;
+                Logger::close();
+                return 1;
             }
+            result = updater.importSubitemsFromFile(importFilePath);
+        }
+        
+        logInfo(result ? "import completed" : "import failed");
+        sqlite3_close(db);
+        curl_global_cleanup();
+        Logger::close();
+        return result ? 0 : 1;
     }
     
     if (commandMode == "dedup") {
@@ -612,6 +606,7 @@ std::cout << "Usage: validproxy [options]\n"
         auto appConfig = config::ConfigReader::load(configPath);
         if (!appConfig) {
             logError("Failed to load config from: " + configPath);
+            Logger::close();
             return 1;
         }
         
@@ -624,6 +619,8 @@ std::cout << "Usage: validproxy [options]\n"
         
         if (sqlite3_open(appConfig->database_path.c_str(), &db) != SQLITE_OK) {
             logError("Failed to open database: " + std::string(sqlite3_errmsg(db)));
+            curl_global_cleanup();
+            Logger::close();
             return 1;
         }
         
@@ -642,6 +639,7 @@ std::cout << "Usage: validproxy [options]\n"
         
         sqlite3_close(db);
         curl_global_cleanup();
+        Logger::close();
         
         logInfo(result ? "completed" : "failed");
         return result ? 0 : 1;
@@ -654,6 +652,7 @@ std::cout << "Usage: validproxy [options]\n"
         auto appConfig = config::ConfigReader::load(configPath);
         if (!appConfig) {
             logError("Failed to load config from: " + configPath);
+            Logger::close();
             return 1;
         }
         
@@ -666,6 +665,8 @@ std::cout << "Usage: validproxy [options]\n"
         
         if (sqlite3_open(appConfig->database_path.c_str(), &db) != SQLITE_OK) {
             logError("Failed to open database: " + std::string(sqlite3_errmsg(db)));
+            curl_global_cleanup();
+            Logger::close();
             return 1;
         }
         
@@ -714,6 +715,7 @@ std::cout << "Usage: validproxy [options]\n"
         
         sqlite3_close(db);
         curl_global_cleanup();
+        Logger::close();
         
         logInfo(result ? "completed" : "failed");
         
@@ -723,6 +725,7 @@ std::cout << "Usage: validproxy [options]\n"
     auto appConfig = config::ConfigReader::load(configPath);
     if (!appConfig) {
         logError("Failed to load config from: " + configPath);
+        Logger::close();
         return 1;
     }
     
@@ -755,6 +758,8 @@ std::cout << "Usage: validproxy [options]\n"
 
     if (sqlite3_open(appConfig->database_path.c_str(), &db) != SQLITE_OK) {
         std::cerr << "Failed to open database: " << sqlite3_errmsg(db) << std::endl;
+        curl_global_cleanup();
+        Logger::close();
         return 1;
     }
     sqlite3_busy_timeout(db, 5000);
@@ -771,7 +776,8 @@ std::cout << "Usage: validproxy [options]\n"
     
     sqlite3_close(db);
     curl_global_cleanup();
-    
+    Logger::close();
+
     std::cout << "validproxy " << (testResult ? "finished" : "failed") << std::endl;
     return testResult ? 0 : 1;
 }
