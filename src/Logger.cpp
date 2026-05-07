@@ -132,10 +132,12 @@ void Logger::setLevel(LogLevel level) {
 }
 
 void Logger::setFileLevel(LogLevel level) {
+    std::lock_guard<std::mutex> lock(mutex_);
     fileLevel_ = level;
 }
 
 void Logger::setConsoleLevel(LogLevel level) {
+    std::lock_guard<std::mutex> lock(mutex_);
     consoleLevel_ = level;
 }
 

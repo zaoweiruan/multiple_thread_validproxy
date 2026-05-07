@@ -33,12 +33,12 @@ std::optional<AppConfig> ConfigReader::load(const std::string& configPath) {
         std::cerr << "[DEBUG] Failed to open file" << std::endl;
         return std::nullopt;
     }
-
+    
     std::stringstream buffer;
     buffer << file.rdbuf();
     std::string content = buffer.str();
     std::cerr << "[DEBUG] File read successfully, content length: " << content.length() << std::endl;
-
+    
     boost::json::value jv;
     try {
         std::cerr << "[DEBUG] About to parse JSON..." << std::endl;
@@ -48,7 +48,7 @@ std::optional<AppConfig> ConfigReader::load(const std::string& configPath) {
         std::cerr << "[DEBUG] JSON exception: " << e.what() << std::endl;
         return std::nullopt;
     }
-        
+    
     if (!jv.is_object()) {
         std::cerr << "[DEBUG] JSON is not an object" << std::endl;
         return std::nullopt;
@@ -66,13 +66,13 @@ std::optional<AppConfig> ConfigReader::load(const std::string& configPath) {
             config.database_path = resolvePath(obj["database"].as_string().c_str(), exeDir);
         } else if (obj["database"].is_object()) {
             auto& db = obj["database"].as_object();
-            if (db.contains("path")) {
+            if (db.contains("path") && db["path"].is_string()) {
                 config.database_path = resolvePath(db["path"].as_string().c_str(), exeDir);
             }
-            if (db.contains("sql")) {
+            if (db.contains("sql") && db["sql"].is_string()) {
                 config.sql_query = db["sql"].as_string().c_str();
             }
-            if (db.contains("sql_by_subid")) {
+            if (db.contains("sql_by_subid") && db["sql_by_subid"].is_string()) {
                 config.sql_by_subid = db["sql_by_subid"].as_string().c_str();
             }
         }
@@ -80,31 +80,34 @@ std::optional<AppConfig> ConfigReader::load(const std::string& configPath) {
     
     if (obj.contains("xray") && obj["xray"].is_object()) {
         auto& xray = obj["xray"].as_object();
-        if (xray.contains("executable")) {
+        if (xray.contains("executable") && xray["executable"].is_string()) {
             config.xray_executable = resolvePath(xray["executable"].as_string().c_str(), exeDir);
         }
-        if (xray.contains("workers")) {
+        if (xray.contains("workers") && xray["workers"].is_int64()) {
             config.xray_workers = static_cast<int>(xray["workers"].as_int64());
+            if (config.xray_workers <= 0) config.xray_workers = 1;
         } else {
             config.xray_workers = 1;
         }
-        if (xray.contains("start_port")) {
+        if (xray.contains("start_port") && xray["start_port"].is_int64()) {
             config.xray_start_port = static_cast<int>(xray["start_port"].as_int64());
+            if (config.xray_start_port <= 0) config.xray_start_port = 1083;
         } else {
             config.xray_start_port = 1083;
         }
-        if (xray.contains("api_port")) {
+        if (xray.contains("api_port") && xray["api_port"].is_int64()) {
             config.xray_api_port = static_cast<int>(xray["api_port"].as_int64());
         }
     }
     
     if (obj.contains("test") && obj["test"].is_object()) {
         auto& test = obj["test"].as_object();
-        if (test.contains("url")) {
+        if (test.contains("url") && test["url"].is_string()) {
             config.test_url = test["url"].as_string().c_str();
         }
-        if (test.contains("timeout_ms")) {
+        if (test.contains("timeout_ms") && test["timeout_ms"].is_int64()) {
             config.test_timeout_ms = static_cast<int>(test["timeout_ms"].as_int64());
+            if (config.test_timeout_ms <= 0) config.test_timeout_ms = 5000;
         } else {
             config.test_timeout_ms = 5000;
         }
@@ -112,27 +115,27 @@ std::optional<AppConfig> ConfigReader::load(const std::string& configPath) {
     
     if (obj.contains("log") && obj["log"].is_object()) {
         auto& log = obj["log"].as_object();
-        if (log.contains("enabled")) {
+        if (log.contains("enabled") && log["enabled"].is_bool()) {
             config.log_enabled = log["enabled"].as_bool();
         } else {
             config.log_enabled = true;
         }
-        if (log.contains("network_failures")) {
+        if (log.contains("network_failures") && log["network_failures"].is_bool()) {
             config.log_network_failures = log["network_failures"].as_bool();
         } else {
             config.log_network_failures = false;
         }
-        if (log.contains("level")) {
+        if (log.contains("level") && log["level"].is_string()) {
             config.log_level = log["level"].as_string().c_str();
         } else {
             config.log_level = "INFO";
         }
-        if (log.contains("console_level")) {
+        if (log.contains("console_level") && log["console_level"].is_string()) {
             config.log_console_level = log["console_level"].as_string().c_str();
         } else {
             config.log_console_level = "INFO";
         }
-        if (log.contains("file_level")) {
+        if (log.contains("file_level") && log["file_level"].is_string()) {
             config.log_file_level = log["file_level"].as_string().c_str();
         } else {
             config.log_file_level = "DEBUG";
@@ -147,7 +150,7 @@ std::optional<AppConfig> ConfigReader::load(const std::string& configPath) {
     
     if (obj.contains("subscription") && obj["subscription"].is_object()) {
         auto& sub = obj["subscription"].as_object();
-        if (sub.contains("priority_mode")) {
+        if (sub.contains("priority_mode") && sub["priority_mode"].is_string()) {
             config.priority_mode = sub["priority_mode"].as_string().c_str();
         } else {
             config.priority_mode = "direct_first";
@@ -158,24 +161,27 @@ std::optional<AppConfig> ConfigReader::load(const std::string& configPath) {
     
     if (obj.contains("dedup") && obj["dedup"].is_object()) {
         auto& dedup = obj["dedup"].as_object();
-        if (dedup.contains("enabled")) {
+        if (dedup.contains("enabled") && dedup["enabled"].is_bool()) {
             config.dedup_enabled = dedup["enabled"].as_bool();
         } else {
             config.dedup_enabled = false;
         }
-        if (dedup.contains("dedup_after_update")) {
+        if (dedup.contains("dedup_after_update") && dedup["dedup_after_update"].is_bool()) {
             config.dedup_after_update = dedup["dedup_after_update"].as_bool();
         } else {
             config.dedup_after_update = false;
         }
-        if (dedup.contains("blacklist_threshold")) {
+        if (dedup.contains("blacklist_threshold") && dedup["blacklist_threshold"].is_int64()) {
             config.blacklist_threshold = static_cast<int>(dedup["blacklist_threshold"].as_int64());
+            if (config.blacklist_threshold <= 0) config.blacklist_threshold = 5;
         } else {
             config.blacklist_threshold = 5;
         }
         if (dedup.contains("subids") && dedup["subids"].is_array()) {
             for (const auto& sid : dedup["subids"].as_array()) {
-                config.dedup_subids.push_back(sid.as_string().c_str());
+                if (sid.is_string()) {
+                    config.dedup_subids.push_back(sid.as_string().c_str());
+                }
             }
         }
     } else {
@@ -185,19 +191,19 @@ std::optional<AppConfig> ConfigReader::load(const std::string& configPath) {
     }
     
     if (obj.contains("notification") && obj["notification"].is_object()) {
-        auto& notif = obj["notification"].as_object();
-        if (notif.contains("enabled")) {
-            config.notification_enabled = notif["enabled"].as_bool();
+        auto& notification = obj["notification"].as_object();
+        if (notification.contains("enabled") && notification["enabled"].is_bool()) {
+            config.notification_enabled = notification["enabled"].as_bool();
         } else {
             config.notification_enabled = false;
         }
-        if (notif.contains("on_update")) {
-            config.notification_on_update = notif["on_update"].as_bool();
+        if (notification.contains("on_update") && notification["on_update"].is_bool()) {
+            config.notification_on_update = notification["on_update"].as_bool();
         } else {
             config.notification_on_update = false;
         }
-        if (notif.contains("on_test")) {
-            config.notification_on_test = notif["on_test"].as_bool();
+        if (notification.contains("on_test") && notification["on_test"].is_bool()) {
+            config.notification_on_test = notification["on_test"].as_bool();
         } else {
             config.notification_on_test = false;
         }
@@ -207,13 +213,12 @@ std::optional<AppConfig> ConfigReader::load(const std::string& configPath) {
         config.notification_on_test = false;
     }
     
-    // Read sync configuration
     if (obj.contains("sync") && obj["sync"].is_object()) {
         auto& sync = obj["sync"].as_object();
-        if (sync.contains("source_db")) {
+        if (sync.contains("source_db") && sync["source_db"].is_string()) {
             config.sync.source_db = resolvePath(sync["source_db"].as_string().c_str(), exeDir);
         }
-        if (sync.contains("target_db")) {
+        if (sync.contains("target_db") && sync["target_db"].is_string()) {
             config.sync.target_db = resolvePath(sync["target_db"].as_string().c_str(), exeDir);
         }
     }
@@ -225,7 +230,6 @@ std::optional<AppConfig> ConfigReader::load(const std::string& configPath) {
             sql.replace(pos, placeholder.length(), std::to_string(value));
         }
     };
-    
     replacePlaceholder(config.sql_query, "{blacklist_threshold}", config.blacklist_threshold);
     replacePlaceholder(config.sql_by_subid, "{blacklist_threshold}", config.blacklist_threshold);
     
