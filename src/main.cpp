@@ -39,6 +39,12 @@ std::string importFilePath;
 
 class CurlGlobalGuard {
 public:
+    CurlGlobalGuard() {
+        curl_global_init(CURL_GLOBAL_ALL);
+    }
+    ~CurlGlobalGuard() {
+        curl_global_cleanup();
+    }
 };
 
 void logInfo(const std::string& msg, LogLevel level = LogLevel::INFO) {
@@ -64,6 +70,7 @@ BOOL WINAPI consoleCtrlHandler(DWORD ctrlType) {
 
 int main(int argc, char* argv[]) {
     SetConsoleCtrlHandler(consoleCtrlHandler, TRUE);
+    CurlGlobalGuard curlGuard;  // RAII guard for curl global init/cleanup
     
     std::string exeDir = utils::getExecutableDir();
     

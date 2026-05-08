@@ -7,6 +7,7 @@
 #include "PortManager.h"
 #include "Utils.h"
 #include "Logger.h"
+#include "CurlEasyHandle.h"
 
 #include <curl/curl.h>
 #include <chrono>
@@ -356,54 +357,46 @@ bool SubitemUpdaterV2::updateWithStrategy(const std::string& subUrl, const std::
 }
 
 std::string SubitemUpdaterV2::fetchUrl(const std::string& url) {
-    CURL* curl = curl_easy_init();
-    if (!curl) return "";
+    try {
+        std::string response;
+        CurlEasyHandle curl;
+        curl.setUrl(url)
+            .setWriteCallback(CurlEasyHandle::writeCallback, &response)
+            .setFollowLocation()
+            .setTimeoutSec(30)
+            .setSslVerifyPeer(false)
+            .setSslVerifyHost(false);
 
-    std::string response;
-    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
-    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
-    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
-    curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 30L);
-    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
-    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L);
+        curl.perform();
+        return response;
 
-    CURLcode res = curl_easy_perform(curl);
-    curl_easy_cleanup(curl);
-
-    if (res != CURLE_OK) {
-        Logger::write("ERROR: fetchUrl failed - " + std::string(curl_easy_strerror(res)), LogLevel::ERR);
+    } catch (const std::exception& e) {
+        Logger::write("ERROR: fetchUrl failed - " + std::string(e.what()), LogLevel::ERR);
         return "";
     }
-
-    return response;
 }
 
 std::string SubitemUpdaterV2::fetchUrlViaProxy(const std::string& url, int socksPort) {
-    CURL* curl = curl_easy_init();
-    if (!curl) return "";
+    try {
+        std::string response;
+        CurlEasyHandle curl;
+        std::string proxyStr = "socks5h://127.0.0.1:" + std::to_string(socksPort);
+        
+        curl.setProxy(proxyStr)
+            .setUrl(url)
+            .setWriteCallback(CurlEasyHandle::writeCallback, &response)
+            .setFollowLocation()
+            .setTimeoutSec(30)
+            .setSslVerifyPeer(false)
+            .setSslVerifyHost(false);
 
-    std::string response;
-    std::string proxyStr = "socks5h://127.0.0.1:" + std::to_string(socksPort);
+        curl.perform();
+        return response;
 
-    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
-    curl_easy_setopt(curl, CURLOPT_PROXY, proxyStr.c_str());
-    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
-    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
-    curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 30L);
-    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
-    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L);
-
-    CURLcode res = curl_easy_perform(curl);
-    curl_easy_cleanup(curl);
-
-    if (res != CURLE_OK) {
-        Logger::write("ERROR: fetchUrlViaProxy failed - " + std::string(curl_easy_strerror(res)), LogLevel::ERR);
+    } catch (const std::exception& e) {
+        Logger::write("ERROR: fetchUrlViaProxy failed - " + std::string(e.what()), LogLevel::ERR);
         return "";
     }
-
-    return response;
 }
 
 std::vector<db::models::Profileitem> SubitemUpdaterV2::parseSubscription(const std::string& content, const std::string& subid) {
