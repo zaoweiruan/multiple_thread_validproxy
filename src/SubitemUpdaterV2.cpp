@@ -54,6 +54,7 @@ namespace {
         
         sqlite3_stmt* stmt = nullptr;
         if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
+            Logger::write("ERROR: insertSubItem prepare failed: " + std::string(sqlite3_errmsg(db)), LogLevel::ERR);
             return false;
         }
         
@@ -77,6 +78,9 @@ namespace {
         bindTextOrNull(stmt, 15, subitem.memo);
         
         bool success = (sqlite3_step(stmt) == SQLITE_DONE);
+        if (!success) {
+            Logger::write("ERROR: insertSubItem failed for id=" + subitem.id + ": " + std::string(sqlite3_errmsg(db)), LogLevel::ERR);
+        }
         sqlite3_finalize(stmt);
         return success;
     }
@@ -163,13 +167,13 @@ bool SubitemUpdaterV2::run() {
                 } else {
                     directFailCount++;
                     failedSubs.push_back({sub.id, sub.remarks, sub.url});
-                    Logger::write("ERROR: Parse failed: " + sub.id, LogLevel::LOG_ERROR);
+                    Logger::write("ERROR: Parse failed: " + sub.id, LogLevel::ERR);
                 }
             } else {
                 Logger::write("WARN: Direct connection failed", LogLevel::WARN);
                 directFailCount++;
                 failedSubs.push_back({sub.id, sub.remarks, sub.url});
-                Logger::write("ERROR: Failed to update: " + sub.id, LogLevel::LOG_ERROR);
+                Logger::write("ERROR: Failed to update: " + sub.id, LogLevel::ERR);
             }
         }
     } else if (runProxyPhase) {
@@ -202,13 +206,13 @@ bool SubitemUpdaterV2::run() {
                 } else {
                     proxyFailCount++;
                     stillFailedSubs.push_back(sub);
-                    Logger::write("ERROR: Parse failed: " + std::get<0>(sub), LogLevel::LOG_ERROR);
+                    Logger::write("ERROR: Parse failed: " + std::get<0>(sub), LogLevel::ERR);
                 }
             } else {
                 Logger::write("WARN: Proxy connection failed", LogLevel::WARN);
                 proxyFailCount++;
                 stillFailedSubs.push_back(sub);
-                Logger::write("ERROR: Failed to update: " + std::get<0>(sub), LogLevel::LOG_ERROR);
+                Logger::write("ERROR: Failed to update: " + std::get<0>(sub), LogLevel::ERR);
             }
         }
         failedSubs = stillFailedSubs;
@@ -247,13 +251,13 @@ bool SubitemUpdaterV2::runSingle(const std::string& subId) {
 
     auto optSub = getSubscription(subId);
     if (!optSub) {
-        Logger::write("ERROR: Subscription not found: " + subId, LogLevel::LOG_ERROR);
+        Logger::write("ERROR: Subscription not found: " + subId, LogLevel::ERR);
         return false;
     }
     const auto& sub = *optSub;
 
     if (sub.enabled != "1") {
-        Logger::write("ERROR: Subscription is disabled: " + subId, LogLevel::LOG_ERROR);
+        Logger::write("ERROR: Subscription is disabled: " + subId, LogLevel::ERR);
         return false;
     }
 
@@ -275,19 +279,19 @@ bool SubitemUpdaterV2::runSingleWithProxy(const std::string& subId, int socksPor
 
     auto optSub = getSubscription(subId);
     if (!optSub) {
-        Logger::write("ERROR: Subscription not found: " + subId, LogLevel::LOG_ERROR);
+        Logger::write("ERROR: Subscription not found: " + subId, LogLevel::ERR);
         return false;
     }
     const auto& sub = *optSub;
 
     if (sub.enabled != "1") {
-        Logger::write("ERROR: Subscription is disabled: " + subId, LogLevel::LOG_ERROR);
+        Logger::write("ERROR: Subscription is disabled: " + subId, LogLevel::ERR);
         return false;
     }
 
     std::string content = fetchUrlViaProxy(sub.url, socksPort);
     if (content.empty()) {
-        Logger::write("ERROR: Failed to fetch via proxy", LogLevel::LOG_ERROR);
+        Logger::write("ERROR: Failed to fetch via proxy", LogLevel::ERR);
         return false;
     }
 
@@ -299,7 +303,7 @@ std::optional<db::models::Subitem> SubitemUpdaterV2::getSubscription(const std::
     std::string sql = "SELECT * FROM SubItem WHERE Id = '" + subId + "';";
     sqlite3_stmt* stmt = nullptr;
     if (sqlite3_prepare_v2(db_, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
-        Logger::write("ERROR: SQL prepare failed - " + std::string(sqlite3_errmsg(db_)), LogLevel::LOG_ERROR);
+        Logger::write("ERROR: SQL prepare failed - " + std::string(sqlite3_errmsg(db_)), LogLevel::ERR);
         return std::nullopt;
     }
 
@@ -368,7 +372,7 @@ std::string SubitemUpdaterV2::fetchUrl(const std::string& url) {
     curl_easy_cleanup(curl);
 
     if (res != CURLE_OK) {
-        Logger::write("ERROR: fetchUrl failed - " + std::string(curl_easy_strerror(res)), LogLevel::LOG_ERROR);
+        Logger::write("ERROR: fetchUrl failed - " + std::string(curl_easy_strerror(res)), LogLevel::ERR);
         return "";
     }
 
@@ -395,7 +399,7 @@ std::string SubitemUpdaterV2::fetchUrlViaProxy(const std::string& url, int socks
     curl_easy_cleanup(curl);
 
     if (res != CURLE_OK) {
-        Logger::write("ERROR: fetchUrlViaProxy failed - " + std::string(curl_easy_strerror(res)), LogLevel::LOG_ERROR);
+        Logger::write("ERROR: fetchUrlViaProxy failed - " + std::string(curl_easy_strerror(res)), LogLevel::ERR);
         return "";
     }
 
@@ -901,7 +905,7 @@ bool SubitemUpdaterV2::updateProfileItems(const std::string& subid, const std::v
         // Step 1: Check for existing duplicate
         sqlite3_stmt* checkStmt = nullptr;
         if (sqlite3_prepare_v2(db_, dedupSql, -1, &checkStmt, nullptr) != SQLITE_OK) {
-            Logger::write("ERROR: Dedup check prepare failed for " + p.indexid + " - " + sqlite3_errmsg(db_), LogLevel::LOG_ERROR);
+            Logger::write("ERROR: Dedup check prepare failed for " + p.indexid + " - " + sqlite3_errmsg(db_), LogLevel::ERR);
             continue;
         }
 
@@ -923,7 +927,7 @@ bool SubitemUpdaterV2::updateProfileItems(const std::string& subid, const std::v
         // Step 2: Insert new profile (not duplicate)
         sqlite3_stmt* stmt = nullptr;
         if (sqlite3_prepare_v2(db_, insertSql, -1, &stmt, nullptr) != SQLITE_OK) {
-            Logger::write("ERROR: Insert prepare failed for " + p.indexid + " - " + sqlite3_errmsg(db_), LogLevel::LOG_ERROR);
+            Logger::write("ERROR: Insert prepare failed for " + p.indexid + " - " + sqlite3_errmsg(db_), LogLevel::ERR);
             continue;
         }
 
@@ -981,7 +985,7 @@ bool SubitemUpdaterV2::updateProfileItems(const std::string& subid, const std::v
                 sqlite3_finalize(exStmt);
             }
         } else {
-            Logger::write("ERROR: Insert failed for " + p.indexid + " - " + sqlite3_errmsg(db_), LogLevel::LOG_ERROR);
+            Logger::write("ERROR: Insert failed for " + p.indexid + " - " + sqlite3_errmsg(db_), LogLevel::ERR);
         }
         sqlite3_finalize(stmt);
     }
@@ -1001,7 +1005,7 @@ std::pair<int, int> SubitemUpdaterV2::getProxyPorts(const std::string& targetUrl
 
     int started = xrayMgr_->start(1, config_.xray_start_port, config_.xray_api_port);
     if (started == 0) {
-        Logger::write("ERROR: Failed to start xray instance", LogLevel::LOG_ERROR);
+        Logger::write("ERROR: Failed to start xray instance", LogLevel::ERR);
         XrayManager::release();
         xrayMgr_ = nullptr;
         return {-1, -1};
@@ -1209,7 +1213,7 @@ int SubitemUpdaterV2::deduplicatePhase0() {
     
     char* errMsg = nullptr;
     if (sqlite3_exec(db_, sql.c_str(), nullptr, nullptr, &errMsg) != SQLITE_OK) {
-        Logger::write("ERROR: Phase0 update failed - " + std::string(errMsg), LogLevel::LOG_ERROR);
+        Logger::write("ERROR: Phase0 update failed - " + std::string(errMsg), LogLevel::ERR);
         sqlite3_free(errMsg);
         return 0;
     }
@@ -1222,7 +1226,7 @@ int SubitemUpdaterV2::deduplicatePhase0() {
         sql = "UPDATE ProfileItem SET SubId = '" + fallbackSubId + "' WHERE SubId = '" + protectedSubId + "' AND IndexId IN (SELECT pi.IndexId FROM ProfileItem pi JOIN ProfileExItem pe ON pi.IndexId = pe.IndexId WHERE pe.Delay <= 0 OR pe.Delay = '-1')";
         
         if (sqlite3_exec(db_, sql.c_str(), nullptr, nullptr, &errMsg) != SQLITE_OK) {
-            Logger::write("ERROR: Phase0 fallback update failed - " + std::string(errMsg), LogLevel::LOG_ERROR);
+            Logger::write("ERROR: Phase0 fallback update failed - " + std::string(errMsg), LogLevel::ERR);
             sqlite3_free(errMsg);
             return updated;
         }
@@ -1265,8 +1269,8 @@ int SubitemUpdaterV2::deduplicatePhase1() {
     
     char* errMsg = nullptr;
     if (sqlite3_exec(db_, sql.c_str(), nullptr, nullptr, &errMsg) != SQLITE_OK) {
-        Logger::write("ERROR: Phase1 dedup failed - " + std::string(errMsg), LogLevel::LOG_ERROR);
-        Logger::write("ERROR: SQL: " + sql, LogLevel::LOG_ERROR);
+        Logger::write("ERROR: Phase1 dedup failed - " + std::string(errMsg), LogLevel::ERR);
+        Logger::write("ERROR: SQL: " + sql, LogLevel::ERR);
         sqlite3_free(errMsg);
         return 0;
     }
@@ -1281,7 +1285,7 @@ int SubitemUpdaterV2::deduplicatePhase1() {
         
         char* errMsg2 = nullptr;
         if (sqlite3_exec(db_, sql2.c_str(), nullptr, nullptr, &errMsg2) != SQLITE_OK) {
-            Logger::write("ERROR: Phase1b dedup failed - " + std::string(errMsg2), LogLevel::LOG_ERROR);
+            Logger::write("ERROR: Phase1b dedup failed - " + std::string(errMsg2), LogLevel::ERR);
             sqlite3_free(errMsg2);
         } else {
             int deleted2 = sqlite3_changes(db_);
@@ -1315,7 +1319,7 @@ int SubitemUpdaterV2::deduplicatePhase2() {
     
     char* errMsg = nullptr;
     if (sqlite3_exec(db_, sql.c_str(), nullptr, nullptr, &errMsg) != SQLITE_OK) {
-        Logger::write("ERROR: Phase2 dedup failed - " + std::string(errMsg), LogLevel::LOG_ERROR);
+        Logger::write("ERROR: Phase2 dedup failed - " + std::string(errMsg), LogLevel::ERR);
         sqlite3_free(errMsg);
         return 0;
     }
@@ -1354,7 +1358,7 @@ int SubitemUpdaterV2::deduplicatePhase3() {
     
     char* errMsg = nullptr;
     if (sqlite3_exec(db_, sql.c_str(), nullptr, nullptr, &errMsg) != SQLITE_OK) {
-        Logger::write("ERROR: Phase3 dedup failed - " + std::string(errMsg), LogLevel::LOG_ERROR);
+        Logger::write("ERROR: Phase3 dedup failed - " + std::string(errMsg), LogLevel::ERR);
         sqlite3_free(errMsg);
         return 0;
     }
@@ -1387,7 +1391,7 @@ int SubitemUpdaterV2::deduplicatePhase4() {
     
     char* errMsg = nullptr;
     if (sqlite3_exec(db_, sql.c_str(), nullptr, nullptr, &errMsg) != SQLITE_OK) {
-        Logger::write("ERROR: Phase4 dedup failed - " + std::string(errMsg), LogLevel::LOG_ERROR);
+        Logger::write("ERROR: Phase4 dedup failed - " + std::string(errMsg), LogLevel::ERR);
         sqlite3_free(errMsg);
         return 0;
     }
@@ -1402,7 +1406,7 @@ void SubitemUpdaterV2::cleanupProfileExItem() {
     
     char* errMsg = nullptr;
     if (sqlite3_exec(db_, sql.c_str(), nullptr, nullptr, &errMsg) != SQLITE_OK) {
-        Logger::write("ERROR: ProfileExItem cleanup failed - " + std::string(errMsg), LogLevel::LOG_ERROR);
+        Logger::write("ERROR: ProfileExItem cleanup failed - " + std::string(errMsg), LogLevel::ERR);
         sqlite3_free(errMsg);
         return;
     }
@@ -1423,6 +1427,7 @@ bool SubitemUpdaterV2::migrateSubscription(sqlite3* srcDb, sqlite3* dstDb,
     bool exists = false;
     
     if (sqlite3_prepare_v2(dstDb, checkSql.c_str(), -1, &checkStmt, nullptr) != SQLITE_OK) {
+        Logger::write("ERROR: Check prepare failed: " + std::string(sqlite3_errmsg(dstDb)), LogLevel::ERR);
         return false;
     }
     sqlite3_bind_text(checkStmt, 1, subid.c_str(), -1, SQLITE_TRANSIENT);
@@ -1446,9 +1451,10 @@ bool SubitemUpdaterV2::migrateSubscription(sqlite3* srcDb, sqlite3* dstDb,
             subitem = db::models::Subitem::fromStmt(srcStmt);
         }
         sqlite3_finalize(srcStmt);
-} else {
-    return false;
-}
+    } else {
+        Logger::write("ERROR: migrateSubscription prepare failed for src: " + std::string(sqlite3_errmsg(srcDb)), LogLevel::ERR);
+        return false;
+    }
 
     if (subitem.id.empty()) {
         return false; // No valid subscription found
@@ -1534,10 +1540,11 @@ bool SubitemUpdaterV2::migrateProxy(sqlite3* srcDb, sqlite3* dstDb,
         return result;
     } else {
         // INSERT new proxy
-        std::string insertSql = "INSERT INTO ProfileItem (IndexId, ConfigType, ConfigVersion, Address, Port, Ports, Id, AlterId, Security, Network, Remarks, HeaderType, RequestHost, Path, StreamSecurity, AllowInsecure, SubId, IsSub, Flow, Sni, Alpn, CoreType, PreSocksPort, Fingerprint, DisplayLog, PublicKey, ShortId, SpiderX, Mldsa65Verify, Extra, MuxEnabled, Cert, CertSha, EchConfigList, EchForceQuery) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+        std::string insertSql = "INSERT INTO ProfileItem (IndexId, ConfigType, ConfigVersion, Address, Port, Ports, Id, AlterId, Security, Network, Remarks, HeaderType, RequestHost, Path, StreamSecurity, AllowInsecure, SubId, IsSub, Flow, Sni, Alpn, CoreType, PreSocksPort, Fingerprint, DisplayLog, PublicKey, ShortId, SpiderX, Mldsa65Verify, Extra, MuxEnabled, Cert, CertSha, EchConfigList, EchForceQuery) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
         
         sqlite3_stmt* insertStmt = nullptr;
         if (sqlite3_prepare_v2(dstDb, insertSql.c_str(), -1, &insertStmt, nullptr) != SQLITE_OK) {
+            Logger::write("ERROR: INSERT prepare failed for proxy " + proxy.indexid + ": " + std::string(sqlite3_errmsg(dstDb)), LogLevel::ERR);
             return false;
         }
         
@@ -1584,6 +1591,7 @@ bool SubitemUpdaterV2::migrateProxy(sqlite3* srcDb, sqlite3* dstDb,
         // Insert ProfileExItem
         bool exResult = migrateProfileExItem(srcDb, dstDb, proxy.indexid);
         if (!exResult) {
+            Logger::write("ERROR: migrateProfileExItem failed for proxy " + proxy.indexid, LogLevel::ERR);
             return false;
         }
         
@@ -1673,15 +1681,15 @@ bool SubitemUpdaterV2::syncDatabases(const std::string& sourceDbPath,
     sqlite3* dstDb = nullptr;
     
     // 0. Check if source and target are the same database
-    std::cout << "========================================" << std::endl;
-    std::cout << "Proxy Database Sync" << std::endl;
-    std::cout << "========================================" << std::endl;
-    std::cout << "Source:  " << sourceDbPath << std::endl;
-    std::cout << "Target:  " << targetDbPath << std::endl;
-    std::cout << "========================================" << std::endl;
+    Logger::write("========================================", LogLevel::INFO);
+    Logger::write("INFO: Proxy Database Sync", LogLevel::INFO);
+    Logger::write("========================================", LogLevel::INFO);
+    Logger::write("INFO: Source: " + sourceDbPath, LogLevel::INFO);
+    Logger::write("INFO: Target: " + targetDbPath, LogLevel::INFO);
+    Logger::write("========================================", LogLevel::INFO);
     if (sourceDbPath == targetDbPath) {
-        std::cerr << "Error: Source and target databases are the same: " << sourceDbPath << std::endl;
-        std::cerr << "Please specify different databases for sync." << std::endl;
+        Logger::write("ERROR: Error: Source and target databases are the same: " + sourceDbPath, LogLevel::ERR);
+        Logger::write("ERROR: Please specify different databases for sync.", LogLevel::ERR);
         return false;
     }
     
@@ -1943,7 +1951,7 @@ bool SubitemUpdaterV2::importSubitemsFromFile(const std::string& filePath,
     // Open file
     std::ifstream file(filePath);
     if (!file.is_open()) {
-        Logger::write("ERROR: Cannot open file: " + filePath, LogLevel::LOG_ERROR);
+        Logger::write("ERROR: Cannot open file: " + filePath, LogLevel::ERR);
         return false;
     }
     
@@ -1991,7 +1999,7 @@ bool SubitemUpdaterV2::importSubitemsFromFile(const std::string& filePath,
         if (!isValidUrlFormat(url)) {
             failedCount++;
             failedList.push_back(url + " (invalid format - no valid domain)");
-            Logger::write("ERROR: Invalid URL format: " + url, LogLevel::LOG_ERROR);
+            Logger::write("ERROR: Invalid URL format: " + url, LogLevel::ERR);
             continue;
         }
         
@@ -2029,7 +2037,7 @@ bool SubitemUpdaterV2::importSubitemsFromFile(const std::string& filePath,
         } else {
             failedCount++;
             failedList.push_back(url + " (database insert failed)");
-            Logger::write("ERROR: Failed to insert: " + url, LogLevel::LOG_ERROR);
+            Logger::write("ERROR: Failed to insert: " + url, LogLevel::ERR);
         }
     }
     
@@ -2082,7 +2090,7 @@ bool SubitemUpdaterV2::importSingleUrl(const std::string& url) {
     
     // 1. Validate URL format
     if (!isValidUrlFormat(url)) {
-        Logger::write("ERROR: Invalid URL format: " + url, LogLevel::LOG_ERROR);
+        Logger::write("ERROR: Invalid URL format: " + url, LogLevel::ERR);
         Logger::write("========================================");
         Logger::write("Import Summary: Success=0, Skipped=0, Failed=1");
         Logger::write("========================================");
@@ -2127,7 +2135,7 @@ bool SubitemUpdaterV2::importSingleUrl(const std::string& url) {
         Logger::write("========================================");
         return true;
     } else {
-        Logger::write("ERROR: Failed to insert: " + url, LogLevel::LOG_ERROR);
+        Logger::write("ERROR: Failed to insert: " + url, LogLevel::ERR);
         Logger::write("========================================");
         Logger::write("Import Summary: Success=0, Skipped=0, Failed=1");
         Logger::write("========================================");
