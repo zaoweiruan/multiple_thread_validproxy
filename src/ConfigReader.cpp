@@ -5,6 +5,7 @@
 #include <windows.h>
 #include <boost/json.hpp>
 
+#include "Logger.h"
 #include "ConfigReader.h"
 #include "Utils.h"
 
@@ -27,39 +28,39 @@ std::string ConfigReader::getDefaultConfigPath() {
 }
 
 std::optional<AppConfig> ConfigReader::load(const std::string& configPath) {
-    std::cerr << "[DEBUG] Loading config from: " << configPath << std::endl;
+    Logger::write("DEBUG: Loading config from: " + configPath, LogLevel::DEBUG);
     std::ifstream file(configPath);
     if (!file.is_open()) {
-        std::cerr << "[DEBUG] Failed to open file" << std::endl;
+        Logger::write("DEBUG: Failed to open file", LogLevel::DEBUG);
         return std::nullopt;
     }
-    
+
     std::stringstream buffer;
     buffer << file.rdbuf();
     std::string content = buffer.str();
-    std::cerr << "[DEBUG] File read successfully, content length: " << content.length() << std::endl;
-    
+    Logger::write("DEBUG: File read successfully, content length: " + std::to_string(content.length()), LogLevel::DEBUG);
+
     boost::json::value jv;
     try {
-        std::cerr << "[DEBUG] About to parse JSON..." << std::endl;
+        Logger::write("DEBUG: About to parse JSON...", LogLevel::DEBUG);
         jv = boost::json::parse(content);
-        std::cerr << "[DEBUG] JSON parsed successfully, is_object: " << jv.is_object() << std::endl;
+        Logger::write("DEBUG: JSON parsed successfully, is_object: " + std::to_string(jv.is_object()), LogLevel::DEBUG);
     } catch (const std::exception& e) {
-        std::cerr << "[DEBUG] JSON exception: " << e.what() << std::endl;
+        Logger::write("DEBUG: JSON exception: " + std::string(e.what()), LogLevel::DEBUG);
         return std::nullopt;
     }
-    
+
     if (!jv.is_object()) {
-        std::cerr << "[DEBUG] JSON is not an object" << std::endl;
+        Logger::write("DEBUG: JSON is not an object", LogLevel::DEBUG);
         return std::nullopt;
     }
-    
+
     std::string exeDir = utils::getExecutableDir();
     
     AppConfig config;
     
     auto& obj = jv.as_object();
-    std::cerr << "[DEBUG] JSON object has " << obj.size() << " keys" << std::endl;
+    Logger::write("DEBUG: JSON object has " + std::to_string(obj.size()) + " keys", LogLevel::DEBUG);
     
     if (obj.contains("database")) {
         if (obj["database"].is_string()) {
@@ -236,12 +237,12 @@ std::optional<AppConfig> ConfigReader::load(const std::string& configPath) {
     if (!config.database_path.empty()) {
         std::filesystem::path dbPath(config.database_path);
         if (!std::filesystem::exists(dbPath)) {
-            std::cerr << "[ERROR] Database file not found: " << config.database_path << std::endl;
+            Logger::write("ERROR: Database file not found: " + config.database_path, LogLevel::ERR);
             return std::nullopt;
         }
     }
     
-    std::cerr << "[DEBUG] Config loaded successfully" << std::endl;
+    Logger::write("DEBUG: Config loaded successfully", LogLevel::DEBUG);
     return config;
 }
 
