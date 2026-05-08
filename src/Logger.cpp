@@ -127,6 +127,7 @@ std::string Logger::getPrefix() {
 }
 
 void Logger::setLevel(LogLevel level) {
+    std::lock_guard<std::mutex> lock(mutex_);
     fileLevel_ = level;
     consoleLevel_ = level;
 }
@@ -168,7 +169,7 @@ std::string Logger::levelToString(LogLevel level) {
         case LogLevel::DEBUG: return "DEBUG";
         case LogLevel::INFO:  return "INFO";
         case LogLevel::WARN:  return "WARN";
-        case LogLevel::LOG_ERROR: return "ERROR";
+        case LogLevel::ERR: return "ERROR";
         default: return "INFO";
     }
 }
@@ -186,7 +187,7 @@ LogLevel Logger::stringToLevel(const std::string& str) {
     if (s == "debug") return LogLevel::DEBUG;
     if (s == "info") return LogLevel::INFO;
     if (s == "warn" || s == "warning") return LogLevel::WARN;
-    if (s == "error") return LogLevel::LOG_ERROR;
+    if (s == "error") return LogLevel::ERR;
     return LogLevel::INFO;
 }
 
