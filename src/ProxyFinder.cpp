@@ -6,6 +6,7 @@
 #include "Profileitem.h"
 #include "ProfileExItem.h"
 #include "Logger.h"
+#include "CurlEasyHandle.h"
 #include <iostream>
 #include <thread>
 #include <chrono>
@@ -188,35 +189,30 @@ ProxyFinder::TestResult ProxyFinder::testProxyConnectivity(int socksPort, const 
     
     std::string urlToTest = targetUrl.empty() ? testUrl_ : targetUrl;
     
-    CURL* curl = curl_easy_init();
-    if (!curl) {
-        result.errorMsg = "curl_init_failed";
-        return result;
-    }
-    
-    std::string proxyUrl = "http://127.0.0.1:" + std::to_string(socksPort);
-    curl_easy_setopt(curl, CURLOPT_PROXY, proxyUrl.c_str());
-    curl_easy_setopt(curl, CURLOPT_URL, urlToTest.c_str());
-    curl_easy_setopt(curl, CURLOPT_NOBODY, 1L);
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, timeoutMs_);
-    curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
-    
-    CURLcode res = curl_easy_perform(curl);
-    
-    double totalTime = 0;
-    curl_easy_getinfo(curl, CURLINFO_TOTAL_TIME, &totalTime);
-    result.latencyMs = static_cast<long>(totalTime * 1000);
-    
-    long responseCode = 0;
-    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &responseCode);
-    curl_easy_cleanup(curl);
-    
-    if (res != CURLE_OK) {
-        result.errorMsg = curl_easy_strerror(res);
-    } else if (responseCode != 200 && responseCode != 204) {
-        result.errorMsg = "HTTP " + std::to_string(responseCode);
-    } else {
-        result.success = true;
+    try {
+        CurlEasyHandle curl;
+        
+        std::string proxyUrl = "http://127.0.0.1:" + std::to_string(socksPort);
+        curl.setProxy(proxyUrl)
+            .setUrl(urlToTest)
+            .setNoBody()
+            .setTimeoutMs(timeoutMs_)
+            .setFollowLocation();
+        
+        curl.perform();
+        
+        result.latencyMs = static_cast<long>(curl.getTotalTime() * 1000);
+        long responseCode = curl.getResponseCode();
+        
+        if (responseCode != 200 && responseCode != 204) {
+            result.errorMsg = "HTTP " + std::to_string(responseCode);
+        } else {
+            result.success = true;
+            result.delay = result.latencyMs;
+        }
+        
+    } catch (const std::exception& e) {
+        result.errorMsg = e.what();
     }
     
     return result;
