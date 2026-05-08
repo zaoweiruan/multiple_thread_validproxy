@@ -55,6 +55,24 @@ void logError(const std::string& msg, LogLevel level = LogLevel::ERR) {
     Logger::write(msg, level);
 }
 
+void printHelp() {
+    std::cout << "Usage: validproxy [options]\n"
+              << "Options:\n"
+              << "  -c, --config <path>   Config file path (default: config.json)\n"
+              << "  -show-sub, --show-sub  Show all subscriptions\n"
+              << "  -G, -generator <id>  Generate outbound JSON for profile by indexId\n"
+              << "  -F, -find-proxy     Find first working proxy (first found)\n"
+              << "  -FMIN,-findminproxy   Find first working proxy (sorted by delay)\n"
+              << "  -U, -update <id>      Update single subscription by ID\n"
+              << "  -UA, -update-all     Update all enabled subscriptions\n"
+              << "  -T, -test-sub <id>   Test proxies from subscription by ID\n"
+              << "  -D, -dedup           Remove duplicate proxies from database\n"
+              << "  -TU, -tourl         Export proxies (delay>0) to share links file\n"
+              << "  -S, -sync [src[:dst]] Sync valid proxies from source to target DB\n"
+              << "  -IS, -import-sub-config <file|url>  Batch import subitems from file or URL\n"
+              << "  -h, --help           Show this help\n";
+}
+
 BOOL WINAPI consoleCtrlHandler(DWORD ctrlType) {
     if (ctrlType == CTRL_C_EVENT || ctrlType == CTRL_BREAK_EVENT) {
         std::cout << "\nCtrl+C detected, stopping xray instances..." << std::endl;
@@ -171,25 +189,11 @@ int main(int argc, char* argv[]) {
             if (i + 1 < argc) {
                 importFilePath = argv[++i];
             } else {
-                logError("Error: -IS requires a file path or URL");
+                std::cerr << "Error: -IS requires a file path or URL" << std::endl;
                 return 1;
             }
         } else if (arg == "-h" || arg == "--help") {
-std::cout << "Usage: validproxy [options]\n"
-                      << "Options:\n"
-                      << "  -c, --config <path>   Config file path (default: config.json)\n"
-                      << "  -show-sub, --show-sub  Show all subscriptions\n"
-                      << "  -G, -generator <id>  Generate outbound JSON for profile by indexId\n"
-                      << "  -F, -find-proxy     Find first working proxy (first found)\n"
-                      << "  -FMIN,-findminproxy   Find first working proxy (sorted by delay)\n"
-                      << "  -U, -update <id>      Update single subscription by ID\n"
-                      << "  -UA, -update-all     Update all enabled subscriptions\n"
-                      << "  -T, -test-sub <id>   Test proxies from subscription by ID\n"
-                      << "  -D, -dedup           Remove duplicate proxies from database\n"
-                        << "  -TU, -tourl         Export proxies (delay>0) to share links file\n"
-                      << "  -S, -sync [src[:dst]] Sync valid proxies from source to target DB\n"
-                      << "  -IS, -import-sub-config <file|url>  Batch import subitems from file or URL\n"
-                      << "  -h, --help           Show this help\n";
+            printHelp();
             return 0;
         } else if (arg.find(".json") != std::string::npos) {
             std::filesystem::path p(arg);
@@ -198,8 +202,8 @@ std::cout << "Usage: validproxy [options]\n"
             }
             configPath = p.lexically_normal().string();
         } else {
-            logError("Error: Unknown option '" + arg + "'");
-            logInfo("Run 'validproxy --help' for usage information");
+            std::cerr << "Error: Unknown option '" << arg << "'" << std::endl << std::endl;
+            printHelp();
             return 1;
         }
     }
