@@ -122,9 +122,9 @@ db::models::Profileitem configProfile = profile;
             
             if (!addSuccess) {
                 Logger::write("[Worker-" + std::to_string(workerId) + "] 注入xray outbound 错误: " + xrayApi.getLastError());
-                Logger::write("[Worker-" + std::to_string(workerId) + "] XRAY_ERROR - " + profile.indexid + " - " + xrayApi.getLastError());
-                Logger::write("  Xray output: " + addResult);
-                Logger::write("  Outbound JSON: " + config.outbound_json);
+                Logger::write("[Worker-" + std::to_string(workerId) + "] XRAY_ERROR - " + profile.indexid + " (tag=" + tag + ") - " + xrayApi.getLastError());
+                Logger::write("  Xray output: " + addResult, LogLevel::ERR);
+                Logger::write("  Outbound JSON: " + config.outbound_json, LogLevel::ERR);
                 {
                     std::lock_guard<std::mutex> lock(queueMutex_);
                     failedCount_++;

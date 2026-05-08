@@ -8,6 +8,7 @@
 #include <filesystem>
 #include <windows.h>
 #include "XrayApi.h"
+#include "Logger.h"
 
 namespace xray {
 
@@ -42,6 +43,9 @@ bool XrayApi::runCommand(const std::string& args, std::string& output) {
 }
 
 bool XrayApi::addOutbound(const std::string& outboundJson, const std::string& tag, std::string& resultOutput) {
+    Logger::write("[XrayApi] addOutbound called: tag=" + tag + ", xrayPath=" + xrayPath_ + ", serverAddr=" + serverAddr_, LogLevel::DEBUG);
+    Logger::write("[XrayApi] outbound JSON: " + outboundJson, LogLevel::DEBUG);
+    
     std::string normalizedXray = xrayPath_;
     for (char& c : normalizedXray) {
         if (c == '/') c = '\\';
@@ -53,6 +57,7 @@ bool XrayApi::addOutbound(const std::string& outboundJson, const std::string& ta
     }
     
     std::string cmd = "cmd /c echo " + outboundJson + " | " + normalizedXray + " api ado --server=" + normalizedServer + " stdin:";
+    Logger::write("[XrayApi] command: " + cmd, LogLevel::DEBUG);
 
     char buffer[4096];
     FILE* pipe = _popen(cmd.c_str(), "r");
@@ -73,10 +78,14 @@ bool XrayApi::addOutbound(const std::string& outboundJson, const std::string& ta
     
     if (!success) {
         lastError_ = "xray api ado failed with code: " + std::to_string(exitCode) + " output: " + output;
+        Logger::write("[XrayApi] addOutbound FAILED: exitCode=" + std::to_string(exitCode) + ", output=" + output, LogLevel::DEBUG);
+        Logger::write("[XrayApi] addOutbound FAILED error: " + lastError_, LogLevel::DEBUG);
         return false;
     }
 
     std::this_thread::sleep_for(std::chrono::milliseconds(200));
+
+    Logger::write("[XrayApi] addOutbound SUCCESS for tag: " + tag, LogLevel::DEBUG);
 
     std::string lsoCmd = "\"" + xrayPath_ + "\" api lso --server=" + serverAddr_;
     FILE* lsoPipe = _popen(lsoCmd.c_str(), "r");
@@ -94,6 +103,8 @@ bool XrayApi::addOutbound(const std::string& outboundJson, const std::string& ta
 }
 
 bool XrayApi::removeOutbound(const std::string& tag) {
+    Logger::write("[XrayApi] removeOutbound called: tag=" + tag, LogLevel::DEBUG);
+    
     std::string cleanTag;
     for (char c : tag) {
         if (c >= 'a' && c <= 'z') cleanTag += c;
@@ -102,6 +113,8 @@ bool XrayApi::removeOutbound(const std::string& tag) {
         else if (c == '_' || c == '-') cleanTag += c;
     }
     if (cleanTag.empty()) cleanTag = "proxy";
+    
+    Logger::write("[XrayApi] removeOutbound: cleaned tag=" + cleanTag + ", cmd tag=\"" + cleanTag + "\"", LogLevel::DEBUG);
     
     std::string cmd = "\"" + xrayPath_ + "\" api rmo --server " + serverAddr_ + " \"" + cleanTag + "\"";
 
@@ -123,6 +136,8 @@ bool XrayApi::removeOutbound(const std::string& tag) {
     CloseHandle(pi.hThread);
 
     std::this_thread::sleep_for(std::chrono::milliseconds(200));
+
+    Logger::write("[XrayApi] removeOutbound SUCCESS for tag: " + tag, LogLevel::DEBUG);
 
     return true;
 }
