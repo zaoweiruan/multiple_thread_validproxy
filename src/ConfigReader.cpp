@@ -156,8 +156,14 @@ std::optional<AppConfig> ConfigReader::load(const std::string& configPath) {
         } else {
             config.priority_mode = "direct_first";
         }
+        if (sub.contains("check_auto_update_interval") && sub["check_auto_update_interval"].is_bool()) {
+            config.check_auto_update_interval = sub["check_auto_update_interval"].as_bool();
+        } else {
+            config.check_auto_update_interval = false;
+        }
     } else {
         config.priority_mode = "direct_first";
+        config.check_auto_update_interval = false;
     }
     
     if (obj.contains("dedup") && obj["dedup"].is_object()) {

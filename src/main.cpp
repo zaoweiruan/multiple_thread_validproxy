@@ -764,7 +764,11 @@ int main(int argc, char* argv[]) {
     ProxyBatchTester tester(db, *appConfig, exeDir);
     g_xrayManager = tester.getXrayManager();
     bool testResult = tester.run();
-    
+
+    if (appConfig->notification_enabled && appConfig->notification_on_test) {
+        utils::sendNotification("Proxy Test Complete", testResult ? "All tests completed successfully" : "Some tests failed");
+    }
+
     if (g_xrayManager) {
         XrayManager::release();
     }

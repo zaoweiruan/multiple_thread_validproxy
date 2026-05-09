@@ -53,9 +53,21 @@ target_link_libraries(validproxy PRIVATE
 
 enable_testing()
 
+# -- GTest (local source) --
+add_subdirectory(E:/eclipse_workspace/googletest ${CMAKE_BINARY_DIR}/googletest)
+
 add_executable(test_curl_easy_handle tests/test_curl_easy_handle.cpp)
 target_include_directories(test_curl_easy_handle PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(test_curl_easy_handle PRIVATE CURL::libcurl)
 add_test(NAME CurlEasyHandleTest COMMAND test_curl_easy_handle)
+
+add_executable(test_dedup tests/test_dedup.cpp)
+target_include_directories(test_dedup PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(test_dedup PRIVATE
+    gtest_main
+    gtest
+    E:/vcpkg/installed/x64-mingw-static/lib/libsqlite3.a
+)
+add_test(NAME DedupTest COMMAND test_dedup)
 
 install(TARGETS validproxy DESTINATION bin)

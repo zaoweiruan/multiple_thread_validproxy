@@ -76,7 +76,7 @@ std::pair<int, int> ProxyFinder::findFirstWorkingProxy(const std::string& target
             result = {currentSocksPort_, currentApiPort_};
             return result;
         } else {
-            Logger::write("ERROR: ProxyFinder: Proxy failed: " + testRes.errorMsg, LogLevel::ERR);
+            Logger::write("ProxyFinder: Proxy failed: " + testRes.errorMsg, LogLevel::INFO);
         }
         
         removeProxyFromXray();
@@ -143,7 +143,7 @@ std::pair<int, int> ProxyFinder::findWorkingProxy(const std::string& targetUrl) 
             allResults.push_back(testRes);
             std::cout << "ProxyFinder: Working proxy: delay=" << testRes.latencyMs << "ms" << std::endl;
         } else {
-            Logger::write("ERROR: ProxyFinder: Proxy failed: " + testRes.errorMsg, LogLevel::ERR);
+            Logger::write("ProxyFinder: Proxy failed: " + testRes.errorMsg, LogLevel::INFO);
         }
         
         removeProxyFromXray();

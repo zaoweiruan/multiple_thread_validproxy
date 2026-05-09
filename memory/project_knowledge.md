@@ -99,6 +99,174 @@ ctest -R TestName -V
 - 数据库: SQLite binary large object
 - 导出文件: bin/exports/ (share links)
 
+## 🔍 无参数定时测试规范（默认行为）
+
+当不提供任何命令行参数运行 `validproxy.exe` 时，程序执行以下标准流程。**此模式是后续默认的定时测试方式**，建议配置系统定时任务（如 Windows 任务计划）定期执行。
+
+### 1. 启动流程
+- **步骤 1**: 加载默认配置文件 `bin/config.json`
+- **步骤 2**: 解析配置，初始化日志系统（日志级别：file=DEBUG, console=INFO）
+- **步骤 3**: 启动 XrayManager 单例，创建 1 个 xray 实例
+  - Xray 实例端口范围：SOCKS 1080-1083，API 10080-10083
+  - 实际启动数量由配置中的 `xray.workers` 决定（默认 4）
+- **步骤 4**: 从数据库加载代理配置
+  - 生产环境：`bin/worker/guindb.db`
+  - 测试环境：`test/guindb.db`
+- **步骤 5**: 初始化 4 个工作线程（Worker-0 到 Worker-3）
+
+### 2. 日志输出格式
+```
+[timestamp] [LEVEL] [mode] message
+```
+
+**示例输出**：
+```
+[2026-05-07 16:02:04] [INFO] validproxy starting...
+[DEBUG] Loading config from: E:\\...\\bin\\config.json
+[DEBUG] Config loaded successfully
+[INFO] XrayManager::start: count=4, startPort=1080, apiPort=10080
+[INFO] [XrayInstance] Creating config: .../xray_config_1080.json
+[INFO] [XrayInstance] Executing: "E:/v2rayN-windows-64/bin/xray/xray.exe" run -c "..."
+[INFO] [XrayInstance] Started successfully, socks=1080, api=10080
+[INFO] ProxyFinder: Loaded 173 proxies from database
+ProxyFinder: Testing 173 proxies (first match)...
+```
+
+### 3. 代理测试流程
+- **测试 URL**: `https://www.google.com/generate_204`
+- **CURL 超时**: 30 秒（单个代理连接超时）
+- **并发测试**: 4 个工作线程并行执行
+- **Xray 注入**:
+  - 使用 `xray api ado` 命令注入出站代理
+  - 标签（tag）使用固定值 `"proxy"`
+  - 注入失败时会重试最多 3 次
+  - RPC 标签冲突错误："existing tag found" 已通过固定标签修复
+- **CURL 调用**: 使用 RAII wrapper `CurlEasyHandle`，协议前缀 `http://`（Xray mixed 端口）
+
+### 4. 调试日志（DEBUG 级别可用）
+
+启用 DEBUG 日志可查看 XrayApi 详细信息：
+- `[XrayApi] addOutbound called: tag=..., xrayPath=..., serverAddr=...`
+- `[XrayApi] outbound JSON: {...}`（完整的代理配置 JSON）
+- `[XrayApi] command: ...`（实际的 xray 命令行参数）
+- `[XrayApi] addOutbound SUCCESS for tag: ...`
+- `[XrayApi] addOutbound FAILED: exitCode=..., output=...`
+- `[XrayApi] removeOutbound called: tag=...`
+- `[XrayApi] removeOutbound SUCCESS for tag: ...`
+
+**常见错误诊断**：
+- `xray api ado failed with code: 1`：检查 xray_executable 路径、outbound JSON 格式、Xray API 服务状态
+- `existing tag found`：已通过固定标签 "proxy" 修复
+- `curl_easy_perform failed: SSL connect error`：代理配置无效或网络问题
+
+### 5. 终止条件
+无参数测试持续运行，直到：
+- 用户手动中断（Ctrl+C）
+- 所有代理测试完成
+- 发生未处理的严重错误
+- **任务计划超时**：Windows 任务计划程序可设置执行超时（建议 2 小时），超时后自动终止进程
+
+### 6. 清理流程
+- 停止所有 Xray 实例（调用 `XrayManager::stopAll()`）
+- 关闭工作线程
+- 刷新并关闭日志文件
+- 释放 CURL 全局资源（通过 `CurlGlobalGuard` RAII）
+
+### 7. 配置要求
+**config.json 必须包含**：
+```json
+{
+  "xray": {
+    "executable": "E:/v2rayN-windows-64/bin/xray/xray.exe",
+    "workers": 4,
+    "start_port": 1080,
+    "api_port": 10080
+  },
+  "database": {
+    "path": "bin/worker/guindb.db"
+  },
+  "log": {
+    "enabled": true,
+    "level": "DEBUG",
+    "console_level": "INFO",
+    "file_level": "DEBUG"
+  }
+}
+```
+
+### 8. 定时任务建议（Windows）
+
+#### 方法 1：PowerShell 脚本（推荐，支持超时设置）
+```powershell
+# 创建带超时的每日定时测试任务
+# 管理员权限运行 PowerShell
+
+$exePath = "E:\eclipse_workspace\multiple_thread_validproxy\bin\validproxy.exe"
+$taskName = "ProxyDailyTest"
+$startTime = "02:00"  # 每日启动时间
+$timeoutHours = 2      # 执行超时时间（小时）
+
+# 创建任务动作
+$action = New-ScheduledTaskAction -Execute $exePath
+
+# 创建每日触发器
+$trigger = New-ScheduledTaskTrigger -Daily -At $startTime
+
+# 设置任务属性（含超时限制）
+$settings = New-ScheduledTaskSettingsSet `
+    -ExecutionTimeLimit (New-TimeSpan -Hours $timeoutHours) `
+    -AllowStartIfOnBatteries `
+    -DontStopIfGoingOnBatteries `
+    -StartWhenAvailable
+
+# 注册任务（如果已存在则覆盖）
+Register-ScheduledTask `
+    -TaskName $taskName `
+    -Action $action `
+    -Trigger $trigger `
+    -Settings $settings `
+    -RunLevel Highest `
+    -Force
+
+Write-Host "任务创建成功: $taskName"
+Write-Host "  执行程序: $exePath"
+Write-Host "  启动时间: 每日 $startTime"
+Write-Host "  超时限制: $timeoutHours 小时"
+```
+
+#### 方法 2：命令行（简单但不支持超时）
+```cmd
+:: 创建每日定时测试任务（示例）
+schtasks /create /tn "ProxyDailyTest" /tr "E:\path\to\validproxy.exe" /sc daily /st 02:00 /ru SYSTEM
+```
+
+**注意**：命令行方式不支持设置执行超时，需通过任务计划程序图形界面手动设置：
+1. 打开"任务计划程序"
+2. 找到 "ProxyDailyTest" 任务
+3. 右键 → 属性 → 设置选项卡
+4. 勾选"如果任务运行超过下列时间，则停止任务"
+5. 设置时间（建议 2 小时）
+
+### 9. 验证命令
+```bash
+# 测试无参数运行（将运行默认配置）
+./bin/validproxy.exe
+
+# 查看详细 DEBUG 日志
+./bin/validproxy.exe 2>&1 | grep -E "(XrayApi|ERROR|DEBUG)"
+
+# 测试有参数模式（对比）
+./bin/validproxy.exe -F      # 查找第一个可用代理
+./bin/validproxy.exe -FMIN   # 查找延迟最小代理
+./bin/validproxy.exe -T 1    # 测试订阅 1 的代理
+```
+
+### 10. 日志分析要点
+- 正常结束：所有代理测试完成，日志中显示 `[INFO] ProxyFinder: Testing X proxies (first match)...`
+- 异常检测：出现 `[ERROR]` 或 `FAILED` 关键字
+- Xray 注入成功率：统计 `[XrayApi] addOutbound SUCCESS` 与 `FAILED` 比例
+- CURL 成功率：统计代理测试结果中 `delay > 0` 的比例
+
 ## 🔍 -TU 参数详解
 
 **官方描述**: `Export proxies (delay>0) to share links file`
@@ -145,7 +313,7 @@ ctest -R TestName -V
    - 例如：`419283746565049382`
    
 2. **统一日志系统**: `Logger` 类（src/Logger.cpp, include/Logger.h）
-   - 支持级别：TRACE、DEBUG、INFO、WARN、LOG_ERROR
+   - 支持级别：TRACE、DEBUG、INFO、WARN、ERR
    - 自动添加时间戳：`[2026-04-29 10:30:43] [INFO] message`
    - 同时输出到：控制台 + 日志文件
    - 线程安全（使用 `std::mutex`）
@@ -154,7 +322,7 @@ ctest -R TestName -V
    ```cpp
    Logger::init(logDir, prefix);          // 初始化
    Logger::write("message");                 // INFO 级别
-   Logger::write("error", LogLevel::LOG_ERROR); // ERROR 级别
+   Logger::write("error", LogLevel::ERR); // ERROR 级别
    logInfo("message");    // 使用辅助函数（main.cpp）
    logError("error");      // 使用辅助函数（main.cpp）
    ```
@@ -212,7 +380,7 @@ ctest -R TestName -V
 
 **功能**:
 - 静态方法，全局可用
-- 支持 5 个级别：TRACE、DEBUG、INFO、WARN、LOG_ERROR
+- 支持 5 个级别：TRACE、DEBUG、INFO、WARN、ERR
 - 自动添加时间戳和级别前缀
 - 同时输出到控制台和日志文件
 - 线程安全（使用 `std::mutex`）
@@ -224,7 +392,7 @@ Logger::init(logDir, commandMode);
 
 // 写入日志
 Logger::write("message");                     // INFO 级别
-Logger::write("error", LogLevel::LOG_ERROR);    // ERROR 级别
+Logger::write("error", LogLevel::ERR);    // ERROR 级别
 Logger::write("debug", LogLevel::DEBUG);       // DEBUG 级别
 
 // 辅助函数（main.cpp）
@@ -238,11 +406,105 @@ Logger::close();
 
 **日志文件位置**: `bin/{commandMode}_{timestamp}.log`
 
+### 代理测试错误级别分类标准
+
+代理测试过程中，错误按以下标准分类：
+
+| 分类 | LogLevel | 说明 | 示例 |
+|------|----------|------|------|
+| **网络错误** | `INFO` | 代理连通性测试失败（预期内，属于常规行为） | curl 超时、连接被拒绝、DNS 解析失败、HTTP 非 200/204 |
+| **配置生成错误** | `ERR` | 代理配置不完整或无法生成 | `checkRequired` 失败、不支持的协议类型、无效端口 |
+| **注入 outbound 错误** | `ERR` | xray 出站代理注入失败 | `addOutbound` 返回非零退出码 |
+
+**原则**：
+- 网络错误是代理测试的正常结果（代理无效），不应视为异常，使用 `INFO`
+- 配置生成和注入错误表示系统自身问题，应使用 `ERR` 以便监控
+- 所有 `Logger::write()` 必须显式指定 `LogLevel`，禁止依赖默认参数（默认 `INFO`）
+
 ### SubitemUpdaterV2::log() 方法（已弃用）
 
 **文件**: `src/SubitemUpdaterV2.cpp:1028-1035`
 
 **注意**: 新代码应直接使用 `Logger::write()`，而非此方法。
+
+## 🧪 Google Test 规范
+
+### 源码位置
+- **本地路径**: `E:\eclipse_workspace\googletest`
+- **头文件**: `E:\eclipse_workspace\googletest\googletest\include\gtest\gtest.h`
+- **CMake 构建文件**: `E:\eclipse_workspace\googletest\CMakeLists.txt`
+- **方式**: 通过 `add_subdirectory` 加载本地源码（见下方 CMake 集成）
+
+### CMake 集成方式
+```cmake
+# 在 enable_testing() 之后添加
+add_subdirectory(E:/eclipse_workspace/googletest ${CMAKE_BINARY_DIR}/googletest)
+
+# 测试目标定义
+add_executable(test_model tests/test_model.cpp)
+target_include_directories(test_model PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(test_model PRIVATE
+    gtest_main       # 提供 main() 的 GTest 库
+    gtest            # GTest 库（不含 main）
+)
+add_test(NAME ModelTest COMMAND test_model)
+```
+
+### 测试文件模板
+
+```cpp
+#include <gtest/gtest.h>
+#include <spdlog/spdlog.h>
+
+#include "YourHeader.h"
+
+// 选项 A：有状态测试 — 使用 TEST_F + 夹具
+class YourFixtureTest : public ::testing::Test {
+protected:
+    void SetUp() override {
+        spdlog::set_level(spdlog::level::warn);
+    }
+};
+
+TEST_F(YourFixtureTest, TestCaseName) {
+    EXPECT_EQ(expected, actual);
+    EXPECT_TRUE(condition);
+}
+
+// 选项 B：无状态测试 — 使用 TEST
+TEST(YourSuiteName, TestCaseName) {
+    ASSERT_EQ(1, 1);  // 致命断言：失败即中止当前测试
+}
+
+// 选项 C：仅当未链接 gtest_main 时需要
+// int main(int argc, char** argv) {
+//     ::testing::InitGoogleTest(&argc, argv);
+//     return RUN_ALL_TESTS();
+// }
+```
+
+### 断言使用规范
+
+| 断言 | 致命版 | 说明 |
+|------|--------|------|
+| `EXPECT_EQ(a, b)` | `ASSERT_EQ(a, b)` | 相等 |
+| `EXPECT_NE(a, b)` | `ASSERT_NE(a, b)` | 不等 |
+| `EXPECT_TRUE(c)` | `ASSERT_TRUE(c)` | 条件为真 |
+| `EXPECT_FALSE(c)` | `ASSERT_FALSE(c)` | 条件为假 |
+| `EXPECT_GT(a, b)` | `ASSERT_GT(a, b)` | 大于 |
+| `EXPECT_LT(a, b)` | `ASSERT_LT(a, b)` | 小于 |
+
+- **非致命 `EXPECT_*`**：失败后继续执行当前测试（推荐，便于收集所有失败）
+- **致命 `ASSERT_*`**：失败后立即返回（用于前置条件检查，如 nullptr、数据库连接）
+
+### 测试数据库路径约定
+- **测试数据库**: `test/guindb.db`（项目根目录下 test/ 子目录）
+- **生产数据库**: `bin/worker/guindb.db`（运行时使用）
+- 测试代码应始终使用测试数据库，不得操作生产数据库
+
+### 注意事项
+- `tests/` 目录下的非 GTest 文件（如 `test_curl_easy_handle.cpp`）使用 `cassert` + 自包含 `main()`，不依赖 GTest
+- 所有测试目标必须在 `CMakeLists.txt` 中通过 `add_test()` 注册，才能通过 `ctest` 执行
 
 ## 🔧 常用工具和模式
 
@@ -357,7 +619,7 @@ std::string utils::generateUniqueId() {
 
 #### 验证结果
 - ✅ 构建成功，无 warning
-- ✅ `"LOG_ERROR"` 和 `"ERROR"` 都能正确解析为 `LogLevel::LOG_ERROR`
+- ✅ `"LOG_ERROR"` 和 `"ERROR"` 都能正确解析为 `LogLevel::ERR`
 - ✅ 所有 10 个命令模式都正确应用日志级别配置
 - ✅ `config.json` 中的 `file_level` 格式现已标准化
 
@@ -565,4 +827,29 @@ XrayManager::release();
 
 ### 文档
 - `docs/superpowers/specs/2026-04-28-subitem-batch-import-design.md` - 批量导入设计文档
+- `docs/plans/*.md` - 实施计划文档（统一目录，共 12 个计划文件）
 - `memory/project_knowledge.md` - 本文件（长期记忆）
+
+## 📂 项目计划文档目录
+
+所有实施计划文档统一存储在 `docs/plans/`：
+
+```
+docs/plans/
+├── 2026-04-13-module-refactoring-plan.md
+├── 2026-05-07-001-refactor-curl-raii-wrapper-plan.md
+├── 2026-05-07-002-refactor-dedup-optimization-plan.md
+├── 2026-05-08-001-fix-sync-logger-plan.md
+├── 2026-05-08-002-fix-cli-argument-handling-plan.md
+├── 2026-05-08-003-standardize-proxy-test-error-levels-plan.md
+├── 2026-05-08-004-cleanup-dead-config-fields-plan.md
+├── 2026-05-08-005-restore-sub-update-interval-check-plan.md
+├── 2026-05-09-006-fix-sub-update-interval-not-skipping-plan.md
+├── 2026-05-09-007-add-report-loglevel-for-summary-output-plan.md
+├── 2026-05-09-008-fix-skip-not-working-in-proxy-first-mode-plan.md
+└── 2026-05-09-009-fix-notification-config-and-add-missing-notifications-plan.md
+```
+
+- **命名规范**: `YYYY-MM-DD[-NNN]-<short-description>-plan.md`
+- **状态字段**: 使用 YAML frontmatter `status: draft|completed|cancelled`
+- **修改权限限制**: 文件编辑仅允许在 `.opencode/plans/`，完成后需手动移入 `docs/plans/`

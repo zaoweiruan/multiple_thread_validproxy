@@ -69,11 +69,10 @@ private:
     
     int deduplicatePhase0();
     int deduplicatePhase1();
-    int deduplicatePhase2();
-    int deduplicatePhase3();
-    int deduplicatePhase4();
+    int deduplicateMergedPhase();
     void cleanupProfileExItem();
     
+    bool shouldSkipUpdate(const db::models::Subitem& sub) const;
     Strategy parseStrategy(const std::string& mode);
     std::string getCurrentTimestamp();
     

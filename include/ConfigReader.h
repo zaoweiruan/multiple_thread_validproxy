@@ -22,6 +22,7 @@ struct AppConfig {
     std::string log_console_level;
     std::string log_file_level;
     std::string priority_mode;
+    bool check_auto_update_interval = false;
     bool dedup_enabled;
     bool dedup_after_update;
     std::vector<std::string> dedup_subids;
