@@ -16,6 +16,8 @@ multiple_thread_validproxy/
 ├── test/                 # 测试数据库
 ├── build/                # 构建输出
 ├── docs/                 # 设计文档和方案
+│   ├── design/           # 功能设计文档
+│   └── plans/            # 实施计划文档（统一目录）
 ├── memory/               # 长期记忆（仅 project_knowledge.md）
 └── AGENTS.md
 ```
@@ -70,7 +72,18 @@ multiple_thread_validproxy/
 | `memory/` | 长期记忆 | 仅包含 `project_knowledge.md`，存储项目持久化知识 |
 | `docs/` | 项目文档 | 存放需求、设计、计划等文档 |
 | `docs/design/` | 设计文档 | 功能设计方案，如去重黑名单方案 |
+| `docs/plans/` | 实施计划 | 所有实施计划文档（统一目录） |
 | `docs/superpowers/specs/` | 功能规格 | 详细功能规格文档 |
-| `docs/superpowers/plans/` | 实施计划 | 功能实施计划文档 |
 
 **注意**: AGENTS.md 只保存项目基础信息和文档引用，详细内容请查阅对应文档。
+## File permission rules
+
+Allow edit permission for Markdown files under the `docs` directory:
+
+```rules
+{
+  "permission": "edit",
+  "pattern": "docs/*.md",
+  "action": "allow"
+}
+```

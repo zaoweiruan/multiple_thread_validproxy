@@ -78,8 +78,8 @@ bool XrayApi::addOutbound(const std::string& outboundJson, const std::string& ta
     
     if (!success) {
         lastError_ = "xray api ado failed with code: " + std::to_string(exitCode) + " output: " + output;
-        Logger::write("[XrayApi] addOutbound FAILED: exitCode=" + std::to_string(exitCode) + ", output=" + output, LogLevel::DEBUG);
-        Logger::write("[XrayApi] addOutbound FAILED error: " + lastError_, LogLevel::DEBUG);
+        Logger::write("[XrayApi] addOutbound FAILED: exitCode=" + std::to_string(exitCode) + ", output=" + output, LogLevel::ERR);
+        Logger::write("[XrayApi] addOutbound FAILED error: " + lastError_, LogLevel::ERR);
         return false;
     }
 

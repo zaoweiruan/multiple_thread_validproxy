@@ -154,6 +154,12 @@ bool SubitemUpdaterV2::run() {
         
         for (size_t i = 0; i < enabledSubs.size(); ++i) {
             const auto& sub = enabledSubs[i];
+            
+            if (shouldSkipUpdate(sub)) {
+                Logger::write("INFO: Skipping sub " + sub.id + " (within update interval)", LogLevel::INFO);
+                continue;
+            }
+            
             Logger::write("INFO: [" + std::to_string(i + 1) + "/" + std::to_string(totalSubs) + "] Processing: " + sub.url, LogLevel::INFO);
             
             std::string content = fetchUrl(sub.url);
@@ -165,6 +171,9 @@ bool SubitemUpdaterV2::run() {
                     successCount++;
                     directSuccessCount++;
                     Logger::write("INFO: Updated successfully: " + sub.id, LogLevel::INFO);
+                    std::string newTime = getCurrentTimestamp();
+                    std::string updateSql = "UPDATE SubItem SET UpdateTime = '" + newTime + "' WHERE Id = '" + sub.id + "'";
+                    sqlite3_exec(db_, updateSql.c_str(), nullptr, nullptr, nullptr);
                 } else {
                     directFailCount++;
                     failedSubs.push_back({sub.id, sub.remarks, sub.url});
@@ -179,6 +188,10 @@ bool SubitemUpdaterV2::run() {
         }
     } else if (runProxyPhase) {
         for (const auto& sub : enabledSubs) {
+            if (shouldSkipUpdate(sub)) {
+                Logger::write("INFO: Skipping sub " + sub.id + " (within update interval)", LogLevel::INFO);
+                continue;
+            }
             failedSubs.push_back({sub.id, sub.remarks, sub.url});
         }
         Logger::write("INFO: Phase 1/1 - Proxy only mode, queuing " + std::to_string(failedSubs.size()) + " subscriptions", LogLevel::INFO);
@@ -204,6 +217,9 @@ bool SubitemUpdaterV2::run() {
                     successCount++;
                     proxySuccessCount++;
                     Logger::write("INFO: Updated successfully: " + std::get<0>(sub), LogLevel::INFO);
+                    std::string newTime = getCurrentTimestamp();
+                    std::string updateSql = "UPDATE SubItem SET UpdateTime = '" + newTime + "' WHERE Id = '" + std::get<0>(sub) + "'";
+                    sqlite3_exec(db_, updateSql.c_str(), nullptr, nullptr, nullptr);
                 } else {
                     proxyFailCount++;
                     stillFailedSubs.push_back(sub);
@@ -262,8 +278,19 @@ bool SubitemUpdaterV2::runSingle(const std::string& subId) {
         return false;
     }
 
+    if (shouldSkipUpdate(sub)) {
+        Logger::write("INFO: Skipping sub " + sub.id + " (within update interval)", LogLevel::INFO);
+        return true;
+    }
+
     Strategy strategy = parseStrategy(config_.priority_mode);
     bool result = updateWithStrategy(sub.url, sub.id, strategy);
+
+    if (result) {
+        std::string newTime = getCurrentTimestamp();
+        std::string updateSql = "UPDATE SubItem SET UpdateTime = '" + newTime + "' WHERE Id = '" + sub.id + "'";
+        sqlite3_exec(db_, updateSql.c_str(), nullptr, nullptr, nullptr);
+    }
 
     releaseProxyPorts();
 
@@ -290,14 +317,25 @@ bool SubitemUpdaterV2::runSingleWithProxy(const std::string& subId, int socksPor
         return false;
     }
 
+    if (shouldSkipUpdate(sub)) {
+        Logger::write("INFO: Skipping sub " + subId + " (within update interval)", LogLevel::INFO);
+        return true;
+    }
+
     std::string content = fetchUrlViaProxy(sub.url, socksPort);
     if (content.empty()) {
-        Logger::write("ERROR: Failed to fetch via proxy", LogLevel::ERR);
+        Logger::write("Failed to fetch via proxy", LogLevel::INFO);
         return false;
     }
 
     auto profiles = parseSubscription(content, sub.id);
-    return updateProfileItems(sub.id, profiles);
+    bool result = updateProfileItems(sub.id, profiles);
+    if (result) {
+        std::string newTime = getCurrentTimestamp();
+        std::string updateSql = "UPDATE SubItem SET UpdateTime = '" + newTime + "' WHERE Id = '" + sub.id + "'";
+        sqlite3_exec(db_, updateSql.c_str(), nullptr, nullptr, nullptr);
+    }
+    return result;
 }
 
 std::optional<db::models::Subitem> SubitemUpdaterV2::getSubscription(const std::string& subId) {
@@ -371,7 +409,7 @@ std::string SubitemUpdaterV2::fetchUrl(const std::string& url) {
         return response;
 
     } catch (const std::exception& e) {
-        Logger::write("ERROR: fetchUrl failed - " + std::string(e.what()), LogLevel::ERR);
+        Logger::write("fetchUrl failed - " + std::string(e.what()), LogLevel::INFO);
         return "";
     }
 }
@@ -394,7 +432,7 @@ std::string SubitemUpdaterV2::fetchUrlViaProxy(const std::string& url, int socks
         return response;
 
     } catch (const std::exception& e) {
-        Logger::write("ERROR: fetchUrlViaProxy failed - " + std::string(e.what()), LogLevel::ERR);
+        Logger::write("fetchUrlViaProxy failed - " + std::string(e.what()), LogLevel::INFO);
         return "";
     }
 }
@@ -1047,6 +1085,31 @@ void SubitemUpdaterV2::cleanupXray() {
     releaseProxyPorts();
 }
 
+bool SubitemUpdaterV2::shouldSkipUpdate(const db::models::Subitem& sub) const
+{
+    if (!config_.check_auto_update_interval)
+        return false;
+
+    if (sub.autoupdateinterval.empty() || sub.updatetime.empty())
+        return false;
+
+    int intervalMinutes = std::stoi(sub.autoupdateinterval);
+    if (intervalMinutes <= 0)
+        return false;
+
+    if (sub.updatetime == "0")
+        return false;
+
+    try {
+        auto lastUpdate = std::chrono::system_clock::from_time_t(std::stoll(sub.updatetime));
+        auto now = std::chrono::system_clock::now();
+        auto elapsed = std::chrono::duration_cast<std::chrono::minutes>(now - lastUpdate).count();
+        return elapsed < intervalMinutes;
+    } catch (...) {
+        return false;
+    }
+}
+
 SubitemUpdaterV2::Strategy SubitemUpdaterV2::parseStrategy(const std::string& mode) {
     if (mode == "proxy_first") return Strategy::ProxyFirst;
     if (mode == "direct_only") return Strategy::DirectOnly;
@@ -1055,10 +1118,9 @@ SubitemUpdaterV2::Strategy SubitemUpdaterV2::parseStrategy(const std::string& mo
 
 std::string SubitemUpdaterV2::getCurrentTimestamp() {
     auto now = std::chrono::system_clock::now();
-    auto time_t = std::chrono::system_clock::to_time_t(now);
-    std::stringstream ss;
-    ss << std::put_time(std::localtime(&time_t), "%Y%m%d_%H%M%S");
-    return ss.str();
+    auto timestamp = std::chrono::duration_cast<std::chrono::seconds>(
+        now.time_since_epoch()).count();
+    return std::to_string(timestamp);
 }
 
 std::pair<std::string, std::string> SubitemUpdaterV2::parseAddressPort(const std::string& addrPart) {
@@ -1289,9 +1351,9 @@ int SubitemUpdaterV2::deduplicatePhase1() {
     return deleted;
 }
 
-int SubitemUpdaterV2::deduplicatePhase2() {
+int SubitemUpdaterV2::deduplicateMergedPhase() {
     if (config_.dedup_subids.empty()) {
-        Logger::write("INFO: Phase 2 skipped: no dedup_subids configured", LogLevel::INFO);
+        Logger::write("INFO: Merged dedup skipped: no dedup_subids configured", LogLevel::INFO);
         return 0;
     }
     
@@ -1302,95 +1364,26 @@ int SubitemUpdaterV2::deduplicatePhase2() {
     }
     
     std::string sql =
-        "DELETE FROM ProfileItem "
-        "WHERE (SubId NOT IN (" + subidsList + ") OR SubId = '' OR SubId IS NULL) "
-        "AND (lower(Address), Port, ConfigType, lower(Id), lower(Network)) IN ("
-        "SELECT lower(Address), Port, ConfigType, lower(Id), lower(Network) FROM ProfileItem "
-        "WHERE SubId IN (" + subidsList + ") "
-        "GROUP BY lower(Address), Port, ConfigType, lower(Id), lower(Network)"
+        "DELETE FROM ProfileItem WHERE IndexId IN ("
+        "SELECT IndexId FROM ("
+        "SELECT pi.IndexId, ROW_NUMBER() OVER ("
+        "PARTITION BY lower(pi.Address), pi.Port, pi.ConfigType, lower(pi.Id), lower(pi.Network) "
+        "ORDER BY CASE WHEN pi.SubId IN (" + subidsList + ") THEN 0 ELSE 1 END, "
+        "CAST(COALESCE(pe.Delay, 0) AS INTEGER) DESC"
+        ") as rn FROM ProfileItem pi "
+        "LEFT JOIN ProfileExItem pe ON pi.IndexId = pe.IndexId"
+        ") WHERE rn > 1"
         ")";
     
     char* errMsg = nullptr;
     if (sqlite3_exec(db_, sql.c_str(), nullptr, nullptr, &errMsg) != SQLITE_OK) {
-        Logger::write("ERROR: Phase2 dedup failed - " + std::string(errMsg), LogLevel::ERR);
+        Logger::write("ERROR: Merged dedup failed - " + std::string(errMsg), LogLevel::ERR);
         sqlite3_free(errMsg);
         return 0;
     }
     
     int deleted = sqlite3_changes(db_);
-    Logger::write("INFO: Phase 2 deleted: " + std::to_string(deleted) + " (remove non-dedup duplicates with dedup_subids)", LogLevel::INFO);
-    return deleted;
-}
-
-int SubitemUpdaterV2::deduplicatePhase3() {
-    if (config_.dedup_subids.empty()) {
-        Logger::write("INFO: Phase 3 skipped: no dedup_subids configured", LogLevel::INFO);
-        return 0;
-    }
-    
-    std::string subidsList;
-    for (size_t i = 0; i < config_.dedup_subids.size(); ++i) {
-        if (i > 0) subidsList += ", ";
-        subidsList += "'" + config_.dedup_subids[i] + "'";
-    }
-    
-    std::string sql =
-        "DELETE FROM ProfileItem "
-        "WHERE SubId IN (" + subidsList + ") "
-        "AND IndexId NOT IN ("
-        "SELECT p.IndexId FROM ProfileItem p "
-        "JOIN ProfileExItem pe ON p.IndexId = pe.IndexId "
-        "WHERE p.SubId IN (" + subidsList + ") AND pe.Delay > 0 AND pe.Delay != '-1' "
-        "GROUP BY lower(p.Address), p.Port, p.ConfigType, lower(p.Id), lower(p.Network)"
-        ") "
-        "AND IndexId NOT IN ("
-        "SELECT MIN(IndexId) FROM ProfileItem "
-        "WHERE SubId IN (" + subidsList + ") "
-        "GROUP BY lower(Address), Port, ConfigType, lower(Id), lower(Network)"
-        ")";
-    
-    char* errMsg = nullptr;
-    if (sqlite3_exec(db_, sql.c_str(), nullptr, nullptr, &errMsg) != SQLITE_OK) {
-        Logger::write("ERROR: Phase3 dedup failed - " + std::string(errMsg), LogLevel::ERR);
-        sqlite3_free(errMsg);
-        return 0;
-    }
-    
-    int deleted = sqlite3_changes(db_);
-    Logger::write("INFO: Phase 3 deleted: " + std::to_string(deleted) + " (dedup_subids internal, keep delay>0)", LogLevel::INFO);
-    return deleted;
-}
-
-int SubitemUpdaterV2::deduplicatePhase4() {
-    if (config_.dedup_subids.empty()) {
-        Logger::write("INFO: Phase 4 skipped: no dedup_subids configured", LogLevel::INFO);
-        return 0;
-    }
-    
-    std::string subidsList;
-    for (size_t i = 0; i < config_.dedup_subids.size(); ++i) {
-        if (i > 0) subidsList += ", ";
-        subidsList += "'" + config_.dedup_subids[i] + "'";
-    }
-    
-    std::string sql =
-        "DELETE FROM ProfileItem "
-        "WHERE (SubId NOT IN (" + subidsList + ") OR SubId = '' OR SubId IS NULL) "
-        "AND (lower(Address), Port, ConfigType, lower(Id), lower(Network)) NOT IN ("
-        "SELECT lower(Address), Port, ConfigType, lower(Id), lower(Network) FROM ProfileItem "
-        "WHERE (SubId NOT IN (" + subidsList + ") OR SubId = '' OR SubId IS NULL) "
-        "GROUP BY lower(Address), Port, ConfigType, lower(Id), lower(Network)"
-        ")";
-    
-    char* errMsg = nullptr;
-    if (sqlite3_exec(db_, sql.c_str(), nullptr, nullptr, &errMsg) != SQLITE_OK) {
-        Logger::write("ERROR: Phase4 dedup failed - " + std::string(errMsg), LogLevel::ERR);
-        sqlite3_free(errMsg);
-        return 0;
-    }
-    
-    int deleted = sqlite3_changes(db_);
-    Logger::write("INFO: Phase 4 deleted: " + std::to_string(deleted) + " (full table dedup non-dedup_subids)", LogLevel::INFO);
+    Logger::write("INFO: Merged dedup deleted: " + std::to_string(deleted) + " (CTE, keep best per combo)", LogLevel::INFO);
     return deleted;
 }
 
@@ -1763,28 +1756,34 @@ bool SubitemUpdaterV2::deduplicate() {
     }
     Logger::write("INFO: Total proxies before: " + std::to_string(totalBefore), LogLevel::INFO);
     
-    Logger::write("INFO: Phase 0/5 - Marking working proxies with protected subid", LogLevel::INFO);
+    char* errMsg = nullptr;
+    if (sqlite3_exec(db_, "BEGIN TRANSACTION;", nullptr, nullptr, &errMsg) != SQLITE_OK) {
+        Logger::write("ERROR: Failed to begin transaction - " + std::string(errMsg), LogLevel::ERR);
+        sqlite3_free(errMsg);
+        return false;
+    }
+    
+    Logger::write("INFO: Phase 1/3 - Marking working proxies with protected subid", LogLevel::INFO);
     int p0 = deduplicatePhase0();
-    Logger::write("INFO: Phase 0 completed: " + std::to_string(p0) + " proxies marked", LogLevel::INFO);
+    Logger::write("INFO: Phase 1 completed: " + std::to_string(p0) + " proxies marked", LogLevel::INFO);
     
-    Logger::write("INFO: Phase 1/5 - Removing invalid addresses (private IPs)", LogLevel::INFO);
+    Logger::write("INFO: Phase 2/3 - Removing invalid addresses (private IPs)", LogLevel::INFO);
     int p1 = deduplicatePhase1();
-    Logger::write("INFO: Phase 1 completed: removed " + std::to_string(p1) + " proxies", LogLevel::INFO);
+    Logger::write("INFO: Phase 2 completed: removed " + std::to_string(p1) + " proxies", LogLevel::INFO);
     
-    Logger::write("INFO: Phase 2/5 - Removing duplicates with delay>0 proxies", LogLevel::INFO);
-    int p2 = deduplicatePhase2();
-    Logger::write("INFO: Phase 2 completed: removed " + std::to_string(p2) + " proxies", LogLevel::INFO);
-    
-    Logger::write("INFO: Phase 3/5 - Keeping dedup_subids, removing duplicates", LogLevel::INFO);
-    int p3 = deduplicatePhase3();
-    Logger::write("INFO: Phase 3 completed: removed " + std::to_string(p3) + " proxies", LogLevel::INFO);
-    
-    Logger::write("INFO: Phase 4/5 - Full deduplication excluding subids", LogLevel::INFO);
-    int p4 = deduplicatePhase4();
-    Logger::write("INFO: Phase 4 completed: removed " + std::to_string(p4) + " proxies", LogLevel::INFO);
+    Logger::write("INFO: Phase 3/3 - Removing duplicates (merged CTE)", LogLevel::INFO);
+    int pMerged = deduplicateMergedPhase();
+    Logger::write("INFO: Phase 3 completed: removed " + std::to_string(pMerged) + " proxies", LogLevel::INFO);
     
     Logger::write("INFO: Cleaning up ProfileExItem...", LogLevel::INFO);
     cleanupProfileExItem();
+    
+    if (sqlite3_exec(db_, "COMMIT;", nullptr, nullptr, &errMsg) != SQLITE_OK) {
+        Logger::write("ERROR: Failed to commit transaction - " + std::string(errMsg), LogLevel::ERR);
+        sqlite3_free(errMsg);
+        sqlite3_exec(db_, "ROLLBACK;", nullptr, nullptr, nullptr);
+        return false;
+    }
     
     int totalAfter = 0;
     if (sqlite3_prepare_v2(db_, countSql.c_str(), -1, &stmt, nullptr) == SQLITE_OK) {

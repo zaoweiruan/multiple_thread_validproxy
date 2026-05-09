@@ -86,7 +86,7 @@ db::models::Profileitem configProfile = profile;
             configProfile.checkRequired();
         } catch (const std::exception& e) {
             std::string errorDetail = profile.address + ":" + profile.port + " (" + profile.configtype + ") - " + e.what();
-            Logger::write("CONFIG_ERROR: " + profile.indexid + " - " + errorDetail);
+            Logger::write("CONFIG_ERROR: " + profile.indexid + " - " + errorDetail, LogLevel::ERR);
             {
                 std::lock_guard<std::mutex> lock(queueMutex_);
                 failedCount_++;
@@ -121,8 +121,8 @@ db::models::Profileitem configProfile = profile;
             }
             
             if (!addSuccess) {
-                Logger::write("[Worker-" + std::to_string(workerId) + "] 注入xray outbound 错误: " + xrayApi.getLastError());
-                Logger::write("[Worker-" + std::to_string(workerId) + "] XRAY_ERROR - " + profile.indexid + " (tag=" + tag + ") - " + xrayApi.getLastError());
+                Logger::write("[Worker-" + std::to_string(workerId) + "] 注入xray outbound 错误: " + xrayApi.getLastError(), LogLevel::ERR);
+                Logger::write("[Worker-" + std::to_string(workerId) + "] XRAY_ERROR - " + profile.indexid + " (tag=" + tag + ") - " + xrayApi.getLastError(), LogLevel::ERR);
                 Logger::write("  Xray output: " + addResult, LogLevel::ERR);
                 Logger::write("  Outbound JSON: " + config.outbound_json, LogLevel::ERR);
                 {
@@ -165,8 +165,8 @@ db::models::Profileitem configProfile = profile;
             
         } catch (const std::exception& e) {
             std::cerr << "[Worker-" << workerId << "] Exception: " << e.what() << std::endl;
-            Logger::write("[Worker-" + std::to_string(workerId) + "] failed to build conf: " + e.what());
-            Logger::write("[Worker-" + std::to_string(workerId) + "] EXCEPTION - " + profile.indexid + " - " + e.what());
+            Logger::write("[Worker-" + std::to_string(workerId) + "] failed to build conf: " + e.what(), LogLevel::ERR);
+            Logger::write("[Worker-" + std::to_string(workerId) + "] EXCEPTION - " + profile.indexid + " - " + e.what(), LogLevel::ERR);
             {
                 std::lock_guard<std::mutex> lock(queueMutex_);
                 failedCount_++;
