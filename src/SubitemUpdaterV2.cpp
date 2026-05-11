@@ -35,7 +35,9 @@ namespace {
             if (val.is_string()) return val.as_string().c_str();
             if (val.is_int64()) return std::to_string(val.as_int64());
             if (val.is_double()) return std::to_string(static_cast<int>(val.as_double()));
-        } catch (...) {}
+} catch (...) {
+            Logger::write("getJsonValueString: exception for key " + std::string(key ? key : "(null)"), LogLevel::WARN);
+        }
         return defaultVal;
     }
 
@@ -237,23 +239,23 @@ bool SubitemUpdaterV2::run() {
 
     releaseProxyPorts();
 
-    Logger::write("========================================", LogLevel::INFO);
-    Logger::write("INFO: Update Summary", LogLevel::INFO);
-    Logger::write("INFO: Total subscriptions: " + std::to_string(totalSubs), LogLevel::INFO);
-    Logger::write("INFO: Phase 1 (Direct) - Success: " + std::to_string(directSuccessCount) + ", Failed: " + std::to_string(directFailCount), LogLevel::INFO);
+    Logger::write("========================================", LogLevel::REPORT);
+    Logger::write("Update Summary", LogLevel::REPORT);
+    Logger::write("Total subscriptions: " + std::to_string(totalSubs), LogLevel::REPORT);
+    Logger::write("Phase 1 (Direct) - Success: " + std::to_string(directSuccessCount) + ", Failed: " + std::to_string(directFailCount), LogLevel::REPORT);
     if (runProxyPhase) {
-        Logger::write("INFO: Phase 2 (Proxy) - Success: " + std::to_string(proxySuccessCount) + ", Failed: " + std::to_string(proxyFailCount), LogLevel::INFO);
+        Logger::write("Phase 2 (Proxy) - Success: " + std::to_string(proxySuccessCount) + ", Failed: " + std::to_string(proxyFailCount), LogLevel::REPORT);
     }
-    Logger::write("INFO: Total - Success: " + std::to_string(successCount) + ", Failed: " + std::to_string(totalSubs - successCount), LogLevel::INFO);
+    Logger::write("Total - Success: " + std::to_string(successCount) + ", Failed: " + std::to_string(totalSubs - successCount), LogLevel::REPORT);
     
     if (!failedSubs.empty()) {
-        Logger::write("========================================", LogLevel::INFO);
-        Logger::write("INFO: Failed subscriptions:", LogLevel::INFO);
+        Logger::write("========================================", LogLevel::REPORT);
+        Logger::write("Failed subscriptions:", LogLevel::REPORT);
         for (const auto& sub : failedSubs) {
-            Logger::write("INFO:   Id: " + std::get<0>(sub) + ", Remarks: " + std::get<1>(sub) + ", URL: " + std::get<2>(sub), LogLevel::INFO);
+            Logger::write("  Id: " + std::get<0>(sub) + ", Remarks: " + std::get<1>(sub) + ", URL: " + std::get<2>(sub), LogLevel::REPORT);
         }
     }
-    Logger::write("========================================", LogLevel::INFO);
+    Logger::write("========================================", LogLevel::REPORT);
 
     if (config_.dedup_after_update && config_.dedup_enabled) {
         Logger::write("INFO: Running dedup after subscription update...", LogLevel::INFO);
@@ -565,8 +567,8 @@ std::vector<db::models::Profileitem> SubitemUpdaterV2::parseSubscription(const s
                                 profile.id = getJsonValueString(obj, "id", "");
                                 profile.security = getJsonValueString(obj, "scy", "auto");
                                 profile.remarks = getJsonValueString(obj, "ps", "");
-                                parseSuccess = true;
-                            } catch (...) {}
+parseSuccess = true;
+} catch (...) {}
                         }
                     }
                 }
@@ -1470,7 +1472,7 @@ bool SubitemUpdaterV2::migrateProxy(sqlite3* srcDb, sqlite3* dstDb,
         
         sqlite3_stmt* updateStmt = nullptr;
         if (sqlite3_prepare_v2(dstDb, updateSql.c_str(), -1, &updateStmt, nullptr) != SQLITE_OK) {
-            std::cerr << "UPDATE prepare failed: " << sqlite3_errmsg(dstDb) << std::endl;
+            Logger::write("UPDATE prepare failed for " + proxy.indexid + ": " + std::string(sqlite3_errmsg(dstDb)), LogLevel::ERR);
             return false;
         }
         
@@ -1513,7 +1515,7 @@ bool SubitemUpdaterV2::migrateProxy(sqlite3* srcDb, sqlite3* dstDb,
         
         bool result = (sqlite3_step(updateStmt) == SQLITE_DONE);
         if (!result) {
-            std::cerr << "UPDATE failed for proxy " << proxy.indexid << ": " << sqlite3_errmsg(dstDb) << std::endl;
+            Logger::write("UPDATE step failed for " + proxy.indexid + ": " + std::string(sqlite3_errmsg(dstDb)), LogLevel::ERR);
         }
         sqlite3_finalize(updateStmt);
         
@@ -1526,7 +1528,7 @@ bool SubitemUpdaterV2::migrateProxy(sqlite3* srcDb, sqlite3* dstDb,
         return result;
     } else {
         // INSERT new proxy
-        std::string insertSql = "INSERT INTO ProfileItem (IndexId, ConfigType, ConfigVersion, Address, Port, Ports, Id, AlterId, Security, Network, Remarks, HeaderType, RequestHost, Path, StreamSecurity, AllowInsecure, SubId, IsSub, Flow, Sni, Alpn, CoreType, PreSocksPort, Fingerprint, DisplayLog, PublicKey, ShortId, SpiderX, Mldsa65Verify, Extra, MuxEnabled, Cert, CertSha, EchConfigList, EchForceQuery) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+        std::string insertSql = "INSERT INTO ProfileItem (IndexId, ConfigType, ConfigVersion, Address, Port, Ports, Id, AlterId, Security, Network, Remarks, HeaderType, RequestHost, Path, StreamSecurity, AllowInsecure, SubId, IsSub, Flow, Sni, Alpn, CoreType, PreSocksPort, Fingerprint, DisplayLog, PublicKey, ShortId, SpiderX, Mldsa65Verify, Extra, MuxEnabled, Cert, CertSha, EchConfigList, EchForceQuery) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
         
         sqlite3_stmt* insertStmt = nullptr;
         if (sqlite3_prepare_v2(dstDb, insertSql.c_str(), -1, &insertStmt, nullptr) != SQLITE_OK) {
@@ -1594,6 +1596,7 @@ bool SubitemUpdaterV2::migrateProfileExItem(sqlite3* srcDb, sqlite3* dstDb,
     bool found = false;
     
     if (sqlite3_prepare_v2(srcDb, srcSql.c_str(), -1, &srcStmt, nullptr) != SQLITE_OK) {
+        Logger::write("migrateProfileExItem: Prepare source select failed for " + indexid + ": " + std::string(sqlite3_errmsg(srcDb)), LogLevel::ERR);
         return false;
     }
     sqlite3_bind_text(srcStmt, 1, indexid.c_str(), -1, SQLITE_TRANSIENT);
@@ -1613,6 +1616,7 @@ bool SubitemUpdaterV2::migrateProfileExItem(sqlite3* srcDb, sqlite3* dstDb,
     bool exists = false;
     
     if (sqlite3_prepare_v2(dstDb, checkSql.c_str(), -1, &checkStmt, nullptr) != SQLITE_OK) {
+        Logger::write("migrateProfileExItem: Prepare target check failed for " + indexid + ": " + std::string(sqlite3_errmsg(dstDb)), LogLevel::ERR);
         return false;
     }
     sqlite3_bind_text(checkStmt, 1, indexid.c_str(), -1, SQLITE_TRANSIENT);
@@ -1626,6 +1630,7 @@ bool SubitemUpdaterV2::migrateProfileExItem(sqlite3* srcDb, sqlite3* dstDb,
         std::string updateSql = "UPDATE ProfileExItem SET Delay = ?, Speed = ?, Sort = ?, Message = ?, consecutive_failures = ? WHERE IndexId = ?";
         sqlite3_stmt* updateStmt = nullptr;
         if (sqlite3_prepare_v2(dstDb, updateSql.c_str(), -1, &updateStmt, nullptr) != SQLITE_OK) {
+            Logger::write("migrateProfileExItem: Prepare UPDATE failed for " + indexid + ": " + std::string(sqlite3_errmsg(dstDb)), LogLevel::ERR);
             return false;
         }
         bindTextOrNull(updateStmt, 1, exItem.delay);
@@ -1637,6 +1642,7 @@ bool SubitemUpdaterV2::migrateProfileExItem(sqlite3* srcDb, sqlite3* dstDb,
         bool result = (sqlite3_step(updateStmt) == SQLITE_DONE);
         sqlite3_finalize(updateStmt);
         if (!result) {
+            Logger::write("migrateProfileExItem: UPDATE step failed for " + indexid + ": " + std::string(sqlite3_errmsg(dstDb)), LogLevel::ERR);
             return false;
         }
     } else {
@@ -1644,6 +1650,7 @@ bool SubitemUpdaterV2::migrateProfileExItem(sqlite3* srcDb, sqlite3* dstDb,
         std::string insertSql = "INSERT INTO ProfileExItem (IndexId, Delay, Speed, Sort, Message, consecutive_failures) VALUES (?, ?, ?, ?, ?, ?)";
         sqlite3_stmt* insertStmt = nullptr;
         if (sqlite3_prepare_v2(dstDb, insertSql.c_str(), -1, &insertStmt, nullptr) != SQLITE_OK) {
+            Logger::write("migrateProfileExItem: Prepare INSERT failed for " + indexid + ": " + std::string(sqlite3_errmsg(dstDb)), LogLevel::ERR);
             return false;
         }
         sqlite3_bind_text(insertStmt, 1, indexid.c_str(), -1, SQLITE_TRANSIENT);
@@ -1655,6 +1662,7 @@ bool SubitemUpdaterV2::migrateProfileExItem(sqlite3* srcDb, sqlite3* dstDb,
         bool result = (sqlite3_step(insertStmt) == SQLITE_DONE);
         sqlite3_finalize(insertStmt);
         if (!result) {
+            Logger::write("migrateProfileExItem: INSERT step failed for " + indexid + ": " + std::string(sqlite3_errmsg(dstDb)), LogLevel::ERR);
             return false;
         }
     }
@@ -1681,20 +1689,18 @@ bool SubitemUpdaterV2::syncDatabases(const std::string& sourceDbPath,
     
     // 1. Open source database
     if (sqlite3_open(sourceDbPath.c_str(), &srcDb) != SQLITE_OK) {
-        std::cerr << "Failed to open source database: " << sqlite3_errmsg(srcDb) << std::endl;
-        std::cerr << "Source path: " << sourceDbPath << std::endl;
+        Logger::write("Failed to open source database: " + std::string(sqlite3_errmsg(srcDb)) + " Path: " + sourceDbPath, LogLevel::ERR);
         return false;
     }
-    std::cout << "Source database opened successfully." << std::endl;
+    Logger::write("Source database opened", LogLevel::DEBUG);
     
     // 2. Open target database
     if (sqlite3_open(targetDbPath.c_str(), &dstDb) != SQLITE_OK) {
-        std::cerr << "Failed to open target database: " << sqlite3_errmsg(dstDb) << std::endl;
-        std::cerr << "Target path: " << targetDbPath << std::endl;
+        Logger::write("Failed to open target database: " + std::string(sqlite3_errmsg(dstDb)) + " Path: " + targetDbPath, LogLevel::ERR);
         sqlite3_close(srcDb);
         return false;
     }
-    std::cout << "Target database opened successfully." << std::endl << std::endl;
+    Logger::write("Target database opened", LogLevel::DEBUG);
     
     // 3. Query valid proxies from source (delay > 0)
     std::string sql = R"(
@@ -1705,7 +1711,7 @@ bool SubitemUpdaterV2::syncDatabases(const std::string& sourceDbPath,
     )";
     
     auto profiles = db::models::ProfileitemDAO(srcDb).getAll(sql);
-    std::cout << "Found " << profiles.size() << " valid proxies to migrate" << std::endl;
+    Logger::write("Found " + std::to_string(profiles.size()) + " valid proxies to migrate", LogLevel::INFO);
     
     int successCount = 0;
     int failCount = 0;
@@ -1715,7 +1721,7 @@ bool SubitemUpdaterV2::syncDatabases(const std::string& sourceDbPath,
         // Migrate subscription first
         if (!profile.subid.empty()) {
             if (!migrateSubscription(srcDb, dstDb, profile.subid)) {
-                std::cerr << "Warning: Failed to migrate subscription " << profile.subid << std::endl;
+                Logger::write("Warning: Failed to migrate subscription " + profile.subid, LogLevel::WARN);
             }
         }
         
@@ -1723,20 +1729,21 @@ bool SubitemUpdaterV2::syncDatabases(const std::string& sourceDbPath,
         if (migrateProxy(srcDb, dstDb, profile)) {
             successCount++;
         } else {
-            std::cerr << "Failed to migrate proxy " << profile.indexid << std::endl;
+            Logger::write("Failed to migrate proxy " + profile.indexid, LogLevel::ERR);
             failCount++;
         }
     }
     
     // 5. Output statistics
-    std::cout << "\nMigration complete:" << std::endl;
-    std::cout << "  Total proxies: " << profiles.size() << std::endl;
-    std::cout << "  Success: " << successCount << std::endl;
-    std::cout << "  Failed: " << failCount << std::endl;
-    
+    Logger::write("Migration Result — Total: " + std::to_string(profiles.size()) + ", Succeeded: " + std::to_string(successCount) + ", Failed: " + std::to_string(failCount), LogLevel::REPORT);
+
+    if (failCount > 0) {
+        Logger::write("Sync failed: " + std::to_string(failCount) + " proxy(es) failed to migrate", LogLevel::ERR);
+    }
+
     sqlite3_close(srcDb);
     sqlite3_close(dstDb);
-    
+
     return failCount == 0;
 }
 
@@ -1754,7 +1761,7 @@ bool SubitemUpdaterV2::deduplicate() {
         }
         sqlite3_finalize(stmt);
     }
-    Logger::write("INFO: Total proxies before: " + std::to_string(totalBefore), LogLevel::INFO);
+    Logger::write("Total proxies before: " + std::to_string(totalBefore), LogLevel::REPORT);
     
     char* errMsg = nullptr;
     if (sqlite3_exec(db_, "BEGIN TRANSACTION;", nullptr, nullptr, &errMsg) != SQLITE_OK) {
@@ -1763,19 +1770,19 @@ bool SubitemUpdaterV2::deduplicate() {
         return false;
     }
     
-    Logger::write("INFO: Phase 1/3 - Marking working proxies with protected subid", LogLevel::INFO);
+    Logger::write("Phase 1/3 - Marking working proxies with protected subid", LogLevel::REPORT);
     int p0 = deduplicatePhase0();
-    Logger::write("INFO: Phase 1 completed: " + std::to_string(p0) + " proxies marked", LogLevel::INFO);
+    Logger::write("Phase 1 completed: " + std::to_string(p0) + " proxies marked", LogLevel::REPORT);
     
-    Logger::write("INFO: Phase 2/3 - Removing invalid addresses (private IPs)", LogLevel::INFO);
+    Logger::write("Phase 2/3 - Removing invalid addresses (private IPs)", LogLevel::REPORT);
     int p1 = deduplicatePhase1();
-    Logger::write("INFO: Phase 2 completed: removed " + std::to_string(p1) + " proxies", LogLevel::INFO);
+    Logger::write("Phase 2 completed: removed " + std::to_string(p1) + " proxies", LogLevel::REPORT);
     
-    Logger::write("INFO: Phase 3/3 - Removing duplicates (merged CTE)", LogLevel::INFO);
+    Logger::write("Phase 3/3 - Removing duplicates (merged CTE)", LogLevel::REPORT);
     int pMerged = deduplicateMergedPhase();
-    Logger::write("INFO: Phase 3 completed: removed " + std::to_string(pMerged) + " proxies", LogLevel::INFO);
+    Logger::write("Phase 3 completed: removed " + std::to_string(pMerged) + " proxies", LogLevel::REPORT);
     
-    Logger::write("INFO: Cleaning up ProfileExItem...", LogLevel::INFO);
+    Logger::write("Cleaning up ProfileExItem...", LogLevel::REPORT);
     cleanupProfileExItem();
     
     if (sqlite3_exec(db_, "COMMIT;", nullptr, nullptr, &errMsg) != SQLITE_OK) {
@@ -1795,12 +1802,12 @@ bool SubitemUpdaterV2::deduplicate() {
     
     int totalDeleted = totalBefore - totalAfter;
     
-    Logger::write("========================================", LogLevel::INFO);
-    Logger::write("INFO: Deduplication Summary", LogLevel::INFO);
-    Logger::write("========================================", LogLevel::INFO);
-    Logger::write("INFO: Total deleted: " + std::to_string(totalDeleted), LogLevel::INFO);
-    Logger::write("INFO: Total remaining: " + std::to_string(totalAfter), LogLevel::INFO);
-    Logger::write("INFO: Dedup completed successfully", LogLevel::INFO);
+    Logger::write("========================================", LogLevel::REPORT);
+    Logger::write("Deduplication Summary", LogLevel::REPORT);
+    Logger::write("========================================", LogLevel::REPORT);
+    Logger::write("Total deleted: " + std::to_string(totalDeleted), LogLevel::REPORT);
+    Logger::write("Total remaining: " + std::to_string(totalAfter), LogLevel::REPORT);
+    Logger::write("Dedup completed successfully", LogLevel::REPORT);
     
     return true;
 }
@@ -1947,10 +1954,10 @@ bool SubitemUpdaterV2::importSubitemsFromFile(const std::string& filePath,
         return false;
     }
     
-    Logger::write("========================================");
-    Logger::write("Subitem Import Starting...");
-    Logger::write("File: " + filePath);
-    Logger::write("========================================");
+    Logger::write("========================================", LogLevel::REPORT);
+    Logger::write("Subitem Import Starting...", LogLevel::REPORT);
+    Logger::write("File: " + filePath, LogLevel::REPORT);
+    Logger::write("========================================", LogLevel::REPORT);
     
     // Initialize counters
     int totalLines = 0;
@@ -2004,7 +2011,7 @@ bool SubitemUpdaterV2::importSubitemsFromFile(const std::string& filePath,
         if (isUrlExists(url)) {
             skippedCount++;
             skippedList.push_back(url + " (already exists)");
-            Logger::write("SKIPPED: URL already exists: " + url);
+            Logger::write("SKIPPED: URL already exists: " + url, LogLevel::WARN);
             continue;
         }
         
@@ -2024,7 +2031,7 @@ bool SubitemUpdaterV2::importSubitemsFromFile(const std::string& filePath,
         if (insertSuccess) {
             successCount++;
             importedList.push_back("[" + subitem.remarks + "] " + url);
-            Logger::write("Imported: [" + subitem.remarks + "] " + url);
+            Logger::write("Imported: [" + subitem.remarks + "] " + url, LogLevel::INFO);
             nextSort += 10;
         } else {
             failedCount++;
@@ -2036,56 +2043,56 @@ bool SubitemUpdaterV2::importSubitemsFromFile(const std::string& filePath,
     file.close();
     
     // Print summary
-    Logger::write("========================================");
-    Logger::write("Subitem Import Summary");
-    Logger::write("========================================");
-    Logger::write("Total lines: " + std::to_string(totalLines));
-    Logger::write("Success: " + std::to_string(successCount));
-    Logger::write("Skipped (duplicates): " + std::to_string(skippedCount));
-    Logger::write("Failed (invalid format): " + std::to_string(failedCount));
-    Logger::write("========================================");
+    Logger::write("========================================", LogLevel::REPORT);
+    Logger::write("Subitem Import Summary", LogLevel::REPORT);
+    Logger::write("========================================", LogLevel::REPORT);
+    Logger::write("Total lines: " + std::to_string(totalLines), LogLevel::REPORT);
+    Logger::write("Success: " + std::to_string(successCount), LogLevel::REPORT);
+    Logger::write("Skipped (duplicates): " + std::to_string(skippedCount), LogLevel::REPORT);
+    Logger::write("Failed (invalid format): " + std::to_string(failedCount), LogLevel::REPORT);
+    Logger::write("========================================", LogLevel::REPORT);
     
     if (!importedList.empty()) {
-        Logger::write("Imported URLs:");
+        Logger::write("Imported URLs:", LogLevel::INFO);
         for (size_t i = 0; i < importedList.size(); i++) {
-            Logger::write("  " + std::to_string(i + 1) + ". " + importedList[i]);
+            Logger::write("  " + std::to_string(i + 1) + ". " + importedList[i], LogLevel::INFO);
         }
     }
-    
+
     if (!skippedList.empty()) {
-        Logger::write("========================================");
-        Logger::write("Skipped URLs (duplicates):");
+        Logger::write("========================================", LogLevel::REPORT);
+        Logger::write("Skipped URLs (duplicates):", LogLevel::WARN);
         for (size_t i = 0; i < skippedList.size(); i++) {
-            Logger::write("  " + std::to_string(i + 1) + ". " + skippedList[i]);
+            Logger::write("  " + std::to_string(i + 1) + ". " + skippedList[i], LogLevel::WARN);
         }
     }
-    
+
     if (!failedList.empty()) {
-        Logger::write("========================================");
-        Logger::write("Failed URLs (invalid format):");
+        Logger::write("========================================", LogLevel::REPORT);
+        Logger::write("Failed URLs (invalid format):", LogLevel::ERR);
         for (size_t i = 0; i < failedList.size(); i++) {
-            Logger::write("  " + std::to_string(i + 1) + ". " + failedList[i]);
+            Logger::write("  " + std::to_string(i + 1) + ". " + failedList[i], LogLevel::ERR);
         }
     }
-    
-    Logger::write("========================================");
+
+    Logger::write("========================================", LogLevel::REPORT);
     
     return failedCount == 0;
 }
 
 // Import single URL directly
 bool SubitemUpdaterV2::importSingleUrl(const std::string& url) {
-    Logger::write("========================================");
-    Logger::write("Subitem Import Starting (Single URL)...");
-    Logger::write("URL: " + url);
-    Logger::write("========================================");
+    Logger::write("========================================", LogLevel::REPORT);
+    Logger::write("Subitem Import Starting (Single URL)...", LogLevel::REPORT);
+    Logger::write("URL: " + url, LogLevel::REPORT);
+    Logger::write("========================================", LogLevel::REPORT);
     
     // 1. Validate URL format
     if (!isValidUrlFormat(url)) {
         Logger::write("ERROR: Invalid URL format: " + url, LogLevel::ERR);
-        Logger::write("========================================");
-        Logger::write("Import Summary: Success=0, Skipped=0, Failed=1");
-        Logger::write("========================================");
+        Logger::write("========================================", LogLevel::REPORT);
+        Logger::write("Import Summary: Success=0, Skipped=0, Failed=1", LogLevel::REPORT);
+        Logger::write("========================================", LogLevel::REPORT);
         return false;
     }
     
@@ -2096,10 +2103,10 @@ bool SubitemUpdaterV2::importSingleUrl(const std::string& url) {
     
     // 3. Check for duplicates
     if (isUrlExists(url)) {
-        Logger::write("SKIPPED: URL already exists: " + url);
-        Logger::write("========================================");
-        Logger::write("Import Summary: Success=0, Skipped=1, Failed=0");
-        Logger::write("========================================");
+        Logger::write("SKIPPED: URL already exists: " + url, LogLevel::REPORT);
+        Logger::write("========================================", LogLevel::REPORT);
+        Logger::write("Import Summary: Success=0, Skipped=1, Failed=0", LogLevel::REPORT);
+        Logger::write("========================================", LogLevel::REPORT);
         return true; // Not an error, just skipped
     }
     
@@ -2121,16 +2128,16 @@ bool SubitemUpdaterV2::importSingleUrl(const std::string& url) {
     
     // 7. Output result
     if (insertSuccess) {
-        Logger::write("Imported: [" + subitem.remarks + "] " + url);
-        Logger::write("========================================");
-        Logger::write("Import Summary: Success=1, Skipped=0, Failed=0");
-        Logger::write("========================================");
+        Logger::write("Imported: [" + subitem.remarks + "] " + url, LogLevel::REPORT);
+        Logger::write("========================================", LogLevel::REPORT);
+        Logger::write("Import Summary: Success=1, Skipped=0, Failed=0", LogLevel::REPORT);
+        Logger::write("========================================", LogLevel::REPORT);
         return true;
     } else {
         Logger::write("ERROR: Failed to insert: " + url, LogLevel::ERR);
-        Logger::write("========================================");
-        Logger::write("Import Summary: Success=0, Skipped=0, Failed=1");
-        Logger::write("========================================");
+        Logger::write("========================================", LogLevel::REPORT);
+        Logger::write("Import Summary: Success=0, Skipped=0, Failed=1", LogLevel::REPORT);
+        Logger::write("========================================", LogLevel::REPORT);
         return false;
     }
 }

@@ -28,24 +28,24 @@ std::vector<db::models::Profileitem> ConfigGenerator::loadProfiles(const std::st
     db::models::ProfileitemDAO dao(db_);
     auto profiles = dao.getAll(sqlQuery);
     
-    Logger::write("[ConfigGenerator] SQL returned " + std::to_string(profiles.size()) + " profiles");
+    Logger::write("[ConfigGenerator] SQL returned " + std::to_string(profiles.size()) + " profiles", LogLevel::INFO);
     
     std::vector<db::models::Profileitem> validProfiles;
     for (auto& p : profiles) {
         if (p.network.empty()) {
-            Logger::write("[ConfigGenerator] Using default network 'tcp' for " + p.address + ":" + p.port);
+            Logger::write("[ConfigGenerator] Using default network 'tcp' for " + p.address + ":" + p.port, LogLevel::WARN);
             p.network = "tcp";
         }
         
         if (!isValidNetwork(p.network)) {
-            Logger::write("[ConfigGenerator] Skipping " + p.address + ":" + p.port + " - invalid network: '" + p.network + "'");
+            Logger::write("[ConfigGenerator] Skipping " + p.address + ":" + p.port + " - invalid network: '" + p.network + "'", LogLevel::WARN);
             continue;
         }
         
         validProfiles.push_back(p);
     }
     
-    Logger::write("[ConfigGenerator] Valid profiles: " + std::to_string(validProfiles.size()));
+    Logger::write("[ConfigGenerator] Valid profiles: " + std::to_string(validProfiles.size()), LogLevel::INFO);
     return validProfiles;
 }
 

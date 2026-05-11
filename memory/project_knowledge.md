@@ -61,8 +61,23 @@
 |------|------|------|
 | 测试数据库 | `test/guindb.db` | 开发和测试参考，完整路径: `E:\eclipse_workspace\multiple_thread_validproxy\test\guindb.db` |
 | 生产数据库 | `bin/worker/guindb.db` | 实际运行使用的数据库 |
+| 同步测试用空库 | `test/guiNDB_empty.db` | 用于 `-S` 同步测试的目标空库（约 8.5MB 预分配） |
+| 同步测试用源库 | `test/guiNDB.db` | 用于 `-S` 同步测试的源库（约 41MB，含 703 条有效代理） |
+| 测试专用配置文件 | `bin/worker/config_test.json` | 将 sync 的 source_db/target_db 指向 test/ 目录，单元测试时使用 |
 
-**注意**: 方案文档和验证命令中引用的 `test/guindb.db` 均指测试数据库。
+**注意**: 方案文档和验证命令中引用的 `test/guindb.db` 均指测试数据库。`guiNDB_empty.db` 和 `guiNDB.db` 为同步测试专用，前者会被覆盖。
+
+### ⚠️ 开发流程规则
+
+> **先创建计划文档、审核后再执行**
+>
+> 任何源代码修改前，必须先在 `docs/plans/` 下创建计划文档（`status: draft`），审核通过后方可执行。完整规范见 [`docs/plans/DEV-PROCESS.md`](../docs/plans/DEV-PROCESS.md)。
+>
+> - 计划文档命名: `YYYY-MM-DD-XXX-descriptive-name.md`
+> - 必须包含 YAML frontmatter: `title` / `type` / `status` / `date`
+> - 状态流转: `draft` → `in_progress` → `completed` / `cancelled` / `superseded`
+> - 完成后更新计划状态并记录验证结果
+> - 长期记忆中记录所有关键决策和上下文
 
 ### 构建/测试命令 (Windows + GCC/MinGW)
 ```bash

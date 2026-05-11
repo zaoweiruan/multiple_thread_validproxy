@@ -1,7 +1,6 @@
 #include "XrayManager.h"
 #include "PortManager.h"
 #include "Logger.h"
-#include <iostream>
 #include <thread>
 #include <chrono>
 
@@ -42,8 +41,7 @@ int XrayManager::start(int count, int startPort, int apiPort) {
         count = workers_;
     }
     
-    Logger::write("XrayManager::start: count=" + std::to_string(count) + ", startPort=" + std::to_string(startPort) + 
-                  ", apiPort=" + std::to_string(apiPort) + ", configDir=" + configDir_);
+    Logger::write("XrayManager::start: count=" + std::to_string(count) + ", startPort=" + std::to_string(startPort) + ", apiPort=" + std::to_string(apiPort) + ", configDir=" + configDir_, LogLevel::REPORT);
     
     std::vector<int> usedPorts;
     int actualCount = 0;
@@ -53,7 +51,7 @@ int XrayManager::start(int count, int startPort, int apiPort) {
         int apiPortAddr = PortManager::findAvailable(apiPort + i, 1000);
         
         if (socksPort <= 0 || apiPortAddr <= 0) {
-            Logger::write("XrayManager: failed to find available ports");
+            Logger::write("XrayManager: failed to find available ports", LogLevel::ERR);
             break;
         }
         
@@ -63,10 +61,10 @@ int XrayManager::start(int count, int startPort, int apiPort) {
             actualCount++;
             std::this_thread::sleep_for(std::chrono::milliseconds(500));
         } else {
-            Logger::write("XrayManager: failed to start instance " + std::to_string(i));
+            Logger::write("XrayManager: failed to start instance " + std::to_string(i), LogLevel::WARN);
         }
     }
-    Logger::write("XrayManager::start: actualCount=" + std::to_string(actualCount));
+    Logger::write("XrayManager::start: actualCount=" + std::to_string(actualCount), LogLevel::REPORT);
     return actualCount;
 }
 
