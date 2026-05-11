@@ -2,7 +2,6 @@
 #include "ConfigGenerator.h"
 #include "Utils.h"
 #include "Logger.h"
-#include <iostream>
 #include <fstream>
 #include <filesystem>
 #include <algorithm>
@@ -21,13 +20,6 @@ ProxyBatchTester::ProxyBatchTester(sqlite3* db, const config::AppConfig& config,
 ProxyBatchTester::~ProxyBatchTester() {
     delete proxyTester_;
     delete xrayManager_;
-}
-
-static std::mutex coutMutex;
-
-void ProxyBatchTester::logToConsole(const std::string& msg) {
-    std::lock_guard<std::mutex> lock(coutMutex);
-    std::cout << msg << "\n" << std::flush;
 }
 
 std::vector<db::models::Profileitem> ProxyBatchTester::loadProxies(const std::string& subId) {
@@ -145,26 +137,24 @@ db::models::Profileitem configProfile = profile;
                     currentNum = ++processedCount_;
                     successCount_++;
                 }
-                logToConsole("[Worker-" + std::to_string(workerId) + "] [" + std::to_string(currentNum) + "/" + std::to_string(totalProxies_) + "] " + profile.address + ":" + profile.port + 
-                         " (" + utils::getProtocolName(profile.configtype) + ") OK " + std::to_string(result.latencyMs) + "ms");
-                Logger::write("[Worker-" + std::to_string(workerId) + "] " + profile.address + ":" + profile.port + 
-                         " (" + utils::getProtocolName(profile.configtype) + ") SUCCESS - Latency: " + std::to_string(result.latencyMs) + "ms");
+                Logger::write(std::string("[Worker-" + std::to_string(workerId) + "] [") + std::to_string(currentNum) + "/" + std::to_string(totalProxies_) + "] " + profile.address + ":" + profile.port +
+                          " (" + utils::getProtocolName(profile.configtype) + ") OK " + std::to_string(result.latencyMs) + "ms", LogLevel::INFO);
+Logger::write(std::string("[Worker-" + std::to_string(workerId) + "] " + profile.address + ":" + profile.port + " (" + utils::getProtocolName(profile.configtype) + ") SUCCESS - Latency: " + std::to_string(result.latencyMs) + "ms"), LogLevel::INFO);
             } else {
                 {
                     std::lock_guard<std::mutex> lock(queueMutex_);
                     currentNum = ++processedCount_;
                     failedCount_++;
                 }
-                logToConsole("[Worker-" + std::to_string(workerId) + "] [" + std::to_string(currentNum) + "/" + std::to_string(totalProxies_) + "] " + profile.address + ":" + profile.port + 
-                         " (" + utils::getProtocolName(profile.configtype) + ") FAIL " + result.errorMsg);
-                Logger::write("[Worker-" + std::to_string(workerId) + "] " + profile.address + ":" + profile.port + 
-                         " (" + utils::getProtocolName(profile.configtype) + ") FAILED - " + result.errorMsg);
+                Logger::write(std::string("[Worker-" + std::to_string(workerId) + "] [") + std::to_string(currentNum) + "/" + std::to_string(totalProxies_) + "] " + profile.address + ":" + profile.port +
+                          " (" + utils::getProtocolName(profile.configtype) + ") FAIL " + result.errorMsg, LogLevel::INFO);
+Logger::write(std::string("[Worker-" + std::to_string(workerId) + "] " + profile.address + ":" + profile.port + " (" + utils::getProtocolName(profile.configtype) + ") FAILED - " + result.errorMsg), LogLevel::INFO);
             }
             
             exItemDao.updateTestResult(profile.indexid, result.latencyMs, result.success, result.errorMsg);
             
-        } catch (const std::exception& e) {
-            std::cerr << "[Worker-" << workerId << "] Exception: " << e.what() << std::endl;
+} catch (const std::exception& e) {
+            Logger::write("[Worker-" + std::to_string(workerId) + "] Exception: " + e.what(), LogLevel::ERR);
             Logger::write("[Worker-" + std::to_string(workerId) + "] failed to build conf: " + e.what(), LogLevel::ERR);
             Logger::write("[Worker-" + std::to_string(workerId) + "] EXCEPTION - " + profile.indexid + " - " + e.what(), LogLevel::ERR);
             {
@@ -198,11 +188,11 @@ void ProxyBatchTester::testProxiesMultiThreaded() {
 }
 
 void ProxyBatchTester::printSummary() {
-    Logger::write("========================================");
-    Logger::write("Total: " + std::to_string(totalProxies_));
-    Logger::write("Success: " + std::to_string(successCount_));
-    Logger::write("Failed: " + std::to_string(failedCount_));
-    Logger::write("========================================");
+    Logger::write("========================================", LogLevel::REPORT);
+    Logger::write("Total: " + std::to_string(totalProxies_), LogLevel::REPORT);
+    Logger::write("Success: " + std::to_string(successCount_), LogLevel::REPORT);
+    Logger::write("Failed: " + std::to_string(failedCount_), LogLevel::REPORT);
+    Logger::write("========================================", LogLevel::REPORT);
 }
 
 bool ProxyBatchTester::run() {
@@ -210,29 +200,27 @@ bool ProxyBatchTester::run() {
     totalProxies_ = static_cast<int>(proxies_.size());
     
     if (totalProxies_ == 0) {
-        std::cerr << "No proxies to test" << std::endl;
-        Logger::write("ERROR: No proxies to test");
+        Logger::write("No proxies to test", LogLevel::WARN);
         return false;
     }
     
     if (config_.log_network_failures) {
-        Logger::write("Loaded " + std::to_string(totalProxies_) + " proxies");
+        Logger::write("Loaded " + std::to_string(totalProxies_) + " proxies", LogLevel::INFO);
     }
     
     int instanceCount = calculateXrayInstanceCount(totalProxies_);
-    if (!startXrayInstances(instanceCount)) {
-        std::cerr << "Failed to start xray instances" << std::endl;
-        Logger::write("ERROR: Failed to start xray instances");
+if (!startXrayInstances(instanceCount)) {
+        Logger::write("Failed to start xray instances", LogLevel::WARN);
         return false;
     }
-    
+
     if (config_.log_network_failures) {
-        Logger::write("Started " + std::to_string(instanceCount) + " xray instances");
+        Logger::write("Started " + std::to_string(instanceCount) + " xray instances", LogLevel::INFO);
     }
-    
+
     testProxiesMultiThreaded();
     printSummary();
-    
+
     xrayManager_->stopAll();
     return true;
 }
@@ -241,26 +229,24 @@ bool ProxyBatchTester::runWithSubId(const std::string& subId) {
     proxies_ = loadProxies(subId);
     totalProxies_ = static_cast<int>(proxies_.size());
     
-    if (totalProxies_ == 0) {
-        std::cerr << "No proxies to test for subscription: " << subId << std::endl;
-        Logger::write("ERROR: No proxies to test for subscription: " + subId);
+if (totalProxies_ == 0) {
+        Logger::write("No proxies to test for subscription: " + subId, LogLevel::WARN);
         return false;
     }
-    
-    std::cout << "Testing " << totalProxies_ << " proxies from subscription: " << subId << std::endl;
+
+    Logger::write("Testing " + std::to_string(totalProxies_) + " proxies from subscription: " + subId, LogLevel::INFO);
     if (config_.log_network_failures) {
-        Logger::write("Testing " + std::to_string(totalProxies_) + " proxies from subscription: " + subId);
+        Logger::write("Testing " + std::to_string(totalProxies_) + " proxies from subscription: " + subId, LogLevel::INFO);
     }
     
     int instanceCount = calculateXrayInstanceCount(totalProxies_);
     if (!startXrayInstances(instanceCount)) {
-        std::cerr << "Failed to start xray instances" << std::endl;
-        Logger::write("ERROR: Failed to start xray instances");
+        Logger::write("Failed to start xray instances", LogLevel::WARN);
         return false;
     }
     
     if (config_.log_network_failures) {
-        Logger::write("Started " + std::to_string(instanceCount) + " xray instances");
+        Logger::write("Started " + std::to_string(instanceCount) + " xray instances", LogLevel::INFO);
     }
     
     testProxiesMultiThreaded();

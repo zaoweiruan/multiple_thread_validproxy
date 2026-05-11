@@ -212,7 +212,6 @@ int main(int argc, char* argv[]) {
     
     if (commandMode == "generator") {
         Logger::init(logDir.string(), commandMode);
-        logInfo("validproxy starting...");
         auto appConfig = config::ConfigReader::load(configPath);
         if (!appConfig) {
             logError("Failed to load config from: " + configPath);
@@ -223,7 +222,8 @@ int main(int argc, char* argv[]) {
         Logger::setFileEnabled(appConfig->log_enabled);
         Logger::setFileLevel(Logger::stringToLevel(appConfig->log_file_level));
         Logger::setConsoleLevel(Logger::stringToLevel(appConfig->log_console_level));
-
+        logInfo("validproxy starting...");
+        
         sqlite3* db = nullptr;
         if (sqlite3_open(appConfig->database_path.c_str(), &db) != SQLITE_OK) {
             logError("Failed to open database: " + std::string(sqlite3_errmsg(db)));
@@ -265,7 +265,6 @@ int main(int argc, char* argv[]) {
     
     if (commandMode == "show-sub") {
         Logger::init(logDir.string(), commandMode);
-        logInfo("validproxy starting...");
         
         auto appConfig = config::ConfigReader::load(configPath);
         if (!appConfig) {
@@ -277,6 +276,7 @@ int main(int argc, char* argv[]) {
         Logger::setFileEnabled(appConfig->log_enabled);
         Logger::setFileLevel(Logger::stringToLevel(appConfig->log_file_level));
         Logger::setConsoleLevel(Logger::stringToLevel(appConfig->log_console_level));
+        logInfo("validproxy starting...");
         
         sqlite3* db = nullptr;
         
@@ -360,7 +360,6 @@ int main(int argc, char* argv[]) {
     
     if (commandMode == "find-proxy" || commandMode == "findminproxy") {
         Logger::init(logDir.string(), commandMode);
-        logInfo("validproxy starting...");
         
         auto appConfig = config::ConfigReader::load(configPath);
         if (!appConfig) {
@@ -372,6 +371,7 @@ int main(int argc, char* argv[]) {
         Logger::setFileEnabled(appConfig->log_enabled);
         Logger::setFileLevel(Logger::stringToLevel(appConfig->log_file_level));
         Logger::setConsoleLevel(Logger::stringToLevel(appConfig->log_console_level));
+        logInfo("validproxy starting...");
         
         sqlite3* db = nullptr;
         
@@ -427,7 +427,6 @@ int main(int argc, char* argv[]) {
     
     if (commandMode == "tourl") {
         Logger::init(logDir.string(), commandMode);
-        logInfo("validproxy starting...");
         
         auto appConfig = config::ConfigReader::load(configPath);
         if (!appConfig) {
@@ -439,6 +438,7 @@ int main(int argc, char* argv[]) {
         Logger::setFileEnabled(appConfig->log_enabled);
         Logger::setFileLevel(Logger::stringToLevel(appConfig->log_file_level));
         Logger::setConsoleLevel(Logger::stringToLevel(appConfig->log_console_level));
+        logInfo("validproxy starting...");
         
         sqlite3* db = nullptr;
         
@@ -510,15 +510,14 @@ int main(int argc, char* argv[]) {
         }
         
         sqlite3_close(db);
+        Logger::write(result ? "completed" : "failed", LogLevel::REPORT);
         Logger::close();
         
-        logInfo(result ? "completed" : "failed");
         return result ? 0 : 1;
     }
     
     if (commandMode == "sync") {
         Logger::init(logDir.string(), commandMode);
-        logInfo("validproxy starting sync...");
         
         auto appConfig = config::ConfigReader::load(configPath);
         if (!appConfig) {
@@ -530,6 +529,7 @@ int main(int argc, char* argv[]) {
         Logger::setFileEnabled(appConfig->log_enabled);
         Logger::setFileLevel(Logger::stringToLevel(appConfig->log_file_level));
         Logger::setConsoleLevel(Logger::stringToLevel(appConfig->log_console_level));
+        logInfo("validproxy starting sync...");
         
         // Determine source and target databases
         std::string sourceDb = !syncSourceDb.empty() ? syncSourceDb : appConfig->sync.source_db;
@@ -546,14 +546,13 @@ int main(int argc, char* argv[]) {
         update::SubitemUpdaterV2 updater(nullptr, "", *appConfig, nullptr, exeDir);
         bool result = updater.syncDatabases(sourceDb, targetDb);
         
-        logInfo(result ? "sync completed" : "sync failed");
+        Logger::write(result ? "sync completed" : "sync failed", LogLevel::REPORT);
         Logger::close();
         return result ? 0 : 1;
     }
     
     if (commandMode == "import-sub") {
         Logger::init(logDir.string(), commandMode);
-        logInfo("validproxy starting import...");
         
         // 判断是 URL 还是文件
         bool isUrl = (importFilePath.rfind("http://", 0) == 0 || 
@@ -571,6 +570,7 @@ int main(int argc, char* argv[]) {
         Logger::setFileEnabled(appConfig->log_enabled);
         Logger::setFileLevel(Logger::stringToLevel(appConfig->log_file_level));
         Logger::setConsoleLevel(Logger::stringToLevel(appConfig->log_console_level));
+        logInfo("validproxy starting import...");
         
         if (sqlite3_open(appConfig->database_path.c_str(), &db) != SQLITE_OK) {
             logError("Failed to open database: " + std::string(sqlite3_errmsg(db)));
@@ -596,7 +596,7 @@ int main(int argc, char* argv[]) {
             result = updater.importSubitemsFromFile(importFilePath);
         }
         
-        logInfo(result ? "import completed" : "import failed");
+        Logger::write(result ? "import completed" : "import failed", LogLevel::REPORT);
         sqlite3_close(db);
         Logger::close();
         return result ? 0 : 1;
@@ -604,7 +604,6 @@ int main(int argc, char* argv[]) {
     
     if (commandMode == "dedup") {
         Logger::init(logDir.string(), commandMode);
-        logInfo("validproxy starting...");
         
         auto appConfig = config::ConfigReader::load(configPath);
         if (!appConfig) {
@@ -616,6 +615,7 @@ int main(int argc, char* argv[]) {
         Logger::setFileEnabled(appConfig->log_enabled);
         Logger::setFileLevel(Logger::stringToLevel(appConfig->log_file_level));
         Logger::setConsoleLevel(Logger::stringToLevel(appConfig->log_console_level));
+        logInfo("validproxy starting...");
         
         sqlite3* db = nullptr;
         
@@ -625,29 +625,22 @@ int main(int argc, char* argv[]) {
             return 1;
         }
         
-        char timestamp[32];
-        time_t now = time(nullptr);
-        strftime(timestamp, sizeof(timestamp), "%Y%m%d_%H%M%S", localtime(&now));
-        std::string logFileName = "dedup_" + std::string(timestamp) + ".log";
-        std::string logFile = (logDir / logFileName).string();
-        std::ofstream logOut(logFile, std::ios::out | std::ios::trunc);
         update::SubitemUpdaterV2 subUpdaterV2(db,
                                               appConfig->xray_executable,
                                               *appConfig,
-                                              &logOut,
+                                              nullptr,
                                               exeDir);
         bool result = subUpdaterV2.deduplicate();
         
         sqlite3_close(db);
+        Logger::write(result ? "completed" : "failed", LogLevel::REPORT);
         Logger::close();
         
-        logInfo(result ? "completed" : "failed");
         return result ? 0 : 1;
     }
     
     if (!singleSubId.empty()) {
         Logger::init(logDir.string(), commandMode.empty() ? "test" : commandMode);
-        logInfo("validproxy starting...");
         
         auto appConfig = config::ConfigReader::load(configPath);
         if (!appConfig) {
@@ -659,6 +652,7 @@ int main(int argc, char* argv[]) {
         Logger::setFileEnabled(appConfig->log_enabled);
         Logger::setFileLevel(Logger::stringToLevel(appConfig->log_file_level));
         Logger::setConsoleLevel(Logger::stringToLevel(appConfig->log_console_level));
+        logInfo("validproxy starting...");
         
         sqlite3* db = nullptr;
         
@@ -667,15 +661,6 @@ int main(int argc, char* argv[]) {
             Logger::close();
             return 1;
         }
-        
-        char timestamp[32];
-        time_t now = time(nullptr);
-        strftime(timestamp, sizeof(timestamp), "%Y%m%d_%H%M%S", localtime(&now));
-        
-        std::string logFileName = commandMode + "_" + std::string(timestamp) + ".log";
-        std::string logFile = (logDir / logFileName).string();
-        std::ofstream logOut(logFile, std::ios::out | std::ios::trunc);
-        std::cout << "Log file: " << logFile << std::endl;
         
         logInfo("Mode: " + commandMode + ", subscription: " + singleSubId);
         
@@ -707,14 +692,9 @@ int main(int argc, char* argv[]) {
             }
         }
         
-        if (logOut.is_open()) {
-            logOut.close();
-        }
-        
         sqlite3_close(db);
+        Logger::write(result ? "completed" : "failed", LogLevel::REPORT);
         Logger::close();
-        
-        logInfo(result ? "completed" : "failed");
         
         return result ? 0 : 1;
     }

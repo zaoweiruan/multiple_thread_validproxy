@@ -170,6 +170,7 @@ std::string Logger::levelToString(LogLevel level) {
         case LogLevel::INFO:  return "INFO";
         case LogLevel::WARN:  return "WARN";
         case LogLevel::ERR: return "ERROR";
+        case LogLevel::REPORT: return "REPORT";
         default: return "INFO";
     }
 }
@@ -188,6 +189,7 @@ LogLevel Logger::stringToLevel(const std::string& str) {
     if (s == "info") return LogLevel::INFO;
     if (s == "warn" || s == "warning") return LogLevel::WARN;
     if (s == "error") return LogLevel::ERR;
+    if (s == "report") return LogLevel::REPORT;
     return LogLevel::INFO;
 }
 

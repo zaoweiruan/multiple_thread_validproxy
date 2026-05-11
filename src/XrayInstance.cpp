@@ -18,15 +18,15 @@ XrayInstance::~XrayInstance() {
 }
 
 bool XrayInstance::start() {
-    Logger::write("[XrayInstance] Creating config: " + configPath_);
+    Logger::write("[XrayInstance] Creating config: " + configPath_, LogLevel::INFO);
     if (!createConfigFile()) {
-        Logger::write("[XrayInstance] Failed to create config file");
+        Logger::write("[XrayInstance] Failed to create config file", LogLevel::ERR);
         return false;
     }
     
     jobObject_ = CreateJobObjectA(NULL, NULL);
     if (!jobObject_) {
-        Logger::write("[XrayInstance] Failed to create job object: " + std::to_string(GetLastError()));
+        Logger::write("[XrayInstance] Failed to create job object: " + std::to_string(GetLastError()), LogLevel::ERR);
         return false;
     }
     
@@ -35,7 +35,7 @@ bool XrayInstance::start() {
     SetInformationJobObject(jobObject_, JobObjectExtendedLimitInformation, &jobLimit, sizeof(jobLimit));
     
     std::string cmd = "\"" + xrayPath_ + "\" run -c \"" + configPath_ + "\"";
-    Logger::write("[XrayInstance] Executing: " + cmd);
+    Logger::write("[XrayInstance] Executing: " + cmd, LogLevel::INFO);
     
     STARTUPINFOA si = {0};
     si.cb = sizeof(si);
@@ -44,14 +44,14 @@ bool XrayInstance::start() {
     BOOL created = CreateProcessA(NULL, (LPSTR)cmd.c_str(), NULL, NULL, FALSE, CREATE_SUSPENDED | CREATE_NO_WINDOW, NULL, NULL, &si, &pi);
     if (!created) {
         DWORD err = GetLastError();
-        Logger::write("[XrayInstance] Failed to create process: " + std::to_string(err));
+        Logger::write("[XrayInstance] Failed to create process: " + std::to_string(err), LogLevel::ERR);
         CloseHandle(jobObject_);
         jobObject_ = nullptr;
         return false;
     }
     
     if (!AssignProcessToJobObject(jobObject_, pi.hProcess)) {
-        Logger::write("[XrayInstance] Failed to assign to job: " + std::to_string(GetLastError()));
+        Logger::write("[XrayInstance] Failed to assign to job: " + std::to_string(GetLastError()), LogLevel::ERR);
     }
     
     ResumeThread(pi.hThread);
@@ -61,7 +61,7 @@ bool XrayInstance::start() {
     processHandle_ = pi.hProcess;
     std::this_thread::sleep_for(std::chrono::seconds(2));
     running_ = true;
-    Logger::write("[XrayInstance] Started successfully, socks=" + std::to_string(socksPort_) + ", api=" + std::to_string(apiPort_));
+    Logger::write("[XrayInstance] Started successfully, socks=" + std::to_string(socksPort_) + ", api=" + std::to_string(apiPort_), LogLevel::INFO);
     return true;
 }
 

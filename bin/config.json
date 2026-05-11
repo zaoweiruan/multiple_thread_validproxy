@@ -19,7 +19,7 @@
         "network_failures": false,
         "level": "INFO",
         "console_level": "INFO",
-        "file_level": "INFO"
+        "file_level": "ERROR"
     },
     "subscription": {
         "priority_mode": "proxy_first",
@@ -29,20 +29,15 @@
         "enabled": true,
         "dedup_after_update": false,
         "blacklist_threshold": 5,
-        "use_whitelist": false,
-        "whitelist": [],
         "subids": ["5544178410297751350", "5126987642659995691"]
     },
     "sync": {
-        "source_db": "test/guindb.db",
-        "target_db": "bin/worker/guindb.db"
+        "source_db": "E:/eclipse_workspace/multiple_thread_validproxy/bin/worker/guiNDB.db",
+        "target_db": "E:/eclipse_workspace/multiple_thread_validproxy/test/guiNDB.db"
     },
-    "notification": {
+"notification": {
         "enabled": false,
-        "on_update": true,
-        "on_test": true
-    },
-    "advanced": {
-        "worker_count": 4
+        "on_update": false,
+        "on_test": false
     }
 }
