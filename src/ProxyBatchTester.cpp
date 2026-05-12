@@ -139,7 +139,6 @@ db::models::Profileitem configProfile = profile;
                 }
                 Logger::write(std::string("[Worker-" + std::to_string(workerId) + "] [") + std::to_string(currentNum) + "/" + std::to_string(totalProxies_) + "] " + profile.address + ":" + profile.port +
                           " (" + utils::getProtocolName(profile.configtype) + ") OK " + std::to_string(result.latencyMs) + "ms", LogLevel::INFO);
-Logger::write(std::string("[Worker-" + std::to_string(workerId) + "] " + profile.address + ":" + profile.port + " (" + utils::getProtocolName(profile.configtype) + ") SUCCESS - Latency: " + std::to_string(result.latencyMs) + "ms"), LogLevel::INFO);
             } else {
                 {
                     std::lock_guard<std::mutex> lock(queueMutex_);
@@ -148,7 +147,6 @@ Logger::write(std::string("[Worker-" + std::to_string(workerId) + "] " + profile
                 }
                 Logger::write(std::string("[Worker-" + std::to_string(workerId) + "] [") + std::to_string(currentNum) + "/" + std::to_string(totalProxies_) + "] " + profile.address + ":" + profile.port +
                           " (" + utils::getProtocolName(profile.configtype) + ") FAIL " + result.errorMsg, LogLevel::INFO);
-Logger::write(std::string("[Worker-" + std::to_string(workerId) + "] " + profile.address + ":" + profile.port + " (" + utils::getProtocolName(profile.configtype) + ") FAILED - " + result.errorMsg), LogLevel::INFO);
             }
             
             exItemDao.updateTestResult(profile.indexid, result.latencyMs, result.success, result.errorMsg);
