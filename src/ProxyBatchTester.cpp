@@ -36,6 +36,7 @@ std::vector<db::models::Profileitem> ProxyBatchTester::loadProxies(const std::st
         sql = config_.sql_query;
     }
     
+    Logger::write("Executing SQL: " + sql, LogLevel::DEBUG);
     return configGen.loadProfiles(sql);
 }
 
@@ -202,12 +203,10 @@ bool ProxyBatchTester::run() {
         return false;
     }
     
-    if (config_.log_network_failures) {
-        Logger::write("Loaded " + std::to_string(totalProxies_) + " proxies", LogLevel::INFO);
-    }
+    Logger::write("Testing " + std::to_string(totalProxies_) + " proxies total", LogLevel::REPORT);
     
     int instanceCount = calculateXrayInstanceCount(totalProxies_);
-if (!startXrayInstances(instanceCount)) {
+    if (!startXrayInstances(instanceCount)) {
         Logger::write("Failed to start xray instances", LogLevel::WARN);
         return false;
     }
@@ -233,6 +232,7 @@ if (totalProxies_ == 0) {
     }
 
     Logger::write("Testing " + std::to_string(totalProxies_) + " proxies from subscription: " + subId, LogLevel::INFO);
+    Logger::write("Testing " + std::to_string(totalProxies_) + " proxies total", LogLevel::REPORT);
     if (config_.log_network_failures) {
         Logger::write("Testing " + std::to_string(totalProxies_) + " proxies from subscription: " + subId, LogLevel::INFO);
     }

@@ -1718,6 +1718,21 @@ bool SubitemUpdaterV2::syncDatabases(const std::string& sourceDbPath,
     
     // 4. Migrate each proxy
     for (const auto& profile : profiles) {
+        // Skip proxies whose Subid is in dedup_subids when sync_skip_subids is enabled
+        if (config_.sync.sync_skip_subids && !profile.subid.empty()) {
+            bool skip = false;
+            for (const auto& sid : config_.dedup_subids) {
+                if (profile.subid == sid) {
+                    skip = true;
+                    break;
+                }
+            }
+            if (skip) {
+                Logger::write("Skipping proxy (protected subid): " + profile.indexid + " (" + profile.remarks + ")", LogLevel::DEBUG);
+                continue;
+            }
+        }
+        
         // Migrate subscription first
         if (!profile.subid.empty()) {
             if (!migrateSubscription(srcDb, dstDb, profile.subid)) {
