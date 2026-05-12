@@ -59,13 +59,58 @@
 ### 数据库路径配置
 | 类型 | 路径 | 说明 |
 |------|------|------|
-| 测试数据库 | `test/guindb.db` | 开发和测试参考，完整路径: `E:\eclipse_workspace\multiple_thread_validproxy\test\guindb.db` |
+| 测试数据库(完整) | `test/guindb.db` | 53,837 profiles, 44 SubIDs, 用于功能验证 |
+| 测试数据库(精简) | `test/guiNDB_empty.db` | 711 profiles, 8 SubIDs, 完整 Xray schema, 用于 CLI 功能测试 |
 | 生产数据库 | `bin/worker/guindb.db` | 实际运行使用的数据库 |
-| 同步测试用空库 | `test/guiNDB_empty.db` | 用于 `-S` 同步测试的目标空库（约 8.5MB 预分配） |
-| 同步测试用源库 | `test/guiNDB.db` | 用于 `-S` 同步测试的源库（约 41MB，含 703 条有效代理） |
-| 测试专用配置文件 | `bin/worker/config_test.json` | 将 sync 的 source_db/target_db 指向 test/ 目录，单元测试时使用 |
+| 同步测试源库 | `test/guiNDB.db` | 用于 `-S` 同步测试的源库（约 41MB，含 703 条有效代理） |
+| 同步测试目标空库 | `test/guiNDB_empty.db` | 用于 `-S` 同步测试的目标空库，含完整 schema |
+| 测试配置文件 | `bin/worker/config_test.json` | 将 sync 的 source_db/target_db 指向 test/ 目录 |
 
-**注意**: 方案文档和验证命令中引用的 `test/guindb.db` 均指测试数据库。`guiNDB_empty.db` 和 `guiNDB.db` 为同步测试专用，前者会被覆盖。
+**注意**: `guiNDB_empty.db` 为 CLI 功能测试的标准目标库，它包含完整的 Xray schema 和 711 条样本数据，可测试 `-S` sync 等功能而不依赖完整数据集。`test/guindb.db` 为完整参考数据库（53,837 profiles），用于大规模测试。
+
+---
+
+### 测试规范 (Test Specification)
+
+#### 概述
+所有 CLI 命令行功能的回归测试使用 `test/guiNDB_empty.db` 作为标准测试数据库（711 profiles, 8 SubIDs, 完整 Xray schema）。
+
+#### 测试配置
+使用 `bin/test_config_empty.json` 配置文件，其中 `database.path` 指向 `test/guiNDB_empty.db`:
+```json
+{
+    "database": { "path": "test/guiNDB_empty.db" },
+    "xray": { "executable": "E:/v2rayN-windows-64/bin/xray/xray.exe", "workers": 4, "start_port": 1080, "api_port": 10080 },
+    "test": { "url": "https://www.google.com/generate_204", "timeout_ms": 5000 },
+    "log": { "enabled": true, "network_failures": false, "console_level": "INFO", "file_level": "DEBUG" },
+    "subscription": { "priority_mode": "proxy_first", "check_auto_update_interval": true },
+    "dedup": { "enabled": true, "dedup_after_update": false, "blacklist_threshold": 5 },
+    "notification": { "enabled": false, "on_update": true, "on_test": true }
+}
+```
+
+#### 测试命令列表
+| 命令 | 预期结果 | 依赖 |
+|------|---------|------|
+| `--help` / `-h` | 显示帮助信息，0 错误 | 无 |
+| `--show-sub` | 列出所有 subscriptions (8 个) | 数据库 |
+| `-G <indexId>` | 生成有效 outbound JSON | 数据库 |
+| `-D` / `--dedup` | 去重完成，输出统计 | 数据库 |
+| `-TU` / `-tourl` | 导出 proxies (delay>0) 到文件 | 数据库 |
+| `-S src:dst` | 从源库同步到目标空库，schema 完整 | 数据库 |
+
+#### 日志级别验证
+| 级别 | 验证方法 |
+|------|---------|
+| TRACE | 不应输出 (项目未使用) |
+| DEBUG | 应出现在文件日志中，不在控制台 (console_level=INFO) |
+| INFO | 应同时出现在控制台和文件日志 |
+| WARN | 应同时出现在控制台和文件日志 |
+| ERROR | 应同时出现在控制台和文件日志 |
+| REPORT | 应同时出现在控制台和文件日志 |
+
+#### 测试输出
+每次测试生成时间戳报告到 `docs/test/test-report_YYYYMMDD_HHMMSS.md`。
 
 ### ⚠️ 开发流程规则
 

@@ -126,11 +126,6 @@ std::optional<AppConfig> ConfigReader::load(const std::string& configPath) {
         } else {
             config.log_network_failures = false;
         }
-        if (log.contains("level") && log["level"].is_string()) {
-            config.log_level = log["level"].as_string().c_str();
-        } else {
-            config.log_level = "INFO";
-        }
         if (log.contains("console_level") && log["console_level"].is_string()) {
             config.log_console_level = log["console_level"].as_string().c_str();
         } else {
@@ -144,7 +139,6 @@ std::optional<AppConfig> ConfigReader::load(const std::string& configPath) {
     } else {
         config.log_enabled = true;
         config.log_network_failures = false;
-        config.log_level = "INFO";
         config.log_console_level = "INFO";
         config.log_file_level = "DEBUG";
     }
@@ -180,7 +174,7 @@ std::optional<AppConfig> ConfigReader::load(const std::string& configPath) {
         }
         if (dedup.contains("blacklist_threshold") && dedup["blacklist_threshold"].is_int64()) {
             config.blacklist_threshold = static_cast<int>(dedup["blacklist_threshold"].as_int64());
-            if (config.blacklist_threshold <= 0) config.blacklist_threshold = 5;
+            if (config.blacklist_threshold < 0) config.blacklist_threshold = 5;
         } else {
             config.blacklist_threshold = 5;
         }
@@ -228,6 +222,9 @@ std::optional<AppConfig> ConfigReader::load(const std::string& configPath) {
         if (sync.contains("target_db") && sync["target_db"].is_string()) {
             config.sync.target_db = resolvePath(sync["target_db"].as_string().c_str(), exeDir);
         }
+        if (sync.contains("sync_skip_subids") && sync["sync_skip_subids"].is_bool()) {
+            config.sync.sync_skip_subids = sync["sync_skip_subids"].as_bool();
+        }
     }
     
     // Replace placeholder {blacklist_threshold} in SQL queries
@@ -239,6 +236,11 @@ std::optional<AppConfig> ConfigReader::load(const std::string& configPath) {
     };
     replacePlaceholder(config.sql_query, "{blacklist_threshold}", config.blacklist_threshold);
     replacePlaceholder(config.sql_by_subid, "{blacklist_threshold}", config.blacklist_threshold);
+    
+    if (!config.sql_query.empty())
+        Logger::write("SQL query: " + config.sql_query, LogLevel::DEBUG);
+    if (!config.sql_by_subid.empty())
+        Logger::write("SQL by_subid: " + config.sql_by_subid, LogLevel::DEBUG);
     
     if (!config.database_path.empty()) {
         std::filesystem::path dbPath(config.database_path);

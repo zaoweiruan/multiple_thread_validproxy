@@ -16,7 +16,6 @@
     },
     "log": {
         "enabled": true,
-        "level": "DEBUG",
         "console_level": "INFO",
         "file_level": "DEBUG"
     },

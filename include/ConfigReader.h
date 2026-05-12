@@ -18,7 +18,6 @@ struct AppConfig {
     int test_timeout_ms;
     bool log_enabled;
     bool log_network_failures;
-    std::string log_level;
     std::string log_console_level;
     std::string log_file_level;
     std::string priority_mode;
@@ -35,6 +34,7 @@ struct AppConfig {
     struct {
         std::string source_db;
         std::string target_db;
+        bool sync_skip_subids = false;  // When true, -S skips proxies whose Subid is in dedup_subids
     } sync;
 };
 
