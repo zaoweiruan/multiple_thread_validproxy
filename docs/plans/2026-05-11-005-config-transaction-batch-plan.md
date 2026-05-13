@@ -1,7 +1,7 @@
 ---
 title: "feat: ConfigGenerator transaction batch — single query for all profile items"
 type: feat
-status: draft
+status: cancelled
 date: 2026-05-11
 origin: "Identified during performance review: ConfigGenerator::loadProfiles executes per-row processing that could be batched"
 ---

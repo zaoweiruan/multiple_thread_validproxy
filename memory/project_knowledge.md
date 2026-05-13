@@ -123,6 +123,10 @@
 > - 状态流转: `draft` → `in_progress` → `completed` / `cancelled` / `superseded`
 > - 完成后更新计划状态并记录验证结果
 > - 长期记忆中记录所有关键决策和上下文
+> - **任务跟踪器**: 所有计划均需在 `docs/plans/project-plans-tracker.md`（项目统一跟踪器）中登记
+>   - 创建计划文档后，同步更新 tracer 的「Plan Document Index」和「Pending Work」
+>   - 执行完成后，更新 tracer 的「Execution History」和索引状态
+>   - 详见 `docs/plans/project-plans-tracker.md`
 
 ### 构建/测试命令 (Windows + GCC/MinGW)
 ```bash
@@ -913,3 +917,40 @@ docs/plans/
 - **命名规范**: `YYYY-MM-DD[-NNN]-<short-description>-plan.md`
 - **状态字段**: 使用 YAML frontmatter `status: draft|completed|cancelled`
 - **修改权限限制**: 文件编辑仅允许在 `.opencode/plans/`，完成后需手动移入 `docs/plans/`
+
+## 📋 计划跟踪机制
+
+### 跟踪文档模式
+
+项目使用一个**中央进度跟踪文档**记录所有计划的全局状态：
+
+- 位置：`docs/plans/project-plans-tracker.md`
+- 作用：维护全量计划索引表 + 记录已完成/待执行工作项
+- 特点：不关闭（保持 `in_progress`），作为会话间交接的持久化锚点
+
+### 生命周期
+
+```
+创建计划文档 (draft)
+  → 更新跟踪文档（添加索引行）
+  → 审核计划
+  → 执行代码变更
+  → 更新计划文档 (completed/cancelled)
+  → 更新跟踪文档（同步索引状态）
+  → 更新本文件（记录关键决策）
+```
+
+### 三份文档协同
+
+| 文档 | 用途 | 生命周期 |
+|------|------|---------|
+| `docs/plans/YYYY-...-plan.md` | 单个计划的详细描述 | draft → completed/cancelled |
+| `docs/plans/project-plans-tracker.md` | 全量索引 + 进度总览 | 长期保持 in_progress |
+| `memory/project_knowledge.md` | 长期记忆、关键决策、架构知识 | 持久存在 |
+
+### 原则
+
+- 每个计划文档独立管理自己的状态（`status` frontmatter）
+- 跟踪文档是只读索引，不替代计划文档的详细内容
+- 会话开始时读取跟踪文档了解全局状态
+- 会话结束时更新跟踪文档和长期记忆

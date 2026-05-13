@@ -55,6 +55,14 @@ void logError(const std::string& msg, LogLevel level = LogLevel::ERR) {
     Logger::write(msg, level);
 }
 
+static bool openDatabase(const config::AppConfig& config, sqlite3*& db, const std::string& context) {
+    if (sqlite3_open(config.database_path.c_str(), &db) != SQLITE_OK) {
+        Logger::write(context + " - Failed to open database: " + std::string(sqlite3_errmsg(db)), LogLevel::ERR);
+        return false;
+    }
+    return true;
+}
+
 void printHelp() {
     std::cout << "Usage: validproxy [options]\n"
               << "Options:\n"
@@ -225,8 +233,7 @@ int main(int argc, char* argv[]) {
         logInfo("validproxy starting...");
         
         sqlite3* db = nullptr;
-        if (sqlite3_open(appConfig->database_path.c_str(), &db) != SQLITE_OK) {
-            logError("Failed to open database: " + std::string(sqlite3_errmsg(db)));
+        if (!openDatabase(*appConfig, db, "[main] generator")) {
             Logger::close();
             return 1;
         }
@@ -279,9 +286,7 @@ int main(int argc, char* argv[]) {
         logInfo("validproxy starting...");
         
         sqlite3* db = nullptr;
-        
-        if (sqlite3_open(appConfig->database_path.c_str(), &db) != SQLITE_OK) {
-            logError("Failed to open database: " + std::string(sqlite3_errmsg(db)));
+        if (!openDatabase(*appConfig, db, "[main] show-sub")) {
             Logger::close();
             return 1;
         }
@@ -374,9 +379,7 @@ int main(int argc, char* argv[]) {
         logInfo("validproxy starting...");
         
         sqlite3* db = nullptr;
-        
-        if (sqlite3_open(appConfig->database_path.c_str(), &db) != SQLITE_OK) {
-            logError("Failed to open database: " + std::string(sqlite3_errmsg(db)));
+        if (!openDatabase(*appConfig, db, "[main] find-proxy")) {
             Logger::close();
             return 1;
         }
@@ -441,9 +444,7 @@ int main(int argc, char* argv[]) {
         logInfo("validproxy starting...");
         
         sqlite3* db = nullptr;
-        
-        if (sqlite3_open(appConfig->database_path.c_str(), &db) != SQLITE_OK) {
-            logError("Failed to open database: " + std::string(sqlite3_errmsg(db)));
+        if (!openDatabase(*appConfig, db, "[main] tourl")) {
             Logger::close();
             return 1;
         }
@@ -572,8 +573,7 @@ int main(int argc, char* argv[]) {
         Logger::setConsoleLevel(Logger::stringToLevel(appConfig->log_console_level));
         logInfo("validproxy starting import...");
         
-        if (sqlite3_open(appConfig->database_path.c_str(), &db) != SQLITE_OK) {
-            logError("Failed to open database: " + std::string(sqlite3_errmsg(db)));
+        if (!openDatabase(*appConfig, db, "[main] import-sub-config")) {
             Logger::close();
             return 1;
         }
@@ -618,9 +618,7 @@ int main(int argc, char* argv[]) {
         logInfo("validproxy starting...");
         
         sqlite3* db = nullptr;
-        
-        if (sqlite3_open(appConfig->database_path.c_str(), &db) != SQLITE_OK) {
-            logError("Failed to open database: " + std::string(sqlite3_errmsg(db)));
+        if (!openDatabase(*appConfig, db, "[main] dedup")) {
             Logger::close();
             return 1;
         }
@@ -655,9 +653,7 @@ int main(int argc, char* argv[]) {
         logInfo("validproxy starting...");
         
         sqlite3* db = nullptr;
-        
-        if (sqlite3_open(appConfig->database_path.c_str(), &db) != SQLITE_OK) {
-            logError("Failed to open database: " + std::string(sqlite3_errmsg(db)));
+        if (!openDatabase(*appConfig, db, "[main] " + commandMode)) {
             Logger::close();
             return 1;
         }
@@ -731,9 +727,7 @@ int main(int argc, char* argv[]) {
     std::cout << "Log file: " << Logger::getLogDir() << "/" << Logger::getPrefix() << "_" << timestamp << ".log" << std::endl;
     
     sqlite3* db = nullptr;
-
-    if (sqlite3_open(appConfig->database_path.c_str(), &db) != SQLITE_OK) {
-        logError("Failed to open database: " + std::string(sqlite3_errmsg(db)));
+    if (!openDatabase(*appConfig, db, "[main] default")) {
         Logger::close();
         return 1;
     }

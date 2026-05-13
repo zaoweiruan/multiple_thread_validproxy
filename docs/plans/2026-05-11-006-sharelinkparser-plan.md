@@ -1,7 +1,7 @@
 ---
 title: "feat: ShareLinkParser — extract and validate share links"
 type: feat
-status: draft
+status: cancelled
 date: 2026-05-11
 origin: "Required for subscription import: need to parse base64-encoded share links into proxy configs"
 ---
