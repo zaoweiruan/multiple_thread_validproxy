@@ -162,7 +162,7 @@ bool SubitemUpdaterV2::run() {
                 continue;
             }
             
-            Logger::write("INFO: [" + std::to_string(i + 1) + "/" + std::to_string(totalSubs) + "] Processing: " + sub.url, LogLevel::INFO);
+            Logger::write("[" + std::to_string(i + 1) + "/" + std::to_string(totalSubs) + "] Processing: " + sub.url, LogLevel::REPORT);
             
             std::string content = fetchUrl(sub.url);
             if (!content.empty()) {
@@ -175,7 +175,7 @@ bool SubitemUpdaterV2::run() {
                     Logger::write("INFO: Updated successfully: " + sub.id, LogLevel::INFO);
                     std::string newTime = getCurrentTimestamp();
                     std::string updateSql = "UPDATE SubItem SET UpdateTime = '" + newTime + "' WHERE Id = '" + sub.id + "'";
-                    sqlite3_exec(db_, updateSql.c_str(), nullptr, nullptr, nullptr);
+                    execSql(updateSql, "[SubitemUpdaterV2] SQL exec failed");
                 } else {
                     directFailCount++;
                     failedSubs.push_back({sub.id, sub.remarks, sub.url});
@@ -208,7 +208,7 @@ bool SubitemUpdaterV2::run() {
         
         for (size_t i = 0; i < failedSubs.size(); ++i) {
             const auto& sub = failedSubs[i];
-            Logger::write("INFO: [" + std::to_string(i + 1) + "/" + std::to_string(failedSubs.size()) + "] Trying via proxy: " + std::get<2>(sub), LogLevel::INFO);
+            Logger::write("[" + std::to_string(i + 1) + "/" + std::to_string(failedSubs.size()) + "] Trying via proxy: " + std::get<2>(sub), LogLevel::REPORT);
             
             std::string content = fetchUrlViaProxy(std::get<2>(sub), proxySocksPort);
             if (!content.empty()) {
@@ -221,7 +221,7 @@ bool SubitemUpdaterV2::run() {
                     Logger::write("INFO: Updated successfully: " + std::get<0>(sub), LogLevel::INFO);
                     std::string newTime = getCurrentTimestamp();
                     std::string updateSql = "UPDATE SubItem SET UpdateTime = '" + newTime + "' WHERE Id = '" + std::get<0>(sub) + "'";
-                    sqlite3_exec(db_, updateSql.c_str(), nullptr, nullptr, nullptr);
+                    execSql(updateSql, "[SubitemUpdaterV2] SQL exec failed");
                 } else {
                     proxyFailCount++;
                     stillFailedSubs.push_back(sub);
@@ -291,7 +291,7 @@ bool SubitemUpdaterV2::runSingle(const std::string& subId) {
     if (result) {
         std::string newTime = getCurrentTimestamp();
         std::string updateSql = "UPDATE SubItem SET UpdateTime = '" + newTime + "' WHERE Id = '" + sub.id + "'";
-        sqlite3_exec(db_, updateSql.c_str(), nullptr, nullptr, nullptr);
+        execSql(updateSql, "[SubitemUpdaterV2] SQL exec failed");
     }
 
     releaseProxyPorts();
@@ -335,9 +335,19 @@ bool SubitemUpdaterV2::runSingleWithProxy(const std::string& subId, int socksPor
     if (result) {
         std::string newTime = getCurrentTimestamp();
         std::string updateSql = "UPDATE SubItem SET UpdateTime = '" + newTime + "' WHERE Id = '" + sub.id + "'";
-        sqlite3_exec(db_, updateSql.c_str(), nullptr, nullptr, nullptr);
+        execSql(updateSql, "[SubitemUpdaterV2] SQL exec failed");
     }
     return result;
+}
+
+bool SubitemUpdaterV2::execSql(const std::string& sql, const std::string& errorContext) {
+    char* errMsg = nullptr;
+    if (sqlite3_exec(db_, sql.c_str(), nullptr, nullptr, &errMsg) != SQLITE_OK) {
+        Logger::write(errorContext + ": " + std::string(errMsg), LogLevel::ERR);
+        sqlite3_free(errMsg);
+        return false;
+    }
+    return true;
 }
 
 std::optional<db::models::Subitem> SubitemUpdaterV2::getSubscription(const std::string& subId) {
@@ -931,17 +941,47 @@ bool SubitemUpdaterV2::updateProfileItems(const std::string& subid, const std::v
                            "AlterId, Security, Network, Remarks, HeaderType, RequestHost, Path, StreamSecurity, "
                            "AllowInsecure, Subid, IsSub, Flow, Sni, Alpn, CoreType, PreSocksPort, Fingerprint, "
                            "DisplayLog, PublicKey, ShortId, SpiderX, Mldsa65Verify, EchConfigList, Extra, MuxEnabled, Cert, "
-                           "CertSha, EchForceQuery) "
-                           "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                            "CertSha, EchForceQuery) "
+                            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
 
+    // Prepare statements once before loop for reuse
+    const char* exSql = "INSERT INTO ProfileExItem (indexid, delay, speed, sort, message, consecutive_failures) "
+                        "VALUES (?, ?, ?, ?, ?, ?)";
+
+    sqlite3_stmt* checkStmt = nullptr;
+    if (sqlite3_prepare_v2(db_, dedupSql, -1, &checkStmt, nullptr) != SQLITE_OK) {
+        Logger::write("ERROR: Dedup check prepare failed - " + std::string(sqlite3_errmsg(db_)), LogLevel::ERR);
+        sqlite3_exec(db_, "COMMIT;", nullptr, nullptr, nullptr);
+        return false;
+    }
+
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db_, insertSql, -1, &stmt, nullptr) != SQLITE_OK) {
+        Logger::write("ERROR: Insert prepare failed - " + std::string(sqlite3_errmsg(db_)), LogLevel::ERR);
+        sqlite3_finalize(checkStmt);
+        sqlite3_exec(db_, "COMMIT;", nullptr, nullptr, nullptr);
+        return false;
+    }
+
+    sqlite3_stmt* exStmt = nullptr;
+    if (sqlite3_prepare_v2(db_, exSql, -1, &exStmt, nullptr) != SQLITE_OK) {
+        Logger::write("ERROR: ProfileExItem insert prepare failed - " + std::string(sqlite3_errmsg(db_)), LogLevel::ERR);
+        sqlite3_finalize(checkStmt);
+        sqlite3_finalize(stmt);
+        sqlite3_exec(db_, "COMMIT;", nullptr, nullptr, nullptr);
+        return false;
+    }
+
+    size_t count = 0;
     for (const auto& p : profiles) {
-        // Step 1: Check for existing duplicate
-        sqlite3_stmt* checkStmt = nullptr;
-        if (sqlite3_prepare_v2(db_, dedupSql, -1, &checkStmt, nullptr) != SQLITE_OK) {
-            Logger::write("ERROR: Dedup check prepare failed for " + p.indexid + " - " + sqlite3_errmsg(db_), LogLevel::ERR);
-            continue;
+        count++;
+        if (count % 100 == 0) {
+            Logger::write("Progress: " + std::to_string(count) + "/" + std::to_string(profiles.size()) + " profiles processed", LogLevel::REPORT);
         }
 
+        // Step 1: Check for existing duplicate
+        sqlite3_reset(checkStmt);
+        sqlite3_clear_bindings(checkStmt);
         sqlite3_bind_text(checkStmt, 1, p.address.c_str(), -1, SQLITE_TRANSIENT);
         sqlite3_bind_text(checkStmt, 2, p.port.c_str(), -1, SQLITE_TRANSIENT);
         sqlite3_bind_text(checkStmt, 3, p.configtype.c_str(), -1, SQLITE_TRANSIENT);
@@ -953,16 +993,12 @@ bool SubitemUpdaterV2::updateProfileItems(const std::string& subid, const std::v
             std::string existingId = reinterpret_cast<const char*>(sqlite3_column_text(checkStmt, 0));
             Logger::write("INFO: Skipping duplicate profile, keep existing IndexId: " + existingId, LogLevel::INFO);
         }
-        sqlite3_finalize(checkStmt);
 
         if (isDuplicate) continue;
 
         // Step 2: Insert new profile (not duplicate)
-        sqlite3_stmt* stmt = nullptr;
-        if (sqlite3_prepare_v2(db_, insertSql, -1, &stmt, nullptr) != SQLITE_OK) {
-            Logger::write("ERROR: Insert prepare failed for " + p.indexid + " - " + sqlite3_errmsg(db_), LogLevel::ERR);
-            continue;
-        }
+        sqlite3_reset(stmt);
+        sqlite3_clear_bindings(stmt);
 
         sqlite3_bind_text(stmt, 1, p.indexid.c_str(), -1, SQLITE_TRANSIENT);
         sqlite3_bind_text(stmt, 2, p.configtype.c_str(), -1, SQLITE_TRANSIENT);
@@ -1004,27 +1040,26 @@ bool SubitemUpdaterV2::updateProfileItems(const std::string& subid, const std::v
             inserted++;
 
             // Insert corresponding ProfileExItem with initial values
-            const char* exSql = "INSERT INTO ProfileExItem (indexid, delay, speed, sort, message, consecutive_failures) "
-                               "VALUES (?, ?, ?, ?, ?, ?)";
-            sqlite3_stmt* exStmt = nullptr;
-            if (sqlite3_prepare_v2(db_, exSql, -1, &exStmt, nullptr) == SQLITE_OK) {
-                sqlite3_bind_text(exStmt, 1, p.indexid.c_str(), -1, SQLITE_TRANSIENT);
-                sqlite3_bind_text(exStmt, 2, "0", -1, SQLITE_TRANSIENT);
-                sqlite3_bind_text(exStmt, 3, "0", -1, SQLITE_TRANSIENT);
-                sqlite3_bind_text(exStmt, 4, "0", -1, SQLITE_TRANSIENT);
-                sqlite3_bind_text(exStmt, 5, "NOT_TESTED", -1, SQLITE_TRANSIENT);
-                sqlite3_bind_int(exStmt, 6, 0);
-                sqlite3_step(exStmt);
-                sqlite3_finalize(exStmt);
-            }
+            sqlite3_reset(exStmt);
+            sqlite3_clear_bindings(exStmt);
+            sqlite3_bind_text(exStmt, 1, p.indexid.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(exStmt, 2, "0", -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(exStmt, 3, "0", -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(exStmt, 4, "0", -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(exStmt, 5, "NOT_TESTED", -1, SQLITE_TRANSIENT);
+            sqlite3_bind_int(exStmt, 6, 0);
+            sqlite3_step(exStmt);
         } else {
             Logger::write("ERROR: Insert failed for " + p.indexid + " - " + sqlite3_errmsg(db_), LogLevel::ERR);
         }
-        sqlite3_finalize(stmt);
     }
 
+    sqlite3_finalize(checkStmt);
+    sqlite3_finalize(stmt);
+    sqlite3_finalize(exStmt);
+
     sqlite3_exec(db_, "COMMIT;", nullptr, nullptr, nullptr);
-    Logger::write("INFO: Inserted " + std::to_string(inserted) + " new profiles, skipped duplicates", LogLevel::INFO);
+    Logger::write("Inserted " + std::to_string(inserted) + " new profiles, skipped duplicates", LogLevel::REPORT);
     // Dedup skips are normal behavior, not failures
     // As long as the transaction succeeded, return true
     return true;

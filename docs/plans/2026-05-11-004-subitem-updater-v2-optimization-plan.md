@@ -1,7 +1,7 @@
 ---
 title: "refactor: SubitemUpdaterV2 optimization — batch update, connection reuse, progress callback"
 type: refactor
-status: draft
+status: completed
 date: 2026-05-11
 origin: "Identified during log-level audit: SubitemUpdaterV2 has N+1 query pattern, no connection reuse, no progress reporting"
 ---

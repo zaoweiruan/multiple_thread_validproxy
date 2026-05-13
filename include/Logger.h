@@ -9,9 +9,9 @@ enum class LogLevel {
     TRACE = 0,
     DEBUG = 1,
     INFO = 2,
-    WARN = 3,
-    ERR = 4,
-    REPORT = 5
+    REPORT = 3,
+    WARN = 4,
+    ERR = 5
 };
 
 class Logger {

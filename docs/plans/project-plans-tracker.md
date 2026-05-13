@@ -1,12 +1,12 @@
 ---
-title: "docs: Save project memory and remaining work tracker"
+title: "docs: Project Plans Tracker — global plan index and progress tracker"
 type: docs
 status: in_progress
 date: 2026-05-11
 origin: "Continuation of project memory consolidation task"
 ---
 
-# Save Project Memory — Progress Tracker
+# Project Plans Tracker
 
 ## Status: In Progress
 
@@ -50,17 +50,37 @@ origin: "Continuation of project memory consolidation task"
 - [x] memory/project_knowledge.md — "开发流程规则" section added
 - [x] DEV-PROCESS.md — created with workflow + template + status definitions
 
-## Remaining Items
+## Execution History (post-tracker-creation)
 
-### New Plan Documents to Execute
-- [ ] **Plan 004** (2026-05-11-004): SubitemUpdaterV2 optimization — batch update, connection reuse
-- [ ] **Plan 005** (2026-05-11-005): Config transaction batch — single query for all profiles
-- [ ] **Plan 006** (2026-05-11-006): ShareLinkParser — extract and validate share links
+### Recently Completed Plans
+
+| # | Plan | Description | Status |
+|---|------|-------------|--------|
+| 1 | 13-001 | Sub-update log level INFO→REPORT | ✅ completed |
+| 2 | 13-002 | Profile progress/inserted log level INFO→REPORT | ✅ completed |
+| 3 | 30 (P0) | Fix silent sqlite3_exec + finalize audit | ✅ completed |
+| 4 | 31 (P1) | Extract sqlite3_open helper (U1 done, U2 kept as-is) | ✅ completed |
+| 5 | 32 (P3) | Extract logInfo/logError helper functions | ✅ completed |
+| 6 | 33 (P4) | Extract sqlite::exec helper + Transaction RAII guard | 📝 draft |
+| 7 | 34 (P5) | Fix LogLevel ordering REPORT below ERR | ✅ completed |
+
+- [x] **Plan 004** (2026-05-11-004): SubitemUpdaterV2 optimization — executed, build+test pass, marked completed
+- [x] **Plan 005** (2026-05-11-005): Config transaction batch — analyzed as unnecessary (single query already), cancelled
+- [x] **Plan 006** (2026-05-11-006): ShareLinkParser — analyzed as unnecessary (parseSubscription handles it), cancelled
+- [x] **Plan 007** (2026-05-12-007): Log config SQL queries — implemented, verified, completed
+- [x] **Plan 009** (2026-05-12-009): Remove dead log level field — completed earlier
+- [x] **Plan 013** (2026-05-13-001): Adjust sub-update log level INFO→REPORT — SubitemUpdaterV2.cpp lines 165/211, build+test pass, completed
+- [x] **Plan 014** (2026-05-13-002): Adjust profile progress/inserted log level INFO→REPORT — SubitemUpdaterV2.cpp lines 969/1052, build+test pass, completed
+- [x] **Plan 030** (2026-05-13-P0): Fix silent sqlite3_exec + finalize audit — U1: 4 sqlite3_exec error checks added in SubitemUpdaterV2.cpp, U2: main.cpp finalize audit clean, build+test pass, completed
 
 ### Validation
-- [ ] Full Logger::write audit (already clean per current grep)
-- [ ] Build verification (CI mode)
-- [ ] Full test suite run (dedup + model + curl_easy_handle)
+- [x] Full Logger::write audit (clean)
+- [x] Build verification (CI mode) — verified on Plan 004/013/014 execution
+- [x] Full test suite run (dedup + model + curl_easy_handle) — all passed
+
+## Pending Work
+
+- [ ] **P4** (33): Extract sqlite::exec helper + Transaction RAII guard — see plan doc
 
 ## Plan Document Index
 
@@ -87,6 +107,16 @@ origin: "Continuation of project memory consolidation task"
 | 19 | 2026-05-10-merge-log-level-standardization-plan.md | fix | completed |
 | 20 | 2026-05-11-001-agents-md-improvement-plan.md | docs | completed |
 | 21 | 2026-05-11-003-fix-sync-config-path-errors-plan.md | fix | completed |
-| 22 | 2026-05-11-004-subitem-updater-v2-optimization-plan.md | refactor | draft |
-| 23 | 2026-05-11-005-config-transaction-batch-plan.md | feat | draft |
-| 24 | 2026-05-11-006-sharelinkparser-plan.md | feat | draft |
+| 22 | 2026-05-11-004-subitem-updater-v2-optimization-plan.md | refactor | completed |
+| 23 | 2026-05-11-005-config-transaction-batch-plan.md | feat | cancelled |
+| 24 | 2026-05-11-006-sharelinkparser-plan.md | feat | cancelled |
+| 25 | 2026-05-12-007-log-config-sql-queries-plan.md | feat | completed |
+| 26 | 2026-05-12-009-remove-dead-log-level-field-plan.md | fix | completed |
+| 27 | 2026-05-13-001-adjust-sub-update-log-level-to-report-plan.md | feat | completed |
+| 28 | 2026-05-13-002-adjust-profile-progress-inserted-log-level-to-report-plan.md | feat | completed |
+| 29 | ~~todo-tracker.md~~ | ~~meta~~ | ~~in_progress~~ (merged into tracker) |
+| 30 | 2026-05-13-P0-fix-silent-sqlite3-exec-and-finalize-plan.md | fix | completed |
+| 31 | 2026-05-13-P1-extract-sqlite3-open-helper-and-exec-template-plan.md | refactor | completed |
+| 32 | 2026-05-13-P3-extract-log-helper-functions-plan.md | refactor | completed |
+| 33 | 2026-05-13-P4-extract-sqlite-helper-and-transaction-plan.md | refactor | draft |
+| 34 | 2026-05-13-P5-fix-loglevel-ordering-report-below-err-plan.md | fix | draft |

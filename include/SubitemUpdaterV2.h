@@ -87,6 +87,8 @@ private:
     std::string urlDecode(const std::string& input);
     std::pair<std::string, std::string> parseAddressPort(const std::string& addrPart);
     
+    bool execSql(const std::string& sql, const std::string& errorContext);
+
     // Helper methods for import
     std::string extractRemarksFromUrl(const std::string& url);
     int getNextSortValue();
