@@ -29,6 +29,10 @@
 #include "Utils.h"
 #include "Logger.h"
 
+#ifdef HAS_WXWIDGETS
+#include "UIApp.h"
+#endif
+
 namespace {
 
 XrayManager* g_xrayManager = nullptr;
@@ -67,6 +71,9 @@ void printHelp() {
     std::cout << "Usage: validproxy [options]\n"
               << "Options:\n"
               << "  -c, --config <path>   Config file path (default: config.json)\n"
+#ifdef HAS_WXWIDGETS
+              << "  -ui, --ui            Launch graphical user interface\n"
+#endif
               << "  -show-sub, --show-sub  Show all subscriptions\n"
               << "  -G, -generator <id>  Generate outbound JSON for profile by indexId\n"
               << "  -F, -find-proxy     Find first working proxy (first found)\n"
@@ -126,6 +133,8 @@ int main(int argc, char* argv[]) {
                 }
                 configPath = fp.lexically_normal().string();
             }
+        } else if (arg == "-ui" || arg == "--ui") {
+            commandMode = "ui";
         } else if (arg == "-show-sub" || arg == "--show-sub") {
             commandMode = "show-sub";
         } else if (arg == "-G" || arg == "-generator" || arg == "--generator") {
@@ -217,6 +226,55 @@ int main(int argc, char* argv[]) {
     }
     
     g_commandMode = commandMode;
+    
+    // ------------------------------------------------------------------
+    // GUI mode (-ui / --ui)
+    // ------------------------------------------------------------------
+    if (commandMode == "ui") {
+#ifdef HAS_WXWIDGETS
+        Logger::init(logDir.string(), "ui");
+        auto appConfig = config::ConfigReader::load(configPath);
+        if (!appConfig) {
+            logError("Failed to load config from: " + configPath);
+            Logger::close();
+            return 1;
+        }
+
+        Logger::setFileEnabled(appConfig->log_enabled);
+        Logger::setFileLevel(Logger::stringToLevel(appConfig->log_file_level));
+        Logger::setConsoleLevel(Logger::stringToLevel(appConfig->log_console_level));
+        logInfo("validproxy GUI starting...");
+
+        sqlite3* db = nullptr;
+        if (!openDatabase(*appConfig, db, "[main] ui")) {
+            Logger::close();
+            return 1;
+        }
+
+        // Strip -ui / --ui from argv before passing to wxEntry
+        // so wxWidgets does not complain about unknown options.
+        std::vector<char*> wxArgv;
+        wxArgv.push_back(argv[0]);
+        for (int i = 1; i < argc; ++i) {
+            std::string a(argv[i]);
+            if (a != "-ui" && a != "--ui") {
+                wxArgv.push_back(argv[i]);
+            }
+        }
+        int wxArgc = static_cast<int>(wxArgv.size());
+
+        wxApp::SetInstance(new UIApp(*appConfig, db));
+        int ret = wxEntry(wxArgc, wxArgv.data());
+
+        XrayManager::release();  // safety net: ensure xray instances are stopped
+        sqlite3_close(db);
+        Logger::close();
+        return ret;
+#else
+        std::cerr << "Error: GUI mode not available. Rebuild with wxWidgets support." << std::endl;
+        return 1;
+#endif
+    }
     
     if (commandMode == "generator") {
         Logger::init(logDir.string(), commandMode);

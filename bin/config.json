@@ -18,7 +18,7 @@
     "log": {
         "enabled": true,
         "network_failures": false,
-        "console_level": "REPORT",
+        "console_level": "INFO",
         "file_level": "ERROR"
     },
     "subscription": {

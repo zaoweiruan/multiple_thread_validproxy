@@ -26,7 +26,9 @@ ConfigGenerator::ConfigGenerator(sqlite3* db) : db_(db) {}
 
 std::vector<db::models::Profileitem> ConfigGenerator::loadProfiles(const std::string& sqlQuery) {
     db::models::ProfileitemDAO dao(db_);
-    auto profiles = dao.getAll(sqlQuery);
+    // When sqlQuery is empty (default), use the DAO's own default query
+    // instead of passing "" which bypasses the default parameter.
+    auto profiles = dao.getAll(sqlQuery.empty() ? "SELECT * FROM ProfileItem;" : sqlQuery);
     
     Logger::write("[ConfigGenerator] SQL returned " + std::to_string(profiles.size()) + " profiles", LogLevel::INFO);
     

@@ -71,7 +71,7 @@ namespace utils {
             nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
             nid.hIcon = LoadIcon(NULL, IDI_APPLICATION);
             nid.uCallbackMessage = WM_USER;
-            strncpy_s(nid.szTip, "validproxy", _TRUNCATE);
+            MultiByteToWideChar(CP_UTF8, 0, "validproxy", -1, nid.szTip, 128);
             Shell_NotifyIcon(NIM_ADD, &nid);
             
             atexit([]() {
@@ -88,8 +88,8 @@ namespace utils {
         
         nid.uFlags = NIF_INFO;
         nid.dwInfoFlags = NIIF_INFO;
-        strncpy_s(nid.szInfoTitle, title.c_str(), _TRUNCATE);
-        strncpy_s(nid.szInfo, message.c_str(), _TRUNCATE);
+        MultiByteToWideChar(CP_UTF8, 0, title.c_str(), -1, nid.szInfoTitle, 64);
+        MultiByteToWideChar(CP_UTF8, 0, message.c_str(), -1, nid.szInfo, 256);
         
         Shell_NotifyIcon(NIM_MODIFY, &nid);
     }
