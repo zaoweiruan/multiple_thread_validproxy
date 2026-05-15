@@ -51,6 +51,111 @@ target_link_libraries(validproxy PRIVATE
     D:/boost_1_88_0/lib/libboost_json-mgw14-mt-x64-1_88.a
 )
 
+# -- wxWidgets (GUI mode) --
+# Find wxWidgets as a CMake CONFIG package from vcpkg (dynamic variant, which has proper cmake config)
+# Pre-find NanoSVG dependency so wxWidgets config can find it
+find_package(NanoSVG CONFIG QUIET
+    PATHS "E:/vcpkg/installed/x64-mingw-dynamic/share/nanosvg"
+    NO_DEFAULT_PATH
+)
+if(NOT NanoSVG_FOUND)
+    message(STATUS "NanoSVG not found - wxWidgets will not be available")
+endif()
+
+find_package(wxWidgets CONFIG QUIET
+    PATHS "E:/vcpkg/installed/x64-mingw-dynamic/share/wxwidgets"
+    NO_DEFAULT_PATH
+)
+
+if(wxWidgets_FOUND)
+    message(STATUS "wxWidgets found: ${wxWidgets_VERSION}")
+    
+    # Create UI source file list
+    set(UI_SOURCES
+        src/ui/Events.h
+        src/ui/Events.cpp
+        src/ui/AppController.h
+        src/ui/AppController.cpp
+        src/ui/MainFrame.h
+        src/ui/MainFrame.cpp
+        src/ui/SubscriptionPanel.h
+        src/ui/SubscriptionPanel.cpp
+        src/ui/ProxyListPanel.h
+        src/ui/ProxyListPanel.cpp
+        src/ui/TestPanel.h
+        src/ui/TestPanel.cpp
+        src/ui/LogPanel.h
+        src/ui/LogPanel.cpp
+        src/ui/ConfigDialog.h
+        src/ui/ConfigDialog.cpp
+        src/ui/TrayIcon.h
+        src/ui/TrayIcon.cpp
+        src/ui/UIApp.h
+        src/ui/UIApp.cpp
+    )
+    
+    target_sources(validproxy PRIVATE ${UI_SOURCES})
+    
+    # Link wxWidgets imported targets
+    target_link_libraries(validproxy PRIVATE
+        wx::wxbase
+        wx::wxcore
+        wx::wxadv
+        wx::wxaui
+        wx::wxhtml
+        wx::wxpropgrid
+        wx::wxnet
+    )
+    
+    # Add include directory for wx headers (dynamic variant headers)
+    target_include_directories(validproxy PRIVATE "E:/vcpkg/installed/x64-mingw-dynamic/include")
+    
+    # Add include directory for UI source headers (so main.cpp can #include "UIApp.h" etc.)
+    target_include_directories(validproxy PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/ui)
+    
+    # Copy wx DLLs to output directory
+    function(copy_wx_dlls TARGET_NAME)
+        get_target_property(_bin_dir ${TARGET_NAME} RUNTIME_OUTPUT_DIRECTORY)
+        if(NOT _bin_dir)
+            set(_bin_dir "${CMAKE_SOURCE_DIR}/bin")
+        endif()
+        # List of wx DLLs needed
+        set(WX_DLLS
+            wxbase32u_gcc_custom.dll
+            wxbase32u_net_gcc_custom.dll
+            wxmsw32u_adv_gcc_custom.dll
+            wxmsw32u_aui_gcc_custom.dll
+            wxmsw32u_core_gcc_custom.dll
+            wxmsw32u_html_gcc_custom.dll
+            wxmsw32u_propgrid_gcc_custom.dll
+            libpcre2-16.dll
+            libzlib1.dll
+            libjpeg-62.dll
+            libpng16.dll
+            libtiff.dll
+            liblzma.dll
+        )
+        foreach(dll ${WX_DLLS})
+            set(src_dll "E:/vcpkg/installed/x64-mingw-dynamic/bin/${dll}")
+            if(EXISTS "${src_dll}")
+                add_custom_command(TARGET ${TARGET_NAME} POST_BUILD
+                    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                        "${src_dll}"
+                        "${_bin_dir}/${dll}"
+                    COMMENT "Copying ${dll} to ${_bin_dir}"
+                )
+            endif()
+        endforeach()
+    endfunction()
+    
+    copy_wx_dlls(validproxy)
+    
+    # Compile definition for GUI mode
+    target_compile_definitions(validproxy PRIVATE HAS_WXWIDGETS=1)
+else()
+    message(STATUS "wxWidgets not found - GUI mode (-ui) will not be available")
+endif()
+
 enable_testing()
 
 # -- GTest (local source) --

@@ -4,15 +4,17 @@ build/
 *.o
 *.obj
 *.exe
+!/.gitignore
 
-# Bin directory (except config.json and validproxy.exe)
+# Bin directory 
+
 bin/log/
 bin/config/xray_config_*.json
 bin/config/*_priority*.json
 bin/config/*_temp*.json
 bin/config/worker_config_*.json
-bin/config/*.json
 !bin/config.json
+bin/config/*.json
 bin/*.log
 bin/*.txt
 bin/*.bat
@@ -75,10 +77,8 @@ docs/superpowers/specs/*.bak
 .zencoder/
 
 # Temp files
-Utils.cpp
-Utils.h
 kilo.json
-config.json
+opencode.json
 
 # Planning system outputs
 findings.md
@@ -86,9 +86,10 @@ progress.md
 session-ses_*.md
 
 # Temporary test files
-*.json.bak
+.*
+*.exe
+*.bak
 json_diff*.json
 1.json
-1.json.bak
 1.md
-nulbin/validproxy.exe
+

@@ -180,152 +180,23 @@ ctest -R TestName -V
 
 ### 2. 日志输出格式
 ```
-[timestamp] [LEVEL] [mode] message
-```
-
-**示例输出**：
-```
-[2026-05-07 16:02:04] [INFO] validproxy starting...
-[DEBUG] Loading config from: E:\\...\\bin\\config.json
-[DEBUG] Config loaded successfully
-[INFO] XrayManager::start: count=4, startPort=1080, apiPort=10080
-[INFO] [XrayInstance] Creating config: .../xray_config_1080.json
-[INFO] [XrayInstance] Executing: "E:/v2rayN-windows-64/bin/xray/xray.exe" run -c "..."
-[INFO] [XrayInstance] Started successfully, socks=1080, api=10080
-[INFO] ProxyFinder: Loaded 173 proxies from database
-ProxyFinder: Testing 173 proxies (first match)...
-```
-
-### 3. 代理测试流程
-- **测试 URL**: `https://www.google.com/generate_204`
-- **CURL 超时**: 30 秒（单个代理连接超时）
-- **并发测试**: 4 个工作线程并行执行
-- **Xray 注入**:
-  - 使用 `xray api ado` 命令注入出站代理
-  - 标签（tag）使用固定值 `"proxy"`
-  - 注入失败时会重试最多 3 次
-  - RPC 标签冲突错误："existing tag found" 已通过固定标签修复
-- **CURL 调用**: 使用 RAII wrapper `CurlEasyHandle`，协议前缀 `http://`（Xray mixed 端口）
-
-### 4. 调试日志（DEBUG 级别可用）
-
-启用 DEBUG 日志可查看 XrayApi 详细信息：
-- `[XrayApi] addOutbound called: tag=..., xrayPath=..., serverAddr=...`
-- `[XrayApi] outbound JSON: {...}`（完整的代理配置 JSON）
-- `[XrayApi] command: ...`（实际的 xray 命令行参数）
-- `[XrayApi] addOutbound SUCCESS for tag: ...`
-- `[XrayApi] addOutbound FAILED: exitCode=..., output=...`
-- `[XrayApi] removeOutbound called: tag=...`
-- `[XrayApi] removeOutbound SUCCESS for tag: ...`
-
-**常见错误诊断**：
-- `xray api ado failed with code: 1`：检查 xray_executable 路径、outbound JSON 格式、Xray API 服务状态
-- `existing tag found`：已通过固定标签 "proxy" 修复
-- `curl_easy_perform failed: SSL connect error`：代理配置无效或网络问题
-
-### 5. 终止条件
-无参数测试持续运行，直到：
-- 用户手动中断（Ctrl+C）
-- 所有代理测试完成
-- 发生未处理的严重错误
-- **任务计划超时**：Windows 任务计划程序可设置执行超时（建议 2 小时），超时后自动终止进程
-
-### 6. 清理流程
-- 停止所有 Xray 实例（调用 `XrayManager::stopAll()`）
-- 关闭工作线程
-- 刷新并关闭日志文件
-- 释放 CURL 全局资源（通过 `CurlGlobalGuard` RAII）
-
-### 7. 配置要求
-**config.json 必须包含**：
-```json
-{
-  "xray": {
-    "executable": "E:/v2rayN-windows-64/bin/xray/xray.exe",
-    "workers": 4,
-    "start_port": 1080,
-    "api_port": 10080
-  },
-  "database": {
-    "path": "bin/worker/guindb.db"
-  },
-  "log": {
-    "enabled": true,
-    "level": "DEBUG",
-    "console_level": "INFO",
-    "file_level": "DEBUG"
-  }
-}
-```
-
-### 8. 定时任务建议（Windows）
-
-#### 方法 1：PowerShell 脚本（推荐，支持超时设置）
-```powershell
-# 创建带超时的每日定时测试任务
-# 管理员权限运行 PowerShell
-
-$exePath = "E:\eclipse_workspace\multiple_thread_validproxy\bin\validproxy.exe"
-$taskName = "ProxyDailyTest"
-$startTime = "02:00"  # 每日启动时间
-$timeoutHours = 2      # 执行超时时间（小时）
-
-# 创建任务动作
-$action = New-ScheduledTaskAction -Execute $exePath
-
-# 创建每日触发器
-$trigger = New-ScheduledTaskTrigger -Daily -At $startTime
-
-# 设置任务属性（含超时限制）
-$settings = New-ScheduledTaskSettingsSet `
-    -ExecutionTimeLimit (New-TimeSpan -Hours $timeoutHours) `
-    -AllowStartIfOnBatteries `
-    -DontStopIfGoingOnBatteries `
-    -StartWhenAvailable
-
-# 注册任务（如果已存在则覆盖）
-Register-ScheduledTask `
-    -TaskName $taskName `
-    -Action $action `
-    -Trigger $trigger `
-    -Settings $settings `
-    -RunLevel Highest `
-    -Force
-
-Write-Host "任务创建成功: $taskName"
-Write-Host "  执行程序: $exePath"
-Write-Host "  启动时间: 每日 $startTime"
-Write-Host "  超时限制: $timeoutHours 小时"
-```
-
-#### 方法 2：命令行（简单但不支持超时）
-```cmd
-:: 创建每日定时测试任务（示例）
-schtasks /create /tn "ProxyDailyTest" /tr "E:\path\to\validproxy.exe" /sc daily /st 02:00 /ru SYSTEM
-```
-
-**注意**：命令行方式不支持设置执行超时，需通过任务计划程序图形界面手动设置：
-1. 打开"任务计划程序"
-2. 找到 "ProxyDailyTest" 任务
-3. 右键 → 属性 → 设置选项卡
-4. 勾选"如果任务运行超过下列时间，则停止任务"
-5. 设置时间（建议 2 小时）
-
-### 9. 验证命令
-```bash
-# 测试无参数运行（将运行默认配置）
-./bin/validproxy.exe
-
-# 查看详细 DEBUG 日志
-./bin/validproxy.exe 2>&1 | grep -E "(XrayApi|ERROR|DEBUG)"
-
-# 测试有参数模式（对比）
-./bin/validproxy.exe -F      # 查找第一个可用代理
-./bin/validproxy.exe -FMIN   # 查找延迟最小代理
 ./bin/validproxy.exe -T 1    # 测试订阅 1 的代理
 ```
 
-### 10. 日志分析要点
+### 10. 错误分析记录（2026-05-14）
+
+对 `bin/worker/log/` 全部 454 份日志进行错误模式扫描，发现 **4 类错误/异常模式**：
+
+| # | 错误类型 | 示例 | 判定 | 根因文件 |
+|---|---------|------|------|---------|
+| 1 | `CONFIG_ERROR: REALITY requires publicKey` | `test_20260513_142948.log` ×20+ | **基础字段值问题** | `Profileitem.h:85-88`, `SubitemUpdaterV2.cpp`（导入未校验） |
+| 2 | `CONFIG_ERROR: REALITY requires sni` | 同上日志 | **基础字段值问题** | `Profileitem.h:89-91` |
+| 3 | `Skipping ... invalid network: 'wshttps://...'` | `test_20260506_110443.log` ×N | **数据污染 + 导入缺陷** | `ConfigGenerator.cpp:isValidNetwork()`, `SubitemUpdaterV2.cpp`（导入未清洗） |
+| 4 | 校验策略不一致（throw vs skip） | 代码审查发现 | **代码设计问题** | `Profileitem.h` vs `ConfigGenerator.cpp` |
+
+**核心结论**：问题主要出在**数据导入阶段**（`SubitemUpdaterV2::parseSubscription`），REALITY 代理的 `PublicKey`/`Sni` 为空、`Network` 字段含垃圾值（如 `@freev2configs`、emoji），未经校验就写入数据库。`ConfigGenerator` 的校验逻辑正确，但仅作为最后防线。完整报告见 `docs/reports/error-report_20260514.md`。
+
+### 11. 日志分析要点
 - 正常结束：所有代理测试完成，日志中显示 `[INFO] ProxyFinder: Testing X proxies (first match)...`
 - 异常检测：出现 `[ERROR]` 或 `FAILED` 关键字
 - Xray 注入成功率：统计 `[XrayApi] addOutbound SUCCESS` 与 `FAILED` 比例
@@ -891,6 +762,7 @@ XrayManager::release();
 
 ### 文档
 - `docs/superpowers/specs/2026-04-28-subitem-batch-import-design.md` - 批量导入设计文档
+- `docs/design/invalid-proxy-filter-map.md` - 去除无效代理逻辑完整地图（10 个检查点全链路说明）
 - `docs/plans/*.md` - 实施计划文档（统一目录，共 12 个计划文件）
 - `memory/project_knowledge.md` - 本文件（长期记忆）
 

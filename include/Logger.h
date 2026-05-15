@@ -4,6 +4,7 @@
 #include <string>
 #include <fstream>
 #include <mutex>
+#include <functional>
 
 enum class LogLevel {
     TRACE = 0,
@@ -24,6 +25,11 @@ public:
     static void writeTimestamp(const std::string& msg, LogLevel level);
     static void flush();
     static void close();
+    // Callback for UI integration
+    using LogCallback = std::function<void(const std::string&, LogLevel)>;
+    static void setLogCallback(LogCallback cb);
+    static void clearLogCallback();
+
     static bool isEnabled();
     static std::ofstream* getFile();
     static std::string getLogDir();
@@ -50,6 +56,8 @@ private:
     static bool fileEnabled_;
     static LogLevel fileLevel_;
     static LogLevel consoleLevel_;
+    static LogCallback logCallback_;
+    static std::mutex callbackMutex_;
 };
 
 #endif // LOGGER_H

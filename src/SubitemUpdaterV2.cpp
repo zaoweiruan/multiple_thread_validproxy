@@ -16,6 +16,7 @@
 #include <iomanip>
 #include <algorithm>
 #include <array>
+#include <set>
 #include <cstdint>
 #include <random>
 #include <windows.h>
@@ -47,6 +48,67 @@ namespace {
         } else {
             sqlite3_bind_text(stmt, idx, val.c_str(), -1, SQLITE_TRANSIENT);
         }
+    }
+
+    // Network whitelist check (mirrors ConfigGenerator::isValidNetwork)
+    bool isValidNetwork(const std::string& network) {
+        if (network.empty()) return false;
+        std::string lower = network;
+        std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+        static const std::set<std::string> valid = {
+            "tcp","ws","grpc","h2","httpupgrade","kcp","xhttp","http","quic"
+        };
+        if (valid.count(lower) == 0) {
+            if (lower == "raw" || lower == "tcp,udp") {
+                return true;
+            }
+        }
+        return valid.count(lower) > 0;
+    }
+
+    // Pre-filter invalid proxies before insert/dedup
+    // R1: REALITY requires PublicKey
+    // R2: REALITY requires Sni
+    // R3: Network must be valid if non-empty (empty is allowed, ConfigGenerator falls back to "tcp")
+    // R4: Address must not be empty
+    // R5: Port must be valid (1-65535)
+    bool isValidProxy(const db::models::Profileitem& p) {
+        // R1: REALITY requires PublicKey
+        if (p.streamsecurity == "reality" && p.publickey.empty()) {
+            Logger::write("SKIP: " + p.address + ":" + p.port + " - REALITY missing PublicKey", LogLevel::WARN);
+            return false;
+        }
+        // R2: REALITY requires Sni
+        if (p.streamsecurity == "reality" && p.sni.empty()) {
+            Logger::write("SKIP: " + p.address + ":" + p.port + " - REALITY missing Sni", LogLevel::WARN);
+            return false;
+        }
+        // R3: Invalid network (non-empty only)
+        if (!p.network.empty() && !isValidNetwork(p.network)) {
+            Logger::write("SKIP: " + p.address + ":" + p.port + " - invalid network: '" + p.network + "'", LogLevel::WARN);
+            return false;
+        }
+        // R4: Empty address
+        if (p.address.empty()) {
+            Logger::write("SKIP: empty address (IndexId: " + p.indexid + ")", LogLevel::WARN);
+            return false;
+        }
+        // R5: Invalid port
+        if (p.port.empty()) {
+            Logger::write("SKIP: " + p.address + " - empty port", LogLevel::WARN);
+            return false;
+        }
+        try {
+            int portVal = std::stoi(p.port);
+            if (portVal <= 0 || portVal > 65535) {
+                Logger::write("SKIP: " + p.address + ":" + p.port + " - port out of range", LogLevel::WARN);
+                return false;
+            }
+        } catch (...) {
+            Logger::write("SKIP: " + p.address + ":" + p.port + " - non-numeric port", LogLevel::WARN);
+            return false;
+        }
+        return true;
     }
 
     bool insertSubItem(sqlite3* db, const db::models::Subitem& subitem) {
@@ -925,6 +987,23 @@ bool SubitemUpdaterV2::updateProfileItems(const std::string& subid, const std::v
         return true;
     }
 
+    // Phase 0: Pre-filter invalid proxies before insert
+    std::vector<db::models::Profileitem> validProfiles;
+    validProfiles.reserve(profiles.size());
+    for (const auto& p : profiles) {
+        if (isValidProxy(p)) {
+            validProfiles.push_back(p);
+        }
+    }
+    int filteredCount = static_cast<int>(profiles.size() - validProfiles.size());
+    if (filteredCount > 0) {
+        Logger::write("FILTER: Removed " + std::to_string(filteredCount) + " invalid proxies before insert", LogLevel::REPORT);
+    }
+    if (validProfiles.empty()) {
+        Logger::write("INFO: All profiles filtered out (no valid proxies to insert)", LogLevel::INFO);
+        return true;
+    }
+
     sqlite3_exec(db_, "BEGIN TRANSACTION;", nullptr, nullptr, nullptr);
     int inserted = 0;
 
@@ -973,10 +1052,10 @@ bool SubitemUpdaterV2::updateProfileItems(const std::string& subid, const std::v
     }
 
     size_t count = 0;
-    for (const auto& p : profiles) {
+    for (const auto& p : validProfiles) {
         count++;
         if (count % 100 == 0) {
-            Logger::write("Progress: " + std::to_string(count) + "/" + std::to_string(profiles.size()) + " profiles processed", LogLevel::REPORT);
+            Logger::write("Progress: " + std::to_string(count) + "/" + std::to_string(validProfiles.size()) + " profiles processed", LogLevel::REPORT);
         }
 
         // Step 1: Check for existing duplicate
@@ -1381,7 +1460,31 @@ int SubitemUpdaterV2::deduplicatePhase1() {
             sqlite3_free(errMsg2);
         } else {
             int deleted2 = sqlite3_changes(db_);
+            deleted += deleted2;
             Logger::write("INFO: Phase 1b deleted: " + std::to_string(deleted2) + " (invalid ports)", LogLevel::INFO);
+        }
+
+        // Phase 1c: Remove invalid REALITY proxies (missing PublicKey or Sni)
+        std::string sql3 = "DELETE FROM ProfileItem WHERE StreamSecurity = 'reality' AND (PublicKey IS NULL OR PublicKey = '')";
+        char* errMsg3 = nullptr;
+        if (sqlite3_exec(db_, sql3.c_str(), nullptr, nullptr, &errMsg3) != SQLITE_OK) {
+            Logger::write("ERROR: Phase1c dedup failed - " + std::string(errMsg3), LogLevel::ERR);
+            sqlite3_free(errMsg3);
+        } else {
+            int deleted3 = sqlite3_changes(db_);
+            deleted += deleted3;
+            Logger::write("INFO: Phase 1c deleted: " + std::to_string(deleted3) + " (REALITY missing PublicKey)", LogLevel::INFO);
+        }
+
+        std::string sql4 = "DELETE FROM ProfileItem WHERE StreamSecurity = 'reality' AND (Sni IS NULL OR Sni = '')";
+        char* errMsg4 = nullptr;
+        if (sqlite3_exec(db_, sql4.c_str(), nullptr, nullptr, &errMsg4) != SQLITE_OK) {
+            Logger::write("ERROR: Phase1c dedup failed (Sni) - " + std::string(errMsg4), LogLevel::ERR);
+            sqlite3_free(errMsg4);
+        } else {
+            int deleted4 = sqlite3_changes(db_);
+            deleted += deleted4;
+            Logger::write("INFO: Phase 1c deleted: " + std::to_string(deleted4) + " (REALITY missing Sni)", LogLevel::INFO);
         }
     }
     

@@ -13,6 +13,8 @@ bool Logger::enabled_ = false;
 bool Logger::fileEnabled_ = true;
 LogLevel Logger::fileLevel_ = LogLevel::DEBUG;
 LogLevel Logger::consoleLevel_ = LogLevel::INFO;
+Logger::LogCallback Logger::logCallback_ = nullptr;
+std::mutex Logger::callbackMutex_;
 
 void Logger::init(const std::string& logDir, const std::string& prefix) {
     init(logDir, prefix, LogLevel::DEBUG, LogLevel::INFO);
@@ -65,6 +67,14 @@ void Logger::write(const std::string& msg, LogLevel level) {
         *outFile_ << fullMsg << std::endl;
         outFile_->flush();
     }
+    
+    // UI callback (invoked under callbackMutex_, not the main mutex, to avoid deadlock)
+    {
+        std::lock_guard<std::mutex> cbLock(callbackMutex_);
+        if (logCallback_) {
+            logCallback_(fullMsg, level);
+        }
+    }
 }
 
 void Logger::writeTimestamp(const std::string& msg) {
@@ -91,6 +101,16 @@ void Logger::writeTimestamp(const std::string& msg, LogLevel level) {
         *outFile_ << fullMsg << std::endl;
         outFile_->flush();
     }
+}
+
+void Logger::setLogCallback(LogCallback cb) {
+    std::lock_guard<std::mutex> lock(callbackMutex_);
+    logCallback_ = std::move(cb);
+}
+
+void Logger::clearLogCallback() {
+    std::lock_guard<std::mutex> lock(callbackMutex_);
+    logCallback_ = nullptr;
 }
 
 void Logger::flush() {
