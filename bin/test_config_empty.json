@@ -1,0 +1,39 @@
+{
+    "database": {
+        "path": "E:/eclipse_workspace/multiple_thread_validproxy/test/guiNDB_empty.db"
+    },
+    "xray": {
+        "executable": "E:/v2rayN-windows-64/bin/xray/xray.exe",
+        "workers": 4,
+        "start_port": 1080,
+        "api_port": 10080
+    },
+    "test": {
+        "url": "https://www.google.com/generate_204",
+        "timeout_ms": 5000
+    },
+    "log": {
+        "enabled": true,
+        "network_failures": false,
+        "console_level": "INFO",
+        "file_level": "DEBUG"
+    },
+    "subscription": {
+        "priority_mode": "proxy_first",
+        "check_auto_update_interval": true
+    },
+    "dedup": {
+        "enabled": true,
+        "dedup_after_update": false,
+        "blacklist_threshold": 5
+    },
+    "sync": {
+        "source_db": "E:/eclipse_workspace/multiple_thread_validproxy/test/guindb.db",
+        "target_db": "E:/eclipse_workspace/multiple_thread_validproxy/test/guiNDB_empty.db"
+    },
+    "notification": {
+        "enabled": false,
+        "on_update": true,
+        "on_test": true
+    }
+}

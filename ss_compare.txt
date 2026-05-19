@@ -1,0 +1,2 @@
+vless://6202b230-417c-4d8e-b624-0f71afa9c75d@135.84.74.152:443?encryption=none&security=tls&sni=sni.111000.dynv6.net&insecure=1&allowInsecure=1&type=ws&host=sni.111000.dynv6.net#RELAY%F0%9F%9A%A9
+vless://6202b230-417c-4d8e-b624-0f71afa9c75d@135.84.74.152:443?encryption=none&security=tls&sni=sni.111000.dynv6.net&type=ws&headerType=none&host=sni.111000.dynv6.net#RELAY%F0%9F%9A%A9

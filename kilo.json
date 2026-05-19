@@ -1,8 +1,16 @@
 {
+  "$schema": "https://app.kilo.ai/config.json",
   "skills": {
-    "paths": ["C:\\Users\\dsm\\.config\\kilo\\skills"]
-  },
-  "model": {
-    "max_context": 4096
-  }
+    "paths": ["C:\\Users\\dsm\\.config\\kilo\\skills"]	
+  },    
+  "permission": {
+        "glob": "allow",
+        "read": "allow",
+        "grep": "allow",
+        "edit": "allow",
+		"skill": "allow",
+		"webfetch": "allow",
+		"websearch": "allow",
+		"question": "allow"
+    }
 }

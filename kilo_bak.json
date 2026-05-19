@@ -1,0 +1,72 @@
+{
+  "skills": {
+    "paths": ["C:\\Users\\dsm\\.config\\kilo\\skills"]
+  },
+  "model": {
+    "max_context": 4096
+  },    
+  "permission": {
+        "glob": "allow",
+        "read": "allow",
+        "grep": "allow",
+        "edit": "allow",
+		"skill": "allow",
+		"webfetch": "allow",
+		"websearch": "allow",
+		"question": "allow"
+    },
+    "mcp": {
+        "playwright": {
+            "type": "local",
+            "command": [
+                "cmd",
+                "/c",
+                "npx",
+                "-y",
+                "@executeautomation/playwright-mcp-server"
+            ]
+        },
+        "shadcn": {
+            "type": "local",
+            "command": [
+                "cmd",
+                "/c",
+                "npx",
+                "-y",
+                "@jpisnice/shadcn-ui-mcp-server"
+            ]
+        },
+        "desktop-commander": {
+            "type": "local",
+            "command": [
+                "cmd",
+                "/c",
+                "npx",
+                "-y",
+                "@wonderwhy-er/desktop-commander@latest"
+            ]
+        },
+        "e2b": {
+            "type": "local",
+            "command": [
+                "cmd",
+                "/c",
+                "npx",
+                "-y",
+                "@e2b/mcp-server"]
+        },    
+    "grep-app": {
+      "transport": "httpStream",
+      "url": "http://localhost:8603/mcp",
+      "disabled": false,
+      "autoApprove": ["grep_search", "grep_source"]
+    },    
+	"context7": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@upstash/context7-mcp"
+      ]
+    }
+    }
+}

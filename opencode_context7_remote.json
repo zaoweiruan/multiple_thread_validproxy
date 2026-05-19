@@ -1,0 +1,62 @@
+{
+    "$schema": "https://opencode.ai/config.json",
+    "permission": {
+        "glob": "allow",
+        "read": "allow",
+        "grep": "allow",
+        "edit": "allow",
+		"skill": "allow",
+		"webfetch": "allow",
+		"websearch": "allow",
+		"question": "allow"
+    },
+    "mcp": {
+        "playwright": {
+            "type": "local",
+            "command": [
+                "cmd",
+                "/c",
+                "npx",
+                "-y",
+                "@executeautomation/playwright-mcp-server"
+            ]
+        },
+        "shadcn": {
+            "type": "local",
+            "command": [
+                "cmd",
+                "/c",
+                "npx",
+                "-y",
+                "@jpisnice/shadcn-ui-mcp-server"
+            ]
+        },
+        "desktop-commander": {
+            "type": "local",
+            "command": [
+                "cmd",
+                "/c",
+                "npx",
+                "-y",
+                "@wonderwhy-er/desktop-commander@latest"
+            ]
+        },
+        "e2b": {
+            "type": "local",
+            "command": [
+                "cmd",
+                "/c",
+                "npx",
+                "-y",
+                "@e2b/mcp-server"]
+        },  
+	"context7": {
+      "type": "remote",
+      "url": "https://mcp.context7.com/mcp",
+      "enabled": true,
+      "headers": {
+        "CONTEXT7_API_KEY": "ctx7sk-d6b14a11-0298-4907-8977-1a7a7cb2d01c"
+      }
+    }
+	}
+  }
