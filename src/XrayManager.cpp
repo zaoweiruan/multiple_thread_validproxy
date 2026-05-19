@@ -5,12 +5,15 @@
 #include <chrono>
 
 XrayManager* XrayManager::instance_ = nullptr;
+std::mutex XrayManager::instanceMutex_;
 
 XrayManager* XrayManager::getInstance() {
+    std::lock_guard<std::mutex> lock(instanceMutex_);
     return instance_;
 }
 
 XrayManager* XrayManager::getInstance(const std::string& xrayPath, const std::string& configDir, int workers) {
+    std::lock_guard<std::mutex> lock(instanceMutex_);
     if (!instance_) {
         instance_ = new XrayManager(xrayPath, configDir, workers);
     }
@@ -18,6 +21,7 @@ XrayManager* XrayManager::getInstance(const std::string& xrayPath, const std::st
 }
 
 void XrayManager::release() {
+    std::lock_guard<std::mutex> lock(instanceMutex_);
     if (instance_) {
         instance_->stopAll();
         delete instance_;

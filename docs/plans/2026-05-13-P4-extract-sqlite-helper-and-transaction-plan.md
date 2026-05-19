@@ -1,7 +1,7 @@
 ---
 title: "refactor: Extract sqlite::exec helper and sqlite::Transaction RAII guard"
 type: refactor
-status: draft
+status: cancelled
 date: 2026-05-13
 origin: "Code audit P4 — consolidate sqlite3_exec error handling and fix COMMIT→ROLLBACK bug in transaction error paths"
 ---

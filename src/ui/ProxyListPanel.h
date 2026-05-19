@@ -29,23 +29,20 @@ public:
                    TestPanel* testPanel);
     ~ProxyListPanel() override;
 
-    // Reload proxies_ + exItems_ from DB and refresh the list control.
-    // Called on initial load and when a subscription is selected.
     void loadProxies(const std::string& subId = "");
-
-    // Reload exItems_ (test results / delay) from DB and push into the
-    // store without touching proxies_ — preserves scroll / selection.
-    // Called from MainFrame when a test operation completes.
     void refreshResults();
-
-    // Find the row whose indexId matches and select + reveal it.
     void selectProxyByIndexId(const std::string& indexId);
 
 private:
+    enum class SortDirection { None, Asc, Desc };
+
     void onContextMenu(wxDataViewEvent& event);
     void onTestProxy(wxCommandEvent& event);
     void onGenerateConfig(wxCommandEvent& event);
     void onProxyTestProgress(ProxyTestProgressEvent& event);
+    void onColumnHeaderClick(wxDataViewEvent& event);
+    void sortProxiesByColumn(int col, SortDirection dir);
+    void resetSort();
 
     AppController* controller_;
     sqlite3* db_;
@@ -54,9 +51,14 @@ private:
     wxDataViewCtrl* listCtrl_;
     wxDataViewListStore* store_;
 
-    // Source data
     std::vector<db::models::Profileitem> proxies_;
     std::vector<db::models::ProfileExItem> exItems_;
+
+    struct SortState {
+        int column = -1;
+        SortDirection direction = SortDirection::None;
+    };
+    SortState sortState_;
 
     wxDECLARE_EVENT_TABLE();
 };

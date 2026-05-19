@@ -16,6 +16,9 @@
 #include <filesystem>
 #include <fstream>
 #include <ctime>
+#include <future>
+#include <chrono>
+#include <thread>
 
 // ---------------------------------------------------------------
 // AppController implementation
@@ -24,9 +27,16 @@ AppController::AppController(sqlite3* db, const config::AppConfig& cfg)
     : db_(db), config_(cfg) {}
 
 AppController::~AppController() {
+    // Signal cancellation 
     cancelRequested_ = true;
+    
+    // Immediately release XrayManager to kill all xray processes
+    // This causes curl API calls to fail fast
+    XrayManager::release();
+    
+    // Detach worker thread - the process is exiting, OS will clean up detached threads
     if (workerThread_.joinable()) {
-        workerThread_.join();
+        workerThread_.detach();
     }
 }
 
@@ -89,12 +99,26 @@ std::vector<db::models::ProfileExItem> AppController::loadProxyResults() {
 }
 
 // ---------------------------------------------------------------
-// Test operations
+// Testing / Cancellation
 // ---------------------------------------------------------------
 void AppController::testSubscriptionAsync(const std::string& subId, wxEvtHandler* wxHandler) {
     cancelRequested_ = false;
     if (workerThread_.joinable()) workerThread_.join();
     workerThread_ = std::thread(&AppController::doTestSubscription, this, subId, wxHandler);
+}
+
+void AppController::testSingleProxyAsync(const std::string& indexId, wxEvtHandler* wxHandler) {
+    cancelRequested_ = false;
+    if (workerThread_.joinable()) workerThread_.join();
+    workerThread_ = std::thread(&AppController::doTestSingleProxy, this, indexId, wxHandler);
+}
+
+void AppController::cancelTest() {
+    cancelRequested_ = true;
+}
+
+bool AppController::isTestCancelled() const {
+    return cancelRequested_.load();
 }
 
 // ---------------------------------------------------------------
@@ -285,6 +309,30 @@ void AppController::doTestSubscription(const std::string& subId, wxEvtHandler* w
     Logger::write(std::string("Batch test ") + (ok ? "succeeded" : "failed"), LogLevel::REPORT);
 }
 
+void AppController::doTestSingleProxy(const std::string& indexId, wxEvtHandler* wxHandler) {
+    ProxyBatchTester tester(db_, config_, "");
+    bool ok = tester.runWithIndexId(indexId);
+
+    if (wxHandler) {
+        wxQueueEvent(wxHandler, new StatusUpdateEvent(2, ok ? "Test completed" : "Test failed"));
+    }
+
+    if (ok) {
+        if (wxHandler) {
+            wxQueueEvent(wxHandler, new ProxyTestProgressEvent(0, 0, "", "", "", "Single test finished", true));
+        }
+        if (wxWindow* win = dynamic_cast<wxWindow*>(wxHandler)) {
+            if (wxWindow* topLevel = wxGetTopLevelParent(win)) {
+                if (topLevel != win) {
+                    wxQueueEvent(topLevel, new ProxyTestProgressEvent(0, 0, "", "", "", "Single test finished", true));
+                }
+            }
+        }
+    }
+
+    Logger::write(std::string("Single proxy test ") + (ok ? "succeeded" : "failed"), LogLevel::REPORT);
+}
+
 // ---------------------------------------------------------------
 // Async find workers
 //
@@ -292,14 +340,36 @@ void AppController::doTestSubscription(const std::string& subId, wxEvtHandler* w
 //   "FOUND:<indexId>:<address>"   — working proxy found
 //   "NOTFOUND"                    — no working proxy found
 //   "ERR:<msg>"                   — exception occurred
+//   "CANCELLED"                   — operation cancelled
 // ---------------------------------------------------------------
 void AppController::doFindFirstProxy(wxEvtHandler* wxHandler) {
     try {
+        if (isTestCancelled()) {
+            if (wxHandler) {
+                wxQueueEvent(wxHandler, new StatusUpdateEvent(0, "CANCELLED"));
+            }
+            return;
+        }
         std::string xrayPath = config_.xray_executable;
         XrayManager* manager = XrayManager::getInstance(xrayPath, "", config_.xray_workers);
+        if (!manager) {
+            if (wxHandler) {
+                wxQueueEvent(wxHandler, new StatusUpdateEvent(0, "ERR:Failed to create XrayManager"));
+            }
+            return;
+        }
         ProxyFinder finder(db_, manager, xrayPath, config_.test_url, "", config_.test_timeout_ms);
 
         std::pair<int, int> ports = finder.findFirstWorkingProxy();
+
+        if (isTestCancelled()) {
+            XrayManager::release();
+            if (wxHandler) {
+                wxQueueEvent(wxHandler, new StatusUpdateEvent(0, "CANCELLED"));
+            }
+            return;
+        }
+
         auto res = finder.getLastResult();
 
         if (res.success && ports.first > 0) {
@@ -314,7 +384,6 @@ void AppController::doFindFirstProxy(wxEvtHandler* wxHandler) {
         }
 
         finder.release();
-        XrayManager::release();
 
     } catch (const std::exception& e) {
         if (wxHandler) {
@@ -325,11 +394,32 @@ void AppController::doFindFirstProxy(wxEvtHandler* wxHandler) {
 
 void AppController::doFindBestProxy(wxEvtHandler* wxHandler) {
     try {
+        if (isTestCancelled()) {
+            if (wxHandler) {
+                wxQueueEvent(wxHandler, new StatusUpdateEvent(0, "CANCELLED"));
+            }
+            return;
+        }
         std::string xrayPath = config_.xray_executable;
         XrayManager* manager = XrayManager::getInstance(xrayPath, "", config_.xray_workers);
+        if (!manager) {
+            if (wxHandler) {
+                wxQueueEvent(wxHandler, new StatusUpdateEvent(0, "ERR:Failed to create XrayManager"));
+            }
+            return;
+        }
         ProxyFinder finder(db_, manager, xrayPath, config_.test_url, "", config_.test_timeout_ms);
 
         std::pair<int, int> ports = finder.findWorkingProxy();
+
+        if (isTestCancelled()) {
+            XrayManager::release();
+            if (wxHandler) {
+                wxQueueEvent(wxHandler, new StatusUpdateEvent(0, "CANCELLED"));
+            }
+            return;
+        }
+
         auto res = finder.getLastResult();
 
         if (res.success && ports.first > 0) {
@@ -344,11 +434,52 @@ void AppController::doFindBestProxy(wxEvtHandler* wxHandler) {
         }
 
         finder.release();
-        XrayManager::release();
 
     } catch (const std::exception& e) {
         if (wxHandler) {
             wxQueueEvent(wxHandler, new StatusUpdateEvent(0, std::string("ERR:") + e.what()));
         }
     }
+}
+
+void AppController::findProxyByIndexIdAsync(const std::string& indexId, wxEvtHandler* wxHandler) {
+    cancelRequested_ = false;
+    if (workerThread_.joinable()) workerThread_.join();
+    workerThread_ = std::thread([this, indexId, wxHandler]() {
+        try {
+            auto proxies = loadProxies();
+            // Try exact indexId match first
+            auto it = std::find_if(proxies.begin(), proxies.end(),
+                [&indexId](const auto& p) { return p.indexid == indexId; });
+            
+            // If not found, try address prefix match
+            if (it == proxies.end()) {
+                it = std::find_if(proxies.begin(), proxies.end(),
+                    [&indexId](const auto& p) { 
+                        return p.address.find(indexId) == 0; 
+                    });
+            }
+            
+            if (it == proxies.end()) {
+                if (wxHandler) {
+                    wxQueueEvent(wxHandler, new StatusUpdateEvent(0, "NOTFOUND:" + indexId));
+                }
+                return;
+            }
+            
+            ProxyBatchTester tester(db_, config_, "");
+            bool ok = tester.runWithIndexId(it->indexid);
+            
+            if (ok && wxHandler) {
+                wxQueueEvent(wxHandler, new StatusUpdateEvent(0, "FOUND:" + it->indexid + ":" + it->address));
+                wxQueueEvent(wxHandler, new ProxyTestProgressEvent(0, 0, it->indexid, "", "", "Test finished", true));
+            } else if (wxHandler) {
+                wxQueueEvent(wxHandler, new StatusUpdateEvent(0, "ERR:Test failed for " + it->indexid));
+            }
+        } catch (const std::exception& e) {
+            if (wxHandler) {
+                wxQueueEvent(wxHandler, new StatusUpdateEvent(0, std::string("ERR:") + e.what()));
+            }
+        }
+    });
 }

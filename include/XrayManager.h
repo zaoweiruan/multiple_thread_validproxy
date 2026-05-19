@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 #include <memory>
+#include <mutex>
 #include "XrayInstance.h"
 
 class XrayManager {
@@ -31,6 +32,7 @@ private:
     int workers_;
     
     static XrayManager* instance_;
+    static std::mutex instanceMutex_;
 };
 
 #endif // XRAY_MANAGER_H

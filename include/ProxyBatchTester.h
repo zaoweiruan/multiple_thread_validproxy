@@ -23,7 +23,12 @@ public:
     
     bool run();
     bool runWithSubId(const std::string& subId);
+    bool runWithIndexId(const std::string& indexId);
     XrayManager* getXrayManager() { return xrayManager_; }
+    
+    // Cancel support
+    void cancel() { cancelRequested_ = true; }
+    bool isCancelled() const { return cancelRequested_.load(); }
 
 private:
     std::vector<db::models::Profileitem> loadProxies(const std::string& subId = "");
@@ -46,6 +51,7 @@ private:
     std::queue<int> proxiesQueue_;
     std::mutex queueMutex_;
     std::atomic<int> processedCount_;
+    std::atomic<bool> cancelRequested_{false};
 };
 
 #endif // PROXY_BATCH_TESTER_H

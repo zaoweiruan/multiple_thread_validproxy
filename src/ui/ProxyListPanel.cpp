@@ -56,11 +56,12 @@ ProxyListPanel::ProxyListPanel(wxWindow* parent, AppController* controller,
     listCtrl_->AppendTextColumn("Speed",         COL_SPEED,    wxDATAVIEW_CELL_INERT,  80, wxALIGN_RIGHT);
     listCtrl_->AppendTextColumn("Remarks",       COL_REMARKS,  wxDATAVIEW_CELL_EDITABLE, 200);
 
-    sizer->Add(listCtrl_, 1, wxEXPAND | wxALL, 2);
-    SetSizer(sizer);
+sizer->Add(listCtrl_, 1, wxEXPAND | wxALL, 2);
+     SetSizer(sizer);
 
-    // Bind custom events for completion handling
-    Bind(wxEVT_PROXY_TEST_PROGRESS, &ProxyListPanel::onProxyTestProgress, this);
+     // Bind custom events for completion handling
+     Bind(wxEVT_PROXY_TEST_PROGRESS, &ProxyListPanel::onProxyTestProgress, this);
+     Bind(wxEVT_DATAVIEW_COLUMN_HEADER_CLICK, &ProxyListPanel::onColumnHeaderClick, this);
 }
 
 ProxyListPanel::~ProxyListPanel() = default;
@@ -137,6 +138,69 @@ void ProxyListPanel::selectProxyByIndexId(const std::string& indexId) {
 }
 
 // -------------------------------------------------------------------
+// Column header click handler + sorting logic
+// -------------------------------------------------------------------
+void ProxyListPanel::onColumnHeaderClick(wxDataViewEvent& event) {
+    int col = event.GetColumn();
+    
+    // Cycle direction: None -> Asc -> Desc -> None
+    if (sortState_.column == col) {
+        sortState_.direction = (sortState_.direction == SortDirection::Asc)
+            ? SortDirection::Desc
+            : (sortState_.direction == SortDirection::Desc
+                ? SortDirection::None
+                : SortDirection::Asc);
+    } else {
+        sortState_.column = col;
+        sortState_.direction = SortDirection::Asc;
+    }
+    
+    if (sortState_.direction != SortDirection::None) {
+        sortProxiesByColumn(sortState_.column, sortState_.direction);
+    } else {
+        resetSort();
+    }
+}
+
+void ProxyListPanel::sortProxiesByColumn(int col, SortDirection dir) {
+    auto getDelay = [this](const db::models::Profileitem& p) -> int {
+        for (const auto& ex : exItems_) {
+            if (ex.indexid == p.indexid) {
+                try { return std::stoi(ex.delay); } catch (...) { return 0; }
+            }
+        }
+        return 0;
+    };
+    
+    std::sort(proxies_.begin(), proxies_.end(), [col, dir, &getDelay](const auto& a, const auto& b) {
+        int cmp = 0;
+        switch (col) {
+            case COL_ADDRESS:
+                cmp = a.address.compare(b.address);
+                break;
+            case COL_DELAY: {
+                int delayA = getDelay(a);
+                int delayB = getDelay(b);
+                cmp = (delayA > delayB) - (delayA < delayB);
+                break;
+            }
+            case COL_SPEED:
+                cmp = a.configtype.compare(b.configtype);
+                break;
+            default:
+                cmp = a.indexid.compare(b.indexid);
+                break;
+        }
+        return dir == SortDirection::Asc ? cmp < 0 : cmp > 0;
+    });
+    
+    loadProxies();
+}
+
+void ProxyListPanel::resetSort() {
+    loadProxies();
+}
+
 void ProxyListPanel::onContextMenu(wxDataViewEvent& event) {
     wxDataViewItem item = event.GetItem();
     if (!item.IsOk()) return;
@@ -156,12 +220,18 @@ void ProxyListPanel::onTestProxy(wxCommandEvent& event) {
     store_->GetValue(idxVar, item, COL_INDEXID);
     std::string indexId = idxVar.GetString().ToStdString();
 
-    // Relay test request to TestPanel
+    // Send initial "Testing..." event to TestPanel
     if (testPanel_) {
         wxQueueEvent(testPanel_, new ProxyTestProgressEvent(0, 1, indexId, "", "", "Testing…", false));
     }
 
-    controller_->testSubscriptionAsync(indexId, testPanel_);
+    // FIX: Also send to MainFrame so it can refresh Delay column on completion
+    wxWindow* topLevel = wxGetTopLevelParent(this);
+    if (topLevel && topLevel != this) {
+        wxQueueEvent(topLevel, new ProxyTestProgressEvent(0, 1, indexId, "", "", "Testing…", false));
+    }
+
+    controller_->testSingleProxyAsync(indexId, testPanel_);
     (void)event; // id dispatched in menu
 }
 

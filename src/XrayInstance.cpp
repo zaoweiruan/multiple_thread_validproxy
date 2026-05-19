@@ -55,10 +55,8 @@ bool XrayInstance::start() {
     }
     
     ResumeThread(pi.hThread);
-    CloseHandle(pi.hProcess);
-    CloseHandle(pi.hThread);
-    
     processHandle_ = pi.hProcess;
+    CloseHandle(pi.hThread);
     std::this_thread::sleep_for(std::chrono::seconds(2));
     running_ = true;
     Logger::write("[XrayInstance] Started successfully, socks=" + std::to_string(socksPort_) + ", api=" + std::to_string(apiPort_), LogLevel::INFO);
@@ -66,10 +64,19 @@ bool XrayInstance::start() {
 }
 
 void XrayInstance::stop() {
+    // Force kill the process tree using the job object
     if (jobObject_) {
-        TerminateJobObject(jobObject_, 0);
+        TerminateJobObject(jobObject_, 1);
+        // Give processes a moment to terminate
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
         CloseHandle(jobObject_);
         jobObject_ = nullptr;
+    }
+    if (processHandle_) {
+        // Ensure process is dead
+        WaitForSingleObject(processHandle_, 100);
+        CloseHandle(processHandle_);
+        processHandle_ = nullptr;
     }
     running_ = false;
 }

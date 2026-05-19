@@ -35,16 +35,20 @@ public:
   std::vector<db::models::Profileitem> loadProxies(const std::string& subId = "");
   std::vector<db::models::ProfileExItem> loadProxyResults();
 
-  // Tests
-  void testSubscriptionAsync(const std::string& subId, wxEvtHandler* wxHandler);
-  void cancelTest() { cancelRequested_ = true; }
-  bool isTestCancelled() const { return cancelRequested_.load(); }
+// ---------------------------------------------------------------
+// Testing / Cancellation
+// ---------------------------------------------------------------
+void testSubscriptionAsync(const std::string& subId, wxEvtHandler* wxHandler);
+void testSingleProxyAsync(const std::string& indexId, wxEvtHandler* wxHandler);
+void cancelTest();
+bool isTestCancelled() const;
 
-  // Find (async)
-  ProxyFinder::TestResult findFirstProxy();
-  ProxyFinder::TestResult findBestProxy();
-  void findFirstProxyAsync(wxEvtHandler* wxHandler);
-  void findBestProxyAsync(wxEvtHandler* wxHandler);
+// Find (async)
+   ProxyFinder::TestResult findFirstProxy();
+   ProxyFinder::TestResult findBestProxy();
+   void findFirstProxyAsync(wxEvtHandler* wxHandler);
+   void findBestProxyAsync(wxEvtHandler* wxHandler);
+   void findProxyByIndexIdAsync(const std::string& indexId, wxEvtHandler* wxHandler);
 
   // Export / Tool
   bool exportShareLinks();
@@ -57,6 +61,7 @@ private:
   void doUpdateSubscription(const std::string& subId, wxEvtHandler* wxHandler);
   void doUpdateAllSubscriptions(wxEvtHandler* wxHandler);
   void doTestSubscription(const std::string& subId, wxEvtHandler* wxHandler);
+  void doTestSingleProxy(const std::string& indexId, wxEvtHandler* wxHandler);
   void doFindFirstProxy(wxEvtHandler* wxHandler);
   void doFindBestProxy(wxEvtHandler* wxHandler);
 
