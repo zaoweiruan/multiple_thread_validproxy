@@ -14,6 +14,7 @@
 #include <wx/menu.h>
 #include <wx/msgdlg.h>
 #include <wx/artprov.h>
+#include <thread>
 
 // -------------------------------------------------------------------
 //  Menu / Tool identifiers
@@ -105,23 +106,35 @@ MainFrame::MainFrame(const config::AppConfig& cfg, sqlite3* db)
         }
     });
 
-    initMenuBar();
-    initToolBar();
-    initStatusBar();
-    initAuiManager();
-    initPanels();
-    initTrayIcon();
-    loadSettings();
+initMenuBar();
+     initToolBar();
+     initStatusBar();
+     initAuiManager();
+     initPanels();
+     
+     // Bind subscription selection to filter proxy list
+     Bind(wxEVT_SUBSCRIPTION_SELECTED, [this](SubscriptionSelectedEvent& evt) {
+         std::string subId = evt.getSubId();
+         if (proxyPanel_) {
+             proxyPanel_->loadProxies(subId);
+         }
+         setStatusText(0, "Loaded subscription: " + wxString(subId));
+     });
+     
+     initTrayIcon();
+     loadSettings();
 }
 
 MainFrame::~MainFrame() {
+    // Clean shutdown: cancel any running task and wait for thread with timeout
+    if (controller_) {
+        controller_->cancelTest();
+        delete controller_;
+        controller_ = nullptr;
+    }
     if (configDialog_) {
         delete configDialog_;
         configDialog_ = nullptr;
-    }
-    if (controller_) {
-        delete controller_;
-        controller_ = nullptr;
     }
 }
 
@@ -197,21 +210,22 @@ void MainFrame::initAuiManager() {
 void MainFrame::initPanels() {
     wxBoxSizer* sizer = new wxBoxSizer(wxVERTICAL);
 
-    // Top row: subscriptions | proxies
+    // Top row: subscriptions | test panel
     wxBoxSizer* topSizer = new wxBoxSizer(wxHORIZONTAL);
-
     subPanel_   = new SubscriptionPanel(this, controller_);
     testPanel_  = new TestPanel(this);
+    topSizer->Add(subPanel_,  1, wxEXPAND | wxRIGHT, 2);
+    topSizer->Add(testPanel_, 1, wxEXPAND);
+    sizer->Add(topSizer, 0, wxEXPAND | wxALL, 2);
+
+    // Bottom row: proxy list panel (takes remaining space)
     proxyPanel_ = new ProxyListPanel(this, controller_, db_, testPanel_);
+    sizer->Add(proxyPanel_, 1, wxEXPAND | wxALL, 2);
 
-    topSizer->Add(subPanel_,   1, wxEXPAND | wxRIGHT, 2);
-    topSizer->Add(testPanel_,  1, wxEXPAND | wxRIGHT, 2);
-    topSizer->Add(proxyPanel_, 2, wxEXPAND);
-
-    sizer->Add(topSizer, 1, wxEXPAND | wxALL, 2);
     SetSizer(sizer);
 
-    // Load initial proxy data
+    // Load initial data
+    subPanel_->loadSubscriptions();
     proxyPanel_->loadProxies("");
 }
 
@@ -228,9 +242,11 @@ void MainFrame::loadSettings() {
 //  Event handlers — menus
 // -------------------------------------------------------------------
 void MainFrame::onClose(wxCloseEvent& event) {
-    if (configDialog_) configDialog_->EndModal(wxID_CANCEL);
-    Destroy();
-    (void)event;  // keep compiler happy
+    // Signal cancellation and let destructor handle cleanup
+    if (controller_) {
+        controller_->cancelTest();
+    }
+    event.Skip();  // Allow frame destruction to proceed
 }
 
 void MainFrame::onIconize(wxIconizeEvent& event) {

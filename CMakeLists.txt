@@ -120,24 +120,48 @@ if(wxWidgets_FOUND)
         if(NOT _bin_dir)
             set(_bin_dir "${CMAKE_SOURCE_DIR}/bin")
         endif()
-        # List of wx DLLs needed
-        set(WX_DLLS
-            wxbase32u_gcc_custom.dll
-            wxbase32u_net_gcc_custom.dll
-            wxmsw32u_adv_gcc_custom.dll
-            wxmsw32u_aui_gcc_custom.dll
-            wxmsw32u_core_gcc_custom.dll
-            wxmsw32u_html_gcc_custom.dll
-            wxmsw32u_propgrid_gcc_custom.dll
-            libpcre2-16.dll
-            libzlib1.dll
-            libjpeg-62.dll
-            libpng16.dll
-            libtiff.dll
-            liblzma.dll
-        )
+        
+        # Determine if we're building Debug or Release to choose correct DLL directory
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+             set(wx_bin_dir "E:/vcpkg/installed/x64-mingw-dynamic/debug/bin")
+             # Debug DLLs have 'd' suffix: wxbase32ud_gcc_custom.dll, libpcre2-16d.dll, libzlibd1.dll
+             set(WX_DLLS
+                 wxbase32ud_gcc_custom.dll
+                 wxbase32ud_net_gcc_custom.dll
+                 wxmsw32ud_adv_gcc_custom.dll
+                 wxmsw32ud_aui_gcc_custom.dll
+                 wxmsw32ud_core_gcc_custom.dll
+                 wxmsw32ud_html_gcc_custom.dll
+                 wxmsw32ud_propgrid_gcc_custom.dll
+                 libpcre2-16d.dll
+                 libzlibd1.dll
+                 libjpeg-62.dll
+                 libpng16d.dll
+                 libtiffd.dll
+                 liblzma.dll
+             )
+        else()
+            set(wx_bin_dir "E:/vcpkg/installed/x64-mingw-dynamic/bin")
+            # Release DLLs
+            set(WX_DLLS
+                wxbase32u_gcc_custom.dll
+                wxbase32u_net_gcc_custom.dll
+                wxmsw32u_adv_gcc_custom.dll
+                wxmsw32u_aui_gcc_custom.dll
+                wxmsw32u_core_gcc_custom.dll
+                wxmsw32u_html_gcc_custom.dll
+                wxmsw32u_propgrid_gcc_custom.dll
+                libpcre2-16.dll
+                libzlib1.dll
+                libjpeg-62.dll
+                libpng16.dll
+                libtiff.dll
+                liblzma.dll
+            )
+        endif()
+        
         foreach(dll ${WX_DLLS})
-            set(src_dll "E:/vcpkg/installed/x64-mingw-dynamic/bin/${dll}")
+            set(src_dll "${wx_bin_dir}/${dll}")
             if(EXISTS "${src_dll}")
                 add_custom_command(TARGET ${TARGET_NAME} POST_BUILD
                     COMMAND ${CMAKE_COMMAND} -E copy_if_different

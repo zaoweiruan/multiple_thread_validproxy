@@ -1,3 +1,10 @@
+---
+title: "feat(ProxyBatchTester): log config-parsed SQL queries to log"
+type: feat
+status: completed
+date: 2026-05-12
+origin: "Sisyphus - Plan 007: Log Config-Parsed SQL Queries to Log"
+---
 # Plan 007: Log Config-Parsed SQL Queries to Log
 
 - **Status**: completed
@@ -75,3 +82,4 @@ ProxyBatchTester.cpp:29-37
 - [ ] 控制台默认不显示 SQL（`INFO` 阈值过滤）
 - [ ] `sql_query` 和 `sql_by_subid` 均被记录
 - [ ] `{blacklist_threshold}` 和 `{subid}` 占位符替换后的值在日志中可见
+

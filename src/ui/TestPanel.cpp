@@ -73,29 +73,32 @@ void TestPanel::cancelTest() {
 }
 
 void TestPanel::onProgress(ProxyTestProgressEvent& event) {
+    // Handle completion state FIRST (but don't return early - need to add result row)
     if (event.isCompleted()) {
         isRunning_ = false;
         cancelBtn_->Enable(false);
         statusLabel_->SetLabel("Test completed");
-        return;
     }
 
-    int current = event.getCurrent();
-    int total = event.getTotal();
-    if (total > 0) {
-        total_ = total;
-        progressBar_->SetRange(total);
-        progressBar_->SetValue(current);
-        progressText_->SetLabel(wxString::Format("%d/%d", current, total));
-    }
-
-    // Add result row
+    // Add result row if we have proxy data (even for completion events)
     if (!event.getProxyId().empty()) {
         long row = resultList_->InsertItem(resultList_->GetItemCount(),
-                                             event.getRemarks());
+                                           event.getRemarks());
         resultList_->SetItem(row, 1, event.getProxyId());
         resultList_->SetItem(row, 2, event.getDelay());
         resultList_->SetItem(row, 3, event.getMessage());
+    }
+
+    // Update progress UI for non-completion events
+    if (!event.isCompleted()) {
+        int current = event.getCurrent();
+        int total = event.getTotal();
+        if (total > 0) {
+            total_ = total;
+            progressBar_->SetRange(total);
+            progressBar_->SetValue(current);
+            progressText_->SetLabel(wxString::Format("%d/%d", current, total));
+        }
     }
 }
 

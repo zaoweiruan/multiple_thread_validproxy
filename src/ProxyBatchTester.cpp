@@ -18,8 +18,9 @@ ProxyBatchTester::ProxyBatchTester(sqlite3* db, const config::AppConfig& config,
 }
 
 ProxyBatchTester::~ProxyBatchTester() {
+    cancelRequested_ = true;  // Signal workers to stop
     delete proxyTester_;
-    delete xrayManager_;
+    // Note: xrayManager_ is a singleton managed by XrayManager::release(), not deleted here
 }
 
 std::vector<db::models::Profileitem> ProxyBatchTester::loadProxies(const std::string& subId) {
@@ -51,12 +52,17 @@ bool ProxyBatchTester::startXrayInstances(int count) {
 }
 
 void ProxyBatchTester::workerThreadFunc(int workerId, int socksPort, int apiPort) {
-    std::string xrayApiAddr = "127.0.0.1:" + std::to_string(apiPort);
+std::string xrayApiAddr = "127.0.0.1:" + std::to_string(apiPort);
     xray::XrayApi xrayApi(config_.xray_executable, xrayApiAddr);
     db::models::ProfileExItemDAO exItemDao(db_);
     config::ConfigGenerator configGen(db_);
     
     while (true) {
+        // Check for cancellation
+        if (cancelRequested_.load()) {
+            break;
+        }
+        
         int profileIdx = -1;
         {
             std::lock_guard<std::mutex> lock(queueMutex_);
@@ -70,10 +76,10 @@ void ProxyBatchTester::workerThreadFunc(int workerId, int socksPort, int apiPort
             processedCount_++;
             continue;
         }
-        
+         
+
         const auto& profile = proxies_[profileIdx];
-        
-db::models::Profileitem configProfile = profile;
+ db::models::Profileitem configProfile = profile;
         
         try {
             configProfile.checkRequired();
@@ -181,8 +187,15 @@ void ProxyBatchTester::testProxiesMultiThreaded() {
         threads.emplace_back(&ProxyBatchTester::workerThreadFunc, this, i, socksPort, apiPort);
     }
     
+    // Wait for all threads, detaching if cancelled to prevent shutdown hang
     for (auto& t : threads) {
-        t.join();
+        if (t.joinable()) {
+            if (cancelRequested_.load()) {
+                t.detach();  // Detach to avoid deadlock on shutdown
+            } else {
+                t.join();
+            }
+        }
     }
 }
 
@@ -195,15 +208,15 @@ void ProxyBatchTester::printSummary() {
 }
 
 bool ProxyBatchTester::run() {
-    proxies_ = loadProxies();
-    totalProxies_ = static_cast<int>(proxies_.size());
-    
-    if (totalProxies_ == 0) {
-        Logger::write("No proxies to test", LogLevel::WARN);
-        return false;
-    }
-    
-    Logger::write("Testing " + std::to_string(totalProxies_) + " proxies total", LogLevel::REPORT);
+     proxies_ = loadProxies();
+     totalProxies_ = static_cast<int>(proxies_.size());
+
+     if (totalProxies_ == 0) {
+         Logger::write("No proxies to test", LogLevel::WARN);
+         return false;
+     }
+     
+     Logger::write("Testing " + std::to_string(totalProxies_) + " proxies total", LogLevel::REPORT);
     
     int instanceCount = calculateXrayInstanceCount(totalProxies_);
     if (!startXrayInstances(instanceCount)) {
@@ -223,15 +236,15 @@ bool ProxyBatchTester::run() {
 }
 
 bool ProxyBatchTester::runWithSubId(const std::string& subId) {
-    proxies_ = loadProxies(subId);
-    totalProxies_ = static_cast<int>(proxies_.size());
-    
-if (totalProxies_ == 0) {
-        Logger::write("No proxies to test for subscription: " + subId, LogLevel::WARN);
-        return false;
-    }
+     proxies_ = loadProxies(subId);
+     totalProxies_ = static_cast<int>(proxies_.size());
+     
+     if (totalProxies_ == 0) {
+         Logger::write("No proxies to test for subscription: " + subId, LogLevel::WARN);
+         return false;
+     }
 
-    Logger::write("Testing " + std::to_string(totalProxies_) + " proxies from subscription: " + subId, LogLevel::INFO);
+     Logger::write("Testing " + std::to_string(totalProxies_) + " proxies from subscription: " + subId, LogLevel::INFO);
     Logger::write("Testing " + std::to_string(totalProxies_) + " proxies total", LogLevel::REPORT);
     if (config_.log_network_failures) {
         Logger::write("Testing " + std::to_string(totalProxies_) + " proxies from subscription: " + subId, LogLevel::INFO);
@@ -245,6 +258,35 @@ if (totalProxies_ == 0) {
     
     if (config_.log_network_failures) {
         Logger::write("Started " + std::to_string(instanceCount) + " xray instances", LogLevel::INFO);
+    }
+    
+    testProxiesMultiThreaded();
+    printSummary();
+    
+    xrayManager_->stopAll();
+    return true;
+}
+
+bool ProxyBatchTester::runWithIndexId(const std::string& indexId) {
+    db::models::ProfileitemDAO dao(db_);
+    auto profiles = dao.getAll();
+    std::vector<db::models::Profileitem> filtered;
+    std::copy_if(profiles.begin(), profiles.end(), std::back_inserter(filtered),
+        [&indexId](const db::models::Profileitem& p) { return p.indexid == indexId; });
+    
+    proxies_ = std::move(filtered);
+    totalProxies_ = static_cast<int>(proxies_.size());
+    
+    if (totalProxies_ == 0) {
+        Logger::write("Proxy not found: " + indexId, LogLevel::WARN);
+        return false;
+    }
+    
+    Logger::write("Testing single proxy: " + indexId, LogLevel::REPORT);
+    
+    if (!startXrayInstances(1)) {
+        Logger::write("Failed to start xray instance", LogLevel::WARN);
+        return false;
     }
     
     testProxiesMultiThreaded();

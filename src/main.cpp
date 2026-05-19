@@ -94,7 +94,19 @@ BOOL WINAPI consoleCtrlHandler(DWORD ctrlType) {
         if (g_xrayManager) {
             g_xrayManager->stopAll();
         }
-        exit(1);
+#ifdef HAS_WXWIDGETS
+        // In GUI mode, post a close event to the main frame
+        if (g_commandMode == "ui") {
+            wxApp* app = static_cast<wxApp*>(wxApp::GetInstance());
+            if (app) {
+                wxWindow* topWindow = app->GetTopWindow();
+                if (topWindow) {
+                    topWindow->Close(true);
+                }
+            }
+        }
+#endif
+        return TRUE;
     }
     return FALSE;
 }
