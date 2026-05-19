@@ -23,9 +23,15 @@ XrayManager* XrayManager::getInstance(const std::string& xrayPath, const std::st
 void XrayManager::release() {
     std::lock_guard<std::mutex> lock(instanceMutex_);
     if (instance_) {
+        int count = instance_->getInstanceCount();
+        Logger::write("[XrayManager][release] shutting down " + std::to_string(count) + " instance(s)", LogLevel::REPORT);
         instance_->stopAll();
+        // release() calls stopAll() then deletes the singleton;
+        // the destructor also calls stopAll(), so if already shut down, defensively mark to skip.
+        instance_->stopped_ = true;
         delete instance_;
         instance_ = nullptr;
+        Logger::write("[XrayManager][release] done", LogLevel::REPORT);
     }
 }
 
@@ -33,7 +39,9 @@ XrayManager::XrayManager(const std::string& xrayPath, const std::string& configD
     : xrayPath_(xrayPath), configDir_(configDir), workers_(workers) {}
 
 XrayManager::~XrayManager() {
-    stopAll();
+    if (!stopped_) {
+        stopAll();
+    }
 }
 
 int XrayManager::start(int testCount) {
@@ -73,10 +81,12 @@ int XrayManager::start(int count, int startPort, int apiPort) {
 }
 
 void XrayManager::stopAll() {
+    int prevSize = static_cast<int>(instances_.size());
     for (auto& inst : instances_) {
         inst->stop();
     }
     instances_.clear();
+    Logger::write("[XrayManager][stopAll] cleared " + std::to_string(prevSize) + " instance(s)", LogLevel::INFO);
 }
 
 XrayInstance* XrayManager::getInstance(int index) {

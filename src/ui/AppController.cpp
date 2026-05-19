@@ -27,17 +27,19 @@ AppController::AppController(sqlite3* db, const config::AppConfig& cfg)
     : db_(db), config_(cfg) {}
 
 AppController::~AppController() {
-    // Signal cancellation 
+    // Signal cancellation first so any in-flight async work can observe the flag
     cancelRequested_ = true;
-    
-    // Immediately release XrayManager to kill all xray processes
-    // This causes curl API calls to fail fast
-    XrayManager::release();
-    
-    // Detach worker thread - the process is exiting, OS will clean up detached threads
+
+    // Wait for worker thread to finish before releasing XrayManager.
+    // WRONG order (release first, detach later) leaves a detached thread
+    // running until the OS kills it — the worker may still access XrayManager
+    // or xray instances after release() destroys the singleton, causing zombies.
     if (workerThread_.joinable()) {
-        workerThread_.detach();
+        workerThread_.join();   // block until thread exits cleanly
     }
+
+    // Now it is safe to shut down XrayManager — no thread still holds a ref
+    XrayManager::release();
 }
 
 // ---------------------------------------------------------------

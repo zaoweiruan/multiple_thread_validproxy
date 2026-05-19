@@ -6,7 +6,8 @@ build/
 *.exe
 *.dll
 !/.gitignore
-
+!docs/**/*.md
+!docs/*.md
 # Bin directory 
 
 bin/log/

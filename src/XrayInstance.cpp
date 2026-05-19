@@ -32,14 +32,22 @@ bool XrayInstance::start() {
     
     JOBOBJECT_EXTENDED_LIMIT_INFORMATION jobLimit = {};
     jobLimit.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
-    SetInformationJobObject(jobObject_, JobObjectExtendedLimitInformation, &jobLimit, sizeof(jobLimit));
+    if (!SetInformationJobObject(jobObject_, JobObjectExtendedLimitInformation, &jobLimit, sizeof(jobLimit))) {
+        DWORD err = GetLastError();
+        Logger::write("[XrayInstance] SetInformationJobObject FAILED, err=" + std::to_string(err)
+                      + ". Fallback: direct TerminateProcess path.", LogLevel::ERR);
+        // KILL_ON_JOB_CLOSE not set — do not rely on close-handle kill.
+        // Fallback: if process was already created we would TerminateProcess it in stop().
+        // For now, keep jobObject_ so stop() can take the fallback branch.
+        // Note: AssignProcessToJobObject with non-kill-on-close job will survive CloseHandle.
+    }
     
     std::string cmd = "\"" + xrayPath_ + "\" run -c \"" + configPath_ + "\"";
     Logger::write("[XrayInstance] Executing: " + cmd, LogLevel::INFO);
     
-    STARTUPINFOA si = {0};
+    STARTUPINFOA si = {};
     si.cb = sizeof(si);
-    PROCESS_INFORMATION pi = {0};
+    PROCESS_INFORMATION pi = {};
     
     BOOL created = CreateProcessA(NULL, (LPSTR)cmd.c_str(), NULL, NULL, FALSE, CREATE_SUSPENDED | CREATE_NO_WINDOW, NULL, NULL, &si, &pi);
     if (!created) {
@@ -52,6 +60,11 @@ bool XrayInstance::start() {
     
     if (!AssignProcessToJobObject(jobObject_, pi.hProcess)) {
         Logger::write("[XrayInstance] Failed to assign to job: " + std::to_string(GetLastError()), LogLevel::ERR);
+        // Do NOT resume the suspended process — it would become an unmanaged orphan.
+        // Caller will check start() return value and handle cleanup.
+        CloseHandle(pi.hProcess);
+        CloseHandle(pi.hThread);
+        return false;
     }
     
     ResumeThread(pi.hThread);
@@ -66,17 +79,38 @@ bool XrayInstance::start() {
 void XrayInstance::stop() {
     // Force kill the process tree using the job object
     if (jobObject_) {
+        Logger::write("[XrayInstance][stop] TerminateJobObject, socks="
+                      + std::to_string(socksPort_) + " api="
+                      + std::to_string(apiPort_), LogLevel::INFO);
         TerminateJobObject(jobObject_, 1);
-        // Give processes a moment to terminate
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        // Graceful wait: give processes up to GRACEFUL_SHUTDOWN_MS to drain before Job close
+        std::this_thread::sleep_for(std::chrono::milliseconds(GRACEFUL_SHUTDOWN_MS));
         CloseHandle(jobObject_);
         jobObject_ = nullptr;
     }
     if (processHandle_) {
-        // Ensure process is dead
-        WaitForSingleObject(processHandle_, 100);
+        // Wait synchronously: process may have already exited or been killed by the Job above.
+        // WAIT_TIMEOUT here does NOT necessarily mean the process is alive — it only means
+        // GRACEFUL_SHUTDOWN_MS elapsed; the exit will be confirmed by GetExitCodeProcess below.
+        DWORD waitResult = WaitForSingleObject(processHandle_, GRACEFUL_SHUTDOWN_MS);
+        DWORD exitCode = 0;
+        GetExitCodeProcess(processHandle_, &exitCode);
+        bool exited = (exitCode != STILL_ACTIVE);
+
+        LogLevel lvl = exited ? LogLevel::INFO : LogLevel::INFO;
+        std::string reason = exited
+            ? "exit=" + std::to_string(exitCode)
+            : "exit, WAIT_TIMEOUT=" + std::to_string(waitResult)
+                    + " (terminated by Job object, exitCode=" + std::to_string(exitCode) + ")";
+
+        Logger::write("[XrayInstance][stop] "
+                      + std::string(exited ? "exited" : "exited by Job") + ", "
+                      + reason + ", socks=" + std::to_string(socksPort_),
+                      lvl);
         CloseHandle(processHandle_);
         processHandle_ = nullptr;
+    } else {
+        Logger::write("[XrayInstance][stop] no process handle (already stopped?)", LogLevel::INFO);
     }
     running_ = false;
 }

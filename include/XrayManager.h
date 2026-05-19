@@ -25,12 +25,15 @@ public:
     int getWorkers() const { return workers_; }
     bool isRunning() const { return getInstanceCount() > 0; }
 
-private:
+ private:
     std::vector<std::unique_ptr<XrayInstance>> instances_;
     std::string xrayPath_;
     std::string configDir_;
     int workers_;
-    
+
+    // Running flag for lifecycle tracking
+    bool stopped_{false};
+
     static XrayManager* instance_;
     static std::mutex instanceMutex_;
 };

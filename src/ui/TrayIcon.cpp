@@ -25,7 +25,12 @@ TrayIcon::TrayIcon(MainFrame* frame)
     SetIcon(icon, "validproxy");
 }
 
-TrayIcon::~TrayIcon() = default;
+TrayIcon::~TrayIcon() {
+    // RemoveIcon 通知 shell 移除任务栏通知区域图标，防止 MainFrame 销毁后
+    // shell 仍向本对象持有的隐藏窗口投递通知事件 → 消息循环永久 pump，
+    // 进程无法退出 (hang)。
+    RemoveIcon();
+}
 
 wxMenu* TrayIcon::CreatePopupMenu() {
     wxMenu* menu = new wxMenu();
