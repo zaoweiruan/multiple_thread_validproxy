@@ -1,0 +1,89 @@
+{
+  "reviewer": "testing",
+  "findings": [
+    {
+      "title": "Logger::stringToLevel() bug fix has no test coverage",
+      "severity": "P1",
+      "file": "src/Logger.cpp",
+      "line": 173,
+      "confidence": 75,
+      "autofix_class": "manual",
+      "owner": "review-fixer",
+      "requires_verification": true,
+      "pre_existing": false,
+      "suggested_fix": "Add unit tests for Logger::stringToLevel() covering: (1) 'LOG_ERROR' → LogLevel::LOG_ERROR, (2) 'log_error' → LogLevel::LOG_ERROR, (3) 'ERROR' → LogLevel::LOG_ERROR, (4) lowercase variants, (5) invalid strings default to INFO. The bug fix adds 'log_' prefix stripping but no test verifies the fix works."
+    },
+    {
+      "title": "ConfigReader type/value validation additions are untested",
+      "severity": "P1",
+      "file": "src/ConfigReader.cpp",
+      "line": 48,
+      "confidence": 75,
+      "autofix_class": "manual",
+      "owner": "review-fixer",
+      "requires_verification": true,
+      "pre_existing": false,
+      "suggested_fix": "Add tests for ConfigReader::load() that verify: (1) Type validation - passing wrong types (e.g., number for string field, string for int field) doesn't crash and uses defaults, (2) Value validation - negative/zero workers defaults to 1, negative timeout defaults to 5000, negative blacklist_threshold defaults to 5, (3) Valid config loads correctly. Currently no ConfigReader tests exist in the project."
+    },
+    {
+      "title": "Logger::setFileLevel() and setConsoleLevel() mutex addition untested for thread safety",
+      "severity": "P2",
+      "file": "src/Logger.cpp",
+      "line": 130,
+      "confidence": 50,
+      "autofix_class": "manual",
+      "owner": "downstream-resolver",
+      "requires_verification": true,
+      "pre_existing": false,
+      "suggested_fix": "While mutex correctness is hard to unit test, consider adding a test that calls setFileLevel/setConsoleLevel from multiple threads concurrently to catch obvious race conditions. The mutex addition is a behavioral change that should be verified."
+    },
+    {
+      "title": "Resource leak fix (Logger::close() + curl_global_cleanup()) has no regression test",
+      "severity": "P2",
+      "file": "src/main.cpp",
+      "line": 200,
+      "confidence": 75,
+      "autofix_class": "manual",
+      "owner": "review-fixer",
+      "requires_verification": true,
+      "pre_existing": false,
+      "suggested_fix": "The diff adds Logger::close() and curl_global_cleanup() calls to multiple error paths in main.cpp to fix resource leaks. No test verifies these cleanup paths are called. Consider adding integration tests or static analysis to verify all error paths clean up resources properly."
+    },
+    {
+      "title": "All command modes now apply log levels but this behavioral change has no tests",
+      "severity": "P1",
+      "file": "src/main.cpp",
+      "line": 210,
+      "confidence": 75,
+      "autofix_class": "manual",
+      "owner": "review-fixer",
+      "requires_verification": true,
+      "pre_existing": false,
+      "suggested_fix": "The diff adds Logger::setFileLevel() and Logger::setConsoleLevel() calls to generator, show-sub, find-proxy, sync, dedup, import-sub, and default modes. This is a behavioral change affecting all command modes with no corresponding test additions. Add tests that verify log levels are correctly applied for each command mode."
+    }
+  ],
+  "residual_risks": [
+    "No test framework integration in CMakeLists.txt - the project builds tests (test_model.cpp) but there's no add_test() or enable_testing() in CMake, suggesting tests aren't run automatically in CI",
+    "ConfigReader tests would need to create temporary config.json files with various malformed inputs - this infrastructure doesn't exist",
+    "Logger tests would need to capture and verify log output - current test infrastructure doesn't support this",
+    "The existing test_model.cpp has trivial tests (e.g., TEST_F(ProfileitemTest, ConfigTypeValues) just tests string literals equal themselves) that don't provide real coverage"
+  ],
+  "testing_gaps": [
+    {
+      "file": "src/Logger.cpp",
+      "gap": "No tests for Logger::stringToLevel() function, especially the newly added 'log_' prefix handling. The bug fix for LOG_ERROR parsing is unverified by tests."
+    },
+    {
+      "file": "src/ConfigReader.cpp",
+      "gap": "No tests exist for ConfigReader::load(). The diff adds significant type validation (is_string(), is_int64(), is_bool()) and value validation (negative/zero checks with defaults) that are completely untested."
+    },
+    {
+      "file": "src/main.cpp",
+      "gap": "No tests verify that all command modes correctly apply log level settings after the diff added setFileLevel()/setConsoleLevel() calls to generator, show-sub, find-proxy, sync, dedup, import-sub, and default modes."
+    },
+    {
+      "file": "src/main.cpp",
+      "gap": "Resource leak fixes (Logger::close() and curl_global_cleanup() in error paths) have no regression tests to ensure cleanup happens on all exit paths."
+    }
+  ]
+}

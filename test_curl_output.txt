@@ -1,0 +1,5 @@
+Testing CurlEasyHandle basic functionality...
+  Response code: 200
+  Total time: 0.792475s
+  INFO: CurlEasyHandle test passed
+All tests passed!

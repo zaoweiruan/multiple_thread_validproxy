@@ -1,0 +1,55 @@
+{
+  "reviewer": "maintainability",
+  "summary": "Review of changes to fix logger system (LOG_ERROR parse bug, apply log levels to all command modes, add mutex locks), add type/value validation in ConfigReader, fix resource leaks in main.cpp",
+  "findings": [
+    {
+      "title": "Repeated initialization and cleanup pattern across command modes",
+      "severity": "P2",
+      "file": "src/main.cpp",
+      "line": 194,
+      "confidence": 50,
+      "autofix_class": "manual",
+      "owner": "downstream-resolver",
+      "requires_verification": false,
+      "pre_existing": false,
+      "suggested_fix": "Consider extracting a common RAII wrapper or helper function for initialization and cleanup to reduce repetition. Each command mode repeats the pattern: Logger::init(), load config, set log levels, open db, do work, cleanup. A helper function or scoped guard could ensure consistent resource management.",
+      "rationale": "The pattern of init/load-config/set-log-levels/open-db/do-work/cleanup is repeated ~10 times across different command modes. While each mode has slightly different needs, the core pattern is the same. This repetition makes it easy to forget cleanup steps (as evidenced by the resource leaks fixed in this diff), and makes it harder to change the initialization or cleanup logic."
+    },
+    {
+      "title": "Inconsistent mutex usage in Logger::setLevel()",
+      "severity": "P2",
+      "file": "src/Logger.cpp",
+      "line": 128,
+      "confidence": 75,
+      "autofix_class": "safe_auto",
+      "owner": "review-fixer",
+      "requires_verification": false,
+      "pre_existing": false,
+      "suggested_fix": "Add std::lock_guard<std::mutex> lock(mutex_); to setLevel() for consistency with setFileLevel() and setConsoleLevel(). Alternatively, document why setLevel() doesn't need a lock (e.g., only called during single-threaded initialization).",
+      "rationale": "The new code adds mutex locks to setFileLevel() and setConsoleLevel(), but setLevel() remains without a lock. This inconsistency could lead to thread-safety issues if setLevel() is called concurrently with logging operations. While setLevel() might only be called during initialization (before other threads start), this invariant is not documented or enforced."
+    },
+    {
+      "title": "Summary output removed from show-sub mode",
+      "severity": "P3",
+      "file": "src/main.cpp",
+      "line": 360,
+      "confidence": 75,
+      "autofix_class": "manual",
+      "owner": "human",
+      "requires_verification": true,
+      "pre_existing": false,
+      "suggested_fix": "Verify if the summary output removal was intentional. If not, restore the removed lines:\nstd::cout << \"-----------+-------+-------------\\n\";\nstd::cout << \"Total      | \" << std::setw(5) << totalCount << \" | All profiles\\n\";",
+      "rationale": "The diff removes the summary output (total count) from the show-sub mode. The removed lines are:\n- std::cout << \"-----------+-------+-------------\\n\";\n- std::cout << \"Total      | \" << std::setw(5) << totalCount << \" | All profiles\\n\";\nIt's unclear if this removal was intentional or accidental. The summary provides useful information about the total number of profiles."
+    }
+  ],
+  "residual_risks": [
+    "The stringToLevel() function only strips the 'log_' prefix once. If the input is 'log_log_error', it becomes 'log_error' after stripping, which doesn't match any level and defaults to INFO. This is an unlikely edge case but could cause confusion.",
+    "The ConfigReader uses std::cerr for debug messages. These should be removed or replaced with proper logging in production.",
+    "The import-sub command calls curl_global_init() regardless of whether the import is from URL or file. If the file import doesn't use curl, this is unnecessary."
+  ],
+  "testing_gaps": [
+    "No tests for the new validation logic in ConfigReader (type checking and value validation)",
+    "No tests for the stringToLevel() fix (handling of 'LOG_ERROR' and 'log_error' formats)",
+    "No tests for the resource cleanup paths (verify that Logger::close() and curl_global_cleanup() are called in all error paths)"
+  ]
+}
