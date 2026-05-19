@@ -25,6 +25,8 @@ private:
     HANDLE jobObject_;
     bool running_;
     
+    static constexpr DWORD GRACEFUL_SHUTDOWN_MS = 500;
+    
     bool createConfigFile();
 };
 

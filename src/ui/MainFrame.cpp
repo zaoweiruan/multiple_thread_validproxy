@@ -126,12 +126,27 @@ initMenuBar();
 }
 
 MainFrame::~MainFrame() {
-    // Clean shutdown: cancel any running task and wait for thread with timeout
+    // Step 1: AUI must be torn down before any panel/frame member is destroyed
+    // (AUI holds references to managed panes — pointers must be valid here)
+    auiManager_.UnInit();
+
+    // Step 2: Controller — worker thread join + XrayManager release
     if (controller_) {
+        // cancelTest() is also called in onClose() but is idempotent
         controller_->cancelTest();
         delete controller_;
         controller_ = nullptr;
     }
+
+    // Step 3: TrayIcon — already deleted in onClose() via RemoveIcon() + delete,
+    //            so here we only null the dangling pointer to prevent double-free
+    if (trayIcon_) {
+        // onClose() has already removed it from the shell and freed it
+        // (left over if onClose path was never called, e.g. programmatic delete)
+        delete trayIcon_;
+        trayIcon_ = nullptr;
+    }
+
     if (configDialog_) {
         delete configDialog_;
         configDialog_ = nullptr;
@@ -246,6 +261,18 @@ void MainFrame::onClose(wxCloseEvent& event) {
     if (controller_) {
         controller_->cancelTest();
     }
+
+    // ── TrayIcon must be removed from shell BEFORE frame is destroyed -----
+    // If the tray icon remains registered after the frame is destroyed,
+    // the shell can send notifications to the now-freed hidden window,
+    // and wxWidgets' message loop pumps those forever → process hangs.
+    if (trayIcon_) {
+        Logger::write("[MainFrame][onClose] RemoveTrayIcon before frame destroy", LogLevel::DEBUG);
+        trayIcon_->RemoveIcon();
+        delete trayIcon_;
+        trayIcon_ = nullptr;
+    }
+
     event.Skip();  // Allow frame destruction to proceed
 }
 
