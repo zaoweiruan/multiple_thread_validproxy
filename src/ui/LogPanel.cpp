@@ -17,19 +17,6 @@ enum {
     ID_LOG_FILTER,
 };
 
-// Log level to color mapping
-static wxColor getLevelColor(LogLevel level) {
-    switch (level) {
-        case LogLevel::TRACE:  return wxColor(128, 128, 128);   // gray
-        case LogLevel::DEBUG:  return wxColor(0, 0, 200);       // blue
-        case LogLevel::INFO:   return wxColor(0, 140, 0);       // green
-        case LogLevel::REPORT: return wxColor(0, 180, 180);     // cyan
-        case LogLevel::WARN:   return wxColor(200, 160, 0);     // yellow/amber
-        case LogLevel::ERR:    return wxColor(200, 0, 0);       // red
-        default:               return wxColor(0, 0, 0);
-    }
-}
-
 // -------------------------------------------------------------------
 LogPanel::LogPanel(wxWindow* parent)
     : wxPanel(parent, wxID_ANY)
@@ -62,8 +49,10 @@ LogPanel::LogPanel(wxWindow* parent)
     // Log text control
     logCtrl_ = new wxTextCtrl(this, wxID_ANY, wxEmptyString,
                                wxDefaultPosition, wxDefaultSize,
-                               wxTE_MULTILINE | wxTE_READONLY | wxTE_RICH |
+                               wxTE_MULTILINE | wxTE_READONLY |
                                wxHSCROLL);
+    logCtrl_->SetBackgroundColour(wxColour(255, 255, 255));
+    logCtrl_->SetForegroundColour(wxColour(0, 0, 0));
     logCtrl_->SetFont(wxFont(9, wxFONTFAMILY_TELETYPE, wxFONTSTYLE_NORMAL, wxFONTWEIGHT_NORMAL));
     topSizer->Add(logCtrl_, 1, wxEXPAND | wxALL, 4);
 
@@ -85,18 +74,11 @@ LogPanel::~LogPanel() {
     Logger::clearLogCallback();
 }
 
-void LogPanel::appendLog(const wxString& msg, LogLevel level) {
-    if (static_cast<int>(level) < static_cast<int>(minLevel_)) {
+void LogPanel::appendLog(const wxString& msg, LogLevel /*level*/) {
+    if (static_cast<int>(minLevel_) > static_cast<int>(LogLevel::TRACE)) {
         return;
     }
-
-    wxColor color = getLevelColor(level);
-    wxTextAttr attr(color, wxNullColour);
-
-    logCtrl_->SetDefaultStyle(attr);
     logCtrl_->AppendText(msg + "\n");
-
-    // Auto-scroll to bottom
     logCtrl_->ShowPosition(logCtrl_->GetLastPosition());
 }
 
