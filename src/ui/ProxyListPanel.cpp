@@ -13,14 +13,13 @@
 // -------------------------------------------------------------------
 enum {
     COL_INDEXID  = 0,
-    COL_TYPE     = 1,
-    COL_ADDRESS  = 2,
+    COL_ADDRESS  = 1,
+    COL_PORT     = 2,
     COL_DELAY    = 3,
-    COL_SPEED    = 4,
+    COL_FAILURES = 4,
     COL_REMARKS  = 5,
     COL_MESSAGE  = 6,
-    COL_FAILURES = 7,
-    COL_COUNT    = 8,
+    COL_COUNT    = 7,
 };
 
 // -------------------------------------------------------------------
@@ -50,15 +49,14 @@ ProxyListPanel::ProxyListPanel(wxWindow* parent, AppController* controller,
     listCtrl_->AssociateModel(store_);
     store_->DecRef();  // AssociateModel took ownership
 
-    // Columns
-    listCtrl_->AppendTextColumn("IndexId",       COL_INDEXID,  wxDATAVIEW_CELL_INERT, 110);
-    listCtrl_->AppendTextColumn("Type",          COL_TYPE,     wxDATAVIEW_CELL_INERT,  80);
-    listCtrl_->AppendTextColumn("Address",       COL_ADDRESS,  wxDATAVIEW_CELL_INERT, 160);
-    listCtrl_->AppendTextColumn("Delay (ms)",    COL_DELAY,    wxDATAVIEW_CELL_INERT, 100, wxALIGN_RIGHT);
-    listCtrl_->AppendTextColumn("Speed",         COL_SPEED,    wxDATAVIEW_CELL_INERT,  80, wxALIGN_RIGHT);
-    listCtrl_->AppendTextColumn("Remarks",       COL_REMARKS,  wxDATAVIEW_CELL_EDITABLE, 200);
-    listCtrl_->AppendTextColumn("Message",       COL_MESSAGE,  wxDATAVIEW_CELL_INERT, 150);
-    listCtrl_->AppendTextColumn("Failures",      COL_FAILURES, wxDATAVIEW_CELL_INERT,  80, wxALIGN_RIGHT);
+    // Columns matching main-layout.svg: # (40) | Host (100) | Port (70) | Latency (80) | Failures (80) | Remarks (160) | Message (160)
+    listCtrl_->AppendTextColumn("#",        COL_INDEXID,  wxDATAVIEW_CELL_INERT, 40);
+    listCtrl_->AppendTextColumn("Host ↕",  COL_ADDRESS,  wxDATAVIEW_CELL_INERT, 100);
+    listCtrl_->AppendTextColumn("Port",     COL_PORT,     wxDATAVIEW_CELL_INERT,  70);
+    listCtrl_->AppendTextColumn("Latency ↕", COL_DELAY,  wxDATAVIEW_CELL_INERT, 80);
+    listCtrl_->AppendTextColumn("Failures ↕", COL_FAILURES, wxDATAVIEW_CELL_INERT, 80);
+    listCtrl_->AppendTextColumn("Remarks",  COL_REMARKS,  wxDATAVIEW_CELL_EDITABLE, 160);
+    listCtrl_->AppendTextColumn("Message",  COL_MESSAGE,  wxDATAVIEW_CELL_INERT, 160);
 
 sizer->Add(listCtrl_, 1, wxEXPAND | wxALL, 2);
      SetSizer(sizer);
@@ -91,14 +89,13 @@ void ProxyListPanel::loadProxies(const std::string& subId) {
     store_->DeleteAllItems();
     for (const auto& p : proxies_) {
         wxVector<wxVariant> row;
-        row.push_back(wxVariant(p.indexid));
-        row.push_back(wxVariant(p.configtype));
-        row.push_back(wxVariant(p.address + ":" + p.port));
+        row.push_back(wxVariant(wxString::Format("%zu", store_->GetCount() + 1)));
+        row.push_back(wxVariant(p.address));
+        row.push_back(wxVariant(p.port));
         row.push_back(wxVariant(delayMap.count(p.indexid) ? delayMap[p.indexid] : "-"));
-        row.push_back(wxVariant(""));
+        row.push_back(wxVariant(std::to_string(failuresMap.count(p.indexid) ? failuresMap[p.indexid] : 0)));
         row.push_back(wxVariant(p.remarks));
         row.push_back(wxVariant(messageMap.count(p.indexid) ? messageMap[p.indexid] : ""));
-        row.push_back(wxVariant(std::to_string(failuresMap.count(p.indexid) ? failuresMap[p.indexid] : 0)));
         store_->AppendItem(row);
     }
 }
@@ -216,25 +213,25 @@ void ProxyListPanel::sortProxiesByColumn(int col, SortDirection dir) {
             case COL_ADDRESS:
                 cmp = a.address.compare(b.address);
                 break;
+            case COL_PORT:
+                cmp = a.port.compare(b.port);
+                break;
             case COL_DELAY: {
                 int delayA = getDelay(a);
                 int delayB = getDelay(b);
                 cmp = (delayA > delayB) - (delayA < delayB);
                 break;
             }
-            case COL_SPEED:
-                cmp = a.configtype.compare(b.configtype);
-                break;
-            case COL_MESSAGE: {
-                const std::string& msgA = getMessage(a);
-                const std::string& msgB = getMessage(b);
-                cmp = msgA.compare(msgB);
-                break;
-            }
             case COL_FAILURES: {
                 int failA = getFailures(a);
                 int failB = getFailures(b);
                 cmp = (failA > failB) - (failA < failB);
+                break;
+            }
+            case COL_MESSAGE: {
+                const std::string& msgA = getMessage(a);
+                const std::string& msgB = getMessage(b);
+                cmp = msgA.compare(msgB);
                 break;
             }
             default:
