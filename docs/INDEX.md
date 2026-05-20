@@ -16,19 +16,18 @@ updated: 2026-05-19
 ## 0. 快速总览
 
 | 类别 | 文件数 | 入口 |
-|------|--------|------|
-| [术语表](#1-术语表) | 1 | `docs/glossary.md` |
-| [项目上下文](#2-项目上下文) | 3 | `docs/context.md` |
-| [开发流程规范](#3-开发流程规范) | 1 | `docs/plans/DEV-PROCESS.md` |
-| [整体架构](#4-整体架构) | 3 | `docs/architecture.md` |
-| [设计规范](#5-设计规范) | 9 | `docs/design/` |
-| [需求与脑暴](#6-需求与脑暴) | 4 | `docs/superpowers/brainstorm/` |
-| [技术方案](#7-技术方案) | 6 | `docs/superpowers/specs/` |
-| [实施计划](#8-实施计划) | 44 | `docs/plans/` |
-| [分析报告](#9-分析报告) | 4 | `docs/reports/` |
-| [测试报告](#10-测试报告) | 1 | `docs/test/` |
-| [代码审查](#11-代码审查) | 8 | `docs/code-reviews/` `docs/ce-code-review/` |
-| [进展与状态跟踪](#12-进展与状态跟踪) | 4 | `docs/plans/` |
+ |------|--------|------|
+ | [术语表](#1-术语表) | 1 | `docs/glossary.md` |
+ | [项目上下文](#2-项目上下文) | 3 | `docs/context.md` |
+ | [开发流程规范](#3-开发流程规范) | 1 | `docs/plans/DEV-PROCESS.md` |
+ | [整体架构](#4-整体架构) | 3 | `docs/architecture.md` |
+ | [设计规范](#5-设计规范) | 9 | `docs/design/` |
+ | [需求与脑暴](#6-需求与脑暴) | 4 | `docs/superpowers/brainstorm/` |
+ | [技术方案](#7-技术方案) | 6 | `docs/superpowers/specs/` |
+ | [实施计划](#8-实施计划) | 44 | `docs/plans/` |
+ | [分析报告](#9-分析报告) | 5 | `docs/reports/` |
+ | [Bug 修复记录](#91-bug-修复记录) | 1 | `docs/bugfix/` |
+ | [测试报告](#10-测试报告) | 1 | `docs/test/` |
 
 ---
 
@@ -184,17 +183,21 @@ updated: 2026-05-19
 
 ## 9. 分析报告
 
-| # | 文件 | 说明 | 大小 |
-|---|------|------|------|
-| 1 | [`docs/reports/2026-04-23-sharelink-export-repair-report.md`](./reports/2026-04-23-sharelink-export-repair-report.md) | **ShareLink 导出修复报告** — 5 项关键问题修复并验证(路径参数/ECH 编码/TLS 参数/VMess Payload/Path Query)，v2rayN 格式 100% 兼容 | 4.3 KB |
-| 2 | [`docs/reports/db-schema-analysis-20260514.md`](./reports/db-schema-analysis-20260514.md) | **数据库 Schema 分析** — ProfileItem/Subscription/ProfileExItem 表结构、字段映射、类型不一致排查 | 10.8 KB |
-| 3 | [`docs/reports/error-report_20260514.md`](./reports/error-report_20260514.md) | **错误报告** — 2026-05-14 运行时错误汇总与分析 | 4.5 KB |
-| 4 | [`docs/reports/2026-05-19-single-proxy-test-fix-report.md`](./reports/2026-05-19-single-proxy-test-fix-report.md) | **单代理测试修复报告** — runWithIndexId, Delay 刷新, 事件流程修复技术细节 | 5.6 KB |
-| 5 | [`docs/reports/2026-05-19-ui-close-hang-fix-report.md`](./reports/2026-05-19-ui-close-hang-fix-report.md) | **UI 关闭挂起修复报告** — AppController/XrayInstance 析构竞态条件 + 进程句柄 BUG | 3.2 KB |
+ | # | 文件 | 说明 | 大小 |
+ |---|------|------|------|
+ | 1 | [`docs/reports/2026-04-23-sharelink-export-repair-report.md`](./reports/2026-04-23-sharelink-export-repair-report.md) | **ShareLink 导出修复报告** — 5 项关键问题修复并验证(路径参数/ECH 编码/TLS 参数/VMess Payload/Path Query)，v2rayN 格式 100% 兼容 | 4.3 KB |
+ | 2 | [`docs/reports/db-schema-analysis-20260514.md`](./reports/db-schema-analysis-20260514.md) | **数据库 Schema 分析** — ProfileItem/Subscription/ProfileExItem 表结构、字段映射、类型不一致排查 | 10.8 KB |
+ | 3 | [`docs/reports/error-report_20260514.md`](./reports/error-report_20260514.md) | **错误报告** — 2026-05-14 运行时错误汇总与分析 | 4.5 KB |
+ | 4 | [`docs/reports/2026-05-19-single-proxy-test-fix-report.md`](./reports/2026-05-19-single-proxy-test-fix-report.md) | **单代理测试修复报告** — runWithIndexId, Delay 刷新, 事件流程修复技术细节 | 5.6 KB |
+ | 5 | [`docs/reports/2026-05-19-ui-close-hang-fix-report.md`](./reports/2026-05-19-ui-close-hang-fix-report.md) | **UI 关闭挂起修复报告** — AppController/XrayInstance 析构竞态条件 + 进程句柄 BUG | 3.2 KB |
 
----
+ ## 9.1 Bug 修复记录
 
-## 10. 测试报告
+ | # | 文件 | 说明 | 大小 |
+ |---|------|------|------|
+ | 1 | [`docs/bugfix/bugfix-20260520-ctrl-c-exit.md`](./bugfix/bugfix-20260520-ctrl-c-exit.md) | **Ctrl+C 信号无法正常退出修复** — AppController 析构函数添加 5 秒超时 + detach 机制 | 4.2 KB |
+
+ ## 10. 测试报告
 
 | # | 文件 | 说明 | 大小 |
 |---|------|------|------|
@@ -204,14 +207,12 @@ updated: 2026-05-19
 
 ## 11. 代码审查
 
-| # | 文件 | 说明 | 大小 |
-|---|------|------|------|
-| 1 | [`docs/code-reviews/2026-05-07-logger-configreader-fixes-review.md`](./code-reviews/2026-05-07-logger-configreader-fixes-review.md) | **Logger + ConfigReader 修复审查报告** — P0 日志格式 BUG + Logger 审计发现 | 5.1 KB |
-| 2 | [`docs/ce-code-review/20260507-e45fc331/`](./ce-code-review/20260507-e45fc331/) | **Code-Embodiment 综合审查** — 6 个维度(adv/agent/native/correctness/maintainability/testing/reliability + learnings) | 7 文件 |
+ | # | 文件 | 说明 | 大小 |
+ |---|------|------|------|
+ | 1 | [`docs/code-reviews/2026-05-07-logger-configreader-fixes-review.md`](./code-reviews/2026-05-07-logger-configreader-fixes-review.md) | **Logger + ConfigReader 修复审查报告** — P0 日志格式 BUG + Logger 审计发现 | 5.1 KB |
+ | 2 | [`docs/ce-code-review/20260507-e45fc331/`](./ce-code-review/20260507-e45fc331/) | **Code-Embodiment 综合审查** — 6 个维度(adv/agent/native/correctness/maintainability/testing/reliability + learnings) | 7 文件 |
 
----
-
-## 12. 进展与状态跟踪
+ ## 12. 进展与状态跟踪
 
 > 以下文档是元跟踪文档，用于跟踪计划执行状态，不属于实施计划本身。
 
