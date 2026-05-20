@@ -7,6 +7,7 @@
 #include <wx/dataview.h>
 #include <wx/menu.h>
 #include <wx/msgdlg.h>
+#include <unordered_map>
 
 // -------------------------------------------------------------------
 // Column indices in the wxDataViewListStore
@@ -18,7 +19,9 @@ enum {
     COL_DELAY    = 3,
     COL_SPEED    = 4,
     COL_REMARKS  = 5,
-    COL_COUNT    = 6,
+    COL_MESSAGE  = 6,
+    COL_FAILURES = 7,
+    COL_COUNT    = 8,
 };
 
 // -------------------------------------------------------------------
@@ -55,6 +58,8 @@ ProxyListPanel::ProxyListPanel(wxWindow* parent, AppController* controller,
     listCtrl_->AppendTextColumn("Delay (ms)",    COL_DELAY,    wxDATAVIEW_CELL_INERT, 100, wxALIGN_RIGHT);
     listCtrl_->AppendTextColumn("Speed",         COL_SPEED,    wxDATAVIEW_CELL_INERT,  80, wxALIGN_RIGHT);
     listCtrl_->AppendTextColumn("Remarks",       COL_REMARKS,  wxDATAVIEW_CELL_EDITABLE, 200);
+    listCtrl_->AppendTextColumn("Message",       COL_MESSAGE,  wxDATAVIEW_CELL_INERT, 150);
+    listCtrl_->AppendTextColumn("Failures",      COL_FAILURES, wxDATAVIEW_CELL_INERT,  80, wxALIGN_RIGHT);
 
 sizer->Add(listCtrl_, 1, wxEXPAND | wxALL, 2);
      SetSizer(sizer);
@@ -74,10 +79,14 @@ void ProxyListPanel::loadProxies(const std::string& subId) {
     proxies_ = controller_->loadProxies(subId);
     exItems_ = controller_->loadProxyResults();
 
-    // Build lookup: indexId -> delay_str
+    // Build lookups: indexId -> delay_str, message, consecutive_failures
     std::unordered_map<std::string, std::string> delayMap;
+    std::unordered_map<std::string, std::string> messageMap;
+    std::unordered_map<std::string, int> failuresMap;
     for (const auto& ex : exItems_) {
         delayMap[ex.indexid] = ex.delay;
+        messageMap[ex.indexid] = ex.message;
+        failuresMap[ex.indexid] = ex.consecutive_failures;
     }
 
     store_->DeleteAllItems();
@@ -89,6 +98,8 @@ void ProxyListPanel::loadProxies(const std::string& subId) {
         row.push_back(wxVariant(delayMap.count(p.indexid) ? delayMap[p.indexid] : "-"));
         row.push_back(wxVariant(""));
         row.push_back(wxVariant(p.remarks));
+        row.push_back(wxVariant(messageMap.count(p.indexid) ? messageMap[p.indexid] : ""));
+        row.push_back(wxVariant(std::to_string(failuresMap.count(p.indexid) ? failuresMap[p.indexid] : 0)));
         store_->AppendItem(row);
     }
 }
@@ -102,10 +113,14 @@ void ProxyListPanel::loadProxies(const std::string& subId) {
 void ProxyListPanel::refreshResults() {
     exItems_ = controller_->loadProxyResults();
 
-    // Build delay lookup from freshly-loaded exItems_
+    // Build lookups from freshly-loaded exItems_
     std::unordered_map<std::string, std::string> delayMap;
+    std::unordered_map<std::string, std::string> messageMap;
+    std::unordered_map<std::string, int> failuresMap;
     for (const auto& ex : exItems_) {
         delayMap[ex.indexid] = ex.delay;
+        messageMap[ex.indexid] = ex.message;
+        failuresMap[ex.indexid] = ex.consecutive_failures;
     }
 
     // Update existing rows in-place
@@ -113,10 +128,15 @@ void ProxyListPanel::refreshResults() {
         wxDataViewItem item = store_->GetItem(row);
         wxVariant idxVar;
         store_->GetValue(idxVar, item, COL_INDEXID);
-        wxString currentDelay = delayMap.count(idxVar.GetString().ToStdString())
-                                    ? wxString(delayMap[idxVar.GetString().ToStdString()])
-                                    : "-";
+        std::string indexId = idxVar.GetString().ToStdString();
+
+        wxString currentDelay = delayMap.count(indexId)
+                                     ? wxString(delayMap[indexId])
+                                     : "-";
         store_->SetValue(wxVariant(currentDelay), item, COL_DELAY);
+
+        store_->SetValue(wxVariant(messageMap.count(indexId) ? messageMap[indexId] : ""), item, COL_MESSAGE);
+        store_->SetValue(wxVariant(std::to_string(failuresMap.count(indexId) ? failuresMap[indexId] : 0)), item, COL_FAILURES);
     }
 }
 

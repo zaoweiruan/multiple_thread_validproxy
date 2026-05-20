@@ -1,0 +1,67 @@
+<svg width="1200" height="700" xmlns="http://www.w3.org/2000/svg" style="font-family:Arial,Helvetica,sans-serif;">
+  <!-- 背景 -->
+  <rect x="0" y="0" width="1200" height="700" fill="#ffffff"/>
+  <!-- 顶部标题栏 -->
+  <rect x="0" y="0" width="1200" height="60" fill="#2f4f8a"/>
+  <text x="24" y="38" fill="#ffffff" font-size="20" font-weight="bold">代理列表</text>
+  <!-- 搜索框占位 -->
+  <rect x="980" y="14" rx="8" ry="8" width="180" height="28" fill="#ffffff" opacity="0.8"/>
+  <text x="990" y="33" fill="#888" font-size="14">搜索代理…</text>
+  <!-- 筛选条块 -->
+  <rect x="24" y="86" width="360" height="28" rx="6" ry="6" fill="#eef3f8" stroke="#d9e6f2"/>
+  <text x="40" y="106" fill="#555" font-size="14">状态筛选</text>
+  <!-- 列标题 -->
+  <g transform="translate(24,130)">
+    <rect x="0"   y="0" width="140" height="32" fill="#f3f5f7" stroke="#e2e6ea"/>
+    <rect x="140" y="0" width="120" height="32" fill="#f3f5f7" stroke="#e2e6ea"/>
+    <rect x="260" y="0" width="120" height="32" fill="#f3f5f7" stroke="#e2e6ea"/>
+    <rect x="380" y="0" width="120" height="32" fill="#f3f5f7" stroke="#e2e6ea"/>
+    <rect x="500" y="0" width="120" height="32" fill="#f3f5f7" stroke="#e2e6ea"/>
+    <rect x="620" y="0" width="180" height="32" fill="#f3f5f7" stroke="#e2e6ea"/>
+    <rect x="800" y="0" width="120" height="32" fill="#f3f5f7" stroke="#e2e6ea"/>
+    <text x="10" y="22" fill="#333" font-size="12">Host</text>
+    <text x="150" y="22" fill="#333" font-size="12">Port</text>
+    <text x="270" y="22" fill="#333" font-size="12">Protocol</text>
+    <text x="390" y="22" fill="#333" font-size="12">Latency</text>
+    <text x="510" y="22" fill="#333" font-size="12">Status</text>
+    <text x="630" y="22" fill="#333" font-size="12">LastSeen</text>
+    <text x="800" y="22" fill="#333" font-size="12">Score</text>
+  </g>
+  <!-- 数据行（示例） -->
+  <g transform="translate(24,170)" fill="#333" font-size="13">
+    <!-- 行1 -->
+    <rect x="0" y="0" width="140" height="28" fill="#fff" stroke="#e5e5e5"/>
+    <rect x="140" y="0" width="120" height="28" fill="#fff" stroke="#e5e5e5"/>
+    <rect x="260" y="0" width="120" height="28" fill="#fff" stroke="#e5e5e5"/>
+    <rect x="380" y="0" width="120" height="28" fill="#fff" stroke="#e5e5e5"/>
+    <rect x="500" y="0" width="120" height="28" fill="#fff" stroke="#e5e5e5"/>
+    <rect x="620" y="0" width="180" height="28" fill="#fff" stroke="#e5e5e5"/>
+    <rect x="800" y="0" width="120" height="28" fill="#fff" stroke="#e5e5e5"/>
+    <text x="8" y="20">192.0.2.1</text>
+    <text x="148" y="20">1080</text>
+    <text x="268" y="20" fill="#555">socks5</text>
+    <text x="388" y="20" fill="#0a0">12ms</text>
+    <text x="508" y="20" fill="#0a0">Online</text>
+    <text x="628" y="20" fill="#555">2m ago</text>
+    <text x="808" y="20" fill="#555">0.92</text>
+  </g>
+  <!-- 行2（示意） -->
+  <g transform="translate(24,210)" fill="#333" font-size="13">
+    <rect x="0" y="0" width="140" height="28" fill="#fff" stroke="#e5e5e5"/>
+    <rect x="140" y="0" width="120" height="28" fill="#fff" stroke="#e5e5e5"/>
+    <rect x="260" y="0" width="120" height="28" fill="#fff" stroke="#e5e5e5"/>
+    <rect x="380" y="0" width="120" height="28" fill="#fff" stroke="#e5e5e5"/>
+    <rect x="500" y="0" width="120" height="28" fill="#fff" stroke="#e5e5e5"/>
+    <rect x="620" y="0" width="180" height="28" fill="#fff" stroke="#e5e5e5"/>
+    <rect x="800" y="0" width="120" height="28" fill="#fff" stroke="#e5e5e5"/>
+    <text x="8" y="20">203.0.113.7</text>
+    <text x="148" y="20">8080</text>
+    <text x="268" y="20" fill="#555">http</text>
+    <text x="388" y="20" fill="#f60">8ms</text>
+    <text x="508" y="20" fill="#555">Testing</text>
+    <text x="628" y="20" fill="#555">5m ago</text>
+    <text x="808" y="20" fill="#555">0.65</text>
+  </g>
+  <!-- 底部状态提示 -->
+  <text x="24" y="680" fill="#666" font-size="12">（示意：表格可垂直滚动，虚拟化渲染实现）</text>
+</svg>

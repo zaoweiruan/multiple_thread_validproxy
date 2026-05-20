@@ -1,0 +1,18 @@
+<svg width="520" height="320" xmlns="http://www.w3.org/2000/svg" style="font-family:Arial,Helvetica,sans-serif;">
+  <!-- 背景阔窗 -->
+  <rect x="0" y="0" width="520" height="320" rx="8" ry="8" fill="#f7f9fa" stroke="#d9e1e8"/>
+  <text x="16" y="28" fill="#333" font-size="14" font-weight="bold">Find Best 设置</text>
+  <!-- 权重输入区（简化为标签+占位） -->
+  <text x="16" y="60" fill="#555" font-size="12">Latency Weight</text>
+  <rect x="150" y="48" width="220" height="20" rx="6" ry="6" fill="#fff" stroke="#d9dde3"/>
+  <text x="180" y="64" fill="#bbb" font-size="11">示例: 1.0</text>
+  <text x="16" y="90" fill="#555" font-size="12">Score Weight</text>
+  <rect x="150" y="78" width="220" height="20" rx="6" ry="6" fill="#fff" stroke="#d9dde3"/>
+  <text x="180" y="94" fill="#bbb" font-size="11">示例: 0.7</text>
+  <!-- 操作按钮 -->
+  <rect x="350" y="120" width="120" height="36" rx="6" ry="6" fill="#2f4f8a"/>
+  <text x="385" y="142" fill="#fff" font-size="14">Find Best</text>
+  <!-- 结果区域占位 -->
+  <rect x="16" y="140" width="320" height="120" fill="#fff" stroke="#d9dde3"/>
+  <text x="20" y="152" fill="#888" font-size="12">排序结果（示意）</text>
+</svg>
