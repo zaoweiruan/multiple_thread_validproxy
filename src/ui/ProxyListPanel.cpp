@@ -89,7 +89,7 @@ void ProxyListPanel::loadProxies(const std::string& subId) {
     store_->DeleteAllItems();
     for (const auto& p : proxies_) {
         wxVector<wxVariant> row;
-        row.push_back(wxVariant(wxString::Format("%zu", store_->GetCount() + 1)));
+        row.push_back(wxVariant(wxString::Format("%d", static_cast<int>(store_->GetCount() + 1))));
         row.push_back(wxVariant(p.address));
         row.push_back(wxVariant(p.port));
         row.push_back(wxVariant(delayMap.count(p.indexid) ? delayMap[p.indexid] : "-"));

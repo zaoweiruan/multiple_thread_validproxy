@@ -95,7 +95,7 @@ void SubscriptionPanel::loadSubscriptions() {
 
         // Count proxies for this subscription
         auto proxies = controller_->loadProxies(sub.id);
-        row.push_back(wxVariant(wxString::Format("%zu", proxies.size())));
+        row.push_back(wxVariant(wxString::Format("%d", static_cast<int>(proxies.size()))));
         row.push_back(wxVariant(sub.updatetime));
         store_->AppendItem(row);
     }
