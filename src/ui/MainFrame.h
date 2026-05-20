@@ -15,7 +15,7 @@ struct sqlite3;
 class AppController;
 class SubscriptionPanel;
 class ProxyListPanel;
-class TestPanel;
+class ProxyDetailPanel;
 class LogPanel;
 class ConfigDialog;
 class TrayIcon;
@@ -31,7 +31,6 @@ public:
     // Panel access
     SubscriptionPanel* getSubscriptionPanel() const { return subPanel_; }
     ProxyListPanel* getProxyListPanel() const { return proxyPanel_; }
-    TestPanel* getTestPanel() const { return testPanel_; }
     LogPanel* getLogPanel() const { return logPanel_; }
     AppController* getController() const { return controller_; }
 
@@ -71,18 +70,20 @@ private:
     void onToolImport(wxCommandEvent& event);
     void onToolConfig(wxCommandEvent& event);
     void onStatusUpdate(StatusUpdateEvent& event);
+    void onSearchBoxEnter(wxCommandEvent& event);
 
     // Members
     wxAuiManager auiManager_;
     AppController* controller_;
     SubscriptionPanel* subPanel_{nullptr};
     ProxyListPanel* proxyPanel_{nullptr};
-    TestPanel* testPanel_{nullptr};
+    ProxyDetailPanel* detailPanel_{nullptr};
     LogPanel* logPanel_{nullptr};
     ConfigDialog* configDialog_{nullptr};
     TrayIcon* trayIcon_{nullptr};
     sqlite3* db_;
     wxStatusBar* statusBar_{nullptr};
+    wxTextCtrl* m_searchBox{nullptr};
 
     wxDECLARE_EVENT_TABLE();
 };

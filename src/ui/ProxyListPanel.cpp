@@ -1,5 +1,4 @@
 #include "ProxyListPanel.h"
-#include "TestPanel.h"
 #include "AppController.h"
 #include "Events.h"
 
@@ -29,15 +28,15 @@ wxBEGIN_EVENT_TABLE(ProxyListPanel, wxPanel)
     EVT_DATAVIEW_ITEM_CONTEXT_MENU(wxID_ANY, ProxyListPanel::onContextMenu)
     EVT_MENU(wxID_ANY, ProxyListPanel::onTestProxy)
     EVT_MENU(wxID_ANY, ProxyListPanel::onGenerateConfig)
+    EVT_DATAVIEW_SELECTION_CHANGED(wxID_ANY, ProxyListPanel::onSelectionChanged)
 wxEND_EVENT_TABLE()
 
 // -------------------------------------------------------------------
 ProxyListPanel::ProxyListPanel(wxWindow* parent, AppController* controller,
-                               sqlite3* db, TestPanel* testPanel)
+                                sqlite3* db)
     : wxPanel(parent, wxID_ANY),
       controller_(controller),
       db_(db),
-      testPanel_(testPanel),
       listCtrl_(nullptr),
       store_(nullptr)
 {
@@ -271,18 +270,13 @@ void ProxyListPanel::onTestProxy(wxCommandEvent& event) {
     store_->GetValue(idxVar, item, COL_INDEXID);
     std::string indexId = idxVar.GetString().ToStdString();
 
-    // Send initial "Testing..." event to TestPanel
-    if (testPanel_) {
-        wxQueueEvent(testPanel_, new ProxyTestProgressEvent(0, 1, indexId, "", "", "Testing…", false));
-    }
-
-    // FIX: Also send to MainFrame so it can refresh Delay column on completion
+    // Send initial "Testing..." event to MainFrame for Delay column refresh
     wxWindow* topLevel = wxGetTopLevelParent(this);
     if (topLevel && topLevel != this) {
         wxQueueEvent(topLevel, new ProxyTestProgressEvent(0, 1, indexId, "", "", "Testing…", false));
     }
 
-    controller_->testSingleProxyAsync(indexId, testPanel_);
+    controller_->testSingleProxyAsync(indexId, this);
     (void)event; // id dispatched in menu
 }
 
@@ -308,4 +302,45 @@ void ProxyListPanel::onProxyTestProgress(ProxyTestProgressEvent& event) {
         refreshResults();
     }
     event.Skip();
+}
+
+// -------------------------------------------------------------------
+void ProxyListPanel::onSelectionChanged(wxDataViewEvent& event) {
+    wxDataViewItem item = listCtrl_->GetSelection();
+    if (!item.IsOk()) return;
+
+    wxVariant idxVar;
+    store_->GetValue(idxVar, item, COL_INDEXID);
+    std::string indexId = idxVar.GetString().ToStdString();
+
+    // Build lookup from exItems_
+    std::unordered_map<std::string, std::string> delayMap;
+    std::unordered_map<std::string, std::string> messageMap;
+    std::unordered_map<std::string, int> failuresMap;
+    for (const auto& ex : exItems_) {
+        delayMap[ex.indexid] = ex.delay;
+        messageMap[ex.indexid] = ex.message;
+        failuresMap[ex.indexid] = ex.consecutive_failures;
+    }
+
+    // Find proxy in proxies_
+    db::models::Profileitem* proxy = nullptr;
+    for (auto& p : proxies_) {
+        if (p.indexid == indexId) {
+            proxy = &p;
+            break;
+        }
+    }
+
+// Notify parent via event
+    wxWindow* topLevel = wxGetTopLevelParent(this);
+    if (topLevel && topLevel != this && proxy) {
+        ProxySelectionEvent selEvt(indexId, proxy->address, proxy->port,
+                                  delayMap.count(indexId) ? delayMap[indexId] : "",
+                                  messageMap.count(indexId) ? messageMap[indexId] : "",
+                                  failuresMap.count(indexId) ? failuresMap[indexId] : 0,
+                                  proxy->remarks);
+        wxQueueEvent(topLevel, selEvt.Clone());
+    }
+    (void)event;
 }

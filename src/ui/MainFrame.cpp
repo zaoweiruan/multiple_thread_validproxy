@@ -1,9 +1,9 @@
 #include "MainFrame.h"
 
 #include "ConfigDialog.h"
+#include "ProxyDetailPanel.h"
 #include "ProxyListPanel.h"
 #include "SubscriptionPanel.h"
-#include "TestPanel.h"
 #include "TrayIcon.h"
 #include "AppController.h"
 #include "Events.h"
@@ -38,6 +38,7 @@ enum {
     ID_TOOL_DEDUP         = wxID_HIGHEST + 203,
     ID_TOOL_IMPORT        = wxID_HIGHEST + 204,
     ID_TOOL_CONFIG        = wxID_HIGHEST + 205,
+    ID_SEARCH_BOX         = wxID_HIGHEST + 206,
 };
 
 // -------------------------------------------------------------------
@@ -64,6 +65,7 @@ wxBEGIN_EVENT_TABLE(MainFrame, wxFrame)
     EVT_MENU(ID_TOOL_DEDUP,       MainFrame::onToolDedup)
     EVT_MENU(ID_TOOL_IMPORT,      MainFrame::onToolImport)
     EVT_MENU(ID_TOOL_CONFIG,      MainFrame::onToolConfig)
+    EVT_TEXT_ENTER(ID_SEARCH_BOX,  MainFrame::onSearchBoxEnter)
 wxEND_EVENT_TABLE()
 
 // -------------------------------------------------------------------
@@ -112,14 +114,23 @@ initMenuBar();
      initAuiManager();
      initPanels();
      
-     // Bind subscription selection to filter proxy list
-     Bind(wxEVT_SUBSCRIPTION_SELECTED, [this](SubscriptionSelectedEvent& evt) {
-         std::string subId = evt.getSubId();
-         if (proxyPanel_) {
-             proxyPanel_->loadProxies(subId);
-         }
-         setStatusText(0, "Loaded subscription: " + wxString(subId));
-     });
+// Bind subscription selection to filter proxy list
+      Bind(wxEVT_SUBSCRIPTION_SELECTED, [this](SubscriptionSelectedEvent& evt) {
+          std::string subId = evt.getSubId();
+          if (proxyPanel_) {
+              proxyPanel_->loadProxies(subId);
+          }
+          setStatusText(0, "Loaded subscription: " + wxString(subId));
+      });
+      
+      // Bind proxy selection to update detail panel
+      Bind(wxEVT_PROXY_SELECTION, [this](ProxySelectionEvent& evt) {
+          if (detailPanel_) {
+              detailPanel_->UpdateDetail(
+                  evt.getHost(), evt.getPort(), evt.getDelay(),
+                  evt.getMessage(), evt.getFailures(), evt.getRemarks());
+          }
+      });
      
      initTrayIcon();
      loadSettings();
@@ -208,6 +219,10 @@ void MainFrame::initToolBar() {
     tb->AddTool(ID_TOOL_DEDUP,      "Dedup",  wxArtProvider::GetBitmap(wxART_LIST_VIEW));
     tb->AddTool(ID_TOOL_IMPORT,     "Import", wxArtProvider::GetBitmap(wxART_FILE_OPEN));
     tb->AddTool(ID_TOOL_CONFIG,     "Config", wxArtProvider::GetBitmap(wxART_LIST_VIEW));
+    tb->AddSeparator();
+    tb->AddControl(new wxStaticText(tb, wxID_ANY, " Search:"));
+    m_searchBox = new wxTextCtrl(tb, ID_SEARCH_BOX, "", wxDefaultPosition, wxSize(150, -1), wxTE_PROCESS_ENTER);
+    tb->AddControl(m_searchBox);
     tb->Realize();
 }
 
@@ -225,17 +240,19 @@ void MainFrame::initAuiManager() {
 void MainFrame::initPanels() {
     wxBoxSizer* sizer = new wxBoxSizer(wxVERTICAL);
 
-    // Top row: subscriptions | test panel
+    // Top row: subscriptions
     wxBoxSizer* topSizer = new wxBoxSizer(wxHORIZONTAL);
-    subPanel_   = new SubscriptionPanel(this, controller_);
-    testPanel_  = new TestPanel(this);
-    topSizer->Add(subPanel_,  1, wxEXPAND | wxRIGHT, 2);
-    topSizer->Add(testPanel_, 1, wxEXPAND);
+    subPanel_ = new SubscriptionPanel(this, controller_);
+    topSizer->Add(subPanel_, 1, wxEXPAND);
     sizer->Add(topSizer, 0, wxEXPAND | wxALL, 2);
 
-    // Bottom row: proxy list panel (takes remaining space)
-    proxyPanel_ = new ProxyListPanel(this, controller_, db_, testPanel_);
-    sizer->Add(proxyPanel_, 1, wxEXPAND | wxALL, 2);
+    // Bottom row: proxy list panel | detail panel
+    wxBoxSizer* bottomSizer = new wxBoxSizer(wxHORIZONTAL);
+    proxyPanel_ = new ProxyListPanel(this, controller_, db_);
+    detailPanel_ = new ProxyDetailPanel(this);
+    bottomSizer->Add(proxyPanel_, 3, wxEXPAND | wxRIGHT, 2);
+    bottomSizer->Add(detailPanel_, 1, wxEXPAND);
+    sizer->Add(bottomSizer, 1, wxEXPAND | wxALL, 2);
 
     SetSizer(sizer);
 
@@ -405,6 +422,12 @@ void MainFrame::onToolImport(wxCommandEvent& event) {
 
 void MainFrame::onToolConfig(wxCommandEvent& event) {
     onMenuConfig(event);
+}
+
+void MainFrame::onSearchBoxEnter(wxCommandEvent& event) {
+    wxString query = m_searchBox->GetValue();
+    setStatusText(0, "Search: " + query);
+    (void)event;
 }
 
 // -------------------------------------------------------------------
