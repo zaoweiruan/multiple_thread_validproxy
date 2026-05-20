@@ -1,6 +1,7 @@
 #include "MainFrame.h"
 
 #include "ConfigDialog.h"
+#include "LogPanel.h"
 #include "ProxyDetailPanel.h"
 #include "ProxyListPanel.h"
 #include "SubscriptionPanel.h"
@@ -240,19 +241,26 @@ void MainFrame::initAuiManager() {
 void MainFrame::initPanels() {
     wxBoxSizer* sizer = new wxBoxSizer(wxVERTICAL);
 
-    // Top row: subscriptions
+    // Top row: subscription | proxy list | detail
     wxBoxSizer* topSizer = new wxBoxSizer(wxHORIZONTAL);
     subPanel_ = new SubscriptionPanel(this, controller_);
-    topSizer->Add(subPanel_, 1, wxEXPAND);
-    sizer->Add(topSizer, 0, wxEXPAND | wxALL, 2);
-
-    // Bottom row: proxy list panel | detail panel
-    wxBoxSizer* bottomSizer = new wxBoxSizer(wxHORIZONTAL);
     proxyPanel_ = new ProxyListPanel(this, controller_, db_);
     detailPanel_ = new ProxyDetailPanel(this);
-    bottomSizer->Add(proxyPanel_, 3, wxEXPAND | wxRIGHT, 2);
-    bottomSizer->Add(detailPanel_, 1, wxEXPAND);
-    sizer->Add(bottomSizer, 1, wxEXPAND | wxALL, 2);
+    logPanel_ = new LogPanel(this);
+
+    // Size hints for column widths
+    subPanel_->SetMinSize(wxSize(380, -1));
+    proxyPanel_->SetMinSize(wxSize(620, -1));
+    detailPanel_->SetMinSize(wxSize(320, -1));
+
+    topSizer->Add(subPanel_, 0, wxEXPAND | wxRIGHT, 2);
+    topSizer->Add(proxyPanel_, 1, wxEXPAND | wxRIGHT, 2);
+    topSizer->Add(detailPanel_, 0, wxEXPAND);
+    sizer->Add(topSizer, 1, wxEXPAND | wxALL, 2);
+
+    // Bottom row: log panel under proxy list area
+    sizer->Add(logPanel_, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, 2);
+    logPanel_->SetMinSize(wxSize(620, 260));
 
     SetSizer(sizer);
 
