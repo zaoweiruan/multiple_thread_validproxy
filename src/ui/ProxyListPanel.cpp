@@ -12,14 +12,15 @@
 // Column indices in the wxDataViewListStore
 // -------------------------------------------------------------------
 enum {
-    COL_INDEXID  = 0,
-    COL_ADDRESS  = 1,
-    COL_PORT     = 2,
-    COL_DELAY    = 3,
-    COL_FAILURES = 4,
-    COL_REMARKS  = 5,
-    COL_MESSAGE  = 6,
-    COL_COUNT    = 7,
+    COL_INDEXID  = 0,  // Hidden column - actual indexId for lookups
+    COL_ROWNUM   = 1,  // Display row number (1,2,3...)
+    COL_ADDRESS  = 2,
+    COL_PORT     = 3,
+    COL_DELAY    = 4,
+    COL_FAILURES = 5,
+    COL_REMARKS  = 6,
+    COL_MESSAGE  = 7,
+    COL_COUNT    = 8,
 };
 
 // -------------------------------------------------------------------
@@ -28,6 +29,7 @@ wxBEGIN_EVENT_TABLE(ProxyListPanel, wxPanel)
     EVT_MENU(wxID_ANY, ProxyListPanel::onTestProxy)
     EVT_MENU(wxID_ANY, ProxyListPanel::onGenerateConfig)
     EVT_DATAVIEW_SELECTION_CHANGED(wxID_ANY, ProxyListPanel::onSelectionChanged)
+    EVT_DATAVIEW_COLUMN_HEADER_CLICK(wxID_ANY, ProxyListPanel::onColumnHeaderClick)
 wxEND_EVENT_TABLE()
 
 // -------------------------------------------------------------------
@@ -49,8 +51,9 @@ ProxyListPanel::ProxyListPanel(wxWindow* parent, AppController* controller,
     listCtrl_->AssociateModel(store_);
     store_->DecRef();  // AssociateModel took ownership
 
-    // Columns matching main-layout.svg: # (40) | Host (100) | Port (70) | Latency (80) | Failures (80) | Remarks (160) | Message (160)
-    listCtrl_->AppendTextColumn("#",        COL_INDEXID,  wxDATAVIEW_CELL_INERT, 40);
+    // Columns matching main-layout.svg: Row# | IndexId (hidden) | Host (100) | Port (70) | Latency (80) | Failures (80) | Remarks (160) | Message (160)
+    listCtrl_->AppendTextColumn("IndexId", COL_INDEXID, wxDATAVIEW_CELL_INERT, 120); // Hidden later if needed
+    listCtrl_->AppendTextColumn("#", COL_ROWNUM, wxDATAVIEW_CELL_INERT, 40);
     listCtrl_->AppendTextColumn("Host ↕",  COL_ADDRESS,  wxDATAVIEW_CELL_INERT, 100);
     listCtrl_->AppendTextColumn("Port",     COL_PORT,     wxDATAVIEW_CELL_INERT,  70);
     listCtrl_->AppendTextColumn("Latency ↕", COL_DELAY,  wxDATAVIEW_CELL_INERT, 80);
@@ -73,7 +76,9 @@ ProxyListPanel::~ProxyListPanel() = default;
 // Rebuilds the entire store so the view is consistent.
 // -------------------------------------------------------------------
 void ProxyListPanel::loadProxies(const std::string& subId) {
-    proxies_ = controller_->loadProxies(subId);
+    currentSubId_ = subId;
+    allProxies_ = controller_->loadProxies(subId);
+    proxies_ = allProxies_;  // Start with unfiltered list
     exItems_ = controller_->loadProxyResults();
 
     // Build lookups: indexId -> delay_str, message, consecutive_failures
@@ -86,19 +91,21 @@ void ProxyListPanel::loadProxies(const std::string& subId) {
         failuresMap[ex.indexid] = ex.consecutive_failures;
     }
 
-    store_->DeleteAllItems();
-    for (const auto& p : proxies_) {
-        wxVector<wxVariant> row;
-        row.push_back(wxVariant(wxString::Format("%d", static_cast<int>(store_->GetCount() + 1))));
-        row.push_back(wxVariant(p.address));
-        row.push_back(wxVariant(p.port));
-        row.push_back(wxVariant(delayMap.count(p.indexid) ? delayMap[p.indexid] : "-"));
-        row.push_back(wxVariant(std::to_string(failuresMap.count(p.indexid) ? failuresMap[p.indexid] : 0)));
-        row.push_back(wxVariant(p.remarks));
-        row.push_back(wxVariant(messageMap.count(p.indexid) ? messageMap[p.indexid] : ""));
-        store_->AppendItem(row);
-    }
-}
+store_->DeleteAllItems();
+      int rowNum = 1;
+      for (const auto& p : proxies_) {
+          wxVector<wxVariant> row;
+          row.push_back(wxVariant(p.indexid));                  // COL_INDEXID: actual indexId for lookups
+          row.push_back(wxVariant(wxString::Format("%d", rowNum++))); // COL_ROWNUM: display row number
+          row.push_back(wxVariant(p.address));
+          row.push_back(wxVariant(p.port));
+          row.push_back(wxVariant(delayMap.count(p.indexid) ? delayMap[p.indexid] : "-"));
+          row.push_back(wxVariant(std::to_string(failuresMap.count(p.indexid) ? failuresMap[p.indexid] : 0)));
+          row.push_back(wxVariant(p.remarks));
+          row.push_back(wxVariant(messageMap.count(p.indexid) ? messageMap[p.indexid] : ""));
+          store_->AppendItem(row);
+      }
+ }
 
 // -------------------------------------------------------------------
 // Refresh only the Delay column by reloading exItems_ from DB.
@@ -207,9 +214,12 @@ void ProxyListPanel::sortProxiesByColumn(int col, SortDirection dir) {
         return 0;
     };
     
-    std::sort(proxies_.begin(), proxies_.end(), [col, dir, &getDelay, &getMessage, &getFailures](const auto& a, const auto& b) {
+std::sort(proxies_.begin(), proxies_.end(), [col, dir, &getDelay, &getMessage, &getFailures](const auto& a, const auto& b) {
         int cmp = 0;
         switch (col) {
+            case COL_ROWNUM:
+                cmp = a.indexid.compare(b.indexid);
+                break;
             case COL_ADDRESS:
                 cmp = a.address.compare(b.address);
                 break;
@@ -234,6 +244,9 @@ void ProxyListPanel::sortProxiesByColumn(int col, SortDirection dir) {
                 cmp = msgA.compare(msgB);
                 break;
             }
+            case COL_REMARKS:
+                cmp = a.remarks.compare(b.remarks);
+                break;
             default:
                 cmp = a.indexid.compare(b.indexid);
                 break;
@@ -241,8 +254,8 @@ void ProxyListPanel::sortProxiesByColumn(int col, SortDirection dir) {
         return dir == SortDirection::Asc ? cmp < 0 : cmp > 0;
     });
     
-    loadProxies();
-}
+    loadProxies(currentSubId_);
+ }
 
 void ProxyListPanel::resetSort() {
     loadProxies();
@@ -306,9 +319,19 @@ void ProxyListPanel::onSelectionChanged(wxDataViewEvent& event) {
     wxDataViewItem item = listCtrl_->GetSelection();
     if (!item.IsOk()) return;
 
+    // Get the actual indexId from the hidden column
     wxVariant idxVar;
     store_->GetValue(idxVar, item, COL_INDEXID);
     std::string indexId = idxVar.GetString().ToStdString();
+
+    // Find proxy by indexId
+    db::models::Profileitem* proxy = nullptr;
+    for (auto& p : proxies_) {
+        if (p.indexid == indexId) {
+            proxy = &p;
+            break;
+        }
+    }
 
     // Build lookup from exItems_
     std::unordered_map<std::string, std::string> delayMap;
@@ -320,24 +343,50 @@ void ProxyListPanel::onSelectionChanged(wxDataViewEvent& event) {
         failuresMap[ex.indexid] = ex.consecutive_failures;
     }
 
-    // Find proxy in proxies_
-    db::models::Profileitem* proxy = nullptr;
-    for (auto& p : proxies_) {
-        if (p.indexid == indexId) {
-            proxy = &p;
-            break;
-        }
+    // Get proxy info
+    std::string host = "";
+    std::string port = "";
+    std::string delay = "";
+    std::string message = "";
+    int failures = 0;
+    std::string remarks = "";
+
+    if (proxy) {
+        host = proxy->address;
+        port = proxy->port;
+        delay = delayMap.count(indexId) ? delayMap[indexId] : "";
+        message = messageMap.count(indexId) ? messageMap[indexId] : "";
+        failures = failuresMap.count(indexId) ? failuresMap[indexId] : 0;
+        remarks = proxy->remarks;
     }
 
 // Notify parent via event
     wxWindow* topLevel = wxGetTopLevelParent(this);
     if (topLevel && topLevel != this && proxy) {
-        ProxySelectionEvent selEvt(indexId, proxy->address, proxy->port,
-                                  delayMap.count(indexId) ? delayMap[indexId] : "",
-                                  messageMap.count(indexId) ? messageMap[indexId] : "",
-                                  failuresMap.count(indexId) ? failuresMap[indexId] : 0,
-                                  proxy->remarks);
+        ProxySelectionEvent selEvt(indexId, host, port,
+                                  delay, message,
+                                  failures, remarks);
         wxQueueEvent(topLevel, selEvt.Clone());
     }
     (void)event;
+ }
+
+ // -------------------------------------------------------------------
+ // Filter proxies by search query (case-insensitive match on address, remark, indexId)
+ // -------------------------------------------------------------------
+void ProxyListPanel::filterBySearch(const wxString& query) {
+    if (query.IsEmpty()) {
+        proxies_ = allProxies_;  // Restore unfiltered list
+    } else {
+        std::string q = query.Lower().ToStdString();
+        proxies_.clear();
+        for (const auto& p : allProxies_) {
+            if (p.address.find(q) != std::string::npos ||
+                p.remarks.find(q) != std::string::npos ||
+                p.indexid.find(q) != std::string::npos) {
+                proxies_.push_back(p);
+            }
+        }
+    }
+    loadProxies(currentSubId_);
 }

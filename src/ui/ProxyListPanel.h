@@ -30,6 +30,7 @@ public:
     void loadProxies(const std::string& subId = "");
     void refreshResults();
     void selectProxyByIndexId(const std::string& indexId);
+    void filterBySearch(const wxString& query);
 
 private:
     enum class SortDirection { None, Asc, Desc };
@@ -51,6 +52,8 @@ private:
 
     std::vector<db::models::Profileitem> proxies_;
     std::vector<db::models::ProfileExItem> exItems_;
+    std::vector<db::models::Profileitem> allProxies_;  // Unfiltered list for search
+    std::string currentSubId_;  // Track current subscription filter for reload
 
     struct SortState {
         int column = -1;

@@ -83,6 +83,8 @@ if(wxWidgets_FOUND)
         src/ui/SubscriptionPanel.cpp
         src/ui/ProxyListPanel.h
         src/ui/ProxyListPanel.cpp
+        src/ui/ProxyDetailPanel.h
+        src/ui/ProxyDetailPanel.cpp
         src/ui/TestPanel.h
         src/ui/TestPanel.cpp
         src/ui/LogPanel.h

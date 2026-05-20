@@ -101,6 +101,7 @@ BOOL WINAPI consoleCtrlHandler(DWORD ctrlType) {
             if (app) {
                 wxWindow* topWindow = app->GetTopWindow();
                 if (topWindow) {
+                    // Try graceful shutdown first, then force exit if needed
                     topWindow->Close(true);
                 }
             }

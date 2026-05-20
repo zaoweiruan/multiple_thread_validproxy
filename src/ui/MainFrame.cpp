@@ -8,6 +8,7 @@
 #include "TrayIcon.h"
 #include "AppController.h"
 #include "Events.h"
+#include "Profileitem.h"
 
 #include <wx/sizer.h>
 #include <wx/aui/auibook.h>
@@ -124,14 +125,18 @@ initMenuBar();
           setStatusText(0, "Loaded subscription: " + wxString(subId));
       });
       
-      // Bind proxy selection to update detail panel
-      Bind(wxEVT_PROXY_SELECTION, [this](ProxySelectionEvent& evt) {
-          if (detailPanel_) {
-              detailPanel_->UpdateDetail(
-                  evt.getHost(), evt.getPort(), evt.getDelay(),
-                  evt.getMessage(), evt.getFailures(), evt.getRemarks());
-          }
-      });
+// Bind proxy selection to update detail panel
+       Bind(wxEVT_PROXY_SELECTION, [this](ProxySelectionEvent& evt) {
+           if (detailPanel_ && controller_) {
+               // Get full proxy data from controller for advanced fields
+               auto proxyOpt = controller_->getProxyByIndexId(evt.getIndexId());
+               const db::models::Profileitem* proxy = proxyOpt.has_value() ? &*proxyOpt : nullptr;
+               
+               detailPanel_->UpdateDetail(
+                   evt.getIndexId(), evt.getHost(), evt.getPort(), evt.getDelay(),
+                   evt.getMessage(), evt.getFailures(), evt.getRemarks(), proxy);
+           }
+       });
      
      initTrayIcon();
      loadSettings();
@@ -435,6 +440,9 @@ void MainFrame::onToolConfig(wxCommandEvent& event) {
 void MainFrame::onSearchBoxEnter(wxCommandEvent& event) {
     wxString query = m_searchBox->GetValue();
     setStatusText(0, "Search: " + query);
+    if (proxyPanel_) {
+        proxyPanel_->filterBySearch(query);
+    }
     (void)event;
 }
 

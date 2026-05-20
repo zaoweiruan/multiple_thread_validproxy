@@ -8,6 +8,9 @@
 #include <wx/msgdlg.h>
 #include <wx/textdlg.h>
 #include <wx/checkbox.h>
+#include <ctime>
+#include <iomanip>
+#include <sstream>
 
 // -------------------------------------------------------------------
 wxBEGIN_EVENT_TABLE(SubscriptionPanel, wxPanel)
@@ -96,10 +99,33 @@ void SubscriptionPanel::loadSubscriptions() {
         // Count proxies for this subscription
         auto proxies = controller_->loadProxies(sub.id);
         row.push_back(wxVariant(wxString::Format("%d", static_cast<int>(proxies.size()))));
-        row.push_back(wxVariant(sub.updatetime));
+        
+        // Format updatetime from unix timestamp to readable datetime
+        wxString updateTimeStr = formatUpdateTime(sub.updatetime);
+        row.push_back(wxVariant(updateTimeStr));
         store_->AppendItem(row);
     }
-}
+ }
+
+ std::string SubscriptionPanel::formatUpdateTime(const std::string& updatetime) {
+     if (updatetime.empty()) {
+         return "Never";
+     }
+     try {
+         long timestamp = std::stol(updatetime);
+         if (timestamp <= 0) {
+             return "Never";
+         }
+         time_t t = static_cast<time_t>(timestamp);
+         struct tm tm_time;
+         localtime_s(&tm_time, &t);
+         char buf[32];
+         strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M", &tm_time);
+         return std::string(buf);
+     } catch (...) {
+         return updatetime;  // Return as-is if parsing fails
+     }
+ }
 
 std::string SubscriptionPanel::getSelectedSubId() const {
     wxDataViewItem sel = listCtrl_->GetSelection();

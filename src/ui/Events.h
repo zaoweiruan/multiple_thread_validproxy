@@ -31,12 +31,14 @@ class LogMessageEvent;
 class StatusUpdateEvent;
 class SubscriptionSelectedEvent;
 class SubscriptionTestEvent;
+class ProxySelectionEvent;
 
 wxDECLARE_EVENT(wxEVT_PROXY_TEST_PROGRESS, ProxyTestProgressEvent);
 wxDECLARE_EVENT(wxEVT_LOG_MESSAGE, LogMessageEvent);
 wxDECLARE_EVENT(wxEVT_STATUS_UPDATE, StatusUpdateEvent);
 wxDECLARE_EVENT(wxEVT_SUBSCRIPTION_SELECTED, SubscriptionSelectedEvent);
 wxDECLARE_EVENT(wxEVT_SUBSCRIPTION_TEST, SubscriptionTestEvent);
+wxDECLARE_EVENT(wxEVT_PROXY_SELECTION, ProxySelectionEvent);
 
 // ---------------------------------------------------------------
 // ProxyTestProgressEvent — sent during batch testing
@@ -138,6 +140,38 @@ public:
 
 private:
     std::string subId_;
+};
+
+// ---------------------------------------------------------------
+// ProxySelectionEvent — sent when a proxy is selected in the list
+// ---------------------------------------------------------------
+class ProxySelectionEvent : public wxEvent {
+public:
+    ProxySelectionEvent(const std::string& indexId = "",
+                        const std::string& host = "",
+                        const std::string& port = "",
+                        const std::string& delay = "",
+                        const std::string& message = "",
+                        int failures = 0,
+                        const std::string& remarks = "")
+        : wxEvent(0, wxEVT_PROXY_SELECTION),
+          indexId_(indexId), host_(host), port_(port),
+          delay_(delay), message_(message), remarks_(remarks),
+          failures_(failures) {}
+
+    wxEvent* Clone() const override { return new ProxySelectionEvent(*this); }
+
+    std::string getIndexId() const { return indexId_; }
+    std::string getHost() const { return host_; }
+    std::string getPort() const { return port_; }
+    std::string getDelay() const { return delay_; }
+    std::string getMessage() const { return message_; }
+    int getFailures() const { return failures_; }
+    std::string getRemarks() const { return remarks_; }
+
+private:
+    std::string indexId_, host_, port_, delay_, message_, remarks_;
+    int failures_;
 };
 
 #endif // UI_EVENTS_H
