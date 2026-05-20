@@ -13,7 +13,6 @@
 #include "Events.h"
 
 // Forward declarations
-class TestPanel;
 
 // ---------------------------------------------------------------
 // ProxyListPanel — right panel showing the proxy list with Delay
@@ -25,8 +24,7 @@ class TestPanel;
 // ---------------------------------------------------------------
 class ProxyListPanel : public wxPanel {
 public:
-    ProxyListPanel(wxWindow* parent, AppController* controller, sqlite3* db,
-                   TestPanel* testPanel);
+    ProxyListPanel(wxWindow* parent, AppController* controller, sqlite3* db);
     ~ProxyListPanel() override;
 
     void loadProxies(const std::string& subId = "");
@@ -41,12 +39,12 @@ private:
     void onGenerateConfig(wxCommandEvent& event);
     void onProxyTestProgress(ProxyTestProgressEvent& event);
     void onColumnHeaderClick(wxDataViewEvent& event);
+    void onSelectionChanged(wxDataViewEvent& event);
     void sortProxiesByColumn(int col, SortDirection dir);
     void resetSort();
 
     AppController* controller_;
     sqlite3* db_;
-    TestPanel* testPanel_;
 
     wxDataViewCtrl* listCtrl_;
     wxDataViewListStore* store_;
