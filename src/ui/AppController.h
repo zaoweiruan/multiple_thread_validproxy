@@ -31,9 +31,10 @@ public:
   void updateAllSubscriptionsAsync(wxEvtHandler* wxHandler);
   bool importSubscription(const std::string& url);
 
-  // Proxies
-  std::vector<db::models::Profileitem> loadProxies(const std::string& subId = "");
-  std::vector<db::models::ProfileExItem> loadProxyResults();
+// Proxies
+std::vector<db::models::Profileitem> loadProxies(const std::string& subId = "");
+std::optional<db::models::Profileitem> getProxyByIndexId(const std::string& indexId);
+std::vector<db::models::ProfileExItem> loadProxyResults();
 
 // ---------------------------------------------------------------
 // Testing / Cancellation

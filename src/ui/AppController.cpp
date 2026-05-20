@@ -19,6 +19,7 @@
 #include <future>
 #include <chrono>
 #include <thread>
+#include <atomic>
 
 // ---------------------------------------------------------------
 // AppController implementation
@@ -29,13 +30,26 @@ AppController::AppController(sqlite3* db, const config::AppConfig& cfg)
 AppController::~AppController() {
     // Signal cancellation first so any in-flight async work can observe the flag
     cancelRequested_ = true;
+    Logger::write("[AppController] Destructor: cancelRequested_ set to true", LogLevel::DEBUG);
 
     // Wait for worker thread to finish before releasing XrayManager.
     // WRONG order (release first, detach later) leaves a detached thread
     // running until the OS kills it — the worker may still access XrayManager
     // or xray instances after release() destroys the singleton, causing zombies.
     if (workerThread_.joinable()) {
-        workerThread_.join();   // block until thread exits cleanly
+        // Wait up to 5 seconds for thread to finish gracefully
+        // If thread doesn't respond, detach it to allow process exit
+        std::future<void> fut = std::async(std::launch::async, [this]() {
+            if (workerThread_.joinable()) {
+                workerThread_.join();
+            }
+        });
+        if (fut.wait_for(std::chrono::seconds(5)) != std::future_status::ready) {
+            Logger::write("[AppController] Destructor: worker thread did not finish in 5s, detaching", LogLevel::WARN);
+            workerThread_.detach();
+        } else {
+            Logger::write("[AppController] Destructor: worker thread joined successfully", LogLevel::DEBUG);
+        }
     }
 
     // Now it is safe to shut down XrayManager — no thread still holds a ref
@@ -95,6 +109,11 @@ std::vector<db::models::Profileitem> AppController::loadProxies(const std::strin
     return filtered;
 }
 
+std::optional<db::models::Profileitem> AppController::getProxyByIndexId(const std::string& indexId) {
+    db::models::ProfileitemDAO dao(db_);
+    return dao.getByIndexId(indexId);
+}
+
 std::vector<db::models::ProfileExItem> AppController::loadProxyResults() {
     db::models::ProfileExItemDAO dao(db_);
     return dao.getAll();
@@ -117,6 +136,7 @@ void AppController::testSingleProxyAsync(const std::string& indexId, wxEvtHandle
 
 void AppController::cancelTest() {
     cancelRequested_ = true;
+    Logger::write("[AppController] cancelTest() called, cancelRequested_ set to true", LogLevel::DEBUG);
 }
 
 bool AppController::isTestCancelled() const {

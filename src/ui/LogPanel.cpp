@@ -38,6 +38,7 @@ LogPanel::LogPanel(wxWindow* parent)
     levels.Add("ERROR");
     levelFilter_ = new wxChoice(this, ID_LOG_FILTER, wxDefaultPosition, wxSize(100, -1), levels);
     levelFilter_->SetSelection(2); // default: INFO
+    minLevel_ = LogLevel::INFO; // Initialize to match the default selection
     toolSizer->Add(levelFilter_, 0, wxRIGHT, 8);
 
     clearBtn_ = new wxButton(this, ID_LOG_CLEAR, "Clear");
@@ -74,13 +75,14 @@ LogPanel::~LogPanel() {
     Logger::clearLogCallback();
 }
 
-void LogPanel::appendLog(const wxString& msg, LogLevel /*level*/) {
-    if (static_cast<int>(minLevel_) > static_cast<int>(LogLevel::TRACE)) {
-        return;
-    }
-    logCtrl_->AppendText(msg + "\n");
-    logCtrl_->ShowPosition(logCtrl_->GetLastPosition());
-}
+void LogPanel::appendLog(const wxString& msg, LogLevel level) {
+     // Only show messages at or above the current filter level
+     if (level < minLevel_) {
+         return;
+     }
+     logCtrl_->AppendText(msg + "\n");
+     logCtrl_->ShowPosition(logCtrl_->GetLastPosition());
+ }
 
 void LogPanel::clearLog() {
     logCtrl_->Clear();

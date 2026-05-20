@@ -35,6 +35,7 @@ private:
 
     void showEditDialog(const db::models::Subitem& sub);
     bool confirmDelete(const std::string& id, const std::string& remarks);
+    static std::string formatUpdateTime(const std::string& updatetime);
 
     AppController* controller_;
     wxDataViewCtrl* listCtrl_;
