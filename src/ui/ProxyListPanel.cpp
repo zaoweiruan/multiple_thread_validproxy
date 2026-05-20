@@ -192,7 +192,26 @@ void ProxyListPanel::sortProxiesByColumn(int col, SortDirection dir) {
         return 0;
     };
     
-    std::sort(proxies_.begin(), proxies_.end(), [col, dir, &getDelay](const auto& a, const auto& b) {
+    auto getMessage = [this](const db::models::Profileitem& p) -> const std::string& {
+        for (const auto& ex : exItems_) {
+            if (ex.indexid == p.indexid) {
+                return ex.message;
+            }
+        }
+        static const std::string empty;
+        return empty;
+    };
+    
+    auto getFailures = [this](const db::models::Profileitem& p) -> int {
+        for (const auto& ex : exItems_) {
+            if (ex.indexid == p.indexid) {
+                return ex.consecutive_failures;
+            }
+        }
+        return 0;
+    };
+    
+    std::sort(proxies_.begin(), proxies_.end(), [col, dir, &getDelay, &getMessage, &getFailures](const auto& a, const auto& b) {
         int cmp = 0;
         switch (col) {
             case COL_ADDRESS:
@@ -207,6 +226,18 @@ void ProxyListPanel::sortProxiesByColumn(int col, SortDirection dir) {
             case COL_SPEED:
                 cmp = a.configtype.compare(b.configtype);
                 break;
+            case COL_MESSAGE: {
+                const std::string& msgA = getMessage(a);
+                const std::string& msgB = getMessage(b);
+                cmp = msgA.compare(msgB);
+                break;
+            }
+            case COL_FAILURES: {
+                int failA = getFailures(a);
+                int failB = getFailures(b);
+                cmp = (failA > failB) - (failA < failB);
+                break;
+            }
             default:
                 cmp = a.indexid.compare(b.indexid);
                 break;
