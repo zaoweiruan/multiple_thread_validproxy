@@ -1,6 +1,7 @@
 # 功能实现状态清单
 
-> 状态日期: 2026-05-15
+> 状态日期: 2026-05-19
+> 最后更新: 同步代码审计 — 3项功能 ⚠️→✅（单代理测试、列排序、添加订阅保存）
 
 ## 约定
 
@@ -23,7 +24,7 @@
 | 右键 → 测试订阅 | ⚠️ | `onTestSubscription` 只 `wxPostEvent(GetParent(), evt)`，**未串联到 TestPanel** |
 | 右键 → 编辑订阅 | ⚠️ | `showEditDialog` 对话框展示但**未保存到数据库** |
 | 右键 → 删除订阅 | ⚠️ | `// TODO: implement DAO delete method` — 确认弹框有，不执行 SQL |
-| 右键 → 添加订阅 | ⚠️ | `showAddDialog` 对话框 UI 完整，但保存时只弹 `"TODO: Save to database"` |
+| 右键 → 添加订阅 | ✅ | `showAddDialog` 对话框 UI 完整，保存时调用 `controller_->importSubscription()` + `loadSubscriptions()` |
 | 右键 → 从 URL 导入 | ✅ | `onImportSubscription` → `controller_->importSubscription()` |
 | 已选订阅 ID 获取 | ✅ | `getSelectedSubId()` |
 
@@ -34,11 +35,11 @@
 | 按订阅加载代理 | ✅ | `loadProxies(subId)` → `ProfileitemDAO::getAll()` |
 | 带颜色 DataView | ✅ | `GetAttrByRow`：类型/延迟/连续失败数着色 |
 | 右键 → 生成配置 | ✅ | `onGenerateConfig` → `AppController::generateConfig()` (已修复 SQL 查询传播 bug) |
-| 右键 → 测试单个代理 | ⚠️ | `onTestProxy` 只弹 `wxMessageBox("Single proxy test: " ...)` — **未调用 ProxyTester** |
+| 右键 → 测试单个代理 | ✅ | `onTestProxy` → `controller_->testSingleProxyAsync()` + 双向事件通知 TestPanel/MainFrame 刷新延迟列 |
 | 右键 → 查看详情 | ✅ | `onViewDetail` 显示 IndexId/Remarks/类型/地址/延迟等完整信息 |
 | 类型筛选 | ⚠️ | `// TODO: apply filters` — 选择器有但未过滤 |
 | 搜索框 | ⚠️ | `// TODO: implement search filtering` — 输入框有但未过滤 |
-| 列排序 | ⚠️ | 列标记了 `wxDATAVIEW_COL_SORTABLE`，`onColumnHeaderClick` 仅 `event.Skip()`，**无 Compare 实现** |
+| 列排序 | ✅ | `onColumnHeaderClick` 完整 Asc/Desc/None 三态循环 + `sortProxiesByColumn()` 按 Address/Delay/Speed/IndexId 排序 |
 
 ## 3. 批量测试
 
@@ -70,7 +71,7 @@
 | 同步数据库 | ✅ | `onMenuSyncDb` → `SubitemUpdaterV2::syncDatabases()` |
 | 导出分享链接 | ✅ | `onMenuExportShareLink` → `share::ShareLink::toShareUri()` |
 | 按 IndexId 生成配置 | ✅ | `onMenuGenerateConfig` → 弹出输入框 → `controller_->generateConfig()` |
-| 导入订阅文件 | ⚠️ | `onMenuImportSub` 只打开文件对话框并设状态栏文本，**未执行实际导入** |
+| 从 URL 导入订阅 | ✅ | `onMenuImportSub` / `onMenuAddSub` 弹出 URL 输入框 → `controller_->importSubscription()` |
 | 设置对话框 | ✅ | `onMenuConfig` → `ConfigDialog` |
 | 关于对话框 | ✅ | `onMenuAbout` → `wxAboutBox` |
 | 系统托盘 | ✅ | `TrayIcon`：Show/Hide/Exit 菜单 + balloon 通知 |
@@ -81,16 +82,12 @@
 
 ### ⚠️ 桩函数（界面存在，逻辑未完成）
 
-1. **导入订阅文件** — `MainFrame::onMenuImportSub`：只打开文件对话框，不执行导入
-2. **添加订阅保存** — `showAddDialog`：对话框 UI 完整但不写入数据库
-3. **编辑订阅保存** — `showEditDialog`：数据显示但不持久化
-4. **删除订阅** — `onDeleteSubscription`：确认框后 `// TODO: implement DAO delete method`
-5. **代理类型/状态筛选** — `onFilterChanged`：`// TODO: apply filters`
-6. **代理搜索** — `onSearch`：`// TODO: implement search filtering`
-7. **单代理测试** — `onTestProxy`：仅弹信息对话框
-8. **订阅右键测试** — `onTestSubscription`：未串联到 TestPanel
-9. **列排序** — `onColumnHeaderClick`：需实现 `Compare()`
-10. **AUI 布局持久化** — `loadSettings()`：空函数
+1. **编辑订阅保存** — `showEditDialog`：数据显示但不持久化，`// TODO: implement DAO update`
+2. **删除订阅** — `onDeleteSubscription`：确认框后 `// TODO: implement DAO delete method`
+3. **代理类型/状态筛选** — `ProxyListPanel`：`// TODO: apply filters`
+4. **代理搜索** — `ProxyListPanel`：`// TODO: implement search filtering`
+5. **订阅右键测试** — `onTestSubscription`：`wxQueueEvent` 发出事件但**无 handler 接收**
+6. **AUI 布局持久化** — `loadSettings()`：空函数
 
 ### ❌ 完全未实现
 

@@ -25,10 +25,16 @@ public:
     static void writeTimestamp(const std::string& msg, LogLevel level);
     static void flush();
     static void close();
-    // Callback for UI integration
+    // Callback for UI integration — single consumer API
     using LogCallback = std::function<void(const std::string&, LogLevel)>;
-    static void setLogCallback(LogCallback cb);
-    static void clearLogCallback();
+    static void setLogCallback(LogCallback cb);   // 覆盖式；初始化时使用
+    static void clearLogCallback();                // 清空
+
+    // Stack-based callback for multiple concurrent consumers (RAII save/restore)
+    // pushCallback(): 压入 cb，cb 成为当前激活回调（同时保留前序者在栈中）
+    // popCallback():  弹出顶层，前一个回调自动恢复（若无则 nullptr）
+    static void pushCallback(LogCallback cb);
+    static void popCallback();
 
     static bool isEnabled();
     static std::ofstream* getFile();
@@ -47,17 +53,18 @@ static std::string levelToString(LogLevel level);
     static void disableFile();
     static void enableConsoleOnly();
 
-private:
-    static std::string logDir_;
-    static std::string prefix_;
-    static std::ofstream* outFile_;
-    static std::mutex mutex_;
-    static bool enabled_;
-    static bool fileEnabled_;
-    static LogLevel fileLevel_;
-    static LogLevel consoleLevel_;
-    static LogCallback logCallback_;
-    static std::mutex callbackMutex_;
-};
+ private:
+     static std::string logDir_;
+     static std::string prefix_;
+     static std::ofstream* outFile_;
+     static std::mutex mutex_;
+     static bool enabled_;
+     static bool fileEnabled_;
+     static LogLevel fileLevel_;
+     static LogLevel consoleLevel_;
+     static LogCallback logCallback_;               // 当前激活的回调（callbackStack_.back() 或 nullptr）
+     static std::vector<LogCallback> callbackStack_;// 回调栈；支持多消费者 save/restore
+     static std::mutex callbackMutex_;
+ };
 
 #endif // LOGGER_H

@@ -15,6 +15,7 @@ LogLevel Logger::fileLevel_ = LogLevel::DEBUG;
 LogLevel Logger::consoleLevel_ = LogLevel::INFO;
 Logger::LogCallback Logger::logCallback_ = nullptr;
 std::mutex Logger::callbackMutex_;
+std::vector<Logger::LogCallback> Logger::callbackStack_;  // 回调栈
 
 void Logger::init(const std::string& logDir, const std::string& prefix) {
     init(logDir, prefix, LogLevel::DEBUG, LogLevel::INFO);
@@ -71,10 +72,44 @@ void Logger::write(const std::string& msg, LogLevel level) {
     // UI callback (invoked under callbackMutex_, not the main mutex, to avoid deadlock)
     {
         std::lock_guard<std::mutex> cbLock(callbackMutex_);
+        // logCallback_ == callbackStack_.back() when stack non-empty; else nullptr
         if (logCallback_) {
             logCallback_(fullMsg, level);
         }
     }
+}
+
+void Logger::setLogCallback(LogCallback cb) {
+    // Initial registration: clear any existing stack entries and set fresh callback
+    std::lock_guard<std::mutex> lock(callbackMutex_);
+    callbackStack_.clear();
+    logCallback_ = std::move(cb);
+    if (logCallback_) {
+        callbackStack_.push_back(logCallback_);
+    }
+}
+
+void Logger::clearLogCallback() {
+    std::lock_guard<std::mutex> lock(callbackMutex_);
+    callbackStack_.clear();
+    logCallback_ = nullptr;
+}
+
+void Logger::pushCallback(LogCallback cb) {
+    // RAII-style: push a new consumer; it becomes the active callback
+    // The previous active caller remains in the stack and will be restored by popCallback()
+    std::lock_guard<std::mutex> lock(callbackMutex_);
+    callbackStack_.push_back(std::move(cb));
+    logCallback_ = callbackStack_.back();
+}
+
+void Logger::popCallback() {
+    // Remove the top callback and restore the previous one
+    std::lock_guard<std::mutex> lock(callbackMutex_);
+    if (!callbackStack_.empty()) {
+        callbackStack_.pop_back();
+    }
+    logCallback_ = callbackStack_.empty() ? nullptr : callbackStack_.back();
 }
 
 void Logger::writeTimestamp(const std::string& msg) {
@@ -99,18 +134,8 @@ void Logger::writeTimestamp(const std::string& msg, LogLevel level) {
     
     if (fileEnabled_ && static_cast<int>(level) >= static_cast<int>(fileLevel_)) {
         *outFile_ << fullMsg << std::endl;
-        outFile_->flush();
+         outFile_->flush();
     }
-}
-
-void Logger::setLogCallback(LogCallback cb) {
-    std::lock_guard<std::mutex> lock(callbackMutex_);
-    logCallback_ = std::move(cb);
-}
-
-void Logger::clearLogCallback() {
-    std::lock_guard<std::mutex> lock(callbackMutex_);
-    logCallback_ = nullptr;
 }
 
 void Logger::flush() {

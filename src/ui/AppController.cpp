@@ -315,21 +315,22 @@ void AppController::doTestSingleProxy(const std::string& indexId, wxEvtHandler* 
     ProxyBatchTester tester(db_, config_, "");
     bool ok = tester.runWithIndexId(indexId);
 
+    // Get actual test result (delay + message) from the tester
+    auto result = tester.getLastResult();
+    std::string delayStr = (result.latencyMs > 0) ? std::to_string(result.latencyMs) : std::string("");
+    std::string message   = result.success
+                              ? std::to_string(result.latencyMs) + "ms"
+                              : result.errorMsg.empty() ? "FAIL" : result.errorMsg;
+
+    // Result row update (indexId+address in remarks col, delay+message in their cols)
+    if (wxHandler) {
+        wxQueueEvent(wxHandler,
+                     new ProxyTestProgressEvent(1, 1, indexId, /*remarks=*/"",
+                                                delayStr, message, /*isCompleted=*/true));
+    }
+    // Status bar update via MainFrame::onStatusUpdate
     if (wxHandler) {
         wxQueueEvent(wxHandler, new StatusUpdateEvent(2, ok ? "Test completed" : "Test failed"));
-    }
-
-    if (ok) {
-        if (wxHandler) {
-            wxQueueEvent(wxHandler, new ProxyTestProgressEvent(0, 0, "", "", "", "Single test finished", true));
-        }
-        if (wxWindow* win = dynamic_cast<wxWindow*>(wxHandler)) {
-            if (wxWindow* topLevel = wxGetTopLevelParent(win)) {
-                if (topLevel != win) {
-                    wxQueueEvent(topLevel, new ProxyTestProgressEvent(0, 0, "", "", "", "Single test finished", true));
-                }
-            }
-        }
     }
 
     Logger::write(std::string("Single proxy test ") + (ok ? "succeeded" : "failed"), LogLevel::REPORT);
@@ -471,13 +472,18 @@ void AppController::findProxyByIndexIdAsync(const std::string& indexId, wxEvtHan
             
             ProxyBatchTester tester(db_, config_, "");
             bool ok = tester.runWithIndexId(it->indexid);
-            
-            if (ok && wxHandler) {
-                wxQueueEvent(wxHandler, new StatusUpdateEvent(0, "FOUND:" + it->indexid + ":" + it->address));
-                wxQueueEvent(wxHandler, new ProxyTestProgressEvent(0, 0, it->indexid, "", "", "Test finished", true));
-            } else if (wxHandler) {
-                wxQueueEvent(wxHandler, new StatusUpdateEvent(0, "ERR:Test failed for " + it->indexid));
+
+            if (wxHandler) {
+                auto result = tester.getLastResult();
+                std::string delayStr = (result.latencyMs > 0) ? std::to_string(result.latencyMs) : std::string("");
+                std::string message = result.success ? std::to_string(result.latencyMs) + "ms"
+                                                     : result.errorMsg.empty() ? "FAIL" : result.errorMsg;
+                wxQueueEvent(wxHandler,
+                             new ProxyTestProgressEvent(1, 1, it->indexid, "", delayStr,
+                                                        message, true));
+                wxQueueEvent(wxHandler, new StatusUpdateEvent(0, ok ? ("FOUND:" + it->indexid + ":" + it->address) : ("ERR:" + message)));
             }
+
         } catch (const std::exception& e) {
             if (wxHandler) {
                 wxQueueEvent(wxHandler, new StatusUpdateEvent(0, std::string("ERR:") + e.what()));

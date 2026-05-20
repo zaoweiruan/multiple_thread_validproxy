@@ -15,6 +15,9 @@ ProxyBatchTester::ProxyBatchTester(sqlite3* db, const config::AppConfig& config,
     
     xrayManager_ = XrayManager::getInstance(config_.xray_executable, configDir, config_.xray_workers);
     proxyTester_ = new ProxyTester(xrayManager_, config_.test_url, config_.test_timeout_ms);
+    
+    lastResult_ = TestResult{false, -1, ""};
+    lastIndexId_.clear();
 }
 
 ProxyBatchTester::~ProxyBatchTester() {
@@ -92,6 +95,7 @@ std::string xrayApiAddr = "127.0.0.1:" + std::to_string(apiPort);
                 processedCount_++;
             }
             exItemDao.updateTestResult(profile.indexid, -1, false, "CONFIG_ERROR");
+            lastResult_ = TestResult{false, -1, "CONFIG_ERROR"};
             continue;
         }
         
@@ -130,6 +134,7 @@ std::string xrayApiAddr = "127.0.0.1:" + std::to_string(apiPort);
                     processedCount_++;
                 }
                 exItemDao.updateTestResult(profile.indexid, -1, false, "XRAY_ERROR");
+                lastResult_ = TestResult{false, -1, "XRAY_ERROR"};
                 continue;
             }
             
@@ -158,7 +163,10 @@ std::string xrayApiAddr = "127.0.0.1:" + std::to_string(apiPort);
             
             exItemDao.updateTestResult(profile.indexid, result.latencyMs, result.success, result.errorMsg);
             
-} catch (const std::exception& e) {
+            // Store result for callers of runWithIndexId() to read after this worker finishes
+            lastResult_ = result;
+
+        } catch (const std::exception& e) {
             Logger::write("[Worker-" + std::to_string(workerId) + "] Exception: " + e.what(), LogLevel::ERR);
             Logger::write("[Worker-" + std::to_string(workerId) + "] failed to build conf: " + e.what(), LogLevel::ERR);
             Logger::write("[Worker-" + std::to_string(workerId) + "] EXCEPTION - " + profile.indexid + " - " + e.what(), LogLevel::ERR);
@@ -168,6 +176,7 @@ std::string xrayApiAddr = "127.0.0.1:" + std::to_string(apiPort);
                 processedCount_++;
             }
             exItemDao.updateTestResult(profile.indexid, -1, false, e.what());
+            lastResult_ = TestResult{false, -1, e.what()};
         }
     }
 }
@@ -272,15 +281,20 @@ bool ProxyBatchTester::runWithIndexId(const std::string& indexId) {
     auto profiles = dao.getAll();
     std::vector<db::models::Profileitem> filtered;
     std::copy_if(profiles.begin(), profiles.end(), std::back_inserter(filtered),
-        [&indexId](const db::models::Profileitem& p) { return p.indexid == indexId; });
+        [&indexId](const auto& p) { return p.indexid == indexId; });
     
     proxies_ = std::move(filtered);
     totalProxies_ = static_cast<int>(proxies_.size());
     
     if (totalProxies_ == 0) {
         Logger::write("Proxy not found: " + indexId, LogLevel::WARN);
+        lastIndexId_ = indexId;
+        lastResult_ = TestResult{false, -1, "NOTFOUND"};
         return false;
     }
+    
+    lastIndexId_ = proxies_[0].indexid;
+    lastResult_ = TestResult{false, -1, ""};
     
     Logger::write("Testing single proxy: " + indexId, LogLevel::REPORT);
     
