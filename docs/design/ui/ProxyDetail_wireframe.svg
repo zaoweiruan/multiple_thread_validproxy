@@ -1,0 +1,19 @@
+<svg width="1200" height="700" xmlns="http://www.w3.org/2000/svg" style="font-family:Arial,Helvetica,sans-serif;">
+  <!-- 背景 -->
+  <rect x="0" y="0" width="1200" height="700" fill="#ffffff"/>
+  <!-- 标题 -->
+  <rect x="0" y="0" width="1200" height="60" fill="#2f4f8a"/>
+  <text x="24" y="38" fill="#fff" font-size="20" font-weight="bold">代理详情</text>
+  <!-- 左侧：数据表占位（简化为一个区域，实际实现应与主表联动） -->
+  <rect x="24" y="86" width="520" height="560" fill="#f6f8fa" stroke="#e5e5e5"/>
+  <text x="40" y="110" fill="#333" font-size="14" font-weight="bold">选中代理概览</text>
+  <!-- 右侧：详细信息面板 -->
+  <rect x="560" y="86" width="600" height="560" fill="#f6f8fa" stroke="#e5e5e5"/>
+  <text x="580" y="110" fill="#333" font-size="14" font-weight="bold">延迟趋势与历史</text>
+  <!-- 延迟趋势图区域占位 -->
+  <rect x="580" y="140" width="520" height="200" fill="#fff" stroke="#d9dde3"/>
+  <text x="590" y="165" fill="#888" font-size="12">Latency trend (示意图)</text>
+  <!-- 最近日志占位 -->
+  <rect x="560" y="360" width="520" height="276" fill="#fff" stroke="#d9dde3"/>
+  <text x="570" y="380" fill="#888" font-size="12">最近日志摘录（示意）</text>
+</svg>
