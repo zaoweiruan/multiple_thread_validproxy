@@ -2,6 +2,7 @@
 #include "XrayManager.h"
 #include "CurlEasyHandle.h"
 #include <chrono>
+#include "TestLogMediator.h"
 
 ProxyTester::ProxyTester(XrayManager* manager, const std::string& testUrl, int timeoutMs)
     : manager_(manager), testUrl_(testUrl), timeoutMs_(timeoutMs) {}
@@ -9,7 +10,7 @@ ProxyTester::ProxyTester(XrayManager* manager, const std::string& testUrl, int t
 ProxyTester::~ProxyTester() {}
 
 TestResult ProxyTester::test(int socksPort) {
-    TestResult result;
+    TestResult result; // test event bridging via mediator can be emitted from here if needed
     result.success = false;
     result.latencyMs = -1;
     result.errorMsg = "";

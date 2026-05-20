@@ -1,5 +1,7 @@
 # Build output
 build/
+nul
+null
 *.tmp
 *.o
 *.obj

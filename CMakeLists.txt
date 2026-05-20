@@ -92,8 +92,9 @@ if(wxWidgets_FOUND)
         src/ui/TrayIcon.h
         src/ui/TrayIcon.cpp
         src/ui/UIApp.h
-        src/ui/UIApp.cpp
-    )
+src/ui/UIApp.cpp
+        src/ui/TestLogMediator.cpp
+        )
     
     target_sources(validproxy PRIVATE ${UI_SOURCES})
     
