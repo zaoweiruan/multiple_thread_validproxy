@@ -48,10 +48,11 @@ SubscriptionPanel::SubscriptionPanel(wxWindow* parent, AppController* controller
     store_->DecRef(); // AssociateModel took ownership
 
     // Columns — Append[Toggle|Text]Column(label, model_column, mode, width, ...)
-    listCtrl_->AppendToggleColumn("On", 0, wxDATAVIEW_CELL_ACTIVATABLE, 30);
-    listCtrl_->AppendTextColumn("Name", 1, wxDATAVIEW_CELL_EDITABLE, 200);
-    listCtrl_->AppendTextColumn("Proxies", 2, wxDATAVIEW_CELL_INERT, 70, wxALIGN_RIGHT);
-    listCtrl_->AppendTextColumn("Update", 3, wxDATAVIEW_CELL_INERT, 130);
+    listCtrl_->AppendTextColumn("#", 0, wxDATAVIEW_CELL_INERT, 30);
+    listCtrl_->AppendToggleColumn("On", 1, wxDATAVIEW_CELL_ACTIVATABLE, 30);
+    listCtrl_->AppendTextColumn("Name", 2, wxDATAVIEW_CELL_EDITABLE, 200);
+    listCtrl_->AppendTextColumn("Proxies", 3, wxDATAVIEW_CELL_INERT, 70, wxALIGN_RIGHT);
+    listCtrl_->AppendTextColumn("Update", 4, wxDATAVIEW_CELL_INERT, 130);
 
     sizer->Add(listCtrl_, 1, wxEXPAND | wxALL, 2);
 
@@ -74,7 +75,7 @@ SubscriptionPanel::SubscriptionPanel(wxWindow* parent, AppController* controller
         int row = wxPtrToUInt(event.GetItem().GetID()) - 1;
         if (row >= 0 && row < (int)subs_.size()) {
             wxVariant val;
-            event.GetModel()->GetValue(val, event.GetItem(), 0);
+            event.GetModel()->GetValue(val, event.GetItem(), 1);
             bool enabled = val.GetBool();
             subs_[row].enabled = enabled ? "1" : "0";
         }
@@ -85,8 +86,10 @@ void SubscriptionPanel::loadSubscriptions() {
     subs_ = controller_->loadSubscriptions();
     store_->DeleteAllItems();
 
+    int rowNum = 1;
     for (const auto& sub : subs_) {
         wxVector<wxVariant> row;
+        row.push_back(wxVariant(rowNum++));
         row.push_back(wxVariant(sub.enabled == "1"));
         row.push_back(wxVariant(sub.remarks));
 
