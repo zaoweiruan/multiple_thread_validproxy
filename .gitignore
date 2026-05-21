@@ -11,6 +11,7 @@ null
 !docs/**/*.md
 !docs/*.md
 *.png
+test*.json
 # Bin directory 
 
 bin/log/

@@ -45,9 +45,8 @@ struct Subitem {
     // MoreUrl
     text = (const char*)sqlite3_column_text(stmt, 3);
     obj.moreurl = text ? text : "";
-    // Enabled
-    text = (const char*)sqlite3_column_text(stmt, 4);
-    obj.enabled = text ? text : "";
+    // Enabled (stored as INTEGER in DB)
+    obj.enabled = std::to_string(sqlite3_column_int(stmt, 4));
     // UserAgent
     text = (const char*)sqlite3_column_text(stmt, 5);
     obj.useragent = text ? text : "";
@@ -174,6 +173,18 @@ public:
 
     sqlite3_finalize(stmt);
     return result;
+  }
+
+  bool updateEnabled(const std::string& id, bool enabled) {
+    std::string sql = "UPDATE SubItem SET Enabled = " + std::string(enabled ? "1" : "0") + " WHERE Id = '" + id + "';";
+    char* errMsg = nullptr;
+    int rc = sqlite3_exec(db_, sql.c_str(), nullptr, nullptr, &errMsg);
+    if (rc != SQLITE_OK) {
+      std::cerr << "SQL error: " << (errMsg ? errMsg : "unknown") << std::endl;
+      sqlite3_free(errMsg);
+      return false;
+    }
+    return true;
   }
 };
 

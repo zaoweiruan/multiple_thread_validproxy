@@ -51,8 +51,8 @@ SubscriptionPanel::SubscriptionPanel(wxWindow* parent, AppController* controller
     store_->DecRef(); // AssociateModel took ownership
 
     // Columns — Append[Toggle|Text]Column(label, model_column, mode, width, ...)
-    listCtrl_->AppendTextColumn("#", 0, wxDATAVIEW_CELL_INERT, 30);
-    listCtrl_->AppendToggleColumn("On", 1, wxDATAVIEW_CELL_ACTIVATABLE, 30);
+    listCtrl_->AppendTextColumn("#", 0, wxDATAVIEW_CELL_INERT, 30);  // Counter for row number
+    listCtrl_->AppendToggleColumn("启用", 1, wxDATAVIEW_CELL_ACTIVATABLE, 30);  // Changed "On" to "启用"
     listCtrl_->AppendTextColumn("Name", 2, wxDATAVIEW_CELL_EDITABLE, 200);
     listCtrl_->AppendTextColumn("Proxies", 3, wxDATAVIEW_CELL_INERT, 70, wxALIGN_RIGHT);
     listCtrl_->AppendTextColumn("Update", 4, wxDATAVIEW_CELL_INERT, 130);
@@ -73,7 +73,7 @@ SubscriptionPanel::SubscriptionPanel(wxWindow* parent, AppController* controller
 
     SetSizer(sizer);
 
-    // Connect toggle event
+    // Connect toggle event - persist enabled state to database
     listCtrl_->Bind(wxEVT_DATAVIEW_ITEM_VALUE_CHANGED, [this](wxDataViewEvent& event) {
         int row = wxPtrToUInt(event.GetItem().GetID()) - 1;
         if (row >= 0 && row < (int)subs_.size()) {
@@ -81,6 +81,10 @@ SubscriptionPanel::SubscriptionPanel(wxWindow* parent, AppController* controller
             event.GetModel()->GetValue(val, event.GetItem(), 1);
             bool enabled = val.GetBool();
             subs_[row].enabled = enabled ? "1" : "0";
+            // Persist to database
+            if (controller_) {
+                controller_->updateSubscriptionEnabled(subs_[row].id, enabled);
+            }
         }
     });
 }
@@ -89,10 +93,10 @@ void SubscriptionPanel::loadSubscriptions() {
     subs_ = controller_->loadSubscriptions();
     store_->DeleteAllItems();
 
-    int rowNum = 1;
+    int rowNum = 1;  // Counter for row number
     for (const auto& sub : subs_) {
         wxVector<wxVariant> row;
-        row.push_back(wxVariant(rowNum++));
+        row.push_back(wxVariant(wxString::Format("%d", rowNum++)));  // Counter for numbering
         row.push_back(wxVariant(sub.enabled == "1"));
         row.push_back(wxVariant(sub.remarks));
 
@@ -140,11 +144,14 @@ std::string SubscriptionPanel::getSelectedSubId() const {
 void SubscriptionPanel::onSelectionChanged(wxDataViewEvent& event) {
     std::string subId = getSelectedSubId();
     if (!subId.empty()) {
-        // Notify proxy list to reload
-        if (GetParent()) {
-            wxQueueEvent(GetParent(), new SubscriptionSelectedEvent(subId));
+        // Notify parent frame to load proxies for this subscription
+        wxWindow* parent = GetParent();
+        if (parent) {
+            SubscriptionSelectedEvent evt(subId);
+            wxPostEvent(parent, evt);
         }
     }
+    (void)event; // Suppress unused parameter warning
 }
 
 void SubscriptionPanel::onContextMenu(wxDataViewEvent&) {
