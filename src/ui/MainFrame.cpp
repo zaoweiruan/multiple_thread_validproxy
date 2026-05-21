@@ -238,7 +238,7 @@ void MainFrame::initToolBar() {
     tb->AddControl(new wxStaticText(tb, wxID_ANY, " Search:"));
     m_searchBox = new wxTextCtrl(tb, ID_SEARCH_BOX, "", wxDefaultPosition, wxSize(150, -1), wxTE_PROCESS_ENTER);
     tb->AddControl(m_searchBox);
-    tb->AddTool(ID_SEARCH_CLEAR, "X", wxNullBitmap);
+    tb->AddTool(ID_SEARCH_CLEAR, "Clear", wxArtProvider::GetBitmap(wxART_DELETE));
 
     // Add database path panel
     m_dbPathLabel = new wxStaticText(tb, wxID_ANY, wxString(getDbPath()), wxDefaultPosition, wxSize(200, -1));
