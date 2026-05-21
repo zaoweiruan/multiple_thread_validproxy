@@ -16,6 +16,8 @@
 #include <wx/menu.h>
 #include <wx/msgdlg.h>
 #include <wx/artprov.h>
+#include <wx/stdpaths.h>
+#include <wx/filename.h>
 #include <thread>
 
 // -------------------------------------------------------------------
@@ -83,6 +85,16 @@ MainFrame::MainFrame(const config::AppConfig& cfg, sqlite3* db)
       db_(db)
 {
     controller_ = new AppController(db, cfg);
+
+    // Set application icon - load from docs/design/ui/icon.png relative to executable
+    wxString execPath = wxStandardPaths::Get().GetExecutablePath();
+    wxString basePath = wxFileName(execPath).GetPathWithSep() + "../docs/design/ui/";
+    wxBitmap appIconBmp(basePath + "icon.png", wxBITMAP_TYPE_PNG);
+    if (appIconBmp.IsOk()) {
+        wxIcon appIcon;
+        appIcon.CopyFromBitmap(appIconBmp);
+        SetIcon(appIcon);
+    }
 
     // ── Find-proxy completion ──────────────────────────────────────
     // Payload: "FOUND:<indexId>:<address>" | "NOTFOUND" | "ERR:..."
@@ -187,8 +199,8 @@ void MainFrame::showBalloon(const wxString& title, const wxString& msg) {
 }
 
 std::string MainFrame::getDbPath() const {
-    // Get from config or use default
-    return "DB: guiNDB.db"; // Will be updated to read from actual config
+    // Return just the path without "DB:" prefix
+    return "guiNDB.db"; // Will be updated to read from actual config
 }
 
 // -------------------------------------------------------------------
@@ -228,6 +240,14 @@ void MainFrame::initMenuBar() {
 void MainFrame::initToolBar() {
     wxToolBar* tb = CreateToolBar();
 
+    // Load custom icons from docs/design/ui/ relative to executable
+    wxString execPath = wxStandardPaths::Get().GetExecutablePath();
+    wxString basePath = wxFileName(execPath).GetPathWithSep() + "../docs/design/ui/";
+    wxBitmap clearIcon(basePath + "clear.png", wxBITMAP_TYPE_PNG);
+    if (!clearIcon.IsOk()) {
+        clearIcon = wxArtProvider::GetBitmap(wxART_DELETE); // fallback
+    }
+
     tb->AddTool(ID_TOOL_UPDATE_ALL, "Update", wxArtProvider::GetBitmap(wxART_EXECUTABLE_FILE));
     tb->AddTool(ID_TOOL_TEST,       "Test",   wxArtProvider::GetBitmap(wxART_TICK_MARK));
     tb->AddTool(ID_TOOL_FIND,       "Find",   wxArtProvider::GetBitmap(wxART_FIND));
@@ -238,10 +258,10 @@ void MainFrame::initToolBar() {
     tb->AddControl(new wxStaticText(tb, wxID_ANY, " Search:"));
     m_searchBox = new wxTextCtrl(tb, ID_SEARCH_BOX, "", wxDefaultPosition, wxSize(150, -1), wxTE_PROCESS_ENTER);
     tb->AddControl(m_searchBox);
-    tb->AddTool(ID_SEARCH_CLEAR, "Clear", wxArtProvider::GetBitmap(wxART_DELETE));
+    tb->AddTool(ID_SEARCH_CLEAR, "Clear", clearIcon);
 
-    // Add database path panel
-    m_dbPathLabel = new wxStaticText(tb, wxID_ANY, wxString(getDbPath()), wxDefaultPosition, wxSize(200, -1));
+    // Add database path panel - right aligned, full path without prefix
+    m_dbPathLabel = new wxStaticText(tb, wxID_ANY, wxString(getDbPath()), wxDefaultPosition, wxSize(200, -1), wxALIGN_RIGHT);
     tb->AddControl(m_dbPathLabel);
 
     tb->Realize();
