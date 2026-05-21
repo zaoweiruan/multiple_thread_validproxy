@@ -25,9 +25,10 @@ public:
   config::AppConfig getConfig() const { return config_; }
   bool saveConfig(const config::AppConfig& cfg);
 
-  // Subscriptions
-  std::vector<db::models::Subitem> loadSubscriptions();
-  void updateSubscriptionAsync(const std::string& subId, wxEvtHandler* wxHandler);
+// Subscriptions
+   std::vector<db::models::Subitem> loadSubscriptions();
+   bool updateSubscriptionEnabled(const std::string& id, bool enabled);
+   void updateSubscriptionAsync(const std::string& subId, wxEvtHandler* wxHandler);
   void updateAllSubscriptionsAsync(wxEvtHandler* wxHandler);
   bool importSubscription(const std::string& url);
 

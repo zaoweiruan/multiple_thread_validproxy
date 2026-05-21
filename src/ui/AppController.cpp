@@ -72,6 +72,11 @@ std::vector<db::models::Subitem> AppController::loadSubscriptions() {
     return dao.getAll();
 }
 
+bool AppController::updateSubscriptionEnabled(const std::string& id, bool enabled) {
+    db::models::SubitemDAO dao(db_);
+    return dao.updateEnabled(id, enabled);
+}
+
 void AppController::updateSubscriptionAsync(const std::string& subId, wxEvtHandler* wxHandler) {
     cancelRequested_ = false;
     if (workerThread_.joinable()) workerThread_.join();
