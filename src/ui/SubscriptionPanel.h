@@ -21,6 +21,7 @@ public:
 
     void loadSubscriptions();
     std::string getSelectedSubId() const;
+    const std::vector<db::models::Subitem>& getSubscriptions() const { return subs_; }
     void showAddDialog();
 
 private:

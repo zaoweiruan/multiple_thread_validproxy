@@ -33,6 +33,7 @@ public:
     ProxyListPanel* getProxyListPanel() const { return proxyPanel_; }
     LogPanel* getLogPanel() const { return logPanel_; }
     AppController* getController() const { return controller_; }
+    std::string getDbPath() const;
 
     // Status bar helpers
     void setStatusText(int field, const wxString& text);
@@ -71,6 +72,8 @@ private:
     void onToolConfig(wxCommandEvent& event);
     void onStatusUpdate(StatusUpdateEvent& event);
     void onSearchBoxEnter(wxCommandEvent& event);
+    void onSearchTextChanged(wxCommandEvent& event);
+    void onSearchClear(wxCommandEvent& event);
 
     // Members
     wxAuiManager auiManager_;
@@ -84,6 +87,7 @@ private:
     sqlite3* db_;
     wxStatusBar* statusBar_{nullptr};
     wxTextCtrl* m_searchBox{nullptr};
+    wxStaticText* m_dbPathLabel{nullptr};
 
     wxDECLARE_EVENT_TABLE();
 };

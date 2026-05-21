@@ -41,6 +41,8 @@ enum {
     ID_TOOL_IMPORT        = wxID_HIGHEST + 204,
     ID_TOOL_CONFIG        = wxID_HIGHEST + 205,
     ID_SEARCH_BOX         = wxID_HIGHEST + 206,
+    ID_SEARCH_CLEAR       = wxID_HIGHEST + 300,
+    ID_TOOLBAR_DBPATH     = wxID_HIGHEST + 301,
 };
 
 // -------------------------------------------------------------------
@@ -68,6 +70,8 @@ wxBEGIN_EVENT_TABLE(MainFrame, wxFrame)
     EVT_MENU(ID_TOOL_IMPORT,      MainFrame::onToolImport)
     EVT_MENU(ID_TOOL_CONFIG,      MainFrame::onToolConfig)
     EVT_TEXT_ENTER(ID_SEARCH_BOX,  MainFrame::onSearchBoxEnter)
+    EVT_TEXT(ID_SEARCH_BOX, MainFrame::onSearchTextChanged)
+    EVT_MENU(ID_SEARCH_CLEAR, MainFrame::onSearchClear)
 wxEND_EVENT_TABLE()
 
 // -------------------------------------------------------------------
@@ -182,6 +186,11 @@ void MainFrame::showBalloon(const wxString& title, const wxString& msg) {
     wxMessageBox(msg, title, wxOK | wxICON_INFORMATION, this);
 }
 
+std::string MainFrame::getDbPath() const {
+    // Get from config or use default
+    return "DB: guiNDB.db"; // Will be updated to read from actual config
+}
+
 // -------------------------------------------------------------------
 //  Initialization steps
 // -------------------------------------------------------------------
@@ -229,6 +238,12 @@ void MainFrame::initToolBar() {
     tb->AddControl(new wxStaticText(tb, wxID_ANY, " Search:"));
     m_searchBox = new wxTextCtrl(tb, ID_SEARCH_BOX, "", wxDefaultPosition, wxSize(150, -1), wxTE_PROCESS_ENTER);
     tb->AddControl(m_searchBox);
+    tb->AddTool(ID_SEARCH_CLEAR, "X", wxNullBitmap);
+
+    // Add database path panel
+    m_dbPathLabel = new wxStaticText(tb, wxID_ANY, wxString(getDbPath()), wxDefaultPosition, wxSize(200, -1));
+    tb->AddControl(m_dbPathLabel);
+
     tb->Realize();
 }
 
@@ -271,7 +286,14 @@ void MainFrame::initPanels() {
 
     // Load initial data
     subPanel_->loadSubscriptions();
-    proxyPanel_->loadProxies("");
+
+    // Auto-load first subscription
+    if (!subPanel_->getSubscriptions().empty()) {
+        std::string firstSubId = subPanel_->getSubscriptions()[0].id;
+        proxyPanel_->loadProxies(firstSubId);
+    } else {
+        proxyPanel_->loadProxies("");
+    }
 }
 
 void MainFrame::initTrayIcon() {
@@ -442,6 +464,21 @@ void MainFrame::onSearchBoxEnter(wxCommandEvent& event) {
     setStatusText(0, "Search: " + query);
     if (proxyPanel_) {
         proxyPanel_->filterBySearch(query);
+    }
+    (void)event;
+}
+
+void MainFrame::onSearchTextChanged(wxCommandEvent& event) {
+    if (proxyPanel_) {
+        proxyPanel_->filterBySearch(m_searchBox->GetValue());
+    }
+    (void)event;
+}
+
+void MainFrame::onSearchClear(wxCommandEvent& event) {
+    m_searchBox->SetValue("");
+    if (proxyPanel_) {
+        proxyPanel_->filterBySearch("");
     }
     (void)event;
 }
