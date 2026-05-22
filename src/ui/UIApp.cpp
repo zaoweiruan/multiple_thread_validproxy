@@ -1,6 +1,7 @@
 #include "UIApp.h"
 #include "MainFrame.h"
 
+#include <wx/image.h>
 #include <wx/msgdlg.h>
 #include <exception>
 #include <iostream>
@@ -22,6 +23,9 @@ UIApp::UIApp(const config::AppConfig& cfg, sqlite3* db)
 
 bool UIApp::OnInit()
 {
+    // Initialize image handlers (required for XPM/PNG support)
+    wxInitAllImageHandlers();
+
     // Ensure we have a database connection
     if (!db_) {
         wxMessageBox("No database connection available.\nThe application cannot start.",

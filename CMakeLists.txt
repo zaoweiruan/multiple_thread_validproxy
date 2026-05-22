@@ -176,8 +176,23 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug")
         endforeach()
     endfunction()
     
-    copy_wx_dlls(validproxy)
+copy_wx_dlls(validproxy)
     
+    # Copy ICO/PNG icons to bin/docs/design/ui/
+    add_custom_command(TARGET validproxy POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_SOURCE_DIR}/bin/docs/design/ui"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CMAKE_SOURCE_DIR}/docs/design/ui/icon.ico"
+            "${CMAKE_SOURCE_DIR}/bin/docs/design/ui/icon.ico"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CMAKE_SOURCE_DIR}/docs/design/ui/clear.ico"
+            "${CMAKE_SOURCE_DIR}/bin/docs/design/ui/clear.ico"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CMAKE_SOURCE_DIR}/docs/design/ui/clear.png"
+            "${CMAKE_SOURCE_DIR}/bin/docs/design/ui/clear.png"
+        COMMENT "Copying icons to bin/docs/design/ui/"
+    )
+
     # Compile definition for GUI mode
     target_compile_definitions(validproxy PRIVATE HAS_WXWIDGETS=1)
 else()

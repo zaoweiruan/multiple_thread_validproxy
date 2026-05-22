@@ -1,5 +1,4 @@
 #include "MainFrame.h"
-
 #include "ConfigDialog.h"
 #include "LogPanel.h"
 #include "ProxyDetailPanel.h"
@@ -9,6 +8,7 @@
 #include "AppController.h"
 #include "Events.h"
 #include "Profileitem.h"
+#include "ToolbarIcons.h"
 
 #include <wx/sizer.h>
 #include <wx/aui/auibook.h>
@@ -17,7 +17,8 @@
 #include <wx/msgdlg.h>
 #include <wx/artprov.h>
 #include <wx/stdpaths.h>
-#include <wx/filename.h>
+#include <wx/srchctrl.h>
+#include <wx/file.h>
 #include <thread>
 
 // -------------------------------------------------------------------
@@ -42,8 +43,8 @@ enum {
     ID_TOOL_DEDUP         = wxID_HIGHEST + 203,
     ID_TOOL_IMPORT        = wxID_HIGHEST + 204,
     ID_TOOL_CONFIG        = wxID_HIGHEST + 205,
+    ID_TOOL_CLEAR         = wxID_HIGHEST + 207,
     ID_SEARCH_BOX         = wxID_HIGHEST + 206,
-    ID_SEARCH_CLEAR       = wxID_HIGHEST + 300,
     ID_TOOLBAR_DBPATH     = wxID_HIGHEST + 301,
 };
 
@@ -51,6 +52,7 @@ enum {
 wxBEGIN_EVENT_TABLE(MainFrame, wxFrame)
     EVT_CLOSE(MainFrame::onClose)
     EVT_ICONIZE(MainFrame::onIconize)
+    EVT_SIZE(MainFrame::onResize)
     // Menu
     EVT_MENU(ID_MENU_IMPORT_SUB,  MainFrame::onMenuImportSub)
     EVT_MENU(ID_MENU_SYNC_DB,     MainFrame::onMenuSyncDb)
@@ -71,9 +73,10 @@ wxBEGIN_EVENT_TABLE(MainFrame, wxFrame)
     EVT_MENU(ID_TOOL_DEDUP,       MainFrame::onToolDedup)
     EVT_MENU(ID_TOOL_IMPORT,      MainFrame::onToolImport)
     EVT_MENU(ID_TOOL_CONFIG,      MainFrame::onToolConfig)
+    // Search
     EVT_TEXT_ENTER(ID_SEARCH_BOX,  MainFrame::onSearchBoxEnter)
-    EVT_TEXT(ID_SEARCH_BOX, MainFrame::onSearchTextChanged)
-    EVT_MENU(ID_SEARCH_CLEAR, MainFrame::onSearchClear)
+    EVT_TEXT(ID_SEARCH_BOX,        MainFrame::onSearchTextChanged)
+    EVT_SEARCH_CANCEL(ID_SEARCH_BOX, MainFrame::onSearchClear)
 wxEND_EVENT_TABLE()
 
 // -------------------------------------------------------------------
@@ -82,23 +85,46 @@ wxEND_EVENT_TABLE()
 MainFrame::MainFrame(const config::AppConfig& cfg, sqlite3* db)
     : wxFrame(nullptr, wxID_ANY, "validproxy - Proxy Manager",
               wxDefaultPosition, wxSize(1200, 800)),
-      db_(db)
+      db_(db),
+      config_(cfg)
 {
     controller_ = new AppController(db, cfg);
 
-    // Set application icon - load from docs/design/ui/icon.png relative to executable
-    wxString execPath = wxStandardPaths::Get().GetExecutablePath();
-    wxString basePath = wxFileName(execPath).GetPathWithSep() + "../docs/design/ui/";
-    wxBitmap appIconBmp(basePath + "icon.png", wxBITMAP_TYPE_PNG);
-    if (appIconBmp.IsOk()) {
-        wxIcon appIcon;
-        appIcon.CopyFromBitmap(appIconBmp);
-        SetIcon(appIcon);
-    }
+    // Set application icon from ICO file
+    wxString exeDir = wxStandardPaths::Get().GetExecutablePath().BeforeLast('/');
+    #ifdef __WXMSW__
+    exeDir = wxStandardPaths::Get().GetExecutablePath().BeforeLast('\\');
+    #endif
+    wxString iconPath = exeDir + "/docs/design/ui/icon.ico";
+    if (wxFile::Exists(iconPath)) {
+        wxIcon appIcon(iconPath, wxBITMAP_TYPE_ICO);
+        if (appIcon.IsOk()) {
+            SetIcon(appIcon);
+        } else {
+            // Fallback to wxArtProvider themed icon
+            wxBitmap appBitmap = wxArtProvider::GetBitmap(wxART_FRAME_ICON);
+            if (appBitmap.IsOk()) {
+                wxIcon appIcon;
+                appIcon.CopyFromBitmap(appBitmap);
+                SetIcon(appIcon);
+            }
+        }
+    } else {
+        // Fallback to wxArtProvider themed icon
+        wxBitmap appBitmap = wxArtProvider::GetBitmap(wxART_FRAME_ICON);
+        if (appBitmap.IsOk()) {
+            wxIcon appIcon;
+            appIcon.CopyFromBitmap(appBitmap);
+            SetIcon(appIcon);
+         }
+     }
 
-    // ── Find-proxy completion ──────────────────────────────────────
-    // Payload: "FOUND:<indexId>:<address>" | "NOTFOUND" | "ERR:..."
-    Bind(wxEVT_STATUS_UPDATE, [this](StatusUpdateEvent& evt) {
+     // Prevent too-narrow window that breaks toolbar right-side control layout
+     SetMinSize(wxSize(900, 600));
+
+     // ── Find-proxy completion ──────────────────────────────────────
+     // Payload: "FOUND:<indexId>:<address>" | "NOTFOUND" | "ERR:..."
+     Bind(wxEVT_STATUS_UPDATE, [this](StatusUpdateEvent& evt) {
         wxString payload = evt.getText();
         if (payload.StartsWith("FOUND:")) {
             if (proxyPanel_) {
@@ -199,8 +225,8 @@ void MainFrame::showBalloon(const wxString& title, const wxString& msg) {
 }
 
 std::string MainFrame::getDbPath() const {
-    // Return just the path without "DB:" prefix
-    return "guiNDB.db"; // Will be updated to read from actual config
+    // Return the actual database path from config
+    return config_.database_path;
 }
 
 // -------------------------------------------------------------------
@@ -238,30 +264,28 @@ void MainFrame::initMenuBar() {
 }
 
 void MainFrame::initToolBar() {
-    wxToolBar* tb = CreateToolBar();
+    wxToolBar* tb = CreateToolBar(wxTB_HORIZONTAL | wxTB_FLAT | wxTB_NODIVIDER);
+    tb->SetToolBitmapSize(wxSize(24, 24));
 
-    // Load custom icons from docs/design/ui/ relative to executable
-    wxString execPath = wxStandardPaths::Get().GetExecutablePath();
-    wxString basePath = wxFileName(execPath).GetPathWithSep() + "../docs/design/ui/";
-    wxBitmap clearIcon(basePath + "clear.png", wxBITMAP_TYPE_PNG);
-    if (!clearIcon.IsOk()) {
-        clearIcon = wxArtProvider::GetBitmap(wxART_DELETE); // fallback
-    }
-
-    tb->AddTool(ID_TOOL_UPDATE_ALL, "Update", wxArtProvider::GetBitmap(wxART_EXECUTABLE_FILE));
-    tb->AddTool(ID_TOOL_TEST,       "Test",   wxArtProvider::GetBitmap(wxART_TICK_MARK));
-    tb->AddTool(ID_TOOL_FIND,       "Find",   wxArtProvider::GetBitmap(wxART_FIND));
-    tb->AddTool(ID_TOOL_DEDUP,      "Dedup",  wxArtProvider::GetBitmap(wxART_LIST_VIEW));
-    tb->AddTool(ID_TOOL_IMPORT,     "Import", wxArtProvider::GetBitmap(wxART_FILE_OPEN));
-    tb->AddTool(ID_TOOL_CONFIG,     "Config", wxArtProvider::GetBitmap(wxART_LIST_VIEW));
-    tb->AddSeparator();
+    tb->AddTool(ID_TOOL_UPDATE_ALL, "Update", ToolbarIcons::load("tool_update"));
+    tb->AddTool(ID_TOOL_TEST,       "Test",   ToolbarIcons::load("tool_test"));
+    tb->AddTool(ID_TOOL_FIND,       "Find",   ToolbarIcons::load("tool_find"));
+    tb->AddTool(ID_TOOL_DEDUP,      "Dedup",  ToolbarIcons::load("tool_dedup"));
+    tb->AddTool(ID_TOOL_IMPORT,     "Import", ToolbarIcons::load("tool_import"));
+    tb->AddTool(ID_TOOL_CONFIG,     "Config", ToolbarIcons::load("tool_config"));
+    tb->AddStretchableSpace();  // Push remaining items to right
     tb->AddControl(new wxStaticText(tb, wxID_ANY, " Search:"));
-    m_searchBox = new wxTextCtrl(tb, ID_SEARCH_BOX, "", wxDefaultPosition, wxSize(150, -1), wxTE_PROCESS_ENTER);
+    m_searchBox = new wxSearchCtrl(tb, ID_SEARCH_BOX, wxEmptyString,
+                                   wxDefaultPosition, wxSize(150, -1),
+                                   wxTE_PROCESS_ENTER);
+    m_searchBox->ShowSearchButton(true);
+    m_searchBox->ShowCancelButton(true);
     tb->AddControl(m_searchBox);
-    tb->AddTool(ID_SEARCH_CLEAR, "Clear", clearIcon);
 
-    // Add database path panel - right aligned, full path without prefix
-    m_dbPathLabel = new wxStaticText(tb, wxID_ANY, wxString(getDbPath()), wxDefaultPosition, wxSize(200, -1), wxALIGN_RIGHT);
+    // Database path — dynamically resized in onResize()
+    m_dbPathLabel = new wxStaticText(tb, wxID_ANY, wxString(getDbPath()),
+                                     wxDefaultPosition, wxSize(300, -1),
+                                     wxALIGN_RIGHT | wxST_ELLIPSIZE_START);
     tb->AddControl(m_dbPathLabel);
 
     tb->Realize();
@@ -477,6 +501,43 @@ void MainFrame::onToolImport(wxCommandEvent& event) {
 
 void MainFrame::onToolConfig(wxCommandEvent& event) {
     onMenuConfig(event);
+}
+
+// -------------------------------------------------------------------
+//  Event handler — dynamic toolbar control sizing on frame resize
+// -------------------------------------------------------------------
+void MainFrame::onResize(wxSizeEvent& event) {
+    // Let the default handler process the resize first (repositions children)
+    event.Skip();
+
+    wxToolBar* tb = GetToolBar();
+    if (!tb || !m_searchBox || !m_dbPathLabel) return;
+
+    // Query control positions AFTER toolbar has recalculated its layout
+    int tbWidth   = tb->GetClientSize().GetWidth();
+    wxPoint searchPos = m_searchBox->GetPosition();
+    wxPoint dbPos     = m_dbPathLabel->GetPosition();
+
+    // Defensive: if toolbar is too narrow and controls overlap, fall back to minima
+    if (dbPos.x <= searchPos.x) {
+        m_searchBox->SetSize(80, -1);
+        m_dbPathLabel->SetSize(60, -1);
+    } else {
+        // Search box: everything from its x-position up to the db-path label
+        int searchWidth = dbPos.x - searchPos.x;
+        searchWidth = std::max(80, std::min(200, searchWidth));
+        m_searchBox->SetSize(searchWidth, -1);
+
+        // DB path label: from its x-position to toolbar right edge (minus margin)
+        int dbWidth = tbWidth - dbPos.x - 8;
+        dbWidth = std::max(60, dbWidth);
+        m_dbPathLabel->SetSize(dbWidth, -1);
+    }
+
+    // Force toolbar to repaint — clears visual remnants left by the native
+    // wxSearchCtrl window at its old position after SetSize narrows it.
+    tb->Refresh();
+    tb->Update();
 }
 
 void MainFrame::onSearchBoxEnter(wxCommandEvent& event) {
