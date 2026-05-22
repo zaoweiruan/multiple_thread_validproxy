@@ -14,6 +14,8 @@ null
 test*.json
 temp/
 test*/
+*.ico
+*.png
 # Bin directory 
 
 bin/log/

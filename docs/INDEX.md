@@ -2,7 +2,7 @@
 title: "docs: project document index"
 type: meta
 status: maintained
-updated: 2026-05-19
+updated: 2026-05-22
 ---
 
 # Project Document Index
@@ -20,6 +20,7 @@ updated: 2026-05-19
  | [术语表](#1-术语表) | 1 | `docs/glossary.md` |
  | [项目上下文](#2-项目上下文) | 3 | `docs/context.md` |
  | [开发流程规范](#3-开发流程规范) | 1 | `docs/plans/DEV-PROCESS.md` |
+ | [提示模式规范](#35-提示模式规范) | 1 | `docs/prompt-patterns.md` |
  | [整体架构](#4-整体架构) | 3 | `docs/architecture.md` |
  | [设计规范](#5-设计规范) | 9 | `docs/design/` |
  | [需求与脑暴](#6-需求与脑暴) | 4 | `docs/superpowers/brainstorm/` |
@@ -58,6 +59,16 @@ updated: 2026-05-19
 | 1 | [`docs/plans/DEV-PROCESS.md`](./plans/DEV-PROCESS.md) | **开发流程核心规则** — "先创建计划文档、审核后再执行" 7 步工作流；LogLevel 等级规范(INFO/WARN/ERR/REPORT/DEBUG)；计划文档 frontmatter 模板 | 2.7 KB |
 
 > **约束**: 任何源代码修改前**必须先创建计划文档**并经过审核。详见 DEV-PROCESS.md §1–2。
+
+---
+
+## 3.5 提示模式规范
+
+| # | 文件 | 说明 | 大小 |
+|---|------|------|------|
+| 1 | [`docs/prompt-patterns.md`](./prompt-patterns.md) | **提示词模式指南** — 针对本项目各工作类型（功能开发/Bug 修复/代码审查/调研等）的最优提示结构模板和反模式 | 8.5 KB |
+
+> **用途**: 作为与 AI agent 协作的接口规范，确保每次交互信息完备。新贡献者或首次使用 agent 前先读本章。
 
 ---
 

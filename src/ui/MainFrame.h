@@ -17,6 +17,7 @@ class SubscriptionPanel;
 class ProxyListPanel;
 class ProxyDetailPanel;
 class LogPanel;
+class wxSearchCtrl;
 class ConfigDialog;
 class TrayIcon;
 
@@ -71,6 +72,7 @@ private:
     void onToolImport(wxCommandEvent& event);
     void onToolConfig(wxCommandEvent& event);
     void onStatusUpdate(StatusUpdateEvent& event);
+    void onResize(wxSizeEvent& event);
     void onSearchBoxEnter(wxCommandEvent& event);
     void onSearchTextChanged(wxCommandEvent& event);
     void onSearchClear(wxCommandEvent& event);
@@ -86,8 +88,9 @@ private:
     TrayIcon* trayIcon_{nullptr};
     sqlite3* db_;
     wxStatusBar* statusBar_{nullptr};
-    wxTextCtrl* m_searchBox{nullptr};
+    wxSearchCtrl* m_searchBox{nullptr};
     wxStaticText* m_dbPathLabel{nullptr};
+    config::AppConfig config_;
 
     wxDECLARE_EVENT_TABLE();
 };
