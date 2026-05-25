@@ -76,6 +76,7 @@ private:
     void onSearchBoxEnter(wxCommandEvent& event);
     void onSearchTextChanged(wxCommandEvent& event);
     void onSearchClear(wxCommandEvent& event);
+    void onTestSubscription(SubscriptionTestEvent& event);
 
     // Members
     wxAuiManager auiManager_;
