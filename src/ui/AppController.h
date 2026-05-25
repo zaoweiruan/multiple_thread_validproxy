@@ -28,6 +28,7 @@ public:
 // Subscriptions
    std::vector<db::models::Subitem> loadSubscriptions();
    bool updateSubscriptionEnabled(const std::string& id, bool enabled);
+   bool updateSubitem(const db::models::Subitem& sub);
    void updateSubscriptionAsync(const std::string& subId, wxEvtHandler* wxHandler);
   void updateAllSubscriptionsAsync(wxEvtHandler* wxHandler);
   bool importSubscription(const std::string& url);

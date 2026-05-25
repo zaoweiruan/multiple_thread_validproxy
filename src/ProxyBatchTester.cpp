@@ -63,6 +63,12 @@ std::string xrayApiAddr = "127.0.0.1:" + std::to_string(apiPort);
     while (true) {
         // Check for cancellation
         if (cancelRequested_.load()) {
+            // DIAGNOSTIC INSTRUMENTATION (systematic-debugging Phase 3/4)
+            // Captures when inner worker actually observes the flag vs. when it was set.
+            // REMOVE after verification.
+            auto now = std::chrono::steady_clock::now();
+            Logger::write("[ProxyBatchTester] Worker " + std::to_string(workerId) + 
+                          " observed cancelRequested_ (will exit after current proxy or immediately)", LogLevel::WARN);
             break;
         }
         
@@ -104,9 +110,15 @@ std::string xrayApiAddr = "127.0.0.1:" + std::to_string(apiPort);
             std::string tag = "proxy";
             
             xrayApi.removeOutbound(tag);
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            for (int i = 0; i < 10; ++i) {  // 10 * 10ms = 100ms total
+                if (cancelRequested_.load()) return;
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            }
             xrayApi.removeOutbound(tag);
-            std::this_thread::sleep_for(std::chrono::milliseconds(400));
+            for (int i = 0; i < 40; ++i) {  // 40 * 10ms = 400ms total
+                if (cancelRequested_.load()) return;
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            }
             
             std::string addResult;
             int retryCount = 0;
@@ -119,7 +131,10 @@ std::string xrayApiAddr = "127.0.0.1:" + std::to_string(apiPort);
                 retryCount++;
                 if (retryCount < 3) {
                     xrayApi.removeOutbound(tag);
-                    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+                    for (int i = 0; i < 20; ++i) {  // 20 * 10ms = 200ms total
+                        if (cancelRequested_.load()) return;
+                        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                    }
                 }
             }
             
@@ -138,7 +153,23 @@ std::string xrayApiAddr = "127.0.0.1:" + std::to_string(apiPort);
                 continue;
             }
             
-            std::this_thread::sleep_for(std::chrono::milliseconds(300));
+            // sleep in 10ms increments for cancellation responsiveness
+            for (int i = 0; i < 30; ++i) {  // 30 * 10ms = 300ms total
+                if (cancelRequested_.load()) return;
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            }
+            
+            // Phase 4 fix: check cancellation before blocking curl test
+            if (cancelRequested_.load()) {
+                Logger::write("[Worker-" + std::to_string(workerId) + "] cancel before blocking test, skipping", LogLevel::WARN);
+                {
+                    std::lock_guard<std::mutex> lock(queueMutex_);
+                    failedCount_++;
+                    processedCount_++;
+                }
+                lastResult_ = TestResult{false, -1, "CANCELLED"};
+                continue;
+            }
             
             auto result = proxyTester_->test(socksPort);
             

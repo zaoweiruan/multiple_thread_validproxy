@@ -142,6 +142,28 @@ void ProxyListPanel::loadProxies(const std::string& subId) {
         row.push_back(wxVariant(p.indexid));                  // COL_INDEXID: actual indexId for lookups (now last)
         store_->AppendItem(row);
     }
+
+    // When no row is selected (startup, subscription switch), select the first
+    // proxy and queue a ProxySelectionEvent directly.  On wxMSW, Select() during
+    // initialisation may not fire a selection-changed notification, so we also
+    // fire the event directly to guarantee the ProxyDetailPanel gets populated.
+    if (!proxies_.empty()) {
+        if (!listCtrl_->GetSelection().IsOk()) {
+            listCtrl_->Select(store_->GetItem(0));
+
+            auto& p = proxies_[0];
+            std::string delay  = delayMap.count(p.indexid) ? delayMap[p.indexid] : "";
+            std::string msg    = messageMap.count(p.indexid) ? messageMap[p.indexid] : "";
+            int failures       = failuresMap.count(p.indexid) ? failuresMap[p.indexid] : 0;
+
+            wxWindow* topLevel = wxGetTopLevelParent(this);
+            if (topLevel && topLevel != this) {
+                ProxySelectionEvent selEvt(p.indexid, p.address, p.port,
+                                           delay, msg, failures, p.remarks);
+                wxQueueEvent(topLevel, selEvt.Clone());
+            }
+        }
+    }
 }
 
 // -------------------------------------------------------------------

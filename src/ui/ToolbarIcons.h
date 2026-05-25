@@ -4,8 +4,8 @@
 // -------------------------------------------------------------------
 // ToolbarIcons — runtime loader for custom toolbar icons.
 //
-// Loads .ico files from bin/icons/<name>.ico relative to executable path.
-// Falls back to .png (legacy), then wxArtProvider stock icons.
+// Loads .png files from bin/icons/<name>.png relative to executable path.
+// Falls back to .ico, then wxArtProvider stock icons.
 //
 // Usage:
 //   tb->AddTool(ID_TOOL_FIND, "Find", ToolbarIcons::load("tool_find"));
@@ -103,32 +103,27 @@ inline wxBitmap prepareForToolbar(wxImage& img) {
 inline wxBitmapBundle load(const wxString& name) {
     wxString exeDir = wxStandardPaths::Get().GetExecutablePath().BeforeLast('\\');
 
-    // --- Try .ico (native Windows icon format) ---
-    wxString icoPath = exeDir + "\\icons\\" + name + ".ico";
-    if (wxFile::Exists(icoPath)) {
-        // Use wxBitmap(icoPath) — on wxMSW this loads the .ico via
-        // Windows internal handler, preserving 32bpp alpha channel.
-        wxBitmap bmp(icoPath, wxBITMAP_TYPE_ICO);
-        if (bmp.IsOk()) {
-            // The .ico files contain a 256x256 entry → rescale to 24×24
-            if (bmp.GetWidth() != 24 || bmp.GetHeight() != 24) {
-                wxImage img = bmp.ConvertToImage();
-                if (img.HasAlpha()) {
-                    // .ico source has proper alpha → convert to mask for wxMSW toolbar
-                    img.Rescale(24, 24, wxIMAGE_QUALITY_HIGH);
-                    return wxBitmapBundle::FromBitmap(prepareForToolbar(img));
-                }
-            }
-            return wxBitmapBundle::FromBitmap(bmp);
-        }
-    }
-
-    // --- Fallback: .png (legacy path) ---
+    // --- Try .png (full 32-bit RGBA, best quality) ---
     wxString pngPath = exeDir + "\\icons\\" + name + ".png";
     if (wxFile::Exists(pngPath)) {
         wxImage img(pngPath);
         if (img.IsOk()) {
             makeBgTransparent(img);
+            return wxBitmapBundle::FromBitmap(prepareForToolbar(img));
+        }
+    }
+
+    // --- Fallback: .ico (native Windows icon format) ---
+    wxString icoPath = exeDir + "\\icons\\" + name + ".ico";
+    if (wxFile::Exists(icoPath)) {
+        // On wxMSW, wxBitmap(icoPath, wxBITMAP_TYPE_ICO) loads the icon
+        // via the Windows LoadImage API at the system-default icon size
+        // (GetSystemMetrics(SM_CXICON) = 32×32 on most systems).
+        // The .ico files contain native 32×32 entries, so no rescaling
+        // is needed — keeps maximum sharpness on all DPIs.
+        wxBitmap bmp(icoPath, wxBITMAP_TYPE_ICO);
+        if (bmp.IsOk()) {
+            wxImage img = bmp.ConvertToImage();
             return wxBitmapBundle::FromBitmap(prepareForToolbar(img));
         }
     }

@@ -186,6 +186,34 @@ public:
     }
     return true;
   }
+
+  bool updateSubitem(const Subitem& sub) {
+    // Escape single quotes in string fields
+    auto esc = [](const std::string& s) -> std::string {
+      std::string out;
+      out.reserve(s.size());
+      for (char c : s) { if (c == '\'') out += "''"; else out += c; }
+      return out;
+    };
+
+    std::string sql =
+        "UPDATE SubItem SET "
+        "Remarks = '" + esc(sub.remarks) + "', "
+        "Url = '" + esc(sub.url) + "', "
+        "Enabled = " + sub.enabled + ", "
+        "UserAgent = '" + esc(sub.useragent) + "', "
+        "AutoUpdateInterval = '" + esc(sub.autoupdateinterval) + "' "
+        "WHERE Id = '" + esc(sub.id) + "';";
+
+    char* errMsg = nullptr;
+    int rc = sqlite3_exec(db_, sql.c_str(), nullptr, nullptr, &errMsg);
+    if (rc != SQLITE_OK) {
+      std::cerr << "SQL error: " << (errMsg ? errMsg : "unknown") << std::endl;
+      sqlite3_free(errMsg);
+      return false;
+    }
+    return true;
+  }
 };
 
 } // namespace models

@@ -268,14 +268,17 @@ void MainFrame::initMenuBar() {
 
 void MainFrame::initToolBar() {
     wxToolBar* tb = CreateToolBar(wxTB_HORIZONTAL | wxTB_FLAT | wxTB_NODIVIDER);
-    tb->SetToolBitmapSize(wxSize(24, 24));
+    tb->SetToolBitmapSize(wxSize(32, 32));
 
-    tb->AddTool(ID_TOOL_UPDATE_ALL, "Update", ToolbarIcons::load("tool_update"));
-    tb->AddTool(ID_TOOL_TEST,       "Test",   ToolbarIcons::load("tool_test"));
-    tb->AddTool(ID_TOOL_FIND,       "Find",   ToolbarIcons::load("tool_find"));
-    tb->AddTool(ID_TOOL_DEDUP,      "Dedup",  ToolbarIcons::load("tool_dedup"));
-    tb->AddTool(ID_TOOL_IMPORT,     "Import", ToolbarIcons::load("tool_import"));
-    tb->AddTool(ID_TOOL_CONFIG,     "Config", ToolbarIcons::load("tool_config"));
+    // Note: 2nd arg = label (visible text when wxTB_TEXT style is set).
+    //       4th arg = shortHelp (hover tooltip on all platforms, per wxToolBarToolBase).
+    //       We use icon-only toolbar (no wxTB_TEXT), so label="", tooltip in shortHelp.
+    tb->AddTool(ID_TOOL_UPDATE_ALL, wxEmptyString, ToolbarIcons::load("tool_update"), "更新");
+    tb->AddTool(ID_TOOL_TEST,       wxEmptyString, ToolbarIcons::load("tool_test"),   "测试");
+    tb->AddTool(ID_TOOL_FIND,       wxEmptyString, ToolbarIcons::load("tool_find"),   "查找");
+    tb->AddTool(ID_TOOL_DEDUP,      wxEmptyString, ToolbarIcons::load("tool_dedup"),  "去重");
+    tb->AddTool(ID_TOOL_IMPORT,     wxEmptyString, ToolbarIcons::load("tool_import"), "导入");
+    tb->AddTool(ID_TOOL_CONFIG,     wxEmptyString, ToolbarIcons::load("tool_config"), "配置");
 
     // Search box — on left side, above Host column
     tb->AddControl(new wxStaticText(tb, wxID_ANY, "", wxDefaultPosition, wxSize(240, -1)));  // 240px spacer
