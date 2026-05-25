@@ -30,13 +30,21 @@ AppController::AppController(sqlite3* db, const config::AppConfig& cfg)
 AppController::~AppController() {
     // Signal cancellation first so any in-flight async work can observe the flag
     cancelRequested_ = true;
-    Logger::write("[AppController] Destructor: cancelRequested_ set to true", LogLevel::DEBUG);
+    auto ts = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count();
+    Logger::write("[AppController] Destructor: cancelRequested_ set to true @ " + std::to_string(ts) + " ms (steady)", LogLevel::DEBUG);
 
     // Wait for worker thread to finish before releasing XrayManager.
     // WRONG order (release first, detach later) leaves a detached thread
     // running until the OS kills it — the worker may still access XrayManager
     // or xray instances after release() destroys the singleton, causing zombies.
     if (workerThread_.joinable()) {
+        // DIAGNOSTIC INSTRUMENTATION (Phase 3/4 test per systematic-debugging skill)
+        // Measures real elapsed time from destructor entry to join completion or 5s timeout.
+        // REMOVE after hypothesis verification.
+        auto joinWaitStart = std::chrono::steady_clock::now();
+        Logger::write("[AppController] Destructor: starting 5s join wait for workerThread_", LogLevel::DEBUG);
+
         // Wait up to 5 seconds for thread to finish gracefully
         // If thread doesn't respond, detach it to allow process exit
         std::future<void> fut = std::async(std::launch::async, [this]() {
@@ -45,10 +53,14 @@ AppController::~AppController() {
             }
         });
         if (fut.wait_for(std::chrono::seconds(5)) != std::future_status::ready) {
-            Logger::write("[AppController] Destructor: worker thread did not finish in 5s, detaching", LogLevel::WARN);
+            auto elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now() - joinWaitStart).count();
+            Logger::write("[AppController] Destructor: 5s timeout fired after " + std::to_string(elapsedMs) + " ms — detaching", LogLevel::WARN);
             workerThread_.detach();
         } else {
-            Logger::write("[AppController] Destructor: worker thread joined successfully", LogLevel::DEBUG);
+            auto elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now() - joinWaitStart).count();
+            Logger::write("[AppController] Destructor: worker thread joined successfully after " + std::to_string(elapsedMs) + " ms", LogLevel::DEBUG);
         }
     }
 
@@ -75,6 +87,11 @@ std::vector<db::models::Subitem> AppController::loadSubscriptions() {
 bool AppController::updateSubscriptionEnabled(const std::string& id, bool enabled) {
     db::models::SubitemDAO dao(db_);
     return dao.updateEnabled(id, enabled);
+}
+
+bool AppController::updateSubitem(const db::models::Subitem& sub) {
+    db::models::SubitemDAO dao(db_);
+    return dao.updateSubitem(sub);
 }
 
 void AppController::updateSubscriptionAsync(const std::string& subId, wxEvtHandler* wxHandler) {
@@ -141,7 +158,9 @@ void AppController::testSingleProxyAsync(const std::string& indexId, wxEvtHandle
 
 void AppController::cancelTest() {
     cancelRequested_ = true;
-    Logger::write("[AppController] cancelTest() called, cancelRequested_ set to true", LogLevel::DEBUG);
+    auto ts = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count();
+    Logger::write("[AppController] cancelTest() called @ " + std::to_string(ts) + " ms (steady), cancelRequested_ set to true", LogLevel::DEBUG);
 }
 
 bool AppController::isTestCancelled() const {

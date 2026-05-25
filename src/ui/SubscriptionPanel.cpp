@@ -234,9 +234,10 @@ void SubscriptionPanel::onImportSubscription(wxCommandEvent&) {
 }
 
 void SubscriptionPanel::showAddDialog() {
-    wxDialog dlg(this, wxID_ANY, "Add Subscription", wxDefaultPosition, wxSize(450, 300));
+    wxDialog dlg(this, wxID_ANY, "Add Subscription", wxDefaultPosition, wxSize(900, 300));
     wxBoxSizer* topSizer = new wxBoxSizer(wxVERTICAL);
     wxFlexGridSizer* grid = new wxFlexGridSizer(2, 10, 10);
+    grid->AddGrowableCol(1);
 
     wxTextCtrl* urlCtrl;
     wxTextCtrl* nameCtrl;
@@ -266,7 +267,8 @@ void SubscriptionPanel::showAddDialog() {
     if (btnSizer) topSizer->Add(btnSizer, 0, wxEXPAND | wxALL, 10);
 
     dlg.SetSizer(topSizer);
-    topSizer->Fit(&dlg);
+    dlg.Layout();
+    dlg.SetMinSize(wxSize(900, 300));
 
     if (dlg.ShowModal() == wxID_OK) {
         wxString url = urlCtrl->GetValue();
@@ -278,14 +280,14 @@ void SubscriptionPanel::showAddDialog() {
 }
 
 void SubscriptionPanel::showEditDialog(const db::models::Subitem& sub) {
-    wxDialog dlg(this, wxID_ANY, "Edit Subscription", wxDefaultPosition, wxSize(500, 400));
+    wxDialog dlg(this, wxID_ANY, "Edit Subscription", wxDefaultPosition, wxSize(1000, 270));
     wxBoxSizer* topSizer = new wxBoxSizer(wxVERTICAL);
-    wxFlexGridSizer* grid = new wxFlexGridSizer(2, 10, 10);
+    wxFlexGridSizer* grid = new wxFlexGridSizer(2, 8, 4);
     grid->AddGrowableCol(1);
 
     wxTextCtrl* nameCtrl;
     wxTextCtrl* urlCtrl;
-    wxTextCtrl* uaCtrl;
+    wxTextCtrl* intervalCtrl;
     wxCheckBox* enabledCtrl;
 
     grid->Add(new wxStaticText(&dlg, wxID_ANY, "ID:"));
@@ -304,20 +306,33 @@ void SubscriptionPanel::showEditDialog(const db::models::Subitem& sub) {
     enabledCtrl->SetValue(sub.enabled == "1");
     grid->Add(enabledCtrl);
 
-    grid->Add(new wxStaticText(&dlg, wxID_ANY, "User-Agent:"));
-    uaCtrl = new wxTextCtrl(&dlg, wxID_ANY, sub.useragent);
-    grid->Add(uaCtrl, 1, wxEXPAND);
+    // Current interval value (may be empty)
+    int curMinutes = 0;
+    if (!sub.autoupdateinterval.empty()) {
+        curMinutes = std::stoi(sub.autoupdateinterval);
+    }
+    grid->Add(new wxStaticText(&dlg, wxID_ANY, "Update Interval (min):"));
+    intervalCtrl = new wxTextCtrl(&dlg, wxID_ANY,
+                                  curMinutes > 0 ? wxString::Format("%d", curMinutes) : "");
+    grid->Add(intervalCtrl, 1, wxEXPAND);
 
-    topSizer->Add(grid, 1, wxEXPAND | wxALL, 10);
+    topSizer->Add(grid, 1, wxEXPAND | wxALL, 6);
     wxSizer* btnSizer = dlg.CreateSeparatedButtonSizer(wxOK | wxCANCEL);
-    if (btnSizer) topSizer->Add(btnSizer, 0, wxEXPAND | wxALL, 10);
+    if (btnSizer) topSizer->Add(btnSizer, 0, wxEXPAND | wxALL, 6);
 
     dlg.SetSizer(topSizer);
-    topSizer->Fit(&dlg);
-    dlg.SetMinSize(wxSize(450, 350));
+    dlg.Layout();
+    dlg.SetMinSize(wxSize(900, 250));
 
     if (dlg.ShowModal() == wxID_OK) {
-        // TODO: implement DAO update
+        db::models::Subitem updated = sub;
+        updated.remarks = nameCtrl->GetValue().ToStdString();
+        updated.url = urlCtrl->GetValue().ToStdString();
+        updated.enabled = enabledCtrl->GetValue() ? "1" : "0";
+        updated.useragent = sub.useragent;  // preserve existing
+        updated.autoupdateinterval = intervalCtrl->GetValue().ToStdString();
+
+        controller_->updateSubitem(updated);
         loadSubscriptions();
     }
 }
