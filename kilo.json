@@ -1,7 +1,7 @@
 {
   "$schema": "https://app.kilo.ai/config.json",
   "skills": {
-    "paths": ["C:\\Users\\dsm\\.config\\kilo\\skills"]	
+    "paths": ["C:\\Users\\dsm\\.config\\kilo\\skills","C:\\Users\\dsm\\.agents\\skills"]	
   },    
   "permission": {
         "glob": "allow",

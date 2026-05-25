@@ -16,6 +16,8 @@ temp/
 test*/
 *.ico
 *.png
+kilo*.*
+skill*.json
 # Bin directory 
 
 bin/log/

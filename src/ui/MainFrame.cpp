@@ -273,7 +273,9 @@ void MainFrame::initToolBar() {
     tb->AddTool(ID_TOOL_DEDUP,      "Dedup",  ToolbarIcons::load("tool_dedup"));
     tb->AddTool(ID_TOOL_IMPORT,     "Import", ToolbarIcons::load("tool_import"));
     tb->AddTool(ID_TOOL_CONFIG,     "Config", ToolbarIcons::load("tool_config"));
-    tb->AddStretchableSpace();  // Push remaining items to right
+
+    // Search box — on left side, above Host column
+    tb->AddControl(new wxStaticText(tb, wxID_ANY, "", wxDefaultPosition, wxSize(240, -1)));  // 240px spacer
     tb->AddControl(new wxStaticText(tb, wxID_ANY, " Search:"));
     m_searchBox = new wxSearchCtrl(tb, ID_SEARCH_BOX, wxEmptyString,
                                    wxDefaultPosition, wxSize(150, -1),
@@ -281,6 +283,7 @@ void MainFrame::initToolBar() {
     m_searchBox->ShowSearchButton(true);
     m_searchBox->ShowCancelButton(true);
     tb->AddControl(m_searchBox);
+    tb->AddStretchableSpace();  // Push dbPathLabel to right
 
     // Database path — dynamically resized in onResize()
     m_dbPathLabel = new wxStaticText(tb, wxID_ANY, wxString(getDbPath()),
