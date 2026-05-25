@@ -187,10 +187,26 @@ copy_wx_dlls(validproxy)
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
             "${CMAKE_SOURCE_DIR}/docs/design/ui/clear.ico"
             "${CMAKE_SOURCE_DIR}/bin/docs/design/ui/clear.ico"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_SOURCE_DIR}/bin/icons"
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${CMAKE_SOURCE_DIR}/docs/design/ui/clear.png"
-            "${CMAKE_SOURCE_DIR}/bin/docs/design/ui/clear.png"
-        COMMENT "Copying icons to bin/docs/design/ui/"
+            "${CMAKE_SOURCE_DIR}/docs/design/ui/icon/tool_update.ico"
+            "${CMAKE_SOURCE_DIR}/bin/icons/tool_update.ico"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CMAKE_SOURCE_DIR}/docs/design/ui/icon/tool_test.ico"
+            "${CMAKE_SOURCE_DIR}/bin/icons/tool_test.ico"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CMAKE_SOURCE_DIR}/docs/design/ui/icon/tool_find.ico"
+            "${CMAKE_SOURCE_DIR}/bin/icons/tool_find.ico"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CMAKE_SOURCE_DIR}/docs/design/ui/icon/tool_dedup.ico"
+            "${CMAKE_SOURCE_DIR}/bin/icons/tool_dedup.ico"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CMAKE_SOURCE_DIR}/docs/design/ui/icon/tool_import.ico"
+            "${CMAKE_SOURCE_DIR}/bin/icons/tool_import.ico"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CMAKE_SOURCE_DIR}/docs/design/ui/icon/tool_config.ico"
+            "${CMAKE_SOURCE_DIR}/bin/icons/tool_config.ico"
+        COMMENT "Copying icons to bin/docs/design/ui/ and bin/icons/"
     )
 
     # Compile definition for GUI mode

@@ -2,16 +2,17 @@
 #define UI_TOOLBAR_ICONS_H
 
 // -------------------------------------------------------------------
-// ToolbarIcons — runtime loader for custom toolbar icon PNGs
+// ToolbarIcons — runtime loader for custom toolbar icons.
 //
-// Loads icons from bin/icons/<name>.png relative to executable path.
-// Falls back to wxArtProvider stock icons if the file is missing.
+// Loads .ico files from bin/icons/<name>.ico relative to executable path.
+// Falls back to .png (legacy), then wxArtProvider stock icons.
 //
 // Usage:
 //   tb->AddTool(ID_TOOL_FIND, "Find", ToolbarIcons::load("tool_find"));
 // -------------------------------------------------------------------
 
 #include <wx/bitmap.h>
+#include <wx/icon.h>
 #include <wx/image.h>
 #include <wx/artprov.h>
 #include <wx/stdpaths.h>
@@ -97,14 +98,35 @@ inline wxBitmap prepareForToolbar(wxImage& img) {
 }
 
 // -------------------------------------------------------------------
-//  load — runtime load with fallback
+//  load — runtime load with .ico primary, .png fallback
 // -------------------------------------------------------------------
 inline wxBitmapBundle load(const wxString& name) {
     wxString exeDir = wxStandardPaths::Get().GetExecutablePath().BeforeLast('\\');
-    wxString path   = exeDir + "\\icons\\" + name + ".png";
 
-    if (wxFile::Exists(path)) {
-        wxImage img(path);
+    // --- Try .ico (native Windows icon format) ---
+    wxString icoPath = exeDir + "\\icons\\" + name + ".ico";
+    if (wxFile::Exists(icoPath)) {
+        // Use wxBitmap(icoPath) — on wxMSW this loads the .ico via
+        // Windows internal handler, preserving 32bpp alpha channel.
+        wxBitmap bmp(icoPath, wxBITMAP_TYPE_ICO);
+        if (bmp.IsOk()) {
+            // The .ico files contain a 256x256 entry → rescale to 24×24
+            if (bmp.GetWidth() != 24 || bmp.GetHeight() != 24) {
+                wxImage img = bmp.ConvertToImage();
+                if (img.HasAlpha()) {
+                    // .ico source has proper alpha → convert to mask for wxMSW toolbar
+                    img.Rescale(24, 24, wxIMAGE_QUALITY_HIGH);
+                    return wxBitmapBundle::FromBitmap(prepareForToolbar(img));
+                }
+            }
+            return wxBitmapBundle::FromBitmap(bmp);
+        }
+    }
+
+    // --- Fallback: .png (legacy path) ---
+    wxString pngPath = exeDir + "\\icons\\" + name + ".png";
+    if (wxFile::Exists(pngPath)) {
+        wxImage img(pngPath);
         if (img.IsOk()) {
             makeBgTransparent(img);
             return wxBitmapBundle::FromBitmap(prepareForToolbar(img));
