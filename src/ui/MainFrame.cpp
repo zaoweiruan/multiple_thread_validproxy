@@ -152,6 +152,9 @@ MainFrame::MainFrame(const config::AppConfig& cfg, sqlite3* db)
         }
     });
 
+    // ── Subscription right-click Test ────────────────────────────
+    Bind(wxEVT_SUBSCRIPTION_TEST, &MainFrame::onTestSubscription, this);
+
 initMenuBar();
      initToolBar();
      initStatusBar();
@@ -433,6 +436,19 @@ void MainFrame::onMenuFindBest(wxCommandEvent&) {
 
 void MainFrame::onMenuDedup(wxCommandEvent&) {
     bool ok = controller_->deduplicate();
+    if (ok) {
+        // Refresh subscription list (updates "Proxies" count column)
+        if (subPanel_) {
+            subPanel_->loadSubscriptions();
+        }
+        // Refresh current proxy list if a subscription is selected
+        if (proxyPanel_ && subPanel_) {
+            std::string currentSubId = subPanel_->getSelectedSubId();
+            if (!currentSubId.empty()) {
+                proxyPanel_->loadProxies(currentSubId);
+            }
+        }
+    }
     wxMessageBox(ok ? "Dedup completed." : "Dedup failed.",
                  "Dedup", wxOK | (ok ? wxICON_INFORMATION : wxICON_WARNING));
     setStatusText(0, ok ? "Dedup completed." : "Dedup failed.");
@@ -476,6 +492,11 @@ void MainFrame::onMenuAbout(wxCommandEvent&) {
 // -------------------------------------------------------------------
 void MainFrame::onToolUpdateAll(wxCommandEvent& event) {
     onMenuUpdateAll(event);
+}
+
+void MainFrame::onTestSubscription(SubscriptionTestEvent& evt) {
+    controller_->testSubscriptionAsync(evt.getSubId(), this);
+    setStatusText(0, "Testing subscription…");
 }
 
 void MainFrame::onToolTest(wxCommandEvent& event) {

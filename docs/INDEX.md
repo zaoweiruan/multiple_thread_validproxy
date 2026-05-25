@@ -2,7 +2,7 @@
 title: "docs: project document index"
 type: meta
 status: maintained
-updated: 2026-05-22
+updated: 2026-05-25
 ---
 
 # Project Document Index
@@ -18,7 +18,8 @@ updated: 2026-05-22
 | 类别 | 文件数 | 入口 |
  |------|--------|------|
  | [术语表](#1-术语表) | 1 | `docs/glossary.md` |
- | [项目上下文](#2-项目上下文) | 3 | `docs/context.md` |
+  | [项目上下文](#2-项目上下文) | 4 | `docs/context.md` |
+  | [模型配置](#25-模型配置) | 1 | `docs/model-config.md` |
  | [开发流程规范](#3-开发流程规范) | 1 | `docs/plans/DEV-PROCESS.md` |
  | [提示模式规范](#35-提示模式规范) | 1 | `docs/prompt-patterns.md` |
  | [整体架构](#4-整体架构) | 3 | `docs/architecture.md` |
@@ -49,6 +50,17 @@ updated: 2026-05-22
 | 1 | [`docs/context.md`](./context.md) | **项目上下文** — v2rayn/Xray-core 源码位置、关键文件映射、项目配置文件路径 | 0.5 KB |
 | 2 | [`docs/1776914861549-gentle-panda.md`](./1776914861549-gentle-panda.md) | **早期架构计划**（已归档）— 项目整体需求分析、文件结构、分阶段实现顺序、CLI 命令、错误处理策略 | 11.1 KB |
 | 3 | [`docs/日志重构需求.md`](./日志重构需求.md) | **日志重构需求描述** — 原始需求文档 | 6.6 KB |
+| 4 | [`docs/model-config.md`](./model-config.md) | **模型配置参考** — OpenCode 代理与类别的主模型及备降链配置（当前全部为免费模型） | 3.8 KB |
+
+---
+
+## 2.5 模型配置
+
+| # | 文件 | 说明 | 大小 |
+|---|------|------|------|
+| 1 | [`docs/model-config.md`](./model-config.md) | **模型配置参考** — OpenCode 代理(sisyphus/oracle/explore 等)与类别(deep/quick/writing 等)的主模型分配及备降链设计，含变更历史 | 3.8 KB |
+
+> **约束**: 模型配置变更前应更新本文档。当前全部模型为免费 tier，无付费模型依赖。
 
 ---
 

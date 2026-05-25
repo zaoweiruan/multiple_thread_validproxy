@@ -12,18 +12,6 @@
 #include <iomanip>
 #include <sstream>
 
-// -------------------------------------------------------------------
-wxBEGIN_EVENT_TABLE(SubscriptionPanel, wxPanel)
-    EVT_DATAVIEW_SELECTION_CHANGED(wxID_ANY, SubscriptionPanel::onSelectionChanged)
-    EVT_DATAVIEW_ITEM_CONTEXT_MENU(wxID_ANY, SubscriptionPanel::onContextMenu)
-    EVT_MENU(wxID_ANY, SubscriptionPanel::onAddSubscription)
-    EVT_MENU(wxID_ANY, SubscriptionPanel::onEditSubscription)
-    EVT_MENU(wxID_ANY, SubscriptionPanel::onDeleteSubscription)
-    EVT_MENU(wxID_ANY, SubscriptionPanel::onUpdateSubscription)
-    EVT_MENU(wxID_ANY, SubscriptionPanel::onTestSubscription)
-    EVT_MENU(wxID_ANY, SubscriptionPanel::onImportSubscription)
-wxEND_EVENT_TABLE()
-
 enum {
     ID_SUB_ADD = wxID_HIGHEST + 400,
     ID_SUB_EDIT,
@@ -32,6 +20,18 @@ enum {
     ID_SUB_TEST,
     ID_SUB_IMPORT,
 };
+
+// -------------------------------------------------------------------
+wxBEGIN_EVENT_TABLE(SubscriptionPanel, wxPanel)
+    EVT_DATAVIEW_SELECTION_CHANGED(wxID_ANY, SubscriptionPanel::onSelectionChanged)
+    EVT_DATAVIEW_ITEM_CONTEXT_MENU(wxID_ANY, SubscriptionPanel::onContextMenu)
+    EVT_MENU(ID_SUB_ADD, SubscriptionPanel::onAddSubscription)
+    EVT_MENU(ID_SUB_EDIT, SubscriptionPanel::onEditSubscription)
+    EVT_MENU(ID_SUB_DELETE, SubscriptionPanel::onDeleteSubscription)
+    EVT_MENU(ID_SUB_UPDATE, SubscriptionPanel::onUpdateSubscription)
+    EVT_MENU(ID_SUB_TEST, SubscriptionPanel::onTestSubscription)
+    EVT_MENU(ID_SUB_IMPORT, SubscriptionPanel::onImportSubscription)
+wxEND_EVENT_TABLE()
 
 // -------------------------------------------------------------------
 SubscriptionPanel::SubscriptionPanel(wxWindow* parent, AppController* controller)
