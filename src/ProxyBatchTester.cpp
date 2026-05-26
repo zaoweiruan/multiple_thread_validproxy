@@ -7,8 +7,10 @@
 #include <algorithm>
 #include <windows.h>
 
-ProxyBatchTester::ProxyBatchTester(sqlite3* db, const config::AppConfig& config, const std::string& baseDir)
-    : db_(db), config_(config), totalProxies_(0), successCount_(0), failedCount_(0), processedCount_(0) {
+ProxyBatchTester::ProxyBatchTester(sqlite3* db, const config::AppConfig& config, const std::string& baseDir,
+                                   std::atomic<bool>* externalCancel)
+    : db_(db), config_(config), totalProxies_(0), successCount_(0), failedCount_(0), processedCount_(0)
+    , externalCancel_(externalCancel) {
     
     std::string exeBaseDir = baseDir.empty() ? utils::getExecutableDir() : baseDir;
     std::string configDir = exeBaseDir + "/config";
@@ -62,7 +64,7 @@ std::string xrayApiAddr = "127.0.0.1:" + std::to_string(apiPort);
     
     while (true) {
         // Check for cancellation
-        if (cancelRequested_.load()) {
+        if (isCancelled()) {
             // DIAGNOSTIC INSTRUMENTATION (systematic-debugging Phase 3/4)
             // Captures when inner worker actually observes the flag vs. when it was set.
             // REMOVE after verification.
@@ -111,12 +113,12 @@ std::string xrayApiAddr = "127.0.0.1:" + std::to_string(apiPort);
             
             xrayApi.removeOutbound(tag);
             for (int i = 0; i < 10; ++i) {  // 10 * 10ms = 100ms total
-                if (cancelRequested_.load()) return;
+                if (isCancelled()) return;
                 std::this_thread::sleep_for(std::chrono::milliseconds(10));
             }
             xrayApi.removeOutbound(tag);
             for (int i = 0; i < 40; ++i) {  // 40 * 10ms = 400ms total
-                if (cancelRequested_.load()) return;
+                if (isCancelled()) return;
                 std::this_thread::sleep_for(std::chrono::milliseconds(10));
             }
             
@@ -132,7 +134,7 @@ std::string xrayApiAddr = "127.0.0.1:" + std::to_string(apiPort);
                 if (retryCount < 3) {
                     xrayApi.removeOutbound(tag);
                     for (int i = 0; i < 20; ++i) {  // 20 * 10ms = 200ms total
-                        if (cancelRequested_.load()) return;
+                        if (isCancelled()) return;
                         std::this_thread::sleep_for(std::chrono::milliseconds(10));
                     }
                 }
@@ -155,12 +157,12 @@ std::string xrayApiAddr = "127.0.0.1:" + std::to_string(apiPort);
             
             // sleep in 10ms increments for cancellation responsiveness
             for (int i = 0; i < 30; ++i) {  // 30 * 10ms = 300ms total
-                if (cancelRequested_.load()) return;
+                if (isCancelled()) return;
                 std::this_thread::sleep_for(std::chrono::milliseconds(10));
             }
             
             // Phase 4 fix: check cancellation before blocking curl test
-            if (cancelRequested_.load()) {
+            if (isCancelled()) {
                 Logger::write("[Worker-" + std::to_string(workerId) + "] cancel before blocking test, skipping", LogLevel::WARN);
                 {
                     std::lock_guard<std::mutex> lock(queueMutex_);
@@ -230,7 +232,7 @@ void ProxyBatchTester::testProxiesMultiThreaded() {
     // Wait for all threads, detaching if cancelled to prevent shutdown hang
     for (auto& t : threads) {
         if (t.joinable()) {
-            if (cancelRequested_.load()) {
+            if (isCancelled()) {
                 t.detach();  // Detach to avoid deadlock on shutdown
             } else {
                 t.join();

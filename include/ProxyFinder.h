@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 #include <utility>
+#include <atomic>
 #include <sqlite3.h>
 #include <curl/curl.h>
 
@@ -15,9 +16,14 @@ public:
     ProxyFinder(sqlite3* db, XrayManager* manager, const std::string& xrayPath, 
                 const std::string& testUrl = "https://www.google.com/generate_204", 
                 const std::string& targetUrl = "",
-                int timeoutMs = 5000);
+                int timeoutMs = 5000,
+                std::atomic<bool>* cancelFlag = nullptr);
     ~ProxyFinder();
     
+    bool isCancelled() const {
+        return cancelRequested_ && cancelRequested_->load();
+    }
+
     std::pair<int, int> findFirstWorkingProxy(const std::string& targetUrl = "");
     std::pair<int, int> findWorkingProxy(const std::string& targetUrl = "");
     void release();
@@ -57,6 +63,7 @@ private:
     int currentSocksPort_;
     int currentApiPort_;
     TestResult lastResult_;
+    std::atomic<bool>* cancelRequested_{nullptr};
 };
 
 #endif // PROXY_FINDER_H

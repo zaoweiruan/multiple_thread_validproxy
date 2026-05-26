@@ -13,7 +13,7 @@
     },
     "test": {
         "url": "https://www.google.com/generate_204",
-        "timeout_ms": 5000
+        "timeout_ms": 2000
     },
     "log": {
         "enabled": true,
