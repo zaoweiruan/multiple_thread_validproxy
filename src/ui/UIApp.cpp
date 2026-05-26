@@ -36,6 +36,7 @@ bool UIApp::OnInit()
     // Create the main application frame
     frame_ = new MainFrame(cfg_, db_);
     SetTopWindow(frame_);
+    frame_->Maximize(true);  // Start maximized
     frame_->Show(true);
 
     return true;

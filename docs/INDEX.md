@@ -50,7 +50,7 @@ updated: 2026-05-25
 | 1 | [`docs/context.md`](./context.md) | **项目上下文** — v2rayn/Xray-core 源码位置、关键文件映射、项目配置文件路径 | 0.5 KB |
 | 2 | [`docs/1776914861549-gentle-panda.md`](./1776914861549-gentle-panda.md) | **早期架构计划**（已归档）— 项目整体需求分析、文件结构、分阶段实现顺序、CLI 命令、错误处理策略 | 11.1 KB |
 | 3 | [`docs/日志重构需求.md`](./日志重构需求.md) | **日志重构需求描述** — 原始需求文档 | 6.6 KB |
-| 4 | [`docs/model-config.md`](./model-config.md) | **模型配置参考** — OpenCode 代理与类别的主模型及备降链配置（当前全部为免费模型） | 3.8 KB |
+| 4 | [`docs/model-config.md`](./model-config.md) | **模型配置参考 v2.0** — OpenCode 代理与类别的主模型及备降链配置（OpenCode Zen + OpenRouter 免费模型） | 4.2 KB |
 
 ---
 
@@ -58,7 +58,7 @@ updated: 2026-05-25
 
 | # | 文件 | 说明 | 大小 |
 |---|------|------|------|
-| 1 | [`docs/model-config.md`](./model-config.md) | **模型配置参考** — OpenCode 代理(sisyphus/oracle/explore 等)与类别(deep/quick/writing 等)的主模型分配及备降链设计，含变更历史 | 3.8 KB |
+| 1 | [`docs/model-config.md`](./model-config.md) | **模型配置参考 v2.0** — OpenCode 代理(sisyphus/oracle/explore 等)与类别(deep/quick/writing 等)的主模型分配及备降链设计，含变更历史 | 4.2 KB |
 
 > **约束**: 模型配置变更前应更新本文档。当前全部模型为免费 tier，无付费模型依赖。
 

@@ -267,7 +267,7 @@ void MainFrame::initMenuBar() {
 }
 
 void MainFrame::initToolBar() {
-    wxToolBar* tb = CreateToolBar(wxTB_HORIZONTAL | wxTB_FLAT | wxTB_NODIVIDER);
+    wxToolBar* tb = CreateToolBar(wxTB_HORIZONTAL | wxTB_NODIVIDER);
     tb->SetToolBitmapSize(wxSize(32, 32));
 
     // Note: 2nd arg = label (visible text when wxTB_TEXT style is set).

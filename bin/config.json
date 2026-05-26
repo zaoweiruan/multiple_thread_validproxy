@@ -23,7 +23,7 @@
     },
     "subscription": {
         "priority_mode": "proxy_first",
-        "check_auto_update_interval": true
+        "check_auto_update_interval": false
     },
     "dedup": {
         "enabled": true,

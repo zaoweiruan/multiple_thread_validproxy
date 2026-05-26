@@ -235,9 +235,6 @@ bool SubitemUpdaterV2::run() {
                     successCount++;
                     directSuccessCount++;
                     Logger::write("INFO: Updated successfully: " + sub.id, LogLevel::INFO);
-                    std::string newTime = getCurrentTimestamp();
-                    std::string updateSql = "UPDATE SubItem SET UpdateTime = '" + newTime + "' WHERE Id = '" + sub.id + "'";
-                    execSql(updateSql, "[SubitemUpdaterV2] SQL exec failed");
                 } else {
                     directFailCount++;
                     failedSubs.push_back({sub.id, sub.remarks, sub.url});
@@ -249,6 +246,9 @@ bool SubitemUpdaterV2::run() {
                 failedSubs.push_back({sub.id, sub.remarks, sub.url});
                 Logger::write("ERROR: Failed to update: " + sub.id, LogLevel::ERR);
             }
+            std::string newTime = getCurrentTimestamp();
+            std::string updateSql = "UPDATE SubItem SET UpdateTime = '" + newTime + "' WHERE Id = '" + sub.id + "'";
+            execSql(updateSql, "[SubitemUpdaterV2] SQL exec failed");
         }
     } else if (runProxyPhase) {
         for (const auto& sub : enabledSubs) {
@@ -281,9 +281,6 @@ bool SubitemUpdaterV2::run() {
                     successCount++;
                     proxySuccessCount++;
                     Logger::write("INFO: Updated successfully: " + std::get<0>(sub), LogLevel::INFO);
-                    std::string newTime = getCurrentTimestamp();
-                    std::string updateSql = "UPDATE SubItem SET UpdateTime = '" + newTime + "' WHERE Id = '" + std::get<0>(sub) + "'";
-                    execSql(updateSql, "[SubitemUpdaterV2] SQL exec failed");
                 } else {
                     proxyFailCount++;
                     stillFailedSubs.push_back(sub);
@@ -295,6 +292,9 @@ bool SubitemUpdaterV2::run() {
                 stillFailedSubs.push_back(sub);
                 Logger::write("ERROR: Failed to update: " + std::get<0>(sub), LogLevel::ERR);
             }
+            std::string newTime = getCurrentTimestamp();
+            std::string updateSql = "UPDATE SubItem SET UpdateTime = '" + newTime + "' WHERE Id = '" + std::get<0>(sub) + "'";
+            execSql(updateSql, "[SubitemUpdaterV2] SQL exec failed");
         }
         failedSubs = stillFailedSubs;
     }
@@ -350,7 +350,7 @@ bool SubitemUpdaterV2::runSingle(const std::string& subId) {
     Strategy strategy = parseStrategy(config_.priority_mode);
     bool result = updateWithStrategy(sub.url, sub.id, strategy);
 
-    if (result) {
+    {
         std::string newTime = getCurrentTimestamp();
         std::string updateSql = "UPDATE SubItem SET UpdateTime = '" + newTime + "' WHERE Id = '" + sub.id + "'";
         execSql(updateSql, "[SubitemUpdaterV2] SQL exec failed");
@@ -394,7 +394,7 @@ bool SubitemUpdaterV2::runSingleWithProxy(const std::string& subId, int socksPor
 
     auto profiles = parseSubscription(content, sub.id);
     bool result = updateProfileItems(sub.id, profiles);
-    if (result) {
+    {
         std::string newTime = getCurrentTimestamp();
         std::string updateSql = "UPDATE SubItem SET UpdateTime = '" + newTime + "' WHERE Id = '" + sub.id + "'";
         execSql(updateSql, "[SubitemUpdaterV2] SQL exec failed");

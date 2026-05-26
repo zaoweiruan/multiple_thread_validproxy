@@ -4,6 +4,7 @@
 #include <fstream>
 #include <thread>
 #include <chrono>
+#include <filesystem>
 
 XrayInstance::XrayInstance(const std::string& xrayPath, int socksPort, int apiPort, const std::string& configDir)
     : xrayPath_(xrayPath), socksPort_(socksPort), apiPort_(apiPort), running_(false) {
@@ -132,6 +133,16 @@ std::string XrayInstance::getConfigPath() const {
 }
 
 bool XrayInstance::createConfigFile() {
+    // Ensure the config directory exists
+    std::filesystem::path configPath(configPath_);
+    std::error_code ec;
+    if (!std::filesystem::exists(configPath.parent_path()) && 
+        !std::filesystem::create_directories(configPath.parent_path(), ec)) {
+        Logger::write("[XrayInstance] Failed to create config directory: " + 
+                     configPath.parent_path().string() + " (err=" + ec.message() + ")", LogLevel::ERR);
+        return false;
+    }
+
     std::string content = R"({
         "log": {"loglevel": "warning"},
         "api": {
