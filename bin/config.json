@@ -16,7 +16,6 @@
         "timeout_ms": 2000
     },
     "log": {
-        "enabled": true,
         "network_failures": false,
         "console_level": "INFO",
         "file_level": "ERROR"
@@ -26,7 +25,6 @@
         "check_auto_update_interval": false
     },
     "dedup": {
-        "enabled": true,
         "dedup_after_update": false,
         "blacklist_threshold": 5,
         "subids": ["5544178410297751350", "5126987642659995691"]

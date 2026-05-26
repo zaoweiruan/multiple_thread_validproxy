@@ -19,6 +19,9 @@ test*/
 kilo*.*
 skill*.json
 model*.md
+bin/docs/design/ui/configuretion_dialog.b64
+docs/reports/Free_AI_Models_List_2026.md
+docs/reports/Tools_List.md
 # Bin directory 
 
 bin/log/

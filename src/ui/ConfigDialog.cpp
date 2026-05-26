@@ -51,7 +51,7 @@ ConfigDialog::ConfigDialog(wxWindow* parent, const config::AppConfig& cfg)
 
     // --- 日志 配置 ---
     propGrid_->Append(new wxPropertyCategory(L"日志"));
-    propGrid_->Append(new wxBoolProperty(L"启用", "log_enabled", cfg.log_enabled));
+    // log_enabled removed - always true (default)
     propGrid_->Append(new wxBoolProperty(L"网络错误日志", "log_network_failures", cfg.log_network_failures));
     wxArrayString levelChoices;
     levelChoices.Add("TRACE"); levelChoices.Add("DEBUG"); levelChoices.Add("INFO");
@@ -69,7 +69,6 @@ ConfigDialog::ConfigDialog(wxWindow* parent, const config::AppConfig& cfg)
 
     // --- 去重 配置 ---
     propGrid_->Append(new wxPropertyCategory(L"去重"));
-    propGrid_->Append(new wxBoolProperty(L"启用", "dedup_enabled", cfg.dedup_enabled));
     propGrid_->Append(new wxBoolProperty(L"更新后去重", "dedup_after_update", cfg.dedup_after_update));
     propGrid_->Append(new wxIntProperty(L"黑名单阈值", "blacklist_threshold",
                                        cfg.blacklist_threshold));
@@ -80,7 +79,7 @@ ConfigDialog::ConfigDialog(wxWindow* parent, const config::AppConfig& cfg)
             if (i > 0) subids += ",";
             subids += cfg.dedup_subids[i];
         }
-        propGrid_->Append(new wxStringProperty(L"订阅 ID 列表(逗号分隔)", "dedup_subids", subids));
+        propGrid_->Append(new wxStringProperty(L"保护订阅ID列表(逗号分隔)", "dedup_subids", subids));
     }
 
     // --- 同步 配置 ---
@@ -91,7 +90,7 @@ ConfigDialog::ConfigDialog(wxWindow* parent, const config::AppConfig& cfg)
     propGrid_->Append(tgtDbProp);
     propGrid_->SetPropertyAttribute("sync_source_db", wxPG_FILE_SHOW_FULL_PATH, (long)1);
     propGrid_->SetPropertyAttribute("sync_target_db", wxPG_FILE_SHOW_FULL_PATH, (long)1);
-    propGrid_->Append(new wxBoolProperty(L"跳过 SubID", "sync_skip_subids", cfg.sync.sync_skip_subids));
+    propGrid_->Append(new wxBoolProperty(L"跳过保护订阅", "sync_skip_subids", cfg.sync.sync_skip_subids));
 
     // --- 通知 配置 ---
     propGrid_->Append(new wxPropertyCategory(L"通知"));
@@ -140,8 +139,8 @@ bool ConfigDialog::saveConfig() {
     editedConfig_.test_url = propGrid_->GetPropertyValueAsString("test_url").ToStdString();
     editedConfig_.test_timeout_ms = propGrid_->GetPropertyValueAsInt("test_timeout_ms");
 
-    // Log fields
-    editedConfig_.log_enabled = propGrid_->GetPropertyValueAsBool("log_enabled");
+    // Log fields - log_enabled always true (removed from UI)
+    editedConfig_.log_enabled = true;
     editedConfig_.log_network_failures = propGrid_->GetPropertyValueAsBool("log_network_failures");
     editedConfig_.log_console_level = propGrid_->GetPropertyValueAsString("log_console_level").ToStdString();
     editedConfig_.log_file_level = propGrid_->GetPropertyValueAsString("log_file_level").ToStdString();
@@ -150,8 +149,8 @@ bool ConfigDialog::saveConfig() {
     editedConfig_.priority_mode = propGrid_->GetPropertyValueAsString("priority_mode").ToStdString();
     editedConfig_.check_auto_update_interval = propGrid_->GetPropertyValueAsBool("check_auto_update_interval");
 
-    // Dedup fields
-    editedConfig_.dedup_enabled = propGrid_->GetPropertyValueAsBool("dedup_enabled");
+    // Dedup fields - dedup_enabled is always true now (removed from UI)
+    editedConfig_.dedup_enabled = true;
     editedConfig_.dedup_after_update = propGrid_->GetPropertyValueAsBool("dedup_after_update");
     editedConfig_.blacklist_threshold = propGrid_->GetPropertyValueAsInt("blacklist_threshold");
     // Parse comma-separated dedup_subids

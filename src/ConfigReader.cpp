@@ -186,7 +186,7 @@ std::optional<AppConfig> ConfigReader::load(const std::string& configPath) {
             }
         }
     } else {
-        config.dedup_enabled = false;
+        config.dedup_enabled = true;
         config.dedup_after_update = false;
         config.blacklist_threshold = 5;
     }
