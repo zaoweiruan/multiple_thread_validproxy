@@ -18,7 +18,8 @@
 
 class ProxyBatchTester {
 public:
-    ProxyBatchTester(sqlite3* db, const config::AppConfig& config, const std::string& baseDir = "");
+    ProxyBatchTester(sqlite3* db, const config::AppConfig& config, const std::string& baseDir = "",
+                     std::atomic<bool>* externalCancel = nullptr);
     ~ProxyBatchTester();
 
     bool run();
@@ -29,7 +30,10 @@ public:
 
     // Cancel support
     void cancel() { cancelRequested_ = true; }
-    bool isCancelled() const { return cancelRequested_.load(); }
+    bool isCancelled() const {
+        if (externalCancel_ && externalCancel_->load()) return true;
+        return cancelRequested_.load();
+    }
 
  private:
 
@@ -57,6 +61,7 @@ public:
 
     TestResult lastResult_;
     std::string lastIndexId_;
+    std::atomic<bool>* externalCancel_{nullptr};
 };
 
 #endif // PROXY_BATCH_TESTER_H

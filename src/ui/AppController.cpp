@@ -328,7 +328,7 @@ void AppController::doUpdateAllSubscriptions(wxEvtHandler* wxHandler) {
 }
 
 void AppController::doTestSubscription(const std::string& subId, wxEvtHandler* wxHandler) {
-    ProxyBatchTester tester(db_, config_, "");
+    ProxyBatchTester tester(db_, config_, "", &cancelRequested_);
     bool ok = tester.runWithSubId(subId);
 
     if (wxHandler) {
@@ -356,7 +356,7 @@ void AppController::doTestSubscription(const std::string& subId, wxEvtHandler* w
 }
 
 void AppController::doTestSingleProxy(const std::string& indexId, wxEvtHandler* wxHandler) {
-    ProxyBatchTester tester(db_, config_, "");
+    ProxyBatchTester tester(db_, config_, "", &cancelRequested_);
     bool ok = tester.runWithIndexId(indexId);
 
     // Get actual test result (delay + message) from the tester
@@ -405,7 +405,7 @@ void AppController::doFindFirstProxy(wxEvtHandler* wxHandler) {
             }
             return;
         }
-        ProxyFinder finder(db_, manager, xrayPath, config_.test_url, "", config_.test_timeout_ms);
+        ProxyFinder finder(db_, manager, xrayPath, config_.test_url, "", config_.test_timeout_ms, &cancelRequested_);
 
         std::pair<int, int> ports = finder.findFirstWorkingProxy();
 
@@ -455,7 +455,7 @@ void AppController::doFindBestProxy(wxEvtHandler* wxHandler) {
             }
             return;
         }
-        ProxyFinder finder(db_, manager, xrayPath, config_.test_url, "", config_.test_timeout_ms);
+        ProxyFinder finder(db_, manager, xrayPath, config_.test_url, "", config_.test_timeout_ms, &cancelRequested_);
 
         std::pair<int, int> ports = finder.findWorkingProxy();
 
@@ -514,7 +514,7 @@ void AppController::findProxyByIndexIdAsync(const std::string& indexId, wxEvtHan
                 return;
             }
             
-            ProxyBatchTester tester(db_, config_, "");
+            ProxyBatchTester tester(db_, config_, "", &cancelRequested_);
             bool ok = tester.runWithIndexId(it->indexid);
 
             if (wxHandler) {

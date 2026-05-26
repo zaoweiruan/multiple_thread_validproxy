@@ -14,9 +14,9 @@
 
 ProxyFinder::ProxyFinder(sqlite3* db, XrayManager* manager, const std::string& xrayPath, 
                          const std::string& testUrl, const std::string& targetUrl, 
-                         int timeoutMs)
+                         int timeoutMs, std::atomic<bool>* cancelFlag)
     : db_(db), manager_(manager), xrayPath_(xrayPath), testUrl_(testUrl), targetUrl_(targetUrl),
-      timeoutMs_(timeoutMs), currentSocksPort_(-1), currentApiPort_(-1) {
+      timeoutMs_(timeoutMs), currentSocksPort_(-1), currentApiPort_(-1), cancelRequested_(cancelFlag) {
     lastResult_ = {false, -1, "", "", "", 0, 0};
 }
 
@@ -45,6 +45,10 @@ std::pair<int, int> ProxyFinder::findFirstWorkingProxy(const std::string& target
     std::cout << "ProxyFinder: Using test URL: " << testUrl << std::endl;
     
     for (size_t i = 0; i < validProxies.size(); ++i) {
+        if (isCancelled()) {
+            Logger::write("ProxyFinder: Cancelled during first proxy search", LogLevel::WARN);
+            return result;
+        }
         const auto& proxy = validProxies[i];
         
         int workerIndex = i % manager_->getInstanceCount();
@@ -110,6 +114,10 @@ std::pair<int, int> ProxyFinder::findWorkingProxy(const std::string& targetUrl) 
     std::vector<TestResult> allResults;
     
     for (size_t i = 0; i < validProxies.size(); ++i) {
+        if (isCancelled()) {
+            Logger::write("ProxyFinder: Cancelled during best proxy search", LogLevel::WARN);
+            return result;
+        }
         const auto& proxy = validProxies[i];
         
         int workerIndex = i % manager_->getInstanceCount();
