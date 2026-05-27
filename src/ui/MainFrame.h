@@ -71,6 +71,8 @@ private:
     void onToolDedup(wxCommandEvent& event);
     void onToolImport(wxCommandEvent& event);
     void onToolConfig(wxCommandEvent& event);
+    void onToolCancelTest(wxCommandEvent& event);
+    void onToolSync(wxCommandEvent& event);
     void onStatusUpdate(StatusUpdateEvent& event);
     void onResize(wxSizeEvent& event);
     void onSearchBoxEnter(wxCommandEvent& event);

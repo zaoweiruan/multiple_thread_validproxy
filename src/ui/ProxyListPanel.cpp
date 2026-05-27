@@ -1,6 +1,7 @@
 #include "ProxyListPanel.h"
 #include "AppController.h"
 #include "Events.h"
+#include "Logger.h"
 
 #include <wx/sizer.h>
 #include <wx/dataview.h>
@@ -226,7 +227,7 @@ void ProxyListPanel::onColumnHeaderClick(wxDataViewEvent& event) {
     int col = event.GetColumn();
     
     // Debug output
-    std::cout << "onColumnHeaderClick: column=" << col << std::endl;
+    Logger::write("[ProxyListPanel] Column header click: column=" + std::to_string(col), LogLevel::DEBUG);
     
     // Cycle direction: None -> Asc -> Desc -> None
     if (sortState_.column == col) {
@@ -246,11 +247,13 @@ if (sortState_.direction != SortDirection::None) {
         resetSort();
     }
     
-    std::cout << "onColumnHeaderClick done: col=" << sortState_.column << ", dir=" << (int)sortState_.direction << std::endl;
+    Logger::write("[ProxyListPanel] Column header click done: col=" + std::to_string(sortState_.column)
+                  + ", dir=" + std::to_string(static_cast<int>(sortState_.direction)), LogLevel::DEBUG);
 }
 
 void ProxyListPanel::sortProxiesByColumn(int col, SortDirection dir) {
-    std::cout << "sortProxiesByColumn: col=" << col << ", dir=" << (int)dir << ", proxies_ size=" << proxies_.size() << std::endl;
+    Logger::write("[ProxyListPanel] Sort: col=" + std::to_string(col) + ", dir=" + std::to_string(static_cast<int>(dir))
+                  + ", proxies_ size=" + std::to_string(proxies_.size()), LogLevel::DEBUG);
     
     auto getDelay = [this](const db::models::Profileitem& p) -> int {
         for (const auto& ex : exItems_) {
