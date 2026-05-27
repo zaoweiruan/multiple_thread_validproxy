@@ -256,6 +256,7 @@ int main(int argc, char* argv[]) {
         Logger::setFileEnabled(appConfig->log_enabled);
         Logger::setFileLevel(Logger::stringToLevel(appConfig->log_file_level));
         Logger::setConsoleLevel(Logger::stringToLevel(appConfig->log_console_level));
+        Logger::setConsoleEnabled(false);  // UI mode: route all output to LogPanel only
         logInfo("validproxy GUI starting...");
 
         sqlite3* db = nullptr;

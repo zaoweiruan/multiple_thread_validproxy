@@ -45,6 +45,7 @@ public:
     static void setConsoleLevel(LogLevel level);
     static void setFileEnabled(bool enabled);
     static bool isFileEnabled();
+    static void setConsoleEnabled(bool enabled);
     static LogLevel getLevel();
     static LogLevel getFileLevel();
     static LogLevel getConsoleLevel();
@@ -60,6 +61,7 @@ static std::string levelToString(LogLevel level);
      static std::mutex mutex_;
      static bool enabled_;
      static bool fileEnabled_;
+     static bool consoleEnabled_;
      static LogLevel fileLevel_;
      static LogLevel consoleLevel_;
      static LogCallback logCallback_;               // 当前激活的回调（callbackStack_.back() 或 nullptr）

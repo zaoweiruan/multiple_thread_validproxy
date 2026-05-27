@@ -275,7 +275,7 @@ void MainFrame::initToolBar() {
     //       We use icon-only toolbar (no wxTB_TEXT), so label="", tooltip in shortHelp.
     tb->AddTool(ID_TOOL_UPDATE_ALL, wxEmptyString, ToolbarIcons::load("tool_update"), "更新");
     tb->AddTool(ID_TOOL_TEST,       wxEmptyString, ToolbarIcons::load("tool_test"),   "测试");
-    tb->AddTool(ID_TOOL_FIND,       wxEmptyString, ToolbarIcons::load("tool_find"),   "查找");
+    tb->AddTool(ID_TOOL_FIND,       wxEmptyString, ToolbarIcons::load("tool_find"),   "查找最佳代理");
     tb->AddTool(ID_TOOL_DEDUP,      wxEmptyString, ToolbarIcons::load("tool_dedup"),  "去重");
     tb->AddTool(ID_TOOL_IMPORT,     wxEmptyString, ToolbarIcons::load("tool_import"), "导入");
     tb->AddTool(ID_TOOL_CONFIG,     wxEmptyString, ToolbarIcons::load("tool_config"), "配置");
@@ -515,7 +515,7 @@ void MainFrame::onToolTest(wxCommandEvent& event) {
 }
 
 void MainFrame::onToolFind(wxCommandEvent& event) {
-    onMenuFindProxy(event);
+    onMenuFindBest(event);
 }
 
 void MainFrame::onToolDedup(wxCommandEvent& event) {

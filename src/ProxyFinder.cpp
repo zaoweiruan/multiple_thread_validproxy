@@ -20,6 +20,19 @@ ProxyFinder::ProxyFinder(sqlite3* db, XrayManager* manager, const std::string& x
     lastResult_ = {false, -1, "", "", "", 0, 0};
 }
 
+std::string ProxyFinder::configTypeToProtocol(const std::string& ct) {
+    if (ct == "1") return "VMess";
+    if (ct == "3") return "Shadowsocks";
+    if (ct == "4") return "SOCKS";
+    if (ct == "5") return "VLESS";
+    if (ct == "6") return "Trojan";
+    if (ct == "7") return "Hysteria2";
+    if (ct == "8") return "TUIC";
+    if (ct == "9") return "WireGuard";
+    if (ct == "10") return "HTTP";
+    return "Unknown(" + ct + ")";
+}
+
 ProxyFinder::~ProxyFinder() {
     release();
 }
@@ -28,7 +41,7 @@ std::pair<int, int> ProxyFinder::findFirstWorkingProxy(const std::string& target
     std::pair<int, int> result = {-1, -1};
     
     if (!manager_ || manager_->getInstanceCount() == 0) {
-        Logger::write("ERROR: ProxyFinder: No xray instances running", LogLevel::ERR);
+        Logger::write("[ProxyFinder] No xray instances running", LogLevel::ERR);
         return result;
     }
     
@@ -41,12 +54,11 @@ std::pair<int, int> ProxyFinder::findFirstWorkingProxy(const std::string& target
     );
     
     std::string testUrl = targetUrl.empty() ? testUrl_ : targetUrl;
-    std::cout << "ProxyFinder: Testing " << validProxies.size() << " proxies (first match)..." << std::endl;
-    std::cout << "ProxyFinder: Using test URL: " << testUrl << std::endl;
+    Logger::write("[ProxyFinder] Testing " + std::to_string(validProxies.size()) + " proxies (first match), URL: " + testUrl, LogLevel::INFO);
     
     for (size_t i = 0; i < validProxies.size(); ++i) {
         if (isCancelled()) {
-            Logger::write("ProxyFinder: Cancelled during first proxy search", LogLevel::WARN);
+            Logger::write("[ProxyFinder] Cancelled during first proxy search", LogLevel::INFO);
             return result;
         }
         const auto& proxy = validProxies[i];
@@ -58,8 +70,11 @@ std::pair<int, int> ProxyFinder::findFirstWorkingProxy(const std::string& target
         currentSocksPort_ = instance->getSocksPort();
         currentApiPort_ = instance->getApiPort();
         
-        std::cout << "ProxyFinder: Testing proxy " << (i+1) << "/" << validProxies.size() 
-                 << " (indexId=" << proxy.indexId << ", socks=" << currentSocksPort_ << ")" << std::endl;
+        Logger::write("[ProxyFinder] Testing " + std::to_string(i+1) + "/" + std::to_string(validProxies.size())
+                     + ": " + proxy.address + ":" + std::to_string(proxy.socksPort)
+                     + " (" + configTypeToProtocol(proxy.configType) + ")"
+                     + " socks=" + std::to_string(currentSocksPort_),
+                     LogLevel::INFO);
         
         if (!injectProxyToXray(proxy.indexId)) {
             Logger::write("ERROR: ProxyFinder: Failed to inject proxy: " + proxy.indexId, LogLevel::ERR);
@@ -75,18 +90,25 @@ std::pair<int, int> ProxyFinder::findFirstWorkingProxy(const std::string& target
         exDao.updateTestResult(proxy.indexId, testRes.latencyMs, testRes.success, testRes.errorMsg);
         
         if (testRes.success) {
-            std::cout << "ProxyFinder: Found working proxy at socks=" << currentSocksPort_ << std::endl;
+            Logger::write("[ProxyFinder] Found working proxy: " + proxy.address + ":" + std::to_string(proxy.socksPort)
+                        + " (" + configTypeToProtocol(proxy.configType) + ")"
+                        + " delay=" + std::to_string(testRes.latencyMs) + "ms"
+                        + " socks=" + std::to_string(currentSocksPort_),
+                        LogLevel::INFO);
             lastResult_ = {true, testRes.latencyMs, "", proxy.indexId, proxy.address, proxy.socksPort, proxy.delay};
             result = {currentSocksPort_, currentApiPort_};
             return result;
         } else {
-            Logger::write("ProxyFinder: Proxy failed: " + testRes.errorMsg, LogLevel::INFO);
+            Logger::write("[ProxyFinder] Failed: " + proxy.address + ":" + std::to_string(proxy.socksPort)
+                        + " (" + configTypeToProtocol(proxy.configType) + ")"
+                        + " - " + testRes.errorMsg,
+                        LogLevel::INFO);
         }
         
         removeProxyFromXray();
     }
     
-    Logger::write("ERROR: ProxyFinder: No working proxy found", LogLevel::ERR);
+    Logger::write("[ProxyFinder] No working proxy found", LogLevel::ERR);
     return result;
 }
 
@@ -94,7 +116,7 @@ std::pair<int, int> ProxyFinder::findWorkingProxy(const std::string& targetUrl) 
     std::pair<int, int> result = {-1, -1};
     
     if (!manager_ || manager_->getInstanceCount() == 0) {
-        Logger::write("ERROR: ProxyFinder: No xray instances running", LogLevel::ERR);
+        Logger::write("[ProxyFinder] No xray instances running", LogLevel::ERR);
         return result;
     }
     
@@ -107,15 +129,14 @@ std::pair<int, int> ProxyFinder::findWorkingProxy(const std::string& targetUrl) 
     );
     
     std::string testUrl = targetUrl.empty() ? testUrl_ : targetUrl;
-    std::cout << "ProxyFinder: Testing " << validProxies.size() << " proxies..." << std::endl;
-    std::cout << "ProxyFinder: Using test URL: " << testUrl << std::endl;
+    Logger::write("[ProxyFinder] Testing " + std::to_string(validProxies.size()) + " proxies for best match, URL: " + testUrl, LogLevel::INFO);
     
     // 测试所有代理，记录实际延迟
     std::vector<TestResult> allResults;
     
     for (size_t i = 0; i < validProxies.size(); ++i) {
         if (isCancelled()) {
-            Logger::write("ProxyFinder: Cancelled during best proxy search", LogLevel::WARN);
+            Logger::write("[ProxyFinder] Cancelled during best proxy search", LogLevel::INFO);
             return result;
         }
         const auto& proxy = validProxies[i];
@@ -127,11 +148,15 @@ std::pair<int, int> ProxyFinder::findWorkingProxy(const std::string& targetUrl) 
         currentSocksPort_ = instance->getSocksPort();
         currentApiPort_ = instance->getApiPort();
         
-        std::cout << "ProxyFinder: Testing proxy " << (i+1) << "/" << validProxies.size() 
-                 << " (indexId=" << proxy.indexId << ", socks=" << currentSocksPort_ << ")" << std::endl;
+        Logger::write("[ProxyFinder] Testing " + std::to_string(i+1) + "/" + std::to_string(validProxies.size())
+                     + ": " + proxy.address + ":" + std::to_string(proxy.socksPort)
+                     + " (" + configTypeToProtocol(proxy.configType) + ")"
+                     + " socks=" + std::to_string(currentSocksPort_),
+                     LogLevel::INFO);
         
         if (!injectProxyToXray(proxy.indexId)) {
-            Logger::write("ERROR: ProxyFinder: Failed to inject proxy: " + proxy.indexId, LogLevel::ERR);
+            Logger::write("[ProxyFinder] Failed to inject proxy: " + proxy.address + ":" + std::to_string(proxy.socksPort)
+                        + " (" + configTypeToProtocol(proxy.configType) + ")", LogLevel::ERR);
             removeProxyFromXray();
             continue;
         }
@@ -149,16 +174,22 @@ std::pair<int, int> ProxyFinder::findWorkingProxy(const std::string& targetUrl) 
             testRes.port = proxy.socksPort;
             testRes.delay = testRes.latencyMs;
             allResults.push_back(testRes);
-            std::cout << "ProxyFinder: Working proxy: delay=" << testRes.latencyMs << "ms" << std::endl;
+            Logger::write("[ProxyFinder] Working proxy: " + proxy.address + ":" + std::to_string(proxy.socksPort)
+                        + " (" + configTypeToProtocol(proxy.configType) + ")"
+                        + " delay=" + std::to_string(testRes.latencyMs) + "ms",
+                        LogLevel::INFO);
         } else {
-            Logger::write("ProxyFinder: Proxy failed: " + testRes.errorMsg, LogLevel::INFO);
+            Logger::write("[ProxyFinder] Failed: " + proxy.address + ":" + std::to_string(proxy.socksPort)
+                        + " (" + configTypeToProtocol(proxy.configType) + ")"
+                        + " - " + testRes.errorMsg,
+                        LogLevel::INFO);
         }
         
         removeProxyFromXray();
     }
     
     if (allResults.empty()) {
-        Logger::write("ERROR: ProxyFinder: No working proxy found", LogLevel::ERR);
+        Logger::write("[ProxyFinder] No working proxy found", LogLevel::ERR);
         return result;
     }
     
@@ -176,8 +207,11 @@ std::pair<int, int> ProxyFinder::findWorkingProxy(const std::string& targetUrl) 
             auto instance = manager_->getInstance(workerIndex);
             if (instance) {
                 result = {instance->getSocksPort(), instance->getApiPort()};
-                std::cout << "ProxyFinder: Best proxy at socks=" << result.first 
-                         << " (delay=" << best.latencyMs << "ms)" << std::endl;
+                Logger::write("[ProxyFinder] Best proxy: " + best.address + ":" + std::to_string(best.port)
+                            + " (" + configTypeToProtocol(validProxies[i].configType) + ")"
+                            + " delay=" + std::to_string(best.latencyMs) + "ms"
+                            + " socks=" + std::to_string(result.first),
+                            LogLevel::INFO);
             }
             break;
         }
@@ -193,7 +227,7 @@ void ProxyFinder::release() {
 }
 
 ProxyFinder::TestResult ProxyFinder::testProxyConnectivity(int socksPort, const std::string& targetUrl) {
-    TestResult result = {false, -1, ""};
+    TestResult result = {};
     
     std::string urlToTest = targetUrl.empty() ? testUrl_ : targetUrl;
     
@@ -229,7 +263,7 @@ ProxyFinder::TestResult ProxyFinder::testProxyConnectivity(int socksPort, const 
 std::vector<ProxyFinder::FallbackProxy> ProxyFinder::loadFallbackProxies(int maxCount) {
     std::vector<FallbackProxy> proxies;
     
-    std::string sql = "SELECT pi.IndexId, pi.Address, pi.Port, pi.PreSocksPort, COALESCE(pe.Delay, 999999) AS Delay "
+    std::string sql = "SELECT pi.IndexId, pi.Address, pi.Port, pi.PreSocksPort, COALESCE(pe.Delay, 999999) AS Delay, pi.ConfigType "
                   "FROM ProfileItem pi "
                   "LEFT JOIN ProfileExItem pe ON pi.IndexId = pe.IndexId "
                   "WHERE pi.Address IS NOT NULL AND pi.Address != '' "
@@ -242,11 +276,11 @@ std::vector<ProxyFinder::FallbackProxy> ProxyFinder::loadFallbackProxies(int max
     }
     sql += ";";
     
-    Logger::write("ProxyFinder: SQL: " + sql, LogLevel::DEBUG);
+    Logger::write("[ProxyFinder] SQL: " + sql, LogLevel::DEBUG);
     
     sqlite3_stmt* stmt = nullptr;
     if (sqlite3_prepare_v2(db_, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
-        Logger::write("ERROR: ProxyFinder: SQL prepare failed - " + std::string(sqlite3_errmsg(db_)), LogLevel::ERR);
+        Logger::write("[ProxyFinder] SQL prepare failed - " + std::string(sqlite3_errmsg(db_)), LogLevel::ERR);
         return proxies;
     }
     
@@ -257,6 +291,9 @@ std::vector<ProxyFinder::FallbackProxy> ProxyFinder::loadFallbackProxies(int max
         
         const char* delayText = (const char*)sqlite3_column_text(stmt, 4);
         proxy.delay = delayText ? std::stoi(delayText) : 999999;
+        
+        const char* configType = (const char*)sqlite3_column_text(stmt, 5);
+        proxy.configType = configType ? configType : "";
         
         const char* preSocksPort = (const char*)sqlite3_column_text(stmt, 3);
         const char* port = (const char*)sqlite3_column_text(stmt, 2);
@@ -273,7 +310,7 @@ std::vector<ProxyFinder::FallbackProxy> ProxyFinder::loadFallbackProxies(int max
     }
     
     sqlite3_finalize(stmt);
-    Logger::write("ProxyFinder: Loaded " + std::to_string(proxies.size()) + " proxies from database", LogLevel::DEBUG);
+    Logger::write("[ProxyFinder] Loaded " + std::to_string(proxies.size()) + " proxies from database", LogLevel::DEBUG);
     return proxies;
 }
 
@@ -285,7 +322,7 @@ bool ProxyFinder::injectProxyToXray(const std::string& indexId) {
     auto profiles = profileDao.getAll(sql);
     
     if (profiles.empty()) {
-        Logger::write("ERROR: ProxyFinder: Profile not found: " + indexId, LogLevel::ERR);
+        Logger::write("[ProxyFinder] Profile not found: " + indexId, LogLevel::ERR);
         return false;
     }
     
@@ -295,7 +332,7 @@ bool ProxyFinder::injectProxyToXray(const std::string& indexId) {
     try {
         profile.checkRequired();
     } catch (const std::exception& e) {
-        Logger::write("ERROR: ProxyFinder: Config error: " + std::string(e.what()), LogLevel::ERR);
+        Logger::write("[ProxyFinder] Config error: " + std::string(e.what()), LogLevel::ERR);
         return false;
     }
     
@@ -313,7 +350,7 @@ bool ProxyFinder::injectProxyToXray(const std::string& indexId) {
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
     
     if (!xrayApi.addOutbound(config.outbound_json, tag, addResult)) {
-        Logger::write("ERROR: 注入xray outbound 错误: " + xrayApi.getLastError(), LogLevel::ERR);
+        Logger::write("[ProxyFinder] Failed to inject outbound via Xray API: " + xrayApi.getLastError(), LogLevel::ERR);
         return false;
     }
     

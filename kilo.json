@@ -1,16 +1,3 @@
 {
-  "$schema": "https://app.kilo.ai/config.json",
-  "skills": {
-    "paths": ["C:\\Users\\dsm\\.config\\kilo\\skills","C:\\Users\\dsm\\.agents\\skills"]	
-  },    
-  "permission": {
-        "glob": "allow",
-        "read": "allow",
-        "grep": "allow",
-        "edit": "allow",
-		"skill": "allow",
-		"webfetch": "allow",
-		"websearch": "allow",
-		"question": "allow"
-    }
+  "$schema": "https://app.kilo.ai/config.json"
 }
