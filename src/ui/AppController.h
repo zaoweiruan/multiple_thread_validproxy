@@ -52,6 +52,7 @@ bool isTestCancelled() const;
    void findFirstProxyAsync(wxEvtHandler* wxHandler);
    void findBestProxyAsync(wxEvtHandler* wxHandler);
    void findProxyByIndexIdAsync(const std::string& indexId, wxEvtHandler* wxHandler);
+   void syncDatabasesAsync(wxEvtHandler* wxHandler);
 
   // Export / Tool
   bool exportShareLinks();
@@ -67,10 +68,12 @@ private:
   void doTestSingleProxy(const std::string& indexId, wxEvtHandler* wxHandler);
   void doFindFirstProxy(wxEvtHandler* wxHandler);
   void doFindBestProxy(wxEvtHandler* wxHandler);
+  void doSyncDatabases(wxEvtHandler* wxHandler);
 
   sqlite3* db_;
   config::AppConfig config_;
   std::atomic<bool> cancelRequested_{false};
+  std::atomic<bool> isRunning_{false};
   // Worker thread (single at a time)
   std::thread workerThread_;
   ProxyFinder::TestResult lastFindResult_;

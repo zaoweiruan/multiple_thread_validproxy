@@ -95,14 +95,34 @@ bool AppController::updateSubitem(const db::models::Subitem& sub) {
 }
 
 void AppController::updateSubscriptionAsync(const std::string& subId, wxEvtHandler* wxHandler) {
+    if (workerThread_.joinable()) {
+        if (isRunning_) {
+            if (wxHandler) {
+                wxQueueEvent(wxHandler, new StatusUpdateEvent(0,
+                    "REJECT:Another operation is already in progress. Please wait or cancel it first."));
+            }
+            return;
+        }
+        workerThread_.join();
+    }
     cancelRequested_ = false;
-    if (workerThread_.joinable()) workerThread_.join();
+    isRunning_ = true;
     workerThread_ = std::thread(&AppController::doUpdateSubscription, this, subId, wxHandler);
 }
 
 void AppController::updateAllSubscriptionsAsync(wxEvtHandler* wxHandler) {
+    if (workerThread_.joinable()) {
+        if (isRunning_) {
+            if (wxHandler) {
+                wxQueueEvent(wxHandler, new StatusUpdateEvent(0,
+                    "REJECT:Another operation is already in progress. Please wait or cancel it first."));
+            }
+            return;
+        }
+        workerThread_.join();
+    }
     cancelRequested_ = false;
-    if (workerThread_.joinable()) workerThread_.join();
+    isRunning_ = true;
     workerThread_ = std::thread(&AppController::doUpdateAllSubscriptions, this, wxHandler);
 }
 
@@ -145,14 +165,34 @@ std::vector<db::models::ProfileExItem> AppController::loadProxyResults() {
 // Testing / Cancellation
 // ---------------------------------------------------------------
 void AppController::testSubscriptionAsync(const std::string& subId, wxEvtHandler* wxHandler) {
+    if (workerThread_.joinable()) {
+        if (isRunning_) {
+            if (wxHandler) {
+                wxQueueEvent(wxHandler, new StatusUpdateEvent(0,
+                    "REJECT:Another operation is already in progress. Please wait or cancel it first."));
+            }
+            return;
+        }
+        workerThread_.join();
+    }
     cancelRequested_ = false;
-    if (workerThread_.joinable()) workerThread_.join();
+    isRunning_ = true;
     workerThread_ = std::thread(&AppController::doTestSubscription, this, subId, wxHandler);
 }
 
 void AppController::testSingleProxyAsync(const std::string& indexId, wxEvtHandler* wxHandler) {
+    if (workerThread_.joinable()) {
+        if (isRunning_) {
+            if (wxHandler) {
+                wxQueueEvent(wxHandler, new StatusUpdateEvent(0,
+                    "REJECT:Another operation is already in progress. Please wait or cancel it first."));
+            }
+            return;
+        }
+        workerThread_.join();
+    }
     cancelRequested_ = false;
-    if (workerThread_.joinable()) workerThread_.join();
+    isRunning_ = true;
     workerThread_ = std::thread(&AppController::doTestSingleProxy, this, indexId, wxHandler);
 }
 
@@ -190,14 +230,34 @@ ProxyFinder::TestResult AppController::findBestProxy() {
 // Find operations  (async — used by GUI MainFrame)
 // ---------------------------------------------------------------
 void AppController::findFirstProxyAsync(wxEvtHandler* wxHandler) {
+    if (workerThread_.joinable()) {
+        if (isRunning_) {
+            if (wxHandler) {
+                wxQueueEvent(wxHandler, new StatusUpdateEvent(0,
+                    "REJECT:Another operation is already in progress. Please wait or cancel it first."));
+            }
+            return;
+        }
+        workerThread_.join();
+    }
     cancelRequested_ = false;
-    if (workerThread_.joinable()) workerThread_.join();
+    isRunning_ = true;
     workerThread_ = std::thread(&AppController::doFindFirstProxy, this, wxHandler);
 }
 
 void AppController::findBestProxyAsync(wxEvtHandler* wxHandler) {
+    if (workerThread_.joinable()) {
+        if (isRunning_) {
+            if (wxHandler) {
+                wxQueueEvent(wxHandler, new StatusUpdateEvent(0,
+                    "REJECT:Another operation is already in progress. Please wait or cancel it first."));
+            }
+            return;
+        }
+        workerThread_.join();
+    }
     cancelRequested_ = false;
-    if (workerThread_.joinable()) workerThread_.join();
+    isRunning_ = true;
     workerThread_ = std::thread(&AppController::doFindBestProxy, this, wxHandler);
 }
 
@@ -313,6 +373,7 @@ void AppController::doUpdateSubscription(const std::string& subId, wxEvtHandler*
         wxQueueEvent(wxHandler, new StatusUpdateEvent(0, msg));
     }
     Logger::write(msg, ok ? LogLevel::REPORT : LogLevel::ERR);
+    isRunning_ = false;
 }
 
 void AppController::doUpdateAllSubscriptions(wxEvtHandler* wxHandler) {
@@ -325,6 +386,7 @@ void AppController::doUpdateAllSubscriptions(wxEvtHandler* wxHandler) {
     }
 
     Logger::write(msg, ok ? LogLevel::REPORT : LogLevel::ERR);
+    isRunning_ = false;
 }
 
 void AppController::doTestSubscription(const std::string& subId, wxEvtHandler* wxHandler) {
@@ -335,24 +397,23 @@ void AppController::doTestSubscription(const std::string& subId, wxEvtHandler* w
         wxQueueEvent(wxHandler, new StatusUpdateEvent(2, ok ? "Test completed" : "Test failed"));
     }
 
-    if (ok) {
-        // Post to the handler (TestPanel or MainFrame) for UI state updates
-        if (wxHandler) {
-            wxQueueEvent(wxHandler, new ProxyTestProgressEvent(0, 0, "", "", "", "Batch test finished", true));
-        }
-        // Broadcast to MainFrame for delay column refresh.
-        // Use dynamic_cast to safely get the top-level window from wxEvtHandler.
-        // Create a fresh event copy for the MainFrame receiver.
-        if (wxWindow* win = dynamic_cast<wxWindow*>(wxHandler)) {
-            if (wxWindow* topLevel = wxGetTopLevelParent(win)) {
-                if (topLevel != win) {
-                    wxQueueEvent(topLevel, new ProxyTestProgressEvent(0, 0, "", "", "", "Batch test finished", true));
-                }
+    // Always send completion event (both success and failure) to restore UI state
+    if (wxHandler) {
+        wxQueueEvent(wxHandler, new ProxyTestProgressEvent(0, 0, "", "", "", ok ? "Batch test finished" : "Batch test failed", true));
+    }
+    // Broadcast to MainFrame for delay column refresh.
+    // Use dynamic_cast to safely get the top-level window from wxEvtHandler.
+    // Create a fresh event copy for the MainFrame receiver.
+    if (wxWindow* win = dynamic_cast<wxWindow*>(wxHandler)) {
+        if (wxWindow* topLevel = wxGetTopLevelParent(win)) {
+            if (topLevel != win) {
+                wxQueueEvent(topLevel, new ProxyTestProgressEvent(0, 0, "", "", "", "Batch test finished", true));
             }
         }
     }
 
     Logger::write(std::string("Batch test ") + (ok ? "succeeded" : "failed"), LogLevel::REPORT);
+    isRunning_ = false;
 }
 
 void AppController::doTestSingleProxy(const std::string& indexId, wxEvtHandler* wxHandler) {
@@ -378,6 +439,7 @@ void AppController::doTestSingleProxy(const std::string& indexId, wxEvtHandler* 
     }
 
     Logger::write(std::string("Single proxy test ") + (ok ? "succeeded" : "failed"), LogLevel::REPORT);
+    isRunning_ = false;
 }
 
 // ---------------------------------------------------------------
@@ -390,6 +452,10 @@ void AppController::doTestSingleProxy(const std::string& indexId, wxEvtHandler* 
 //   "CANCELLED"                   — operation cancelled
 // ---------------------------------------------------------------
 void AppController::doFindFirstProxy(wxEvtHandler* wxHandler) {
+    // Scope guard: reset isRunning_ on every exit path (including early returns and exceptions)
+    struct ResetGuard { std::atomic<bool>& flag; ~ResetGuard() { flag = false; } };
+    ResetGuard _rg{isRunning_};
+
     try {
         if (isTestCancelled()) {
             if (wxHandler) {
@@ -450,6 +516,10 @@ void AppController::doFindFirstProxy(wxEvtHandler* wxHandler) {
 }
 
 void AppController::doFindBestProxy(wxEvtHandler* wxHandler) {
+    // Scope guard: reset isRunning_ on every exit path (including early returns and exceptions)
+    struct ResetGuard { std::atomic<bool>& flag; ~ResetGuard() { flag = false; } };
+    ResetGuard _rg{isRunning_};
+
     try {
         if (isTestCancelled()) {
             if (wxHandler) {
@@ -509,9 +579,29 @@ void AppController::doFindBestProxy(wxEvtHandler* wxHandler) {
     }
 }
 
+void AppController::doSyncDatabases(wxEvtHandler* wxHandler) {
+    bool ok = syncDatabases();
+    std::string msg = ok ? "数据库同步完成" : "数据库同步失败，请查看日志";
+    if (wxHandler) {
+        wxQueueEvent(wxHandler, new StatusUpdateEvent(0, msg));
+    }
+    Logger::write(msg, ok ? LogLevel::REPORT : LogLevel::ERR);
+    isRunning_ = false;
+}
+
 void AppController::findProxyByIndexIdAsync(const std::string& indexId, wxEvtHandler* wxHandler) {
+    if (workerThread_.joinable()) {
+        if (isRunning_) {
+            if (wxHandler) {
+                wxQueueEvent(wxHandler, new StatusUpdateEvent(0,
+                    "REJECT:Another operation is already in progress. Please wait or cancel it first."));
+            }
+            return;
+        }
+        workerThread_.join();
+    }
     cancelRequested_ = false;
-    if (workerThread_.joinable()) workerThread_.join();
+    isRunning_ = true;
     workerThread_ = std::thread([this, indexId, wxHandler]() {
         try {
             auto proxies = loadProxies();
@@ -553,5 +643,22 @@ void AppController::findProxyByIndexIdAsync(const std::string& indexId, wxEvtHan
                 wxQueueEvent(wxHandler, new StatusUpdateEvent(0, std::string("ERR:") + e.what()));
             }
         }
+        isRunning_ = false;
     });
+}
+
+void AppController::syncDatabasesAsync(wxEvtHandler* wxHandler) {
+    if (workerThread_.joinable()) {
+        if (isRunning_) {
+            if (wxHandler) {
+                wxQueueEvent(wxHandler, new StatusUpdateEvent(0,
+                    "REJECT:Another operation is already in progress. Please wait or cancel it first."));
+            }
+            return;
+        }
+        workerThread_.join();
+    }
+    cancelRequested_ = false;
+    isRunning_ = true;
+    workerThread_ = std::thread(&AppController::doSyncDatabases, this, wxHandler);
 }

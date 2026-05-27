@@ -43,6 +43,8 @@ enum {
     ID_TOOL_DEDUP         = wxID_HIGHEST + 203,
     ID_TOOL_IMPORT        = wxID_HIGHEST + 204,
     ID_TOOL_CONFIG        = wxID_HIGHEST + 205,
+    ID_TOOL_CANCEL_TEST   = wxID_HIGHEST + 208,
+    ID_TOOL_SYNC          = wxID_HIGHEST + 209,
     ID_TOOL_CLEAR         = wxID_HIGHEST + 207,
     ID_SEARCH_BOX         = wxID_HIGHEST + 206,
     ID_TOOLBAR_DBPATH     = wxID_HIGHEST + 301,
@@ -73,6 +75,8 @@ wxBEGIN_EVENT_TABLE(MainFrame, wxFrame)
     EVT_MENU(ID_TOOL_DEDUP,       MainFrame::onToolDedup)
     EVT_MENU(ID_TOOL_IMPORT,      MainFrame::onToolImport)
     EVT_MENU(ID_TOOL_CONFIG,      MainFrame::onToolConfig)
+    EVT_MENU(ID_TOOL_CANCEL_TEST, MainFrame::onToolCancelTest)
+    EVT_MENU(ID_TOOL_SYNC,       MainFrame::onToolSync)
     // Search
     EVT_TEXT_ENTER(ID_SEARCH_BOX,  MainFrame::onSearchBoxEnter)
     EVT_TEXT(ID_SEARCH_BOX,        MainFrame::onSearchTextChanged)
@@ -140,15 +144,23 @@ MainFrame::MainFrame(const config::AppConfig& cfg, sqlite3* db)
         } else if (payload.StartsWith("ERR:")) {
             wxMessageBox("Find error: " + payload.Mid(4),
                          "Error", wxOK | wxICON_ERROR);
+        } else if (payload.StartsWith("REJECT:")) {
+            wxMessageBox(payload.Mid(7), "Operation Busy",
+                         wxOK | wxICON_INFORMATION, this);
         } else {
             onStatusUpdate(evt);
         }
     });
 
-    // ── Test completion → refresh Delay column ────────────────────
+    // ── Test completion → refresh Delay column and restore UI state ──
     Bind(wxEVT_PROXY_TEST_PROGRESS, [this](ProxyTestProgressEvent& evt) {
         if (evt.isCompleted() && proxyPanel_) {
             proxyPanel_->refreshResults();
+        }
+        if (evt.isCompleted()) {
+            wxToolBar* tb = GetToolBar();
+            if (tb) tb->EnableTool(ID_TOOL_CANCEL_TEST, false);
+            setStatusText(0, "Test completed");
         }
     });
 
@@ -273,11 +285,16 @@ void MainFrame::initToolBar() {
     // Note: 2nd arg = label (visible text when wxTB_TEXT style is set).
     //       4th arg = shortHelp (hover tooltip on all platforms, per wxToolBarToolBase).
     //       We use icon-only toolbar (no wxTB_TEXT), so label="", tooltip in shortHelp.
-    tb->AddTool(ID_TOOL_UPDATE_ALL, wxEmptyString, ToolbarIcons::load("tool_update"), "更新");
+    tb->AddTool(ID_TOOL_UPDATE_ALL, wxEmptyString, ToolbarIcons::load("tool_update1"), "更新");
     tb->AddTool(ID_TOOL_TEST,       wxEmptyString, ToolbarIcons::load("tool_test"),   "测试");
+    auto cancelBmp = ToolbarIcons::load("tool_cancel");
+    auto cancelDisabled = ToolbarIcons::loadDisabled("tool_cancel");
+    tb->AddTool(ID_TOOL_CANCEL_TEST, wxEmptyString, cancelBmp, cancelDisabled, wxITEM_NORMAL, "取消测试");
+    tb->EnableTool(ID_TOOL_CANCEL_TEST, false);  // disabled until test starts
+    tb->AddTool(ID_TOOL_SYNC,       wxEmptyString, ToolbarIcons::load("tool_synchronize"), "同步");
     tb->AddTool(ID_TOOL_FIND,       wxEmptyString, ToolbarIcons::load("tool_find"),   "查找最佳代理");
     tb->AddTool(ID_TOOL_DEDUP,      wxEmptyString, ToolbarIcons::load("tool_dedup"),  "去重");
-    tb->AddTool(ID_TOOL_IMPORT,     wxEmptyString, ToolbarIcons::load("tool_import"), "导入");
+    tb->AddTool(ID_TOOL_IMPORT,     wxEmptyString, ToolbarIcons::load("tool_import"), "增加新订阅");
     tb->AddTool(ID_TOOL_CONFIG,     wxEmptyString, ToolbarIcons::load("tool_config"), "配置");
 
     // Search box — on left side, above Host column
@@ -500,6 +517,8 @@ void MainFrame::onToolUpdateAll(wxCommandEvent& event) {
 void MainFrame::onTestSubscription(SubscriptionTestEvent& evt) {
     controller_->testSubscriptionAsync(evt.getSubId(), this);
     setStatusText(0, "Testing subscription…");
+    wxToolBar* tb = GetToolBar();
+    if (tb) tb->EnableTool(ID_TOOL_CANCEL_TEST, true);
 }
 
 void MainFrame::onToolTest(wxCommandEvent& event) {
@@ -509,9 +528,20 @@ void MainFrame::onToolTest(wxCommandEvent& event) {
         if (!subId.empty()) {
             controller_->testSubscriptionAsync(subId, this);
             setStatusText(0, "Testing subscription…");
+            wxToolBar* tb = GetToolBar();
+            if (tb) tb->EnableTool(ID_TOOL_CANCEL_TEST, true);
         }
     }
     (void)event;  // keep compiler happy
+}
+
+void MainFrame::onToolCancelTest(wxCommandEvent&) {
+    if (controller_) {
+        controller_->cancelTest();
+    }
+    wxToolBar* tb = GetToolBar();
+    if (tb) tb->EnableTool(ID_TOOL_CANCEL_TEST, false);
+    setStatusText(0, "Cancelling test…");
 }
 
 void MainFrame::onToolFind(wxCommandEvent& event) {
@@ -528,6 +558,13 @@ void MainFrame::onToolImport(wxCommandEvent& event) {
 
 void MainFrame::onToolConfig(wxCommandEvent& event) {
     onMenuConfig(event);
+}
+
+void MainFrame::onToolSync(wxCommandEvent&) {
+    setStatusText(0, "同步中…");
+    if (controller_) {
+        controller_->syncDatabasesAsync(this);
+    }
 }
 
 // -------------------------------------------------------------------
