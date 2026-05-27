@@ -47,7 +47,11 @@ struct FallbackProxy {
     std::string address;
     int socksPort;
     int delay;
+    std::string configType;   // protocol type: 1=VMess, 3=SS, 4=SOCKS, 5=VLESS, etc.
 };
+
+/** Convert config type number to human-readable protocol name */
+static std::string configTypeToProtocol(const std::string& ct);
 
 private:
     std::vector<FallbackProxy> loadFallbackProxies(int maxCount = -1);

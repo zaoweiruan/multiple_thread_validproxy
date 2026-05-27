@@ -11,6 +11,7 @@ std::ofstream* Logger::outFile_ = nullptr;
 std::mutex Logger::mutex_;
 bool Logger::enabled_ = false;
 bool Logger::fileEnabled_ = true;
+bool Logger::consoleEnabled_ = true;
 LogLevel Logger::fileLevel_ = LogLevel::DEBUG;
 LogLevel Logger::consoleLevel_ = LogLevel::INFO;
 Logger::LogCallback Logger::logCallback_ = nullptr;
@@ -60,7 +61,7 @@ void Logger::write(const std::string& msg, LogLevel level) {
     std::string levelStr = levelToString(level);
     std::string fullMsg = "[" + std::string(timestamp) + "] [" + levelStr + "] " + msg;
     
-    if (static_cast<int>(level) >= static_cast<int>(consoleLevel_)) {
+    if (consoleEnabled_ && static_cast<int>(level) >= static_cast<int>(consoleLevel_)) {
         std::cout << fullMsg << std::endl;
     }
     
@@ -128,7 +129,7 @@ void Logger::writeTimestamp(const std::string& msg, LogLevel level) {
     std::string levelStr = levelToString(level);
     std::string fullMsg = "[" + std::string(timestamp) + "] [" + levelStr + "] " + msg;
     
-    if (static_cast<int>(level) >= static_cast<int>(consoleLevel_)) {
+    if (consoleEnabled_ && static_cast<int>(level) >= static_cast<int>(consoleLevel_)) {
         std::cout << fullMsg << std::endl;
     }
     
@@ -202,6 +203,11 @@ LogLevel Logger::getConsoleLevel() {
 void Logger::setFileEnabled(bool enabled) {
     std::lock_guard<std::mutex> lock(mutex_);
     fileEnabled_ = enabled;
+}
+
+void Logger::setConsoleEnabled(bool enabled) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    consoleEnabled_ = enabled;
 }
 
 bool Logger::isFileEnabled() {

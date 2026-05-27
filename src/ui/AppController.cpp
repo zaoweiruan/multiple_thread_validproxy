@@ -405,6 +405,16 @@ void AppController::doFindFirstProxy(wxEvtHandler* wxHandler) {
             }
             return;
         }
+        // Start Xray instances if not already running
+        if (manager->getInstanceCount() == 0) {
+            int started = manager->start(config_.xray_workers, config_.xray_start_port, config_.xray_api_port);
+            if (started == 0) {
+                if (wxHandler) {
+                    wxQueueEvent(wxHandler, new StatusUpdateEvent(0, "ERR:Failed to start Xray instances"));
+                }
+                return;
+            }
+        }
         ProxyFinder finder(db_, manager, xrayPath, config_.test_url, "", config_.test_timeout_ms, &cancelRequested_);
 
         std::pair<int, int> ports = finder.findFirstWorkingProxy();
@@ -454,6 +464,16 @@ void AppController::doFindBestProxy(wxEvtHandler* wxHandler) {
                 wxQueueEvent(wxHandler, new StatusUpdateEvent(0, "ERR:Failed to create XrayManager"));
             }
             return;
+        }
+        // Start Xray instances if not already running
+        if (manager->getInstanceCount() == 0) {
+            int started = manager->start(config_.xray_workers, config_.xray_start_port, config_.xray_api_port);
+            if (started == 0) {
+                if (wxHandler) {
+                    wxQueueEvent(wxHandler, new StatusUpdateEvent(0, "ERR:Failed to start Xray instances"));
+                }
+                return;
+            }
         }
         ProxyFinder finder(db_, manager, xrayPath, config_.test_url, "", config_.test_timeout_ms, &cancelRequested_);
 
