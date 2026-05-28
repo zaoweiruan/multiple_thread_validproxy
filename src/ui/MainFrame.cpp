@@ -286,7 +286,7 @@ void MainFrame::initToolBar() {
     //       4th arg = shortHelp (hover tooltip on all platforms, per wxToolBarToolBase).
     //       We use icon-only toolbar (no wxTB_TEXT), so label="", tooltip in shortHelp.
     tb->AddTool(ID_TOOL_UPDATE_ALL, wxEmptyString, ToolbarIcons::load("tool_update1"), "更新");
-    tb->AddTool(ID_TOOL_TEST,       wxEmptyString, ToolbarIcons::load("tool_test"),   "测试");
+    tb->AddTool(ID_TOOL_TEST,       wxEmptyString, ToolbarIcons::load("tool_test"),   "测试全部代理");
     auto cancelBmp = ToolbarIcons::load("tool_cancel");
     auto cancelDisabled = ToolbarIcons::loadDisabled("tool_cancel");
     tb->AddTool(ID_TOOL_CANCEL_TEST, wxEmptyString, cancelBmp, cancelDisabled, wxITEM_NORMAL, "取消测试");
@@ -522,17 +522,12 @@ void MainFrame::onTestSubscription(SubscriptionTestEvent& evt) {
 }
 
 void MainFrame::onToolTest(wxCommandEvent& event) {
-    // Start test for the currently-selected subscription
-    if (subPanel_) {
-        std::string subId = subPanel_->getSelectedSubId();
-        if (!subId.empty()) {
-            controller_->testSubscriptionAsync(subId, this);
-            setStatusText(0, "Testing subscription…");
-            wxToolBar* tb = GetToolBar();
-            if (tb) tb->EnableTool(ID_TOOL_CANCEL_TEST, true);
-        }
-    }
-    (void)event;  // keep compiler happy
+    // Test ALL proxies (not just the selected subscription)
+    controller_->testAllProxiesAsync(this);
+    setStatusText(0, "Testing all proxies…");
+    wxToolBar* tb = GetToolBar();
+    if (tb) tb->EnableTool(ID_TOOL_CANCEL_TEST, true);
+    (void)event;
 }
 
 void MainFrame::onToolCancelTest(wxCommandEvent&) {
