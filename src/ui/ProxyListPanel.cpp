@@ -25,11 +25,17 @@ enum {
     COL_COUNT    = 9,
 };
 
+// Context menu command IDs — must be unique to avoid wxID_ANY collisions
+enum {
+    ID_CONTEXT_TEST_PROXY = wxID_HIGHEST + 400,
+    ID_CONTEXT_GEN_CONFIG = wxID_HIGHEST + 401,
+};
+
 // -------------------------------------------------------------------
 wxBEGIN_EVENT_TABLE(ProxyListPanel, wxPanel)
     EVT_DATAVIEW_ITEM_CONTEXT_MENU(wxID_ANY, ProxyListPanel::onContextMenu)
-    EVT_MENU(wxID_ANY, ProxyListPanel::onTestProxy)
-    EVT_MENU(wxID_ANY, ProxyListPanel::onGenerateConfig)
+    EVT_MENU(ID_CONTEXT_TEST_PROXY, ProxyListPanel::onTestProxy)
+    EVT_MENU(ID_CONTEXT_GEN_CONFIG, ProxyListPanel::onGenerateConfig)
     EVT_DATAVIEW_SELECTION_CHANGED(wxID_ANY, ProxyListPanel::onSelectionChanged)
 wxEND_EVENT_TABLE()
 
@@ -341,8 +347,8 @@ void ProxyListPanel::onContextMenu(wxDataViewEvent& event) {
     if (!item.IsOk()) return;
 
     wxMenu menu;
-    menu.Append(wxID_ANY, "Test");
-    menu.Append(wxID_ANY, "Generate Config");
+    menu.Append(ID_CONTEXT_TEST_PROXY, "测试此代理");
+    menu.Append(ID_CONTEXT_GEN_CONFIG, "输出分享配置");
     PopupMenu(&menu);
 }
 
