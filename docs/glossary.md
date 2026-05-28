@@ -304,3 +304,128 @@
 | **Fluent API** | `CurlEasyHandle` | 链式调用： `.setUrl().setProxy().setTimeoutMs().perform()` |
 | **Strategy** | `SubitemUpdaterV2::Strategy` | 更新策略模式（DirectFirst/ProxyFirst/DirectOnly） |
 | **Multi-thread Worker** | `ProxyBatchTester` | 多线程工作队列模式 |
+
+---
+
+## 十二、文件目录 (File Directories)
+
+> 以下按逻辑分组，按目录路径格式列出应用中所有文件读写位置。
+
+### `<exeDir>/` 可执行文件所在目录
+- **用途：** 所有相对路径的根目录；通过 `GetModuleFileNameA()` 动态获取
+- **路径计算：** `src/Utils.cpp:19-28` — `GetModuleFileNameA(NULL, buffer, MAX_PATH)` → `rfind('\\')` 截取目录
+- **引用位置：** 几乎所有源文件通过 `utils::getExecutableDir()` 调用
+
+---
+
+### `<exeDir>/config.json` 应用配置文件
+- **用途：** 应用主配置（数据库路径、Xray 路径、测试参数、日志级别、去重设置等）
+- **读取位置：** `src/ConfigReader.cpp:27-32`
+- **文件名格式：** `config.json`（也可通过 `-c <path>` 指定任意 `.json` 文件）
+- **路径计算：** `exeDir + "\\config.json"` (ConfigReader.cpp:27)
+- **操作：** 读取
+
+---
+
+### `<exeDir>/config/` Xray 运行时配置目录
+- **用途：** 存放 Xray 进程 JSON 配置文件及 CLI 生成的出站 JSON
+- **创建位置：** `src/main.cpp:126-128`
+- **Xray 实例配置写入：** `src/XrayInstance.cpp:12,137-144,171`
+  - 文件名：`xray_config_<socksPort>.json`
+  - 路径计算：`configDir + "/xray_config_" + std::to_string(socksPort) + ".json"`
+- **出站 JSON 写入（CLI -G）：** `src/main.cpp:329-331`
+  - 文件名：`<generatorIndexId>.json`
+  - 路径计算：`configDir / (generatorIndexId + ".json")`
+- **被 XrayManager 引用：** `src/ProxyBatchTester.cpp:16-18`, `src/SubitemUpdaterV2.cpp:1150`, `src/main.cpp:460-463`
+- **操作：** 写入（两个写入点），Xray 进程读取
+
+---
+
+### `<exeDir>/log/` 日志文件目录
+- **用途：** 存放所有会话的运行日志
+- **创建位置：** `src/main.cpp:129-131`
+- **日志写入：** `src/Logger.cpp:27-43`
+  - 文件名格式：`<prefix>_<timestamp>.log`
+  - 路径计算：`logDir + "/" + prefix + "_" + timestamp + ".log"`
+  - prefix 取值：`ui`, `test`, `update`, `tourl`, `sync`, `dedup`, `generator`, `show-sub`, `test-sub`, `findminproxy`, `find-proxy`
+  - `main.cpp:125` 定义 `logDir = baseDir / "log"`
+- **初始化调用：** 分布在 `src/main.cpp:248,294,346,439,504,593,628,678,713,777` 等所有 CLI 模式入口
+- **操作：** 写入（每次启动生成一个新文件）
+
+---
+
+### `<exeDir>/proxies/` 分享链接导出目录（CLI 模式）
+- **用途：** `-TU` / `--tourl` 命令导出可用代理分享链接
+- **创建与写入：** `src/main.cpp:572-577`
+  - 文件名：`proxies_<YYYYMMDD_HHMMSS>.txt`
+  - 路径计算：`std::filesystem::path(exeDir) / "proxies" / ("proxies_" + timestamp + ".txt")`
+- **操作：** 写入
+
+---
+
+### `<TEMP>/` 操作系统临时目录（GUI 模式导出）
+- **用途：** GUI 菜单 "Export Share Links" 导出分享链接
+- **写入：** `src/ui/AppController.cpp:334-337`
+  - 文件名：`proxies_<YYYYMMDD_HHMMSS>.txt`
+  - 路径计算：`std::filesystem::temp_directory_path() / ("proxies_" + timestamp + ".txt")`
+- **操作：** 写入
+
+---
+
+### `<exeDir>/icons/` 工具栏图标目录
+- **用途：** 存放工具栏按钮的 PNG/ICO 图标（嵌入式资源的后备路径）
+- **读取：** `src/ui/ToolbarIcons.h:139-156,196-200`
+  - 路径计算：`exeDir + "\\icons\\" + name + ".png"` 及 `.ico` 后备
+  - 文件列表：`tool_cancel.png`, `tool_config.ico/png`, `tool_dedup.ico/png`, `tool_find.ico/png`, `tool_import.ico/png`, `tool_synchronize.png`, `tool_test.ico/png`, `tool_update.ico/png`, `tool_update1.png`
+- **操作：** 读取
+
+---
+
+### `<database_path>` SQLite 数据库文件
+- **用途：** 主数据库，存储 ProfileItem（代理）、SubItem（订阅）、ProfileExItem（测试结果）三张表
+- **读取配置：** `src/ConfigReader.cpp:67-71` — 从 config.json 读取 `database.path`，通过 `resolvePath()` 解析
+- **打开（读写）：** `src/main.cpp:63` — `sqlite3_open(config.database_path.c_str(), &db)`
+- **典型值：** `bin/worker/guiNDB.db`（生产）、`E:/v2rayN-windows-64/guiConfigs/guiNDB.db`（外部）、`test/guiNDB.db`（测试）
+- **伴随文件：** `guiNDB.db-shm`, `guiNDB.db-wal`（WAL 模式自动生成）
+- **操作：** 读写
+
+---
+
+### `<test>/guiNDB.db` 测试数据库
+- **用途：** 集成测试使用的数据库文件
+- **创建/写入：** `test/init_test_db.cpp:7` — 硬编码路径 `E:/eclipse_workspace/multiple_thread_validproxy/test/guiNDB.db`
+- **文件：** `guiNDB.db`, `guiNDB_empty.db`
+- **操作：** 读写（测试框架）
+
+---
+
+### `<source_db>` / `<target_db>` 同步数据库
+- **用途：** `-S` / `--sync` 命令的源和目标数据库，用于数据库间代理同步
+- **配置：** `src/ConfigReader.cpp:217-224` — 从 config.json 读取 `sync.source_db` / `sync.target_db`
+- **打开（读写）：** `src/SubitemUpdaterV2.cpp:1829,1836` — `sqlite3_open(sourceDbPath)` / `sqlite3_open(targetDbPath)`
+- **CLI 参数：** `src/main.cpp:180-215` 解析 `-S source.db:target.db`
+- **操作：** 读写
+
+---
+
+### `<import_file_path>` 批量导入文件
+- **用途：** `-IS` / `--import-sub-config` 命令读取的文件（每行一个订阅 URL，可选备注）
+- **读取：** `src/SubitemUpdaterV2.cpp:2104` — `std::ifstream file(filePath)`
+- **CLI 参数：** `src/main.cpp:219-221` — 从 argv 获取路径
+- **示例文件：** `test/import_test.txt`, `test/test_import.txt`
+- **操作：** 读取
+
+---
+
+### `<exeDir>/worker/` 工作目录（生产数据库所在）
+- **用途：** 生产环境中 `guiNDB.db` 的默认位置（config.json 中引用）
+- **包含文件：** `guiNDB.db`、历史 exe 文件、SQL schema 文件（`schema_*.sql`）、测试数据文件等
+- **路径计算：** 由 config.json 的 `database.path` 或二进制发布结构决定
+- **操作：** 间接读写（通过 SQLite）
+
+---
+
+### `<exeDir>/bin/` 运行时 DLL/资源目录
+- **用途：** 存放 wxWidgets 运行时 DLL（`wxmsw32u_*.dll`）、第三方库（`libpng16.dll`, `libjpeg-62.dll` 等）
+- **路径计算：** 与 exe 同目录（`GetModuleFileNameA` 返回值所在目录）
+- **操作：** 读取（Windows 动态加载 DLL）、写入（CMake 构建时复制 DLL）
