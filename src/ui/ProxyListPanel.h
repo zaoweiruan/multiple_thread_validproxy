@@ -37,7 +37,7 @@ private:
 
     void onContextMenu(wxDataViewEvent& event);
     void onTestProxy(wxCommandEvent& event);
-    void onGenerateConfig(wxCommandEvent& event);
+    void onExportShareLink(wxCommandEvent& event);
     void onProxyTestProgress(ProxyTestProgressEvent& event);
     void onColumnHeaderClick(wxDataViewEvent& event);
     void onSelectionChanged(wxDataViewEvent& event);

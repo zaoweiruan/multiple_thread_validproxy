@@ -27,15 +27,15 @@ enum {
 
 // Context menu command IDs — must be unique to avoid wxID_ANY collisions
 enum {
-    ID_CONTEXT_TEST_PROXY = wxID_HIGHEST + 400,
-    ID_CONTEXT_GEN_CONFIG = wxID_HIGHEST + 401,
+    ID_CONTEXT_TEST_PROXY   = wxID_HIGHEST + 400,
+    ID_CONTEXT_EXPORT_SHARE = wxID_HIGHEST + 401,
 };
 
 // -------------------------------------------------------------------
 wxBEGIN_EVENT_TABLE(ProxyListPanel, wxPanel)
     EVT_DATAVIEW_ITEM_CONTEXT_MENU(wxID_ANY, ProxyListPanel::onContextMenu)
     EVT_MENU(ID_CONTEXT_TEST_PROXY, ProxyListPanel::onTestProxy)
-    EVT_MENU(ID_CONTEXT_GEN_CONFIG, ProxyListPanel::onGenerateConfig)
+    EVT_MENU(ID_CONTEXT_EXPORT_SHARE, ProxyListPanel::onExportShareLink)
     EVT_DATAVIEW_SELECTION_CHANGED(wxID_ANY, ProxyListPanel::onSelectionChanged)
 wxEND_EVENT_TABLE()
 
@@ -348,7 +348,7 @@ void ProxyListPanel::onContextMenu(wxDataViewEvent& event) {
 
     wxMenu menu;
     menu.Append(ID_CONTEXT_TEST_PROXY, "测试此代理");
-    menu.Append(ID_CONTEXT_GEN_CONFIG, "输出分享配置");
+    menu.Append(ID_CONTEXT_EXPORT_SHARE, "输出分享配置");
     PopupMenu(&menu);
 }
 
@@ -372,17 +372,10 @@ void ProxyListPanel::onTestProxy(wxCommandEvent& event) {
 }
 
 // -------------------------------------------------------------------
-void ProxyListPanel::onGenerateConfig(wxCommandEvent& event) {
-    wxDataViewItem item = listCtrl_->GetSelection();
-    if (!item.IsOk()) return;
-
-    wxVariant idxVar;
-    store_->GetValue(idxVar, item, COL_INDEXID);
-    std::string indexId = idxVar.GetString().ToStdString();
-
-    bool ok = controller_->generateConfig(indexId);
-    wxMessageBox(ok ? "Config generated successfully." : "Config generation failed.",
-                 "Generate Config", wxOK | (ok ? wxICON_INFORMATION : wxICON_WARNING));
+void ProxyListPanel::onExportShareLink(wxCommandEvent& event) {
+    bool ok = controller_->exportShareLinks();
+    wxMessageBox(ok ? "分享链接已导出到临时目录。" : "导出分享链接失败。",
+                 "输出分享配置", wxOK | (ok ? wxICON_INFORMATION : wxICON_WARNING));
     (void)event;
 }
 
