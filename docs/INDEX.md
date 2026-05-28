@@ -214,11 +214,12 @@ updated: 2026-05-25
  | 4 | [`docs/reports/2026-05-19-single-proxy-test-fix-report.md`](./reports/2026-05-19-single-proxy-test-fix-report.md) | **单代理测试修复报告** — runWithIndexId, Delay 刷新, 事件流程修复技术细节 | 5.6 KB |
  | 5 | [`docs/reports/2026-05-19-ui-close-hang-fix-report.md`](./reports/2026-05-19-ui-close-hang-fix-report.md) | **UI 关闭挂起修复报告** — AppController/XrayInstance 析构竞态条件 + 进程句柄 BUG | 3.2 KB |
 
- ## 9.1 Bug 修复记录
+## 9.1 Bug 修复记录
 
- | # | 文件 | 说明 | 大小 |
- |---|------|------|------|
- | 1 | [`docs/bugfix/bugfix-20260520-ctrl-c-exit.md`](./bugfix/bugfix-20260520-ctrl-c-exit.md) | **Ctrl+C 信号无法正常退出修复** — AppController 析构函数添加 5 秒超时 + detach 机制 | 4.2 KB |
+| # | 文件 | 说明 | 大小 |
+|---|------|------|------|
+| 1 | [`docs/bugfix/2026-05-28-cancel-sub-update-proxyfinder-phase.md`](./bugfix/2026-05-28-cancel-sub-update-proxyfinder-phase.md) | **订阅更新 ProxyFinder 阶段取消无法立即终止修复** — SubitemUpdaterV2::getProxyPorts() 未传递取消标志给 ProxyFinder | 2.8 KB |
+| 2 | [`docs/bugfix/2026-05-20-ctrl-c-exit.md`](./bugfix/2026-05-20-ctrl-c-exit.md) | **Ctrl+C 信号无法正常退出修复** — AppController 析构函数添加 5 秒超时 + detach 机制 | 4.2 KB |
 
  ## 10. 测试报告
 
@@ -272,4 +273,4 @@ updated: 2026-05-25
 
 ---
 
-*最后更新: 2026-05-19 | 维护者: Kilo AI*
+*最后更新: 2026-05-28 | 维护者: Kilo AI*

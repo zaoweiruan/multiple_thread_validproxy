@@ -73,6 +73,8 @@ origin: "Continuation of project memory consolidation task"
 | 12 | **Single proxy test report** | Technical report: TestSubId→IndexId, Delay refresh, event flow | ✅ completed |
 | 13 | **UI enhancements plan** | Column sorting + Find individual proxy + Subscription linkage | 📝 draft |
 | 14 | **UI close hang fix** | Fix AppController/XrayInstance destructor race + process handle bugs | ✅ completed |
+| 15 | **Cancel support for update** | Add runtime cancel support for subscription update (SubitemUpdaterV2 + MainFrame dynamic cancel button) | ✅ completed |
+| 16 | **ProxyFinder cancel propagation** | Wire externalCancel_ to ProxyFinder in SubitemUpdaterV2::getProxyPorts() | ✅ completed |
 
 ### In Progress Plans
 
