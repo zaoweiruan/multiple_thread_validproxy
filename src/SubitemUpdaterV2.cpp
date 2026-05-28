@@ -1180,10 +1180,11 @@ std::pair<int, int> SubitemUpdaterV2::getProxyPorts(const std::string& targetUrl
         return {-1, -1};
     }
 
-    proxyFinder_ = new ProxyFinder(db_, xrayMgr_, xrayPath_,
-                                    config_.test_url,
-                                    targetUrl,
-                                    config_.test_timeout_ms);
+proxyFinder_ = new ProxyFinder(db_, xrayMgr_, xrayPath_,
+                                     config_.test_url,
+                                     targetUrl,
+                                     config_.test_timeout_ms,
+                                     externalCancel_ ? externalCancel_ : nullptr);
 
     auto result = proxyFinder_->findFirstWorkingProxy(targetUrl);
     Logger::write("INFO: ProxyFinder returned socks=" + std::to_string(result.first) + ", api=" + std::to_string(result.second), LogLevel::INFO);
