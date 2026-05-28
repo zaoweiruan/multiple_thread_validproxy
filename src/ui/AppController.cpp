@@ -331,7 +331,7 @@ bool AppController::exportShareLinks() {
     time_t now = time(nullptr);
     strftime(timestamp, sizeof(timestamp), "%Y%m%d_%H%M%S", localtime(&now));
 
-    std::filesystem::path outPath = std::filesystem::temp_directory_path() / ("proxies_" + std::string(timestamp) + ".txt");
+    std::filesystem::path outPath = std::filesystem::path(utils::getExecutableDir()) / "proxies" / ("proxies_" + std::string(timestamp) + ".txt");
     std::filesystem::create_directories(outPath.parent_path());
 
     std::ofstream outFile(outPath, std::ios::binary);
