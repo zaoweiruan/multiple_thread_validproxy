@@ -41,6 +41,7 @@ struct AppConfig {
 class ConfigReader {
 public:
     static std::optional<AppConfig> load(const std::string& configPath);
+    static bool save(const std::string& configPath, const AppConfig& config);
     static std::string getDefaultConfigPath();
 
 private:

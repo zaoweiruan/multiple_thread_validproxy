@@ -21,6 +21,14 @@ class wxSearchCtrl;
 class ConfigDialog;
 class TrayIcon;
 
+enum class OperationType {
+    NONE,
+    TEST,
+    UPDATE,
+    FIND,
+    SYNC
+};
+
 // ---------------------------------------------------------------
 // MainFrame — primary application window
 // ---------------------------------------------------------------
@@ -39,6 +47,7 @@ public:
     // Status bar helpers
     void setStatusText(int field, const wxString& text);
     void showBalloon(const wxString& title, const wxString& msg);
+    void setOperationState(OperationType op);
 
 private:
     // Initialization
@@ -71,7 +80,7 @@ private:
     void onToolDedup(wxCommandEvent& event);
     void onToolImport(wxCommandEvent& event);
     void onToolConfig(wxCommandEvent& event);
-    void onToolCancelTest(wxCommandEvent& event);
+    void onToolCancel(wxCommandEvent& event);
     void onToolSync(wxCommandEvent& event);
     void onStatusUpdate(StatusUpdateEvent& event);
     void onResize(wxSizeEvent& event);

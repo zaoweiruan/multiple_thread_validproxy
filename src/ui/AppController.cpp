@@ -73,7 +73,9 @@ AppController::~AppController() {
 // ---------------------------------------------------------------
 bool AppController::saveConfig(const config::AppConfig& cfg) {
     config_ = cfg;
-    return true;
+    // Persist to config.json so changes survive restart
+    std::string configPath = config::ConfigReader::getDefaultConfigPath();
+    return config::ConfigReader::save(configPath, cfg);
 }
 
 // ---------------------------------------------------------------
@@ -382,106 +384,156 @@ void AppController::stopXray() {
 // Async workers
 // ---------------------------------------------------------------
 void AppController::doUpdateSubscription(const std::string& subId, wxEvtHandler* wxHandler) {
-    update::SubitemUpdaterV2 updater(db_, config_.xray_executable, config_, nullptr, "");
-    bool ok = updater.runSingle(subId);
+    // Scope guard: reset isRunning_ on every exit path (including early returns and exceptions)
+    struct ResetGuard { std::atomic<bool>& flag; ~ResetGuard() { flag = false; } };
+    ResetGuard _rg{isRunning_};
 
-    std::string msg = ok ? "Update completed: " + subId : "Update failed: " + subId;
-    if (wxHandler) {
-        wxQueueEvent(wxHandler, new StatusUpdateEvent(0, msg));
+    try {
+update::SubitemUpdaterV2 updater(db_, config_.xray_executable, config_, nullptr, "", &cancelRequested_);
+         bool ok = updater.runSingle(subId);
+
+        std::string msg = ok ? "Update completed: " + subId : "Update failed: " + subId;
+        if (wxHandler) {
+            wxQueueEvent(wxHandler, new StatusUpdateEvent(0, msg));
+        }
+        Logger::write(msg, ok ? LogLevel::REPORT : LogLevel::ERR);
+    } catch (const std::exception& e) {
+        if (wxHandler) {
+            wxQueueEvent(wxHandler, new StatusUpdateEvent(0, std::string("ERR:") + e.what()));
+        }
+        Logger::write(std::string("Update error: ") + e.what(), LogLevel::ERR);
     }
-    Logger::write(msg, ok ? LogLevel::REPORT : LogLevel::ERR);
-    isRunning_ = false;
 }
 
 void AppController::doUpdateAllSubscriptions(wxEvtHandler* wxHandler) {
-    update::SubitemUpdaterV2 updater(db_, config_.xray_executable, config_, nullptr, "");
-    bool ok = updater.run();
+    // Scope guard: reset isRunning_ on every exit path (including early returns and exceptions)
+    struct ResetGuard { std::atomic<bool>& flag; ~ResetGuard() { flag = false; } };
+    ResetGuard _rg{isRunning_};
 
-    std::string msg = ok ? "All subscriptions updated" : "Update (all) had failures";
-    if (wxHandler) {
-        wxQueueEvent(wxHandler, new StatusUpdateEvent(0, msg));
+    try {
+update::SubitemUpdaterV2 updater(db_, config_.xray_executable, config_, nullptr, "", &cancelRequested_);
+         bool ok = updater.run();
+
+        std::string msg = ok ? "All subscriptions updated" : "Update (all) had failures";
+        if (wxHandler) {
+            wxQueueEvent(wxHandler, new StatusUpdateEvent(0, msg));
+        }
+
+        Logger::write(msg, ok ? LogLevel::REPORT : LogLevel::ERR);
+    } catch (const std::exception& e) {
+        if (wxHandler) {
+            wxQueueEvent(wxHandler, new StatusUpdateEvent(0, std::string("ERR:") + e.what()));
+        }
+        Logger::write(std::string("Update (all) error: ") + e.what(), LogLevel::ERR);
     }
-
-    Logger::write(msg, ok ? LogLevel::REPORT : LogLevel::ERR);
-    isRunning_ = false;
 }
 
 void AppController::doTestSubscription(const std::string& subId, wxEvtHandler* wxHandler) {
-    ProxyBatchTester tester(db_, config_, "", &cancelRequested_);
-    bool ok = tester.runWithSubId(subId);
+    // Scope guard: reset isRunning_ on every exit path (including early returns and exceptions)
+    struct ResetGuard { std::atomic<bool>& flag; ~ResetGuard() { flag = false; } };
+    ResetGuard _rg{isRunning_};
 
-    if (wxHandler) {
-        wxQueueEvent(wxHandler, new StatusUpdateEvent(2, ok ? "Test completed" : "Test failed"));
-    }
+    try {
+        ProxyBatchTester tester(db_, config_, "", &cancelRequested_);
+        bool ok = tester.runWithSubId(subId);
 
-    // Always send completion event (both success and failure) to restore UI state
-    if (wxHandler) {
-        wxQueueEvent(wxHandler, new ProxyTestProgressEvent(0, 0, "", "", "", ok ? "Batch test finished" : "Batch test failed", true));
-    }
-    // Broadcast to MainFrame for delay column refresh.
-    // Use dynamic_cast to safely get the top-level window from wxEvtHandler.
-    // Create a fresh event copy for the MainFrame receiver.
-    if (wxWindow* win = dynamic_cast<wxWindow*>(wxHandler)) {
-        if (wxWindow* topLevel = wxGetTopLevelParent(win)) {
-            if (topLevel != win) {
-                wxQueueEvent(topLevel, new ProxyTestProgressEvent(0, 0, "", "", "", "Batch test finished", true));
+        if (wxHandler) {
+            wxQueueEvent(wxHandler, new StatusUpdateEvent(2, ok ? "Test completed" : "Test failed"));
+        }
+
+        // Always send completion event (both success and failure) to restore UI state
+        if (wxHandler) {
+            wxQueueEvent(wxHandler, new ProxyTestProgressEvent(0, 0, "", "", "", ok ? "Batch test finished" : "Batch test failed", true));
+        }
+        // Broadcast to MainFrame for delay column refresh.
+        // Use dynamic_cast to safely get the top-level window from wxEvtHandler.
+        // Create a fresh event copy for the MainFrame receiver.
+        if (wxWindow* win = dynamic_cast<wxWindow*>(wxHandler)) {
+            if (wxWindow* topLevel = wxGetTopLevelParent(win)) {
+                if (topLevel != win) {
+                    wxQueueEvent(topLevel, new ProxyTestProgressEvent(0, 0, "", "", "", "Batch test finished", true));
+                }
             }
         }
-    }
 
-    Logger::write(std::string("Batch test ") + (ok ? "succeeded" : "failed"), LogLevel::REPORT);
-    isRunning_ = false;
+        Logger::write(std::string("Batch test ") + (ok ? "succeeded" : "failed"), LogLevel::REPORT);
+    } catch (const std::exception& e) {
+        if (wxHandler) {
+            wxQueueEvent(wxHandler, new StatusUpdateEvent(0, std::string("ERR:") + e.what()));
+        }
+        Logger::write(std::string("Batch test error: ") + e.what(), LogLevel::ERR);
+    }
 }
 
 void AppController::doTestSingleProxy(const std::string& indexId, wxEvtHandler* wxHandler) {
-    ProxyBatchTester tester(db_, config_, "", &cancelRequested_);
-    bool ok = tester.runWithIndexId(indexId);
+    // Scope guard: reset isRunning_ on every exit path (including early returns and exceptions)
+    struct ResetGuard { std::atomic<bool>& flag; ~ResetGuard() { flag = false; } };
+    ResetGuard _rg{isRunning_};
 
-    // Get actual test result (delay + message) from the tester
-    auto result = tester.getLastResult();
-    std::string delayStr = (result.latencyMs > 0) ? std::to_string(result.latencyMs) : std::string("");
-    std::string message   = result.success
-                              ? std::to_string(result.latencyMs) + "ms"
-                              : result.errorMsg.empty() ? "FAIL" : result.errorMsg;
+    try {
+        ProxyBatchTester tester(db_, config_, "", &cancelRequested_);
+        bool ok = tester.runWithIndexId(indexId);
 
-    // Result row update (indexId+address in remarks col, delay+message in their cols)
-    if (wxHandler) {
-        wxQueueEvent(wxHandler,
-                     new ProxyTestProgressEvent(1, 1, indexId, /*remarks=*/"",
-                                                delayStr, message, /*isCompleted=*/true));
+        // Get actual test result (delay + message) from the tester
+        auto result = tester.getLastResult();
+        std::string delayStr = (result.latencyMs > 0) ? std::to_string(result.latencyMs) : std::string("");
+        std::string message   = result.success
+                                    ? std::to_string(result.latencyMs) + "ms"
+                                    : result.errorMsg.empty() ? "FAIL" : result.errorMsg;
+
+        // Result row update (indexId+address in remarks col, delay+message in their cols)
+        if (wxHandler) {
+            wxQueueEvent(wxHandler,
+                         new ProxyTestProgressEvent(1, 1, indexId, /*remarks=*/"",
+                                                      delayStr, message, /*isCompleted=*/true));
+        }
+        // Status bar update via MainFrame::onStatusUpdate
+        if (wxHandler) {
+            wxQueueEvent(wxHandler, new StatusUpdateEvent(2, ok ? "Test completed" : "Test failed"));
+        }
+
+        Logger::write(std::string("Single proxy test ") + (ok ? "succeeded" : "failed"), LogLevel::REPORT);
+    } catch (const std::exception& e) {
+        if (wxHandler) {
+            wxQueueEvent(wxHandler, new StatusUpdateEvent(0, std::string("ERR:") + e.what()));
+        }
+        Logger::write(std::string("Single proxy test error: ") + e.what(), LogLevel::ERR);
     }
-    // Status bar update via MainFrame::onStatusUpdate
-    if (wxHandler) {
-        wxQueueEvent(wxHandler, new StatusUpdateEvent(2, ok ? "Test completed" : "Test failed"));
-    }
-
-    Logger::write(std::string("Single proxy test ") + (ok ? "succeeded" : "failed"), LogLevel::REPORT);
-    isRunning_ = false;
 }
 
 void AppController::doTestAllProxies(wxEvtHandler* wxHandler) {
-    ProxyBatchTester tester(db_, config_, "", &cancelRequested_);
-    bool ok = tester.run();
+    // Scope guard: reset isRunning_ on every exit path (including early returns and exceptions)
+    struct ResetGuard { std::atomic<bool>& flag; ~ResetGuard() { flag = false; } };
+    ResetGuard _rg{isRunning_};
 
-    if (wxHandler) {
-        wxQueueEvent(wxHandler, new StatusUpdateEvent(2, ok ? "All proxies test completed" : "All proxies test had failures"));
-    }
+    try {
+        ProxyBatchTester tester(db_, config_, "", &cancelRequested_);
+        bool ok = tester.run();
 
-    // Always send completion event to restore UI state
-    if (wxHandler) {
-        wxQueueEvent(wxHandler, new ProxyTestProgressEvent(0, 0, "", "", "", ok ? "All batch test finished" : "All batch test failed", true));
-    }
-    // Broadcast to MainFrame for delay column refresh
-    if (wxWindow* win = dynamic_cast<wxWindow*>(wxHandler)) {
-        if (wxWindow* topLevel = wxGetTopLevelParent(win)) {
-            if (topLevel != win) {
-                wxQueueEvent(topLevel, new ProxyTestProgressEvent(0, 0, "", "", "", "All batch test finished", true));
+        if (wxHandler) {
+            wxQueueEvent(wxHandler, new StatusUpdateEvent(2, ok ? "All proxies test completed" : "All proxies test had failures"));
+        }
+
+        // Always send completion event to restore UI state
+        if (wxHandler) {
+            wxQueueEvent(wxHandler, new ProxyTestProgressEvent(0, 0, "", "", "", ok ? "All batch test finished" : "All batch test failed", true));
+        }
+        // Broadcast to MainFrame for delay column refresh
+        if (wxWindow* win = dynamic_cast<wxWindow*>(wxHandler)) {
+            if (wxWindow* topLevel = wxGetTopLevelParent(win)) {
+                if (topLevel != win) {
+                    wxQueueEvent(topLevel, new ProxyTestProgressEvent(0, 0, "", "", "", "All batch test finished", true));
+                }
             }
         }
-    }
 
-    Logger::write(std::string("All proxies batch test ") + (ok ? "succeeded" : "failed"), LogLevel::REPORT);
-    isRunning_ = false;
+        Logger::write(std::string("All proxies batch test ") + (ok ? "succeeded" : "failed"), LogLevel::REPORT);
+    } catch (const std::exception& e) {
+        if (wxHandler) {
+            wxQueueEvent(wxHandler, new StatusUpdateEvent(0, std::string("ERR:") + e.what()));
+        }
+        Logger::write(std::string("All proxies batch test error: ") + e.what(), LogLevel::ERR);
+    }
 }
 
 // ---------------------------------------------------------------
@@ -622,13 +674,24 @@ void AppController::doFindBestProxy(wxEvtHandler* wxHandler) {
 }
 
 void AppController::doSyncDatabases(wxEvtHandler* wxHandler) {
-    bool ok = syncDatabases();
-    std::string msg = ok ? "数据库同步完成" : "数据库同步失败，请查看日志";
-    if (wxHandler) {
-        wxQueueEvent(wxHandler, new StatusUpdateEvent(0, msg));
+    // Scope guard: reset isRunning_ on every exit path (including early returns and exceptions)
+    struct ResetGuard { std::atomic<bool>& flag; ~ResetGuard() { flag = false; } };
+    ResetGuard _rg{isRunning_};
+
+    try {
+        update::SubitemUpdaterV2 updater(db_, config_.xray_executable, config_, nullptr, "", &cancelRequested_);
+        bool ok = updater.syncDatabases(config_.sync.source_db, config_.sync.target_db);
+        std::string msg = ok ? "数据库同步完成" : "数据库同步失败，请查看日志";
+        if (wxHandler) {
+            wxQueueEvent(wxHandler, new StatusUpdateEvent(0, msg));
+        }
+        Logger::write(msg, ok ? LogLevel::REPORT : LogLevel::ERR);
+    } catch (const std::exception& e) {
+        if (wxHandler) {
+            wxQueueEvent(wxHandler, new StatusUpdateEvent(0, std::string("ERR:") + e.what()));
+        }
+        Logger::write(std::string("Sync databases error: ") + e.what(), LogLevel::ERR);
     }
-    Logger::write(msg, ok ? LogLevel::REPORT : LogLevel::ERR);
-    isRunning_ = false;
 }
 
 void AppController::findProxyByIndexIdAsync(const std::string& indexId, wxEvtHandler* wxHandler) {

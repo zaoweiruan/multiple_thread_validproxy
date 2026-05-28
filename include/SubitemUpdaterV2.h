@@ -7,6 +7,7 @@
 #include <fstream>
 #include <iostream>
 #include <optional>
+#include <atomic>
 
 #include "Subitem.h"
 #include "Profileitem.h"
@@ -23,7 +24,8 @@ public:
                     const std::string& xrayPath,
                     const config::AppConfig& config,
                     std::ofstream* logOut = nullptr,
-                    const std::string& baseDir = "");
+                    const std::string& baseDir = "",
+                    std::atomic<bool>* externalCancel = nullptr);
 
     ~SubitemUpdaterV2() {
         cleanupXray();
@@ -89,6 +91,10 @@ private:
     
     bool execSql(const std::string& sql, const std::string& errorContext);
 
+    bool isCancelled() const {
+        return externalCancel_ && externalCancel_->load();
+    }
+
     // Helper methods for import
     std::string extractRemarksFromUrl(const std::string& url);
     int getNextSortValue();
@@ -107,6 +113,7 @@ private:
 
     int xrayProcessId_;
     HANDLE xrayJob_;
+    std::atomic<bool>* externalCancel_{nullptr};
 };
 
 } // namespace update
