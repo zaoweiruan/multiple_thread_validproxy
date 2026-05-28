@@ -196,6 +196,22 @@ void AppController::testSingleProxyAsync(const std::string& indexId, wxEvtHandle
     workerThread_ = std::thread(&AppController::doTestSingleProxy, this, indexId, wxHandler);
 }
 
+void AppController::testAllProxiesAsync(wxEvtHandler* wxHandler) {
+    if (workerThread_.joinable()) {
+        if (isRunning_) {
+            if (wxHandler) {
+                wxQueueEvent(wxHandler, new StatusUpdateEvent(0,
+                    "REJECT:Another operation is already in progress. Please wait or cancel it first."));
+            }
+            return;
+        }
+        workerThread_.join();
+    }
+    cancelRequested_ = false;
+    isRunning_ = true;
+    workerThread_ = std::thread(&AppController::doTestAllProxies, this, wxHandler);
+}
+
 void AppController::cancelTest() {
     cancelRequested_ = true;
     auto ts = std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -439,6 +455,31 @@ void AppController::doTestSingleProxy(const std::string& indexId, wxEvtHandler* 
     }
 
     Logger::write(std::string("Single proxy test ") + (ok ? "succeeded" : "failed"), LogLevel::REPORT);
+    isRunning_ = false;
+}
+
+void AppController::doTestAllProxies(wxEvtHandler* wxHandler) {
+    ProxyBatchTester tester(db_, config_, "", &cancelRequested_);
+    bool ok = tester.run();
+
+    if (wxHandler) {
+        wxQueueEvent(wxHandler, new StatusUpdateEvent(2, ok ? "All proxies test completed" : "All proxies test had failures"));
+    }
+
+    // Always send completion event to restore UI state
+    if (wxHandler) {
+        wxQueueEvent(wxHandler, new ProxyTestProgressEvent(0, 0, "", "", "", ok ? "All batch test finished" : "All batch test failed", true));
+    }
+    // Broadcast to MainFrame for delay column refresh
+    if (wxWindow* win = dynamic_cast<wxWindow*>(wxHandler)) {
+        if (wxWindow* topLevel = wxGetTopLevelParent(win)) {
+            if (topLevel != win) {
+                wxQueueEvent(topLevel, new ProxyTestProgressEvent(0, 0, "", "", "", "All batch test finished", true));
+            }
+        }
+    }
+
+    Logger::write(std::string("All proxies batch test ") + (ok ? "succeeded" : "failed"), LogLevel::REPORT);
     isRunning_ = false;
 }
 

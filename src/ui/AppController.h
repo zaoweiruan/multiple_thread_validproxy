@@ -43,6 +43,7 @@ std::vector<db::models::ProfileExItem> loadProxyResults();
 // ---------------------------------------------------------------
 void testSubscriptionAsync(const std::string& subId, wxEvtHandler* wxHandler);
 void testSingleProxyAsync(const std::string& indexId, wxEvtHandler* wxHandler);
+void testAllProxiesAsync(wxEvtHandler* wxHandler);
 void cancelTest();
 bool isTestCancelled() const;
 
@@ -66,6 +67,7 @@ private:
   void doUpdateAllSubscriptions(wxEvtHandler* wxHandler);
   void doTestSubscription(const std::string& subId, wxEvtHandler* wxHandler);
   void doTestSingleProxy(const std::string& indexId, wxEvtHandler* wxHandler);
+  void doTestAllProxies(wxEvtHandler* wxHandler);
   void doFindFirstProxy(wxEvtHandler* wxHandler);
   void doFindBestProxy(wxEvtHandler* wxHandler);
   void doSyncDatabases(wxEvtHandler* wxHandler);
