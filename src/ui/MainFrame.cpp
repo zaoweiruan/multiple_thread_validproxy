@@ -94,34 +94,23 @@ MainFrame::MainFrame(const config::AppConfig& cfg, sqlite3* db)
 {
     controller_ = new AppController(db, cfg);
 
-    // Set application icon from ICO file
-    wxString exeDir = wxStandardPaths::Get().GetExecutablePath().BeforeLast('/');
+    // Set application icon from embedded resource (icon.ico → resource "icon_ico")
     #ifdef __WXMSW__
-    exeDir = wxStandardPaths::Get().GetExecutablePath().BeforeLast('\\');
+    wxIcon appIcon("icon_ico", wxBITMAP_TYPE_ICO_RESOURCE);
+    #else
+    wxIcon appIcon;
     #endif
-    wxString iconPath = exeDir + "/docs/design/ui/icon.ico";
-    if (wxFile::Exists(iconPath)) {
-        wxIcon appIcon(iconPath, wxBITMAP_TYPE_ICO);
-        if (appIcon.IsOk()) {
-            SetIcon(appIcon);
-        } else {
-            // Fallback to wxArtProvider themed icon
-            wxBitmap appBitmap = wxArtProvider::GetBitmap(wxART_FRAME_ICON);
-            if (appBitmap.IsOk()) {
-                wxIcon appIcon;
-                appIcon.CopyFromBitmap(appBitmap);
-                SetIcon(appIcon);
-            }
-        }
+    if (appIcon.IsOk()) {
+        SetIcon(appIcon);
     } else {
         // Fallback to wxArtProvider themed icon
         wxBitmap appBitmap = wxArtProvider::GetBitmap(wxART_FRAME_ICON);
         if (appBitmap.IsOk()) {
-            wxIcon appIcon;
-            appIcon.CopyFromBitmap(appBitmap);
-            SetIcon(appIcon);
-         }
-     }
+            wxIcon fallbackIcon;
+            fallbackIcon.CopyFromBitmap(appBitmap);
+            SetIcon(fallbackIcon);
+        }
+    }
 
      // Prevent too-narrow window that breaks toolbar right-side control layout
      SetMinSize(wxSize(900, 600));

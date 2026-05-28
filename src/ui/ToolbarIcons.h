@@ -17,8 +17,34 @@
 #include <wx/artprov.h>
 #include <wx/stdpaths.h>
 #include <wx/file.h>
+#include <wx/mstream.h>
 
 namespace ToolbarIcons {
+
+// -------------------------------------------------------------------
+//  Helper: load a PNG icon from the compiled-in resource (.rc).
+//  Returns false on failure (resource not found, decode error).
+// -------------------------------------------------------------------
+inline bool loadPngFromResource(const wxString& name, wxImage& img) {
+#ifdef __WXMSW__
+    wxString resName = name + L"_png";
+    HRSRC hRes = FindResource(nullptr, resName.wc_str(), RT_RCDATA);
+    if (!hRes) return false;
+    HGLOBAL hMem = LoadResource(nullptr, hRes);
+    if (!hMem) return false;
+    void* data = LockResource(hMem);
+    DWORD len = SizeofResource(nullptr, hRes);
+    if (!data || len == 0) return false;
+
+    wxMemoryInputStream mis(data, len);
+    img = wxImage(mis, wxBITMAP_TYPE_PNG);
+    return img.IsOk();
+#else
+    (void)name;
+    (void)img;
+    return false;
+#endif
+}
 
 // -------------------------------------------------------------------
 //  Helper: remove light-grey background pixels (safety net)
@@ -98,12 +124,19 @@ inline wxBitmap prepareForToolbar(wxImage& img) {
 }
 
 // -------------------------------------------------------------------
-//  load — runtime load with .ico primary, .png fallback
+//  load — runtime load, primary path: embedded resource,
+//          fallback: .ico / .png files on disk, then stock wxArtID.
 // -------------------------------------------------------------------
 inline wxBitmapBundle load(const wxString& name) {
-    wxString exeDir = wxStandardPaths::Get().GetExecutablePath().BeforeLast('\\');
+    // --- 1st: embedded resource (compiled into .exe via icons.rc) ---
+    wxImage resImg;
+    if (loadPngFromResource(name, resImg)) {
+        makeBgTransparent(resImg);
+        return wxBitmapBundle::FromBitmap(prepareForToolbar(resImg));
+    }
 
-    // --- Try .png (full 32-bit RGBA, best quality) ---
+    // --- 2nd: try file-based .png (backward compat / development) ---
+    wxString exeDir = wxStandardPaths::Get().GetExecutablePath().BeforeLast('\\');
     wxString pngPath = exeDir + "\\icons\\" + name + ".png";
     if (wxFile::Exists(pngPath)) {
         wxImage img(pngPath);
@@ -113,14 +146,9 @@ inline wxBitmapBundle load(const wxString& name) {
         }
     }
 
-    // --- Fallback: .ico (native Windows icon format) ---
+    // --- 3rd: .ico on disk (wxMSW native format) ---
     wxString icoPath = exeDir + "\\icons\\" + name + ".ico";
     if (wxFile::Exists(icoPath)) {
-        // On wxMSW, wxBitmap(icoPath, wxBITMAP_TYPE_ICO) loads the icon
-        // via the Windows LoadImage API at the system-default icon size
-        // (GetSystemMetrics(SM_CXICON) = 32×32 on most systems).
-        // The .ico files contain native 32×32 entries, so no rescaling
-        // is needed — keeps maximum sharpness on all DPIs.
         wxBitmap bmp(icoPath, wxBITMAP_TYPE_ICO);
         if (bmp.IsOk()) {
             wxImage img = bmp.ConvertToImage();
@@ -160,53 +188,53 @@ inline wxBitmapBundle load(const wxString& name) {
 //  disabled version.
 // -------------------------------------------------------------------
 inline wxBitmapBundle loadDisabled(const wxString& name) {
-    wxString exeDir = wxStandardPaths::Get().GetExecutablePath().BeforeLast('\\');
+    wxImage img;
 
-    // --- Try .png ---
-    wxString pngPath = exeDir + "\\icons\\" + name + ".png";
-    if (wxFile::Exists(pngPath)) {
-        wxImage img(pngPath);
-        if (img.IsOk()) {
-            makeBgTransparent(img);
-
-            if (img.HasAlpha()) {
-                unsigned char* data = img.GetData();
-                unsigned char* alpha = img.GetAlpha();
-                int n = img.GetWidth() * img.GetHeight();
-
-                for (int i = 0; i < n; ++i) {
-                    int idx = i * 3;
-                    int a = alpha[i];
-                    if (a < 128) continue; // already transparent (background)
-
-                    int r = data[idx];
-                    int g = data[idx + 1];
-                    int b = data[idx + 2];
-
-                    // Luminance-based greyscale
-                    int lum = (r * 77 + g * 150 + b * 29) >> 8;
-
-                    // Disabled effect: reduce contrast (compress range around 128)
-                    int grey = static_cast<int>(128 + (lum - 128) * 0.4);
-                    grey = std::max(0, std::min(255, grey));
-
-                    // Make light-filled areas transparent so only dark outlines remain
-                    // Threshold: lum < 80 stays fully opaque, lum >= 140 becomes transparent
-                    if (lum >= 80) {
-                        int fadeAlpha = std::max(0, static_cast<int>(
-                            255 - (lum - 80) * (255.0 / 120.0)));
-                        alpha[i] = static_cast<unsigned char>(
-                            std::min(static_cast<int>(alpha[i]), fadeAlpha));
-                    }
-
-                    data[idx]     = static_cast<unsigned char>(grey);
-                    data[idx + 1] = static_cast<unsigned char>(grey);
-                    data[idx + 2] = static_cast<unsigned char>(grey);
-                }
-            }
-
-            return wxBitmapBundle::FromBitmap(prepareForToolbar(img));
+    // --- 1st: embedded resource (compiled into .exe via icons.rc) ---
+    if (!loadPngFromResource(name, img)) {
+        // --- 2nd: try file-based .png (backward compat) ---
+        wxString exeDir = wxStandardPaths::Get().GetExecutablePath().BeforeLast('\\');
+        wxString pngPath = exeDir + "\\icons\\" + name + ".png";
+        if (wxFile::Exists(pngPath)) {
+            img = wxImage(pngPath);
         }
+    }
+
+    if (img.IsOk()) {
+        makeBgTransparent(img);
+
+        if (img.HasAlpha()) {
+            unsigned char* data = img.GetData();
+            unsigned char* alpha = img.GetAlpha();
+            int n = img.GetWidth() * img.GetHeight();
+
+            for (int i = 0; i < n; ++i) {
+                int idx = i * 3;
+                int a = alpha[i];
+                if (a < 128) continue;
+
+                int r = data[idx];
+                int g = data[idx + 1];
+                int b = data[idx + 2];
+
+                int lum = (r * 77 + g * 150 + b * 29) >> 8;
+                int grey = static_cast<int>(128 + (lum - 128) * 0.4);
+                grey = std::max(0, std::min(255, grey));
+
+                if (lum >= 80) {
+                    int fadeAlpha = std::max(0, static_cast<int>(
+                        255 - (lum - 80) * (255.0 / 120.0)));
+                    alpha[i] = static_cast<unsigned char>(
+                        std::min(static_cast<int>(alpha[i]), fadeAlpha));
+                }
+
+                data[idx]     = static_cast<unsigned char>(grey);
+                data[idx + 1] = static_cast<unsigned char>(grey);
+                data[idx + 2] = static_cast<unsigned char>(grey);
+            }
+        }
+
+        return wxBitmapBundle::FromBitmap(prepareForToolbar(img));
     }
 
     // Fallback to normal load (may provide a stock icon)

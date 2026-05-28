@@ -96,7 +96,11 @@ if(wxWidgets_FOUND)
         src/ui/UIApp.h
 src/ui/UIApp.cpp
         src/ui/TestLogMediator.cpp
+        src/ui/icons.rc
         )
+    
+    # RC flags: let windres find data files relative to CMAKE_SOURCE_DIR
+    set(CMAKE_RC_FLAGS "${CMAKE_RC_FLAGS} -I${CMAKE_SOURCE_DIR}")
     
     target_sources(validproxy PRIVATE ${UI_SOURCES})
     
@@ -178,56 +182,9 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug")
     
 copy_wx_dlls(validproxy)
     
-    # Copy ICO/PNG icons to bin/icons/
-    # (PNG is primary, ICO is fallback — see ToolbarIcons.h)
-    add_custom_command(TARGET validproxy POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_SOURCE_DIR}/bin/docs/design/ui"
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${CMAKE_SOURCE_DIR}/docs/design/ui/icon.ico"
-            "${CMAKE_SOURCE_DIR}/bin/docs/design/ui/icon.ico"
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${CMAKE_SOURCE_DIR}/docs/design/ui/clear.ico"
-            "${CMAKE_SOURCE_DIR}/bin/docs/design/ui/clear.ico"
-        COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_SOURCE_DIR}/bin/icons"
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${CMAKE_SOURCE_DIR}/docs/design/ui/icon/ico/tool_update.ico"
-            "${CMAKE_SOURCE_DIR}/bin/icons/tool_update.ico"
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${CMAKE_SOURCE_DIR}/docs/design/ui/icon/ico/tool_test.ico"
-            "${CMAKE_SOURCE_DIR}/bin/icons/tool_test.ico"
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${CMAKE_SOURCE_DIR}/docs/design/ui/icon/ico/tool_find.ico"
-            "${CMAKE_SOURCE_DIR}/bin/icons/tool_find.ico"
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${CMAKE_SOURCE_DIR}/docs/design/ui/icon/ico/tool_dedup.ico"
-            "${CMAKE_SOURCE_DIR}/bin/icons/tool_dedup.ico"
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${CMAKE_SOURCE_DIR}/docs/design/ui/icon/ico/tool_import.ico"
-            "${CMAKE_SOURCE_DIR}/bin/icons/tool_import.ico"
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${CMAKE_SOURCE_DIR}/docs/design/ui/icon/ico/tool_config.ico"
-            "${CMAKE_SOURCE_DIR}/bin/icons/tool_config.ico"
-        # PNG icons (primary — loaded first by ToolbarIcons)
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${CMAKE_SOURCE_DIR}/docs/design/ui/icon/png/tool_update.png"
-            "${CMAKE_SOURCE_DIR}/bin/icons/tool_update.png"
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${CMAKE_SOURCE_DIR}/docs/design/ui/icon/png/tool_test.png"
-            "${CMAKE_SOURCE_DIR}/bin/icons/tool_test.png"
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${CMAKE_SOURCE_DIR}/docs/design/ui/icon/png/tool_find.png"
-            "${CMAKE_SOURCE_DIR}/bin/icons/tool_find.png"
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${CMAKE_SOURCE_DIR}/docs/design/ui/icon/png/tool_dedup.png"
-            "${CMAKE_SOURCE_DIR}/bin/icons/tool_dedup.png"
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${CMAKE_SOURCE_DIR}/docs/design/ui/icon/png/tool_import.png"
-            "${CMAKE_SOURCE_DIR}/bin/icons/tool_import.png"
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${CMAKE_SOURCE_DIR}/docs/design/ui/icon/png/tool_config.png"
-            "${CMAKE_SOURCE_DIR}/bin/icons/tool_config.png"
-        COMMENT "Copying icons to bin/icons/ (PNG primary, ICO fallback)"
-    )
+    # Icons are now embedded into the executable via src/ui/icons.rc
+    # (see ToolbarIcons.h for the resource-based loading path)
+    # The old POST_BUILD copy-to-bin/icons/ step has been removed.
 
     # Compile definition for GUI mode
     target_compile_definitions(validproxy PRIVATE HAS_WXWIDGETS=1)
