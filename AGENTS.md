@@ -23,6 +23,7 @@
 | 1. 列排序 | [`docs/plans/2026-05-19-ui-enhancements-sort-find-link.md`](./docs/plans/2026-05-19-ui-enhancements-sort-find-link.md) | 📝 待审批 |
 | 2. 查找单个代理 | 同上 | 📝 待审批 |
 | 3. 订阅-代理联动 | 同上 | 📝 待审批 |
+| 4. 订阅更新取消支持 | [`docs/bugfix/2026-05-28-cancel-sub-update-proxyfinder-phase.md`](./docs/bugfix/2026-05-28-cancel-sub-update-proxyfinder-phase.md) | ✅ 已完成 |
 
 ---
 
