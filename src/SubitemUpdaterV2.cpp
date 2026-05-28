@@ -155,9 +155,11 @@ SubitemUpdaterV2::SubitemUpdaterV2(sqlite3* db,
                                     const std::string& xrayPath,
                                     const config::AppConfig& config,
                                     std::ofstream* logOut,
-                                    const std::string& baseDir)
+                                    const std::string& baseDir,
+                                    std::atomic<bool>* externalCancel)
     : db_(db), xrayPath_(xrayPath), config_(config), logOut_(logOut), baseDir_(baseDir),
-      xrayMgr_(nullptr), proxyFinder_(nullptr), xrayProcessId_(0), xrayJob_(nullptr) {
+      xrayMgr_(nullptr), proxyFinder_(nullptr), xrayProcessId_(0), xrayJob_(nullptr),
+      externalCancel_(externalCancel) {
 }
 
 bool SubitemUpdaterV2::run() {
@@ -217,6 +219,10 @@ bool SubitemUpdaterV2::run() {
         Logger::write("========================================", LogLevel::INFO);
         
         for (size_t i = 0; i < enabledSubs.size(); ++i) {
+            if (isCancelled()) {
+                Logger::write("INFO: Update cancelled by user during direct phase", LogLevel::REPORT);
+                break;
+            }
             const auto& sub = enabledSubs[i];
             
             if (shouldSkipUpdate(sub)) {
@@ -227,6 +233,10 @@ bool SubitemUpdaterV2::run() {
             Logger::write("[" + std::to_string(i + 1) + "/" + std::to_string(totalSubs) + "] Processing: " + sub.url, LogLevel::REPORT);
             
             std::string content = fetchUrl(sub.url);
+            if (isCancelled()) {
+                Logger::write("INFO: Update cancelled after fetch", LogLevel::REPORT);
+                break;
+            }
             if (!content.empty()) {
                 Logger::write("INFO: Direct connection successful", LogLevel::INFO);
                 auto profiles = parseSubscription(content, sub.id);
@@ -269,10 +279,18 @@ bool SubitemUpdaterV2::run() {
         std::vector<std::tuple<std::string, std::string, std::string>> stillFailedSubs;
         
         for (size_t i = 0; i < failedSubs.size(); ++i) {
+            if (isCancelled()) {
+                Logger::write("INFO: Update cancelled by user during proxy phase", LogLevel::REPORT);
+                break;
+            }
             const auto& sub = failedSubs[i];
             Logger::write("[" + std::to_string(i + 1) + "/" + std::to_string(failedSubs.size()) + "] Trying via proxy: " + std::get<2>(sub), LogLevel::REPORT);
             
             std::string content = fetchUrlViaProxy(std::get<2>(sub), proxySocksPort);
+            if (isCancelled()) {
+                Logger::write("INFO: Update cancelled after proxy fetch", LogLevel::REPORT);
+                break;
+            }
             if (!content.empty()) {
                 Logger::write("INFO: Proxy connection successful", LogLevel::INFO);
                 auto profiles = parseSubscription(content, std::get<0>(sub));
@@ -348,6 +366,10 @@ bool SubitemUpdaterV2::runSingle(const std::string& subId) {
     }
 
     Strategy strategy = parseStrategy(config_.priority_mode);
+    if (isCancelled()) {
+        Logger::write("INFO: Single update cancelled by user: " + subId, LogLevel::REPORT);
+        return false;
+    }
     bool result = updateWithStrategy(sub.url, sub.id, strategy);
 
     {

@@ -43,7 +43,7 @@ enum {
     ID_TOOL_DEDUP         = wxID_HIGHEST + 203,
     ID_TOOL_IMPORT        = wxID_HIGHEST + 204,
     ID_TOOL_CONFIG        = wxID_HIGHEST + 205,
-    ID_TOOL_CANCEL_TEST   = wxID_HIGHEST + 208,
+    ID_TOOL_CANCEL        = wxID_HIGHEST + 208,
     ID_TOOL_SYNC          = wxID_HIGHEST + 209,
     ID_TOOL_CLEAR         = wxID_HIGHEST + 207,
     ID_SEARCH_BOX         = wxID_HIGHEST + 206,
@@ -75,7 +75,7 @@ wxBEGIN_EVENT_TABLE(MainFrame, wxFrame)
     EVT_MENU(ID_TOOL_DEDUP,       MainFrame::onToolDedup)
     EVT_MENU(ID_TOOL_IMPORT,      MainFrame::onToolImport)
     EVT_MENU(ID_TOOL_CONFIG,      MainFrame::onToolConfig)
-    EVT_MENU(ID_TOOL_CANCEL_TEST, MainFrame::onToolCancelTest)
+    EVT_MENU(ID_TOOL_CANCEL, MainFrame::onToolCancel)
     EVT_MENU(ID_TOOL_SYNC,       MainFrame::onToolSync)
     // Search
     EVT_TEXT_ENTER(ID_SEARCH_BOX,  MainFrame::onSearchBoxEnter)
@@ -147,8 +147,7 @@ MainFrame::MainFrame(const config::AppConfig& cfg, sqlite3* db)
             proxyPanel_->refreshResults();
         }
         if (evt.isCompleted()) {
-            wxToolBar* tb = GetToolBar();
-            if (tb) tb->EnableTool(ID_TOOL_CANCEL_TEST, false);
+            setOperationState(OperationType::NONE);
             setStatusText(0, "Test completed");
         }
     });
@@ -233,6 +232,33 @@ std::string MainFrame::getDbPath() const {
     return config_.database_path;
 }
 
+void MainFrame::setOperationState(OperationType op) {
+    wxToolBar* tb = GetToolBar();
+    if (!tb) return;
+    
+    if (op == OperationType::NONE) {
+        tb->EnableTool(ID_TOOL_CANCEL, false);
+    } else {
+        tb->EnableTool(ID_TOOL_CANCEL, true);
+        switch (op) {
+            case OperationType::TEST:
+                tb->SetToolShortHelp(ID_TOOL_CANCEL, "取消测试");
+                break;
+            case OperationType::UPDATE:
+                tb->SetToolShortHelp(ID_TOOL_CANCEL, "停止更新");
+                break;
+            case OperationType::FIND:
+                tb->SetToolShortHelp(ID_TOOL_CANCEL, "取消查找");
+                break;
+            case OperationType::SYNC:
+                tb->SetToolShortHelp(ID_TOOL_CANCEL, "停止同步");
+                break;
+            default:
+                break;
+        }
+    }
+}
+
 // -------------------------------------------------------------------
 //  Initialization steps
 // -------------------------------------------------------------------
@@ -278,8 +304,8 @@ void MainFrame::initToolBar() {
     tb->AddTool(ID_TOOL_TEST,       wxEmptyString, ToolbarIcons::load("tool_test"),   "测试全部代理");
     auto cancelBmp = ToolbarIcons::load("tool_cancel");
     auto cancelDisabled = ToolbarIcons::loadDisabled("tool_cancel");
-    tb->AddTool(ID_TOOL_CANCEL_TEST, wxEmptyString, cancelBmp, cancelDisabled, wxITEM_NORMAL, "取消测试");
-    tb->EnableTool(ID_TOOL_CANCEL_TEST, false);  // disabled until test starts
+    tb->AddTool(ID_TOOL_CANCEL, wxEmptyString, cancelBmp, cancelDisabled, wxITEM_NORMAL, "取消测试");
+    tb->EnableTool(ID_TOOL_CANCEL, false);  // disabled until operation starts
     tb->AddTool(ID_TOOL_SYNC,       wxEmptyString, ToolbarIcons::load("tool_synchronize"), "同步");
     tb->AddTool(ID_TOOL_FIND,       wxEmptyString, ToolbarIcons::load("tool_find"),   "查找最佳代理");
     tb->AddTool(ID_TOOL_DEDUP,      wxEmptyString, ToolbarIcons::load("tool_dedup"),  "去重");
@@ -422,7 +448,7 @@ void MainFrame::onMenuExit(wxCommandEvent&) {
 }
 
 void MainFrame::onMenuUpdateAll(wxCommandEvent&) {
-    setStatusText(0, "Updating all subscriptions...");
+    setOperationState(OperationType::UPDATE);
     controller_->updateAllSubscriptionsAsync(this);
 }
 
@@ -434,11 +460,13 @@ void MainFrame::onMenuAddSub(wxCommandEvent&) {
 }
 
 void MainFrame::onMenuFindProxy(wxCommandEvent&) {
+    setOperationState(OperationType::FIND);
     setStatusText(0, "Finding first working proxy…");
     controller_->findFirstProxyAsync(this);
 }
 
 void MainFrame::onMenuFindBest(wxCommandEvent&) {
+    setOperationState(OperationType::FIND);
     setStatusText(0, "Finding best proxy…");
     controller_->findBestProxyAsync(this);
 }
@@ -511,28 +539,25 @@ void MainFrame::onToolUpdateAll(wxCommandEvent& event) {
 }
 
 void MainFrame::onTestSubscription(SubscriptionTestEvent& evt) {
+    setOperationState(OperationType::TEST);
     controller_->testSubscriptionAsync(evt.getSubId(), this);
     setStatusText(0, "Testing subscription…");
-    wxToolBar* tb = GetToolBar();
-    if (tb) tb->EnableTool(ID_TOOL_CANCEL_TEST, true);
 }
 
 void MainFrame::onToolTest(wxCommandEvent& event) {
     // Test ALL proxies (not just the selected subscription)
+    setOperationState(OperationType::TEST);
     controller_->testAllProxiesAsync(this);
     setStatusText(0, "Testing all proxies…");
-    wxToolBar* tb = GetToolBar();
-    if (tb) tb->EnableTool(ID_TOOL_CANCEL_TEST, true);
     (void)event;
 }
 
-void MainFrame::onToolCancelTest(wxCommandEvent&) {
+void MainFrame::onToolCancel(wxCommandEvent&) {
     if (controller_) {
         controller_->cancelTest();
     }
-    wxToolBar* tb = GetToolBar();
-    if (tb) tb->EnableTool(ID_TOOL_CANCEL_TEST, false);
-    setStatusText(0, "Cancelling test…");
+    setOperationState(OperationType::NONE);
+    setStatusText(0, "操作已取消");
 }
 
 void MainFrame::onToolFind(wxCommandEvent& event) {
@@ -552,6 +577,7 @@ void MainFrame::onToolConfig(wxCommandEvent& event) {
 }
 
 void MainFrame::onToolSync(wxCommandEvent&) {
+    setOperationState(OperationType::SYNC);
     setStatusText(0, "同步中…");
     if (controller_) {
         controller_->syncDatabasesAsync(this);

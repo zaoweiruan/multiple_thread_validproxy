@@ -227,15 +227,39 @@ std::optional<AppConfig> ConfigReader::load(const std::string& configPath) {
         }
     }
     
-    // Replace placeholder {blacklist_threshold} in SQL queries
-    auto replacePlaceholder = [&](std::string& sql, const std::string& placeholder, int value) {
-        size_t pos = sql.find(placeholder);
-        if (pos != std::string::npos) {
-            sql.replace(pos, placeholder.length(), std::to_string(value));
+    // Warn about any remaining curly-brace placeholders that were not substituted.
+    // Known runtime placeholders (replaced later, not at config load time):
+    //   {subid}              - replaced per-subscription in ProxyBatchTester::loadProxies()
+    //   {blacklist_threshold} - replaced before SQL execution in ProxyBatchTester::loadProxies()
+    const std::vector<std::string> knownRuntimePlaceholders = {"{subid}", "{blacklist_threshold}"};
+    auto hasUnreplaced = [&knownRuntimePlaceholders](const std::string& sql) -> bool {
+        for (size_t i = 0; i < sql.size(); ++i) {
+            if (sql[i] == '{') {
+                // Check if this '{}' pattern is a known runtime placeholder
+                bool isKnown = false;
+                for (const auto& ph : knownRuntimePlaceholders) {
+                    if (sql.compare(i, ph.size(), ph) == 0) {
+                        isKnown = true;
+                        break;
+                    }
+                }
+                if (!isKnown) {
+                    // Check for matched closing brace
+                    auto closingBrace = sql.find('}', i + 1);
+                    if (closingBrace != std::string::npos) {
+                        // The SQL has '{...}' that is NOT a known runtime placeholder
+                        // Extract the unknown placeholder for diagnostic message
+                        std::string unknownPlaceholder = sql.substr(i, closingBrace - i + 1);
+                        Logger::write("WARNING: " + unknownPlaceholder + " in SQL was not substituted", LogLevel::WARN);
+                    }
+                    return true;
+                }
+            }
         }
+        return false;
     };
-    replacePlaceholder(config.sql_query, "{blacklist_threshold}", config.blacklist_threshold);
-    replacePlaceholder(config.sql_by_subid, "{blacklist_threshold}", config.blacklist_threshold);
+    hasUnreplaced(config.sql_query);
+    hasUnreplaced(config.sql_by_subid);
     
     if (!config.sql_query.empty())
         Logger::write("SQL query: " + config.sql_query, LogLevel::DEBUG);
@@ -252,6 +276,83 @@ std::optional<AppConfig> ConfigReader::load(const std::string& configPath) {
     
     Logger::write("DEBUG: Config loaded successfully", LogLevel::DEBUG);
     return config;
+}
+
+bool ConfigReader::save(const std::string& configPath, const AppConfig& config) {
+    boost::json::object root;
+
+    // database
+    boost::json::object dbObj;
+    dbObj["path"] = config.database_path;
+    if (!config.sql_query.empty()) dbObj["sql"] = config.sql_query;
+    if (!config.sql_by_subid.empty()) dbObj["sql_by_subid"] = config.sql_by_subid;
+    root["database"] = dbObj;
+
+    // xray
+    boost::json::object xrayObj;
+    xrayObj["executable"] = config.xray_executable;
+    xrayObj["workers"] = config.xray_workers;
+    xrayObj["start_port"] = config.xray_start_port;
+    xrayObj["api_port"] = config.xray_api_port;
+    root["xray"] = xrayObj;
+
+    // test
+    boost::json::object testObj;
+    testObj["url"] = config.test_url;
+    testObj["timeout_ms"] = config.test_timeout_ms;
+    root["test"] = testObj;
+
+    // log
+    boost::json::object logObj;
+    logObj["enabled"] = config.log_enabled;
+    logObj["network_failures"] = config.log_network_failures;
+    logObj["console_level"] = config.log_console_level;
+    logObj["file_level"] = config.log_file_level;
+    root["log"] = logObj;
+
+    // subscription
+    boost::json::object subObj;
+    subObj["priority_mode"] = config.priority_mode;
+    subObj["check_auto_update_interval"] = config.check_auto_update_interval;
+    root["subscription"] = subObj;
+
+    // dedup
+    boost::json::object dedupObj;
+    dedupObj["enabled"] = config.dedup_enabled;
+    dedupObj["dedup_after_update"] = config.dedup_after_update;
+    dedupObj["blacklist_threshold"] = config.blacklist_threshold;
+    boost::json::array subidsArr;
+    for (const auto& sid : config.dedup_subids) {
+        subidsArr.emplace_back(sid);
+    }
+    dedupObj["subids"] = subidsArr;
+    root["dedup"] = dedupObj;
+
+    // notification
+    boost::json::object notifObj;
+    notifObj["enabled"] = config.notification_enabled;
+    notifObj["on_update"] = config.notification_on_update;
+    notifObj["on_test"] = config.notification_on_test;
+    root["notification"] = notifObj;
+
+    // sync
+    boost::json::object syncObj;
+    syncObj["source_db"] = config.sync.source_db;
+    syncObj["target_db"] = config.sync.target_db;
+    syncObj["sync_skip_subids"] = config.sync.sync_skip_subids;
+    root["sync"] = syncObj;
+
+    // Serialize and write (compact JSON)
+    std::ofstream file(configPath);
+    if (!file.is_open()) {
+        Logger::write("Failed to write config to: " + configPath, LogLevel::ERR);
+        return false;
+    }
+    file << boost::json::serialize(root);
+    file.close();
+
+    Logger::write("Config saved to: " + configPath, LogLevel::INFO);
+    return true;
 }
 
 } // namespace config

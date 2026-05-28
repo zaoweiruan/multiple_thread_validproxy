@@ -34,12 +34,22 @@ std::vector<db::models::Profileitem> ProxyBatchTester::loadProxies(const std::st
     
     if (!subId.empty() && !config_.sql_by_subid.empty()) {
         sql = config_.sql_by_subid;
-        size_t pos = sql.find("{subid}");
-        if (pos != std::string::npos) {
+        // Replace ALL occurrences of {subid} in the SQL template
+        size_t pos = 0;
+        while ((pos = sql.find("{subid}", pos)) != std::string::npos) {
             sql.replace(pos, 7, subId);
+            pos += subId.length();
         }
     } else {
         sql = config_.sql_query;
+    }
+    
+    // Replace ALL occurrences of {blacklist_threshold} in the SQL template (both queries)
+    std::string thresholdStr = std::to_string(config_.blacklist_threshold);
+    size_t btPos = 0;
+    while ((btPos = sql.find("{blacklist_threshold}", btPos)) != std::string::npos) {
+        sql.replace(btPos, 21, thresholdStr);
+        btPos += thresholdStr.length();
     }
     
     Logger::write("Executing SQL: " + sql, LogLevel::DEBUG);
