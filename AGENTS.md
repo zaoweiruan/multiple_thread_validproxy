@@ -24,6 +24,7 @@
 | 2. 查找单个代理 | 同上 | 📝 待审批 |
 | 3. 订阅-代理联动 | 同上 | 📝 待审批 |
 | 4. 订阅更新取消支持 | [`docs/bugfix/2026-05-28-cancel-sub-update-proxyfinder-phase.md`](./docs/bugfix/2026-05-28-cancel-sub-update-proxyfinder-phase.md) | ✅ 已完成 |
+| 5. SQL 错误输出修复 | [`docs/bugfix/2026-05-28-sql-error-console-output-fix.md`](./docs/bugfix/2026-05-28-sql-error-console-output-fix.md) | ✅ 已完成 |
 
 ---
 
