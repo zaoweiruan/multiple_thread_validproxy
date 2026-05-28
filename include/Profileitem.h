@@ -12,6 +12,7 @@
 #include <chrono>
 #include <random>
 #include <array>
+#include "Logger.h"
 
 namespace db {
 namespace models {
@@ -321,7 +322,7 @@ public:
 
     sqlite3_stmt* stmt = nullptr;
     if (sqlite3_prepare_v2(db_, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
-      std::cerr << "SQL错误: " << sqlite3_errmsg(db_) << std::endl;
+      Logger::write("SQL错误: " + std::string(sqlite3_errmsg(db_)), LogLevel::ERR);
       return result;
     }
 
