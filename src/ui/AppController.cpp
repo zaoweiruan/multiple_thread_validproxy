@@ -280,9 +280,8 @@ void AppController::findBestProxyAsync(wxEvtHandler* wxHandler) {
 // ---------------------------------------------------------------
 // Export / Tool operations
 // ---------------------------------------------------------------
-bool AppController::exportShareLinks() {
+std::tuple<bool, int, std::string> AppController::exportShareLinks() {
     db::models::ProfileitemDAO dao(db_);
-    db::models::ProfileExItemDAO exDao(db_);
 
     std::string sql = R"(
         SELECT p.*, COALESCE(pe.Delay, 0) as ExDelay
@@ -295,6 +294,7 @@ bool AppController::exportShareLinks() {
     auto profiles = dao.getAll(sql);
 
     std::string output;
+    int exportCount = 0;
     for (const auto& profile : profiles) {
         auto link = share::ShareLink::toShareUri(
             profile.configtype,
@@ -319,12 +319,13 @@ bool AppController::exportShareLinks() {
         );
         if (!link.empty()) {
             output += link + "\n";
+            ++exportCount;
         }
     }
 
     if (output.empty()) {
         Logger::write("No proxies to export", LogLevel::INFO);
-        return true;
+        return {true, 0, ""};
     }
 
     char timestamp[32];
@@ -338,8 +339,8 @@ bool AppController::exportShareLinks() {
     outFile << output;
     outFile.close();
 
-    Logger::write("Exported " + std::to_string(profiles.size()) + " proxies to: " + outPath.string(), LogLevel::INFO);
-    return true;
+    Logger::write("Exported " + std::to_string(exportCount) + " proxies to: " + outPath.string(), LogLevel::INFO);
+    return {true, exportCount, outPath.filename().string()};
 }
 
 bool AppController::deduplicate() {
