@@ -348,7 +348,7 @@ void ProxyListPanel::onContextMenu(wxDataViewEvent& event) {
 
     wxMenu menu;
     menu.Append(ID_CONTEXT_TEST_PROXY, "测试此代理");
-    menu.Append(ID_CONTEXT_EXPORT_SHARE, "输出分享配置");
+    menu.Append(ID_CONTEXT_EXPORT_SHARE, "有效代理分享");
     PopupMenu(&menu);
 }
 
@@ -373,9 +373,16 @@ void ProxyListPanel::onTestProxy(wxCommandEvent& event) {
 
 // -------------------------------------------------------------------
 void ProxyListPanel::onExportShareLink(wxCommandEvent& event) {
-    bool ok = controller_->exportShareLinks();
-    wxMessageBox(ok ? "分享链接已导出到临时目录。" : "导出分享链接失败。",
-                 "输出分享配置", wxOK | (ok ? wxICON_INFORMATION : wxICON_WARNING));
+    auto [ok, count, filename] = controller_->exportShareLinks();
+    wxString msg;
+    if (ok && count > 0) {
+        msg = wxString::Format("导出%d个有效代理至文件%s", count, filename);
+    } else if (ok) {
+        msg = "没有有效代理可导出。";
+    } else {
+        msg = "导出分享链接失败。";
+    }
+    wxMessageBox(msg, "有效代理分享", wxOK | (ok ? wxICON_INFORMATION : wxICON_WARNING));
     (void)event;
 }
 

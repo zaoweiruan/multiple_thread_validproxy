@@ -464,7 +464,14 @@ void MainFrame::onMenuDedup(wxCommandEvent&) {
 }
 
 void MainFrame::onMenuExportShareLink(wxCommandEvent&) {
-    (void)controller_->exportShareLinks();
+    auto [ok, count, filename] = controller_->exportShareLinks();
+    if (ok && count > 0) {
+        setStatusText(0, wxString::Format("导出%d个有效代理至文件%s", count, filename));
+    } else if (ok) {
+        setStatusText(0, "没有有效代理可导出。");
+    } else {
+        setStatusText(0, "导出分享链接失败。");
+    }
 }
 
 void MainFrame::onMenuGenerateConfig(wxCommandEvent&) {

@@ -3,6 +3,7 @@
 
 #include <string>
 #include <vector>
+#include <tuple>
 #include <atomic>
 #include <thread>
 #include <sqlite3.h>
@@ -56,7 +57,7 @@ bool isTestCancelled() const;
    void syncDatabasesAsync(wxEvtHandler* wxHandler);
 
   // Export / Tool
-  bool exportShareLinks();
+  std::tuple<bool, int, std::string> exportShareLinks();
   bool deduplicate();
   bool syncDatabases(const std::string& src = "", const std::string& dst = "");
   bool generateConfig(const std::string& indexId);
