@@ -71,9 +71,6 @@ void printHelp() {
     std::cout << "Usage: validproxy [options]\n"
               << "Options:\n"
               << "  -c, --config <path>   Config file path (default: config.json)\n"
-#ifdef HAS_WXWIDGETS
-              << "  -ui, --ui            Launch graphical user interface\n"
-#endif
               << "  -show-sub, --show-sub  Show all subscriptions\n"
               << "  -G, -generator <id>  Generate outbound JSON for profile by indexId\n"
               << "  -F, -find-proxy     Find first working proxy (first found)\n"
@@ -85,7 +82,8 @@ void printHelp() {
               << "  -TU, -tourl         Export proxies (delay>0) to share links file\n"
               << "  -S, -sync [src[:dst]] Sync valid proxies from source to target DB\n"
               << "  -IS, -import-sub-config <file|url>  Batch import subitems from file or URL\n"
-              << "  -h, --help           Show this help\n";
+              << "  -h, --help           Show this help\n\n"
+              << "If no options are provided, the graphical user interface launches.\n";
 }
 
 BOOL WINAPI consoleCtrlHandler(DWORD ctrlType) {
@@ -134,6 +132,7 @@ int main(int argc, char* argv[]) {
     std::string singleSubId;
     std::string commandMode;
     std::string generatorIndexId;
+    bool forceGuiMode = false;  // Set by -ui/--ui flag
     
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
@@ -147,7 +146,7 @@ int main(int argc, char* argv[]) {
                 configPath = fp.lexically_normal().string();
             }
         } else if (arg == "-ui" || arg == "--ui") {
-            commandMode = "ui";
+            forceGuiMode = true;
         } else if (arg == "-show-sub" || arg == "--show-sub") {
             commandMode = "show-sub";
         } else if (arg == "-G" || arg == "-generator" || arg == "--generator") {
@@ -241,9 +240,11 @@ int main(int argc, char* argv[]) {
     g_commandMode = commandMode;
     
     // ------------------------------------------------------------------
-    // GUI mode (-ui / --ui)
+    // GUI mode: default when no CLI mode specified, or when -ui/--ui is given
     // ------------------------------------------------------------------
-    if (commandMode == "ui") {
+    bool shouldLaunchGui = forceGuiMode || commandMode.empty();
+    
+    if (shouldLaunchGui) {
 #ifdef HAS_WXWIDGETS
         Logger::init(logDir.string(), "ui");
         auto appConfig = config::ConfigReader::load(configPath);
@@ -260,8 +261,7 @@ int main(int argc, char* argv[]) {
         logInfo("validproxy GUI starting...");
 
         sqlite3* db = nullptr;
-        if (!openDatabase(*appConfig, db, "[main] ui")) {
-            Logger::close();
+        if (!openDatabase(*appConfig, db, "[main] ui")) {            Logger::close();
             return 1;
         }
 
@@ -289,7 +289,12 @@ int main(int argc, char* argv[]) {
         Logger::close();
         return ret;
 #else
-        std::cerr << "Error: GUI mode not available. Rebuild with wxWidgets support." << std::endl;
+        if (forceGuiMode) {
+            std::cerr << "Error: GUI mode not available. Rebuild with wxWidgets support." << std::endl;
+        } else {
+            // No CLI mode specified and no wxWidgets: show help
+            printHelp();
+        }
         return 1;
 #endif
     }
