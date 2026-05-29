@@ -1,0 +1,124 @@
+<svg width="1400" height="800" xmlns="http://www.w3.org/2000/svg" style="font-family:Arial,Helvetica,sans-serif;">
+  <!-- 背景 -->
+  <rect x="0" y="0" width="1400" height="800" fill="#f5f7fa"/>
+  <!-- 顶部标题栏 -->
+  <rect x="0" y="0" width="1400" height="50" fill="#2f4f8a"/>
+  <text x="20" y="32" fill="#ffffff" font-size="18" font-weight="bold">代理管理面板</text>
+  <!-- 搜索框 -->
+  <rect x="1080" y="10" rx="6" ry="6" width="220" height="28" fill="#ffffff"/>
+  <text x="1090" y="28" fill="#999" font-size="13">搜索订阅/代理…</text>
+
+  <!-- 左侧订阅列表窗口 -->
+  <rect x="20" y="70" width="380" height="380" fill="#ffffff" stroke="#d9e1e8" rx="6"/>
+  <text x="30" y="95" fill="#333" font-size="14" font-weight="bold">订阅列表</text>
+  <!-- 订阅表头 -->
+  <g transform="translate(30,115)">
+    <text x="0" y="0" fill="#666" font-size="11">#</text>
+    <text x="40" y="0" fill="#666" font-size="11">名称</text>
+    <text x="200" y="0" fill="#666" font-size="11">数量</text>
+    <text x="280" y="0" fill="#666" font-size="11">启用</text>
+    <text x="340" y="0" fill="#666" font-size="11">更新时间</text>
+  </g>
+  <!-- 订阅项 -->
+  <g transform="translate(20,130)" font-size="12">
+    <rect x="0" y="0" width="340" height="32" fill="#f9fbfd" stroke="#e8ecf1"/>
+    <text x="8" y="21" fill="#333">1</text>
+    <text x="45" y="21" fill="#333">[Sub 1] My-Proxy</text>
+    <text x="205" y="21" fill="#555">15</text>
+    <rect x="275" y="4" width="16" height="16" fill="#4caf50"/>
+    <text x="340" y="21" fill="#888">09:20</text>
+    
+    <rect x="0" y="38" width="340" height="32" fill="#ffffff" stroke="#e8ecf1"/>
+    <text x="8" y="57" fill="#555">2</text>
+    <text x="45" y="57" fill="#555">[Sub 2] HK-Node</text>
+    <text x="205" y="57" fill="#555">23</text>
+    <rect x="275" y="42" width="16" height="16" fill="#f44336"/>
+    <text x="340" y="57" fill="#888">08:45</text>
+    
+    <rect x="0" y="76" width="340" height="32" fill="#ffffff" stroke="#e8ecf1"/>
+    <text x="8" y="95" fill="#555">3</text>
+    <text x="45" y="95" fill="#555">[Sub 3] JP-Provider</text>
+    <text x="205" y="95" fill="#555">8</text>
+    <rect x="275" y="80" width="16" height="16" fill="#4caf50"/>
+    <text x="340" y="95" fill="#888">昨天</text>
+  </g>
+
+  <!-- 中间ProxyList表格 -->
+  <rect x="420" y="70" width="620" height="300" fill="#ffffff" stroke="#d9e1e8" rx="6"/>
+  <text x="430" y="90" fill="#333" font-size="14" font-weight="bold">代理列表</text>
+  <!-- 表头 - 可点击排序 -->
+  <g transform="translate(430,110)">
+    <rect x="0" y="0" width="40" height="28" fill="#f3f5f7" stroke="#e2e6ea"/>
+    <rect x="40" y="0" width="100" height="28" fill="#f3f5f7" stroke="#e2e6ea"/>
+    <rect x="140" y="0" width="70" height="28" fill="#f3f5f7" stroke="#e2e6ea"/>
+    <rect x="210" y="0" width="80" height="28" fill="#f3f5f7" stroke="#e2e6ea"/>
+    <rect x="290" y="0" width="80" height="28" fill="#f3f5f7" stroke="#e2e6ea"/>
+    <rect x="370" y="0" width="160" height="28" fill="#f3f5f7" stroke="#e2e6ea"/>
+    <rect x="530" y="0" width="90" height="28" fill="#f3f5f7" stroke="#e2e6ea"/>
+    <text x="12" y="19" fill="#333" font-size="12">#</text>
+    <text x="45" y="19" fill="#333" font-size="12">Host ↕</text>
+    <text x="150" y="19" fill="#333" font-size="12">Port</text>
+    <text x="220" y="19" fill="#333" font-size="12">Latency ↕</text>
+    <text x="300" y="19" fill="#333" font-size="12">连续失败 ↕</text>
+    <text x="380" y="19" fill="#333" font-size="12">Remarks</text>
+    <text x="540" y="19" fill="#333" font-size="12">Message</text>
+  </g>
+  <!-- 数据行 -->
+  <g transform="translate(430,138)" fill="#333" font-size="12">
+    <rect x="0" y="0" width="40" height="26" fill="#fff" stroke="#e5e5e5"/>
+    <rect x="40" y="0" width="100" height="26" fill="#fff" stroke="#e5e5e5"/>
+    <rect x="140" y="0" width="70" height="26" fill="#fff" stroke="#e5e5e5"/>
+    <rect x="210" y="0" width="80" height="26" fill="#fff" stroke="#e5e5e5"/>
+    <rect x="290" y="0" width="80" height="26" fill="#fff" stroke="#e5e5e5"/>
+    <rect x="370" y="0" width="160" height="26" fill="#fff" stroke="#e5e5e5"/>
+    <rect x="530" y="0" width="90" height="26" fill="#fff" stroke="#e5e5e5"/>
+    <text x="15" y="18">1</text>
+    <text x="45" y="18">203.0.113.5</text>
+    <text x="150" y="18">1080</text>
+    <text x="220" y="18" fill="#0a0">15ms</text>
+    <text x="300" y="18">0</text>
+    <text x="380" y="18" fill="#888">HK-01</text>
+    <text x="540" y="18">200 OK</text>
+  </g>
+  <g transform="translate(430,164)" fill="#333" font-size="12">
+    <rect x="0" y="0" width="40" height="26" fill="#fafafa" stroke="#e5e5e5"/>
+    <rect x="40" y="0" width="100" height="26" fill="#fafafa" stroke="#e5e5e5"/>
+    <rect x="140" y="0" width="70" height="26" fill="#fafafa" stroke="#e5e5e5"/>
+    <rect x="210" y="0" width="80" height="26" fill="#fafafa" stroke="#e5e5e5"/>
+    <rect x="290" y="0" width="80" height="26" fill="#fafafa" stroke="#e5e5e5"/>
+    <rect x="370" y="0" width="160" height="26" fill="#fafafa" stroke="#e5e5e5"/>
+    <rect x="530" y="0" width="90" height="26" fill="#fafafa" stroke="#e5e5e5"/>
+    <text x="15" y="18">2</text>
+    <text x="45" y="18">198.51.100.2</text>
+    <text x="150" y="18">8080</text>
+    <text x="220" y="18" fill="#f60">22ms</text>
+    <text x="300" y="18" fill="#f44336">3</text>
+    <text x="380" y="18" fill="#888">HK-02-BACKUP</text>
+    <text x="540" y="18">Testing</text>
+  </g>
+
+  <!-- 右键菜单（在第二行代理上弹出） -->
+  <g transform="translate(425,164)">
+    <rect x="0" y="28" width="100" height="52" fill="#ffffff" stroke="#999" rx="4" ry="4" filter="url(#shadow)"/>
+    <defs>
+      <filter id="shadow" x="-2" y="-2" width="120" height="70">
+        <feDropShadow dx="2" dy="2" stdDeviation="3" flood-opacity="0.2"/>
+      </filter>
+    </defs>
+    <text x="12" y="48" fill="#333" font-size="12">测试</text>
+    <text x="12" y="68" fill="#333" font-size="12">分享链接</text>
+  </g>
+
+  <!-- 右侧详情窗口 -->
+  <rect x="1060" y="70" width="320" height="690" fill="#ffffff" stroke="#d9e1e8" rx="6"/>
+  <text x="1070" y="95" fill="#333" font-size="14" font-weight="bold">代理详情</text>
+
+  <!-- 下方日志窗口 -->
+  <rect x="420" y="500" width="620" height="260" fill="#ffffff" stroke="#d9e1e8" rx="6"/>
+  <text x="430" y="520" fill="#333" font-size="14" font-weight="bold">运行日志</text>
+  <g transform="translate(430,540)" fill="#666" font-size="11">
+    <text x="10" y="16">[INFO] 2026-05-20 09:07:03 代理测试开始</text>
+    <text x="10" y="36">[INFO] 2026-05-20 09:07:04 203.0.113.5 latency: 15ms</text>
+    <text x="10" y="56">[WARN] 198.51.100.2 连续失败: 3次</text>
+  </g>
+</svg>

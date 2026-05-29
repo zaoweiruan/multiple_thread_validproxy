@@ -1,0 +1,49 @@
+## Agent-Native Architecture Review
+
+### Summary
+This is a C++17/20 Windows CLI-based proxy validation tool (multiple_thread_validproxy) with no existing agent integration. The reviewed changeset (BASE 709972e..HEAD) includes fixes to the logger system (LOG_ERROR parse bug, log level application across all command modes, mutex locks for log level setters), type/value validation in ConfigReader, and resource leak fixes in main.cpp. None of these changes introduce agent-accessible interfaces. All user-facing CLI commands (the sole UI actions) lack equivalent agent tools, resulting in zero action parity between users and agents. There is no agent system prompt, context injection, or shared workspace, as no agent integration exists.
+
+### Capability Map
+All user actions are CLI command-line flags/modes, with no corresponding agent tools:
+
+| UI Action (CLI Command/Mode) | Location | Agent Tool | In Prompt? | Priority | Status |
+|-----------|----------|------------|------------|----------|--------|
+| `-c/--config <path>` (config loading) | src/main.cpp, src/ConfigReader.cpp | None | N/A | Must have | Missing |
+| `-show-sub` (list subscriptions) | src/main.cpp | None | N/A | Must have | Missing |
+| `-G/-generator <id>` (generate outbound JSON) | src/main.cpp | None | N/A | Must have | Missing |
+| `-F/-find-proxy` (find first working proxy) | src/main.cpp | None | N/A | Must have | Missing |
+| `-FMIN/-findminproxy` (find lowest latency proxy) | src/main.cpp | None | N/A | Must have | Missing |
+| `-U/-update <id>` (update single subscription) | src/main.cpp | None | N/A | Must have | Missing |
+| `-UA/-update-all` (update all enabled subscriptions) | src/main.cpp | None | N/A | Must have | Missing |
+| `-T/-test-sub <id>` (test subscription proxies) | src/main.cpp | None | N/A | Must have | Missing |
+| `-S/-sync` (sync databases) | src/main.cpp | None | N/A | Must have | Missing |
+| `-I/-import-sub` (import subscription from URL/file) | src/main.cpp | None | N/A | Must have | Missing |
+| `-D/-dedup` (deduplicate proxies) | src/main.cpp | None | N/A | Must have | Missing |
+| `-O/-tourl` (export proxies to URL list) | src/main.cpp | None | N/A | Should have | Missing |
+| Default test mode (batch test all proxies) | src/main.cpp | None | N/A | Must have | Missing |
+
+### Findings
+
+#### Critical (Must Fix)
+1. **No Agent Integration Exists** -- Entire codebase -- The project has no agent tool definitions, system prompts, LLM API calls, or MCP integration. Every user-facing CLI action is an orphan feature with no agent equivalent, violating the Action Parity core principle. Fix: Introduce agent integration (e.g., MCP server exposing CLI command equivalents as tools) to make all user actions agent-accessible.
+
+2. **All Core CLI Commands Lack Agent Tools** -- src/main.cpp -- All 13+ CLI command modes have no corresponding agent tools. For example, the `-find-proxy` command (find first working proxy) can only be triggered by a user via CLI, not by an agent. Fix: Create agent tools (e.g., via MCP) that map 1:1 to each CLI command, accepting the same parameters as the CLI flags.
+
+#### Warnings (Should Fix)
+1. **No Context Injection for Agents** -- N/A -- Since no agent exists, there is no system prompt or runtime context injection. Agents (if added) would not know about available resources (proxy database, config files, Xray executable), recent activity, or domain vocabulary (e.g., "subscription", "ProfileItem", "blacklist threshold"). Recommendation: When adding agent integration, inject runtime context (available CLI commands, config state, database path) into the agent system prompt dynamically.
+
+2. **No Shared Workspace** -- N/A -- Agents and users would operate in separate data spaces if agents were added, as there is no shared data layer. For example, an agent generating a proxy config via `-generator` would write to the same filesystem as the user, but only if shared workspace architecture is adopted. Recommendation: Ensure agent actions use the same filesystem paths, database, and config as user CLI actions.
+
+#### Observations
+1. **Internal Fixes Do Not Improve Parity** -- The reviewed changes (logger fixes, ConfigReader validation, resource leak fixes) are internal quality improvements to the CLI tool. They do not add any agent-accessible interfaces, so they do not improve agent-native parity.
+2. **ConfigReader Validation Helps Future Agent Tools** -- The added type/value validation in ConfigReader (e.g., checking `is_string()`, `is_int64()`, clamping invalid values) will make it easier to expose config loading as an agent tool, as invalid config inputs will be rejected early.
+3. **Logger Mutex Fixes Prepare for Concurrent Agent/User Access** -- Adding mutex locks to `setFileLevel()` and `setConsoleLevel()` in Logger.cpp prevents race conditions if an agent and user modify log levels concurrently in a future shared architecture.
+
+### What's Working Well
+- The CLI tool has clear, well-defined command modes that would map cleanly to agent tools if integration is added.
+- The ConfigReader now validates all config types and values, which reduces errors if config loading is exposed as an agent tool.
+- Resource leak fixes in main.cpp (adding `Logger::close()`, `curl_global_cleanup()`, `sqlite3_close()` in all exit paths) ensure consistent state if an agent triggers the same command flows.
+
+### Score
+- **0/13+ high-priority capabilities are agent-accessible**
+- **Verdict:** NEEDS WORK (no agent integration exists)

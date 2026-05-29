@@ -1,0 +1,65 @@
+{
+  "reviewer": "correctness",
+  "findings": [
+    {
+      "title": "show-sub command no longer prints total proxy count due to accidental line deletion",
+      "severity": "P1",
+      "file": "src/main.cpp",
+      "line": 378,
+      "confidence": 100,
+      "autofix_class": "safe_auto",
+      "owner": "review-fixer",
+      "requires_verification": false,
+      "pre_existing": false,
+      "suggested_fix": "Re-add the following two lines after the per-type loop in the show-sub command:\nstd::cout << \"-----------+-------+-------------\\n\";\nstd::cout << \"Total      | \" << std::setw(5) << totalCount << \" | All profiles\\n\";",
+      "why_it_matters": "The show-sub command is expected to display a summary total of all proxies after listing per-type counts. Removing these lines regresses the command's output, breaking existing user workflows that rely on the total count.",
+      "evidence": [
+        "Diff hunk @@ -318,60 +329,64 @@ shows removal of two lines: '-        std::cout << \"-----------+-------+-------------\\n\";' and '-        std::cout << \"Total      | \" << std::setw(5) << totalCount << \" | All profiles\\n\";'",
+        "The per-type loop in show-sub still computes totalCount correctly, but the value is never printed to stdout in the modified code."
+      ]
+    },
+    {
+      "title": "Logger::setLevel() writes shared state without mutex protection",
+      "severity": "P2",
+      "file": "src/Logger.cpp",
+      "line": 130,
+      "confidence": 75,
+      "autofix_class": "manual",
+      "owner": "downstream-resolver",
+      "requires_verification": true,
+      "pre_existing": true,
+      "suggested_fix": "Add a std::lock_guard<std::mutex> lock(mutex_); at the start of Logger::setLevel() to protect concurrent writes to fileLevel_ and consoleLevel_.",
+      "why_it_matters": "Logger::setLevel() modifies the shared fileLevel_ and consoleLevel_ member variables without holding the mutex, while Logger::setFileLevel() and Logger::setConsoleLevel() (modified in this PR) use mutex locks. Concurrent calls to these methods can cause data races and undefined behavior.",
+      "evidence": [
+        "Logger::setLevel() implementation (unmodified in this PR): 'void Logger::setLevel(LogLevel level) { fileLevel_ = level; consoleLevel_ = level; }' has no mutex lock.",
+        "Logger::setFileLevel() (modified in this PR) uses std::lock_guard<std::mutex> lock(mutex_); before modifying fileLevel_."
+      ]
+    },
+    {
+      "title": "Potential integer overflow when casting int64_t config values to int",
+      "severity": "P3",
+      "file": "src/ConfigReader.cpp",
+      "line": 58,
+      "confidence": 25,
+      "autofix_class": "advisory",
+      "owner": "human",
+      "requires_verification": false,
+      "pre_existing": true,
+      "suggested_fix": "Add bounds checking before casting int64_t to int, e.g., if (val > INT_MAX || val < INT_MIN) { use default value; }",
+      "why_it_matters": "If a config value for xray_workers, xray_start_port, test_timeout_ms, or blacklist_threshold is set to a value larger than INT_MAX (or smaller than INT_MIN), static_cast<int> will result in undefined behavior.",
+      "evidence": [
+        "ConfigReader.cpp casts int64_t values from JSON to int using static_cast<int> without checking if the value fits in the int range, e.g., 'config.xray_workers = static_cast<int>(xray[\"workers\"].as_int64());'"
+      ]
+    }
+  ],
+  "residual_risks": [
+    "Logger::getLevel() and Logger::getFileLevel() read fileLevel_ and consoleLevel_ without mutex locks, which may return inconsistent values if called concurrently with write methods.",
+    "ConfigReader::load() does not validate that priority_mode is one of the allowed values (e.g., 'proxy_first', 'direct_first'), leading to potential undefined behavior in downstream code that relies on this value."
+  ],
+  "testing_gaps": [
+    "No test case for the show-sub command to verify that the total proxy count is printed in the output.",
+    "No test case for Logger::stringToLevel() with edge case inputs like 'LOG_', 'log_', 'log_log_error', or very large integer config values.",
+    "No concurrency test for Logger methods to verify that mutex protection prevents data races.",
+    "No test case for ConfigReader::load() with invalid type fields (e.g., xray.workers as string instead of int) to verify that type checks work correctly."
+  ]
+}

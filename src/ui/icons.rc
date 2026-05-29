@@ -1,0 +1,32 @@
+// -------------------------------------------------------------------
+// icons.rc — Embedded icon resources for validproxy.exe
+//
+// PNG toolbar icons are stored as RCDATA (custom data) and loaded by
+// ToolbarIcons.h via FindResource → wxMemoryInputStream → wxImage.
+//
+// The frame/application icon (icon.ico) is stored as a native Windows
+// ICON resource, loadable via wxBITMAP_TYPE_ICO_RESOURCE.
+//
+// All paths are relative to CMAKE_SOURCE_DIR (set via RC flags).
+// -------------------------------------------------------------------
+
+#include <windows.h>
+
+// ── Toolbar PNG icons (RCDATA) ──────────────────────────────────────
+// Each entry embeds the raw PNG bytes so the loader can decode them
+// with wxImage(memoryStream, wxBITMAP_TYPE_PNG).  Resource names match
+// the icon basename with a "_png" suffix.
+tool_update1_png      RCDATA "docs/design/ui/icon/png/tool_update1.png"
+tool_test_png         RCDATA "docs/design/ui/icon/png/tool_test.png"
+tool_cancel_png       RCDATA "docs/design/ui/icon/png/tool_cancel.png"
+tool_synchronize_png  RCDATA "docs/design/ui/icon/png/tool_synchronize.png"
+tool_find_png         RCDATA "docs/design/ui/icon/png/tool_find.png"
+tool_dedup_png        RCDATA "docs/design/ui/icon/png/tool_dedup.png"
+tool_import_png       RCDATA "docs/design/ui/icon/png/tool_import.png"
+tool_config_png       RCDATA "docs/design/ui/icon/png/tool_config.png"
+
+// ── Application / frame icon (native ICON group) ────────────────────
+// Creates both RT_ICON (raw DIB data per resolution) and RT_GROUP_ICON
+// (directory of available resolutions) so Windows / wxWidgets can load
+// it with LoadImage / wxBITMAP_TYPE_ICO_RESOURCE.
+icon_ico              ICON   "docs/design/ui/icon.ico"

@@ -1,0 +1,2 @@
+https://raw.githubusercontent.com/ShatakVPN/ConfigForge-V2Ray/refs/heads/main/configs/vless.txt ShatakVPN-Test
+https://raw.githubusercontent.com/cook369/proxy-collect/main/dist/yudou/v2ray.txt Cook369-Test

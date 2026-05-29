@@ -1,0 +1,177 @@
+## Institutional Learnings Search Results
+
+### Search Context
+- **Feature/Task**: Fix logger system (LOG_ERROR parse bug, apply log levels to all command modes, add mutex locks), add type/value validation in ConfigReader, fix resource leaks in main.cpp
+- **Keywords Used**: logger, LOG_ERROR, log levels, mutex, lock, ConfigReader, type validation, value validation, resource leaks, main.cpp
+- **Files Scanned**: 15 total files (docs/, memory/)
+- **Relevant Matches**: 8 files with relevant content
+
+### Critical Patterns
+No `docs/solutions/patterns/critical-patterns.md` file exists in this repository.
+
+### Relevant Learnings
+
+#### 1. 修复 LOG_ERROR 解析 bug，补全所有命令模式日志级别设置 (2026-05-06)
+- **File**: `memory/project_knowledge.md` (lines 339-362)
+- **Module**: Logger / main.cpp
+- **Problem Type**: bug (runtime_error)
+- **Relevance**: Directly addresses the LOG_ERROR parse bug and log level application to all command modes
+- **Key Insight**: 
+  - **LOG_ERROR 解析 bug**: `Logger::stringToLevel()` 将 `"LOG_ERROR"` 转为小写 `"log_error"`，但匹配的是 `"error"`，导致 `config.json` 中 `"file_level": "LOG_ERROR"` 被错误解析为 `LogLevel::INFO`
+  - **修复方法**: 添加对 `"log_"` 前缀的处理（如 `"log_error"` → `"error"`），同时兼容带和不带 `LOG_` 前缀的格式
+  - **日志级别未在所有模式应用**: 以下命令模式未调用 `setFileLevel()` 和 `setConsoleLevel()`：
+    - `generator`、`show-sub`、`find-proxy`/`findminproxy`、`sync`、`dedup`、`import-sub` (文件分支)、`default` 模式
+  - **修复**: 在 `Logger::init()` + `setFileEnabled()` 后添加 `setFileLevel()` 和 `setConsoleLevel()` 调用
+  - **config.json 格式问题**: `"file_level": "LOG_ERROR"` 应改为 `"ERROR"` 以匹配枚举命名
+- **Severity**: high
+
+#### 2. 废弃字段清理与 Logger 配置完善 (2026-05-06)
+- **File**: `memory/project_knowledge.md` (lines 298-337)
+- **Module**: ConfigReader, Logger, main.cpp
+- **Problem Type**: bug (configuration)
+- **Relevance**: Addresses ConfigReader type/value validation and Logger configuration application
+- **Key Insight**:
+  - **废弃字段未清理**: `update_subscription` 和 `check_auto_update_interval` 从未被使用，属于死代码
+  - **Logger 配置未应用**: `config.json` 中包含 `level`、`console_level`、`file_level`，但 `ConfigReader.cpp` 未解析，导致配置无效
+  - **Logger::setFileEnabled() 缺失**: 多个命令模式未调用，导致 `log_enabled` 配置不生效：
+    - `-TU` (tourl) 模式
+    - `-IS` (import-sub) URL 分支
+    - `-T`/`-U`/`-UA` 模式
+  - **修复内容**:
+    1. 删除 `AppConfig` 中的废弃字段，删除 `ConfigReader.cpp` 中对应解析代码
+    2. `AppConfig` 新增字段：`log_level`、`log_console_level`、`log_file_level`
+    3. `ConfigReader.cpp` 添加对 `log.level`、`log.console_level`、`log.file_level` 的解析
+    4. `main.cpp` 中添加 `Logger::setFileLevel()` 和 `Logger::setConsoleLevel()` 调用
+- **Severity**: high
+
+#### 3. 修复日志双重时间戳及清理 debug 输出 (2026-05-06)
+- **File**: `memory/project_knowledge.md` (lines 277-297)
+- **Module**: Logger, ConfigReader, main.cpp
+- **Problem Type**: bug (runtime_error)
+- **Relevance**: Related to logger system fixes and debug output cleanup in ConfigReader and main.cpp
+- **Key Insight**:
+  - **双重时间戳**: `logInfo()`/`logError()` 手动添加 `[timestamp] [mode]` 前缀，然后 `Logger::write()` 又添加一次时间戳，导致日志出现重复时间戳
+  - **多余 debug 输出**: `ConfigReader.cpp` 和 `main.cpp` 中存在多处 `std::cerr`/`fprintf(stderr, ...)` debug 输出，未使用统一日志系统
+  - **未使用函数**: `getTimestamp()` 函数因日志修复后不再使用，产生编译 warning
+  - **修复内容**:
+    - 重写 `logInfo()`/`logError()`，移除手动时间戳和模式前缀，统一由 `Logger::write()` 处理
+    - 移除 `ConfigReader.cpp` 中所有 `std::cerr` debug 输出（sync 配置读取相关）
+    - 移除 `main.cpp` sync 段中的 `fprintf(stderr, "[DEBUG] ...")` 调试代码
+    - 删除未使用的 `getTimestamp()` 函数
+- **Severity**: medium
+
+#### 4. 修复 ConfigReader 配置解析 (2026-05-05)
+- **File**: `memory/project_knowledge.md` (lines 385-408)
+- **Module**: ConfigReader
+- **Problem Type**: bug (runtime_error)
+- **Relevance**: Directly addresses ConfigReader parsing issues; type/value validation is still needed
+- **Key Insight**:
+  - **根本原因**: `ConfigReader::load()` 只解析 `database` 节，未解析 `xray`、`test`、`log`、`dedup`、`notification` 等节
+  - **导致后果**: `config.xray_executable` 始终为空字符串，调用 `CreateProcessA()` 时参数无效（错误码 87 = ERROR_INVALID_PARAMETER）
+  - **修复内容**: 完善 `ConfigReader::load()` 函数，添加对所有配置节的解析：
+    - `xray` 节：`executable`、`workers`、`start_port`、`api_port`
+    - `test` 节：`url`、`timeout_ms`
+    - `log` 节：`enabled`、`network_failures`
+    - `subscription` 节：`priority_mode`、`check_auto_update_interval`
+    - `dedup` 节：`enabled`、`dedup_after_update`、`blacklist_threshold`、`subids`
+    - `notification` 节：`enabled`、`on_update`、`on_test`
+  - **注意**: 当前 intent includes adding type/value validation in ConfigReader, which was not part of this fix
+- **Severity**: high
+
+#### 5. Logger 日志重构需求与实现 (2026-04-22)
+- **File**: `docs/日志重构需求.md` (full document)
+- **Module**: Logger, main.cpp, ConfigReader
+- **Problem Type**: design_pattern (logger_refactoring)
+- **Relevance**: Documents the logger refactoring architecture, including mutex usage for thread safety
+- **Key Insight**:
+  - **日志等级**: TRACE(0) → DEBUG(1) → INFO(2) → WARN(3) → LOG_ERROR(4)
+  - **分层输出**: console_level 控制台等级，file_level 文件等级
+  - **配置项**: `config.json` 中新增 log.level/log.console_level/log.file_level
+  - **线程安全**: 使用 mutex 保证多线程安全
+  - **ERROR 是 Windows 宏**: 代码中使用 LOG_ERROR 而非 ERROR
+  - **Logger 类实现** (from `docs/plans/2026-04-13-module-refactoring-plan.md`):
+    - 使用 `std::mutex mutex_` 静态成员
+    - 所有写操作使用 `std::lock_guard<std::mutex> lock(mutex_)`
+    - `init()`, `write()`, `writeTimestamp()`, `flush()`, `close()` 都加锁
+  - **潜在风险**: 日志等级字符串解析需要处理大小写和前缀（LOG_ vs log_）
+- **Severity**: medium
+
+#### 6. 模块重构计划中的 Logger 和 main.cpp 重构 (2026-04-13)
+- **File**: `docs/plans/2026-04-13-module-refactoring-plan.md` (lines 120-220, 1025-1106)
+- **Module**: Logger, main.cpp
+- **Problem Type**: architecture_pattern
+- **Relevance**: Shows the target architecture for Logger (with mutex) and main.cpp simplification
+- **Key Insight**:
+  - **Logger 重构目标**:
+    - 使用 `std::mutex` 保证线程安全
+    - 静态成员：`static std::mutex mutex_;`
+    - 所有公共方法都使用 `std::lock_guard<std::mutex>` 加锁
+  - **main.cpp 重构目标**:
+    - 从 687 行简化为调用各模块
+    - 移除混杂的职责
+    - 统一目录创建逻辑
+  - **注意**: 当前 intent to fix resource leaks in main.cpp aligns with this refactoring goal
+- **Severity**: low
+
+#### 7. -S 参数解析 Windows 盘符冒号冲突修复 (2026-05-06)
+- **File**: `memory/project_knowledge.md` (lines 364-383)
+- **Module**: main.cpp
+- **Problem Type**: bug (runtime_error)
+- **Relevance**: Recent fix in main.cpp related to parameter parsing; resource leak fixes may be needed in similar areas
+- **Key Insight**:
+  - **根因**: `-S` 参数使用 `syncParam.find(':')` 查找第一个冒号作为源/目标分隔符，但 Windows 绝对路径中的盘符（如 `E:\path`）也包含冒号
+  - **修复**: 重写冒号查找逻辑，迭代查找所有冒号并跳过 Windows 盘符冒号（`[A-Za-z]:\` 或 `[A-Za-z]:/` 模式）
+  - **修改文件**: `src/main.cpp`（约第 120-154 行）
+- **Severity**: high
+
+#### 8. 使用可配置阈值替代硬编码数字 (2026-05-05)
+- **File**: `memory/project_knowledge.md` (lines 410-431)
+- **Module**: ConfigReader
+- **Problem Type**: design_pattern (config_validation)
+- **Relevance**: Shows pattern for type/value validation in ConfigReader using placeholders
+- **Key Insight**:
+  - **问题**: SQL 查询中硬编码阈值5（`consecutive_failures < 5`），修改 `blacklist_threshold` 配置不生效
+  - **解决方案**: 在 `config.json` 的 SQL 中使用占位符 `{blacklist_threshold}`
+  - **实现**: 在 `ConfigReader.cpp` 中添加 `replacePlaceholder()` lambda，自动替换占位符
+  - **模式**: 配置值验证 + 占位符替换 = 灵活配置
+  - **注意**: 当前 intent to add type/value validation in ConfigReader can follow this pattern
+- **Severity**: medium
+
+### Recommendations
+
+1. **LOG_ERROR 解析 bug**: 
+   - Verify that `Logger::stringToLevel()` correctly handles both `"LOG_ERROR"` and `"ERROR"` formats
+   - The fix should strip `"log_"` prefix (case-insensitive) before matching
+
+2. **Log levels for all command modes**:
+   - Ensure ALL 10 command modes have `setFileLevel()` and `setConsoleLevel()` calls after `Logger::init()` and `setFileEnabled()`
+   - Modes to check: `generator`, `show-sub`, `find-proxy`, `findminproxy`, `sync`, `dedup`, `import-sub` (file), `import-sub` (URL), `default`, `tourl`, `-T`/`-U`/`-UA`
+
+3. **Mutex locks in Logger**:
+   - Verify all Logger methods that access shared resources (`outFile_`, `logDir_`, etc.) use `std::lock_guard<std::mutex>`
+   - Methods to check: `init()`, `write()`, `writeTimestamp()`, `flush()`, `close()`, `setFileLevel()`, `setConsoleLevel()`, `setFileEnabled()`
+
+4. **ConfigReader type/value validation**:
+   - Add validation for all parsed values (e.g., `timeout_ms > 0`, `workers > 0`, `start_port` is valid port)
+   - Consider adding validation helper functions like `validatePositiveInt()`, `validatePort()`, `validateUrl()`
+   - Follow the placeholder pattern from the `blacklist_threshold` fix for configurable values
+
+5. **Resource leaks in main.cpp**:
+   - Check all `new` allocations have corresponding `delete` (or use smart pointers)
+   - Verify `Logger::close()` is called before program exit
+   - Check `XrayManager::release()` is called to clean up xray instances
+   - Review all `sqlite3_*` resource usage: `sqlite3_close()`, `sqlite3_finalize()` for prepared statements
+   - Look for any `FILE*` or `std::ofstream*` that may not be properly closed
+
+6. **Past patterns to follow**:
+   - Use `std::lock_guard<std::mutex>` for all mutex locks (RAII pattern)
+   - Remove debug output (`std::cerr`, `fprintf(stderr, ...)`) in favor of `Logger::write()`
+   - Apply config validation after parsing, before using values
+   - Clean up deprecated/unused fields proactively
+
+### Additional Notes
+
+- No `docs/solutions/` directory exists in this repository; all learnings were found in `memory/project_knowledge.md` and `docs/` directory
+- The project has active logging and configuration-related fixes as of 2026-05-06
+- Multiple command modes have been incrementally fixed; verify complete coverage
+- Windows-specific issues (like colon in paths) require special handling in main.cpp

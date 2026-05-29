@@ -1,0 +1,26 @@
+{
+  "reviewer": "reliability",
+  "findings": [
+    {
+      "title": "ConfigReader silently ignores type mismatches and invalid values without logging",
+      "severity": "P2",
+      "file": "src/ConfigReader.cpp",
+      "line": 50,
+      "confidence": 75,
+      "autofix_class": "advisory",
+      "owner": "review-fixer",
+      "requires_verification": false,
+      "pre_existing": false,
+      "suggested_fix": "Add warning logs (to stderr or Logger) when type mismatches or invalid values are detected in config fields. For example: if a field is expected to be an int but is a string, log a warning; if a value is <= 0 where positive is expected, log a warning before applying the default."
+    }
+  ],
+  "residual_risks": [
+    "ConfigReader type mismatch and invalid value silent failure - users may not know their config is wrong",
+    "Logger::close() double-call safety - cannot verify from diff if calling close() multiple times is safe"
+  ],
+  "testing_gaps": [
+    "No tests for ConfigReader type validation (what happens when wrong types are provided?)",
+    "No tests for Logger::stringToLevel() with 'LOG_' prefix",
+    "No tests for resource cleanup in error paths (verify curl_global_cleanup, sqlite3_close, Logger::close are called in all error paths)"
+  ]
+}

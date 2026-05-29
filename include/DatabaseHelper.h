@@ -5,6 +5,7 @@
 #include <memory>
 #include <sqlite3.h>
 #include <iostream>
+#include "Logger.h"
 
 namespace db {
 
@@ -27,7 +28,7 @@ public:
       close();
     }
     if (sqlite3_open(db_path_.c_str(), &db_) != SQLITE_OK) {
-      std::cerr << "无法打开数据库: " << sqlite3_errmsg(db_) << std::endl;
+      Logger::write("无法打开数据库: " + std::string(sqlite3_errmsg(db_)), LogLevel::ERR);
       return false;
     }
     return true;
@@ -35,11 +36,11 @@ public:
 
   bool execute(const std::string& sql) {
     if (!db_) return false;
-    
+
     char* err_msg = nullptr;
     if (sqlite3_exec(db_, sql.c_str(), nullptr, nullptr, &err_msg) != SQLITE_OK) {
       if (err_msg) {
-        std::cerr << "SQL错误: " << err_msg << std::endl;
+        Logger::write("SQL错误: " + std::string(err_msg), LogLevel::ERR);
         sqlite3_free(err_msg);
       }
       return false;
