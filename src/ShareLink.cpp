@@ -1,0 +1,499 @@
+#include "ShareLink.h"
+#include <sstream>
+#include <iomanip>
+#include <algorithm>
+#include <cctype>
+#include <openssl/bio.h>
+#include <openssl/evp.h>
+#include <openssl/buffer.h>
+#include <iostream>
+
+namespace share {
+
+static const char* base64_chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+static void replaceAll(std::string& str, const std::string& from, const std::string& to) {
+    size_t pos = 0;
+    while ((pos = str.find(from, pos)) != std::string::npos) {
+        str.replace(pos, from.length(), to);
+        pos += to.length();
+    }
+}
+
+std::string ShareLink::base64Encode(const std::string& str) {
+    std::string result;
+    int i = 0;
+    int j = 0;
+    unsigned char char_array_3[3];
+    unsigned char char_array_4[4];
+    int len = str.length();
+    int pos = 0;
+    
+    while (len--) {
+        char_array_3[i++] = str[pos++];
+        if (i == 3) {
+            char_array_4[0] = (char_array_3[0] & 0xfc) >> 2;
+            char_array_4[1] = ((char_array_3[0] & 0x03) << 4) + ((char_array_3[1] & 0xf0) >> 4);
+            char_array_4[2] = ((char_array_3[1] & 0x0f) << 2) + ((char_array_3[2] & 0xc0) >> 6);
+            char_array_4[3] = char_array_3[2] & 0x3f;
+            
+            for(i = 0; i < 4; i++) result += base64_chars[char_array_4[i]];
+            i = 0;
+        }
+    }
+    
+    if (i) {
+        for(j = i; j < 3; j++) char_array_3[j] = 0;
+        char_array_4[0] = (char_array_3[0] & 0xfc) >> 2;
+        char_array_4[1] = ((char_array_3[0] & 0x03) << 4) + ((char_array_3[1] & 0xf0) >> 4);
+        if (i == 1) {
+            char_array_4[2] = ((char_array_3[1] & 0x0f) << 2);
+        } else {
+            char_array_4[2] = ((char_array_3[1] & 0x0f) << 2) + ((char_array_3[2] & 0xc0) >> 6);
+            char_array_4[3] = char_array_3[2] & 0x3f;
+        }
+        for (j = 0; j < i + 1; j++) result += base64_chars[char_array_4[j]];
+        while(i++ < 3) result += '=';
+    }
+    
+    return result;
+}
+
+std::string ShareLink::base64Decode(const std::string& str) {
+    std::string result;
+    int i = 0;
+    int j = 0;
+    int len = str.length();
+    unsigned char char_array_4[4];
+    unsigned char char_array_3[3];
+    std::string base64_table = base64_chars;
+    
+    while (len-- && (str[j] != '=') && (std::isalnum(str[j]) || str[j] == '+' || str[j] == '/')) {
+        char_array_4[i++] = str[j++];
+        if (i == 4) {
+            for (i = 0; i < 4; i++) {
+                char_array_4[i] = (unsigned char)base64_table.find(char_array_4[i]);
+            }
+            char_array_3[0] = (char_array_4[0] << 2) + ((char_array_4[1] & 0x30) >> 4);
+            char_array_3[1] = ((char_array_4[1] & 0xf) << 4) + ((char_array_4[2] & 0x3c) >> 2);
+            char_array_3[2] = ((char_array_4[2] & 0x3) << 6);
+            for (i = 0; i < 3; i++) result += char_array_3[i];
+            i = 0;
+        }
+    }
+    
+    if (i) {
+        for (j = 0; j < i; j++) {
+            char_array_4[j] = (unsigned char)base64_table.find(char_array_4[j]);
+        }
+        char_array_3[0] = (char_array_4[0] << 2) + ((char_array_4[1] & 0x30) >> 4);
+        char_array_3[1] = ((char_array_4[1] & 0xf) << 4) + ((char_array_4[2] & 0x3c) >> 2);
+        for (j = 0; j < i - 1; j++) result += char_array_3[j];
+    }
+    
+    return result;
+}
+
+std::string ShareLink::urlEncode(const std::string& str) {
+    std::ostringstream escaped;
+    escaped.fill('0');
+    escaped << std::hex << std::uppercase;
+    
+    for (char c : str) {
+        if (std::isalnum(c) || c == '-' || c == '_' || c == '.' || c == '~') {
+            escaped << c;
+        } else {
+            escaped << '%' << std::setw(2) << int((unsigned char)c);
+        }
+    }
+    return escaped.str();
+}
+
+std::string ShareLink::buildQueryString(const std::map<std::string, std::string>& params) {
+    std::ostringstream oss;
+    bool first = true;
+    for (const auto& [key, value] : params) {
+        if (!value.empty()) {
+            if (!first) oss << "&";
+            oss << urlEncode(key) << "=" << urlEncode(value);
+            first = false;
+        }
+    }
+    return oss.str();
+}
+
+bool ShareLink::isValidIpv6(const std::string& addr) {
+    return addr.find(':') != std::string::npos && addr.find('[') != std::string::npos;
+}
+
+std::string ShareLink::formatIpv6(const std::string& addr) {
+    std::string result = addr;
+    if (result.front() != '[') result = "[" + result;
+    if (result.back() != ']') result += "]";
+    return result;
+}
+
+static std::string jsonEncode(const std::string& str) {
+    std::string result = str;
+    replaceAll(result, "\\", "\\\\");
+    replaceAll(result, "\"", "\\\"");
+    return result;
+}
+
+static std::string urlEncode(const std::string& str) {
+    std::string result;
+    for (unsigned char c : str) {
+        if (c >= 0x80) {
+            char buf[4];
+            snprintf(buf, sizeof(buf), "%%%02X", c);
+            result += buf;
+        } else if (c == ';' || c == '=' || c == ' ' || c == '|' || c == '#' || c == '?' || c == '/' || c == '\\') {
+            char buf[4];
+            snprintf(buf, sizeof(buf), "%%%02X", c);
+            result += buf;
+        } else {
+            result += (char)c;
+        }
+    }
+    return result;
+}
+
+std::string ShareLink::vmessToUri(const std::string& address,
+                                const std::string& port,
+                                const std::string& id,
+                                const std::string& alterid,
+                                const std::string& security,
+                                const std::string& network,
+                                const std::string& headertype,
+                                const std::string& requesthost,
+                                const std::string& path,
+                                const std::string& streamsecurity,
+                                const std::string& sni,
+                                const std::string& alpn,
+                                const std::string& fingerprint,
+                                const std::string& allowinsecure,
+                                const std::string& remarks) {
+    std::string json;
+    
+    // Always regenerate JSON from parameters to ensure consistency
+    // (don't trust potentially stale base64 content from database)
+    std::ostringstream oss;
+    oss << "{\n";
+    oss << "  \"v\": \"" << jsonEncode("2") << "\",\n";
+    oss << "  \"ps\": \"" << jsonEncode(remarks) << "\",\n";
+    oss << "  \"add\": \"" << jsonEncode(address) << "\",\n";
+    oss << "  \"port\": \"" << jsonEncode(port) << "\",\n";
+    oss << "  \"id\": \"" << jsonEncode(id) << "\",\n";
+    oss << "  \"aid\": \"" << jsonEncode(alterid) << "\",\n";
+    oss << "  \"scy\": \"" << jsonEncode(security) << "\",\n";
+    oss << "  \"net\": \"" << jsonEncode(network) << "\",\n";
+    oss << "  \"type\": \"" << jsonEncode(headertype) << "\",\n";
+    oss << "  \"host\": \"" << jsonEncode(requesthost) << "\",\n";
+    oss << "  \"path\": \"" << jsonEncode(path) << "\",\n";
+    oss << "  \"tls\": \"" << jsonEncode(streamsecurity) << "\",\n";
+    oss << "  \"sni\": \"" << jsonEncode(sni) << "\",\n";
+    oss << "  \"alpn\": \"" << jsonEncode(alpn) << "\",\n";
+    oss << "  \"fp\": \"" << jsonEncode(fingerprint) << "\",\n";
+    std::string insecureVal = allowinsecure.empty() ? "0" : allowinsecure;
+    oss << "  \"insecure\": \"" << jsonEncode(insecureVal) << "\"\n";
+    oss << "}";
+    json = oss.str();
+    
+    std::string b64 = base64Encode(json);
+    return "vmess://" + b64;  // No @address:port suffix per v2rayN format
+}
+
+std::string ShareLink::vlessToUri(const std::string& address,
+                                const std::string& port,
+                                const std::string& id,
+                                const std::string& flow,
+                                const std::string& network,
+                                const std::string& headertype,
+                                const std::string& requesthost,
+                                const std::string& path,
+                                const std::string& streamsecurity,
+                                const std::string& sni,
+                                const std::string& alpn,
+                                const std::string& fingerprint,
+                                const std::string& allowinsecure,
+                                const std::string& remarks,
+                                const std::string& echConfigList,
+                                const std::string& publicKey,
+                                const std::string& shortId) {
+    std::string query;
+    
+    // v2rayN parameter order (matching v2rayN exactly)
+    query += "encryption=none";
+    
+    if (streamsecurity == "tls" || streamsecurity == "reality") {
+        query += "&security=" + streamsecurity;
+    }
+    if (!sni.empty()) {
+        query += "&sni=" + sni;
+    }
+    if (!fingerprint.empty()) {
+        query += "&fp=" + fingerprint;
+    }
+    if (!publicKey.empty()) {
+        query += "&pbk=" + publicKey;
+    }
+    if (!shortId.empty()) {
+        query += "&sid=" + shortId;
+    }
+    if (!echConfigList.empty()) {
+        query += "&ech=" + urlEncode(echConfigList);
+    }
+
+    // v2rayN outputs insecure fields only for TLS connections
+    if (streamsecurity == "tls" || streamsecurity == "reality") {
+        std::string insecureFlag = (allowinsecure == "true" || allowinsecure == "1") ? "1" : "0";
+        if (!query.empty()) query += "&";
+        query += "insecure=" + insecureFlag + "&allowInsecure=" + insecureFlag;
+    }
+
+    if (!flow.empty()) {
+        query += "&flow=" + flow;
+    }
+    
+    query += "&type=" + (network.empty() ? "tcp" : network);
+    
+    // v2rayN does NOT output headerType field
+    // (even when headertype has value, it's omitted from share link)
+    
+    if (!requesthost.empty()) {
+        query += "&host=" + requesthost;
+    }
+    
+    if (!path.empty()) {
+        // v2rayN fully percent-encodes path values
+        std::string pathFormatted = urlEncode(path);
+        query += "&path=" + pathFormatted;
+    }
+    
+    std::string result = "vless://" + id + "@" + address + ":" + port + "?" + query;
+    
+    if (!remarks.empty()) {
+        std::string remarksFormatted = urlEncode(remarks);
+        result += "#" + remarksFormatted;
+    }
+    
+    return result;
+}
+std::string ShareLink::trojanToUri(const std::string& address,
+                                    const std::string& port,
+                                    const std::string& password,
+                                    const std::string& flow,
+                                    const std::string& network,
+                                    const std::string& headertype,
+                                    const std::string& requesthost,
+                                    const std::string& path,
+                                    const std::string& streamsecurity,
+                                    const std::string& sni,
+                                    const std::string& alpn,
+                                    const std::string& fingerprint,
+                                    const std::string& allowinsecure,
+                                    const std::string& remarks) {
+    std::string query;
+    
+    // v2rayN parameter order (similar to VLESS but no encryption field)
+    if (streamsecurity == "tls" || streamsecurity == "reality") {
+        query += "security=" + streamsecurity;
+    }
+    if (!sni.empty()) {
+        if (!query.empty()) query += "&";
+        query += "sni=" + sni;
+    }
+    if (!fingerprint.empty()) {
+        if (!query.empty()) query += "&";
+        query += "fp=" + fingerprint;
+    }
+    
+    // v2rayN ALWAYS outputs both fields regardless of DB value
+    std::string insecureFlag = (allowinsecure == "true" || allowinsecure == "1") ? "1" : "0";
+    if (!query.empty()) query += "&";
+    query += "insecure=" + insecureFlag + "&allowInsecure=" + insecureFlag;
+    
+    std::string net = network.empty() ? "tcp" : network;
+    if (net != "tcp") {
+        query += "&type=" + net;
+    }
+    
+    // v2rayN does NOT output headerType field
+    
+    if (!requesthost.empty()) {
+        query += "&host=" + requesthost;
+    }
+    
+    if (!path.empty()) {
+        // v2rayN fully percent-encodes path values
+        std::string pathFormatted = urlEncode(path);
+        query += "&path=" + pathFormatted;
+    }
+    
+    std::string result = "trojan://" + password + "@" + address + ":" + port + "?" + query;
+    
+    if (!remarks.empty()) {
+        std::string remarksFormatted = urlEncode(remarks);
+        result += "#" + remarksFormatted;
+    }
+    
+    return result;
+}
+
+std::string ShareLink::ssToUri(const std::string& address,
+                                const std::string& port,
+                                const std::string& method,
+                                const std::string& password,
+                                const std::string& network,
+                                const std::string& path,
+                                const std::string& streamsecurity,
+                                const std::string& sni,
+                                const std::string& remarks) {
+    std::string userInfo = method + ":" + password;
+    std::string encoded = base64Encode(userInfo);
+    // Strip trailing '=' padding to match v2rayN SS format
+    while (!encoded.empty() && encoded.back() == '=') {
+        encoded.pop_back();
+    }
+    
+    std::string result = "ss://" + encoded + "@" + address + ":" + port;
+    std::string query;
+    std::string pathFormatted = path;
+    replaceAll(pathFormatted, "=", "\\=");
+    pathFormatted = urlEncode(pathFormatted);
+    
+    if (network == "ws" || network == "websocket") {
+        query = "plugin=v2ray-plugin";
+        query += "%3Bmode%3Dwebsocket";
+        if (!sni.empty()) {
+            query += "%3Bhost%3D" + sni;
+        }
+        if (!path.empty()) {
+            query += "%3Bpath%3D" + pathFormatted;
+        }
+        if (streamsecurity == "tls") {
+            query += "%3Btls";
+        }
+        query += "%3Bmux%3D0";
+    } else if (!network.empty() && network != "tcp") {
+        query = "obfs=" + network;
+        if (!path.empty()) {
+            query += "&obfs-path=" + urlEncode(path);
+        }
+    }
+    
+    if (!query.empty()) {
+        result += "?" + query;
+    }
+    if (!remarks.empty()) {
+        std::string remarksFormatted = remarks;
+        replaceAll(remarksFormatted, " ", "%20");
+        replaceAll(remarksFormatted, "|", "%7C");
+        result += "#" + remarksFormatted;
+    }
+    return result;
+}
+
+std::string ShareLink::hysteria2ToUri(const std::string& address,
+                                       const std::string& port,
+                                       const std::string& password,
+                                       const std::string& sni,
+                                       const std::string& alpn,
+                                       const std::string& fingerprint,
+                                       const std::string& path,
+                                       const std::string& remarks) {
+    std::map<std::string, std::string> params;
+    
+    if (!sni.empty()) params["sni"] = sni;
+    if (!alpn.empty()) params["alpn"] = alpn;
+    if (!fingerprint.empty()) params["fp"] = fingerprint;
+    if (!path.empty()) params["path"] = path;
+    
+    std::string query = buildQueryString(params);
+    std::string result = "hy2://" + password + "@" + address + ":" + port;
+    if (!query.empty()) {
+        result += "?" + query;
+    }
+    if (!remarks.empty()) {
+        result += "#" + urlEncode(remarks);
+    }
+    return result;
+}
+
+std::string ShareLink::toShareUri(const std::string& configType,
+                                  const std::string& address,
+                                  const std::string& port,
+                                  const std::string& id,
+                                  const std::string& security,
+                                  const std::string& network,
+                                  const std::string& flow,
+                                  const std::string& sni,
+                                  const std::string& alpn,
+                                  const std::string& fingerprint,
+                                  const std::string& allowinsecure,
+                                  const std::string& path,
+                                  const std::string& requesthost,
+                                  const std::string& headertype,
+                                  const std::string& streamsecurity,
+                                  const std::string& remarks,
+                                  const std::string& echConfigList,
+                                  const std::string& publicKey,
+                                  const std::string& shortId) {
+    int type = std::stoi(configType);
+    
+    // v2rayN ConfigType: 1=VMess, 3=SS, 4=Socks, 5=VLESS, 6=Trojan, 7=Hysteria2, 8=TUIC, 9=WireGuard, 10=HTTP
+    switch (type) {
+        case 1: // VMess
+            return vmessToUri(address, port, id, "0", security, network, headertype,
+                           requesthost, path, streamsecurity, sni, alpn, fingerprint,
+                           allowinsecure, remarks);
+        case 3: // Shadowsocks
+            return ssToUri(address, port, security, id, network, path,
+                         streamsecurity, sni, remarks);
+        case 4: // Socks - not supported
+            std::cerr << "Socks not supported: " << configType << std::endl;
+            return "";
+        case 5: // VLESS
+            return vlessToUri(address, port, id, flow, network, headertype,
+                           requesthost, path, streamsecurity, sni, alpn, fingerprint,
+                           allowinsecure, remarks, echConfigList, publicKey, shortId);
+        case 6: // Trojan
+            return trojanToUri(address, port, id, flow, network, headertype,
+                             requesthost, path, streamsecurity, sni, alpn, fingerprint,
+                             allowinsecure, remarks);
+        case 7: // Hysteria2
+            return hysteria2ToUri(address, port, id, sni, alpn, fingerprint, path, remarks);
+        case 8: // TUIC
+            return vlessToUri(address, port, id, flow, network, headertype,
+                           requesthost, path, streamsecurity, sni, alpn, fingerprint,
+                           allowinsecure, remarks, "", publicKey, shortId);
+        case 9: // WireGuard - not supported
+            std::cerr << "WireGuard not supported: " << configType << std::endl;
+            return "";
+        case 10: // HTTP - not supported
+            std::cerr << "HTTP not supported: " << configType << std::endl;
+            return "";
+        default:
+            std::cerr << "Unsupported config type: " << configType << std::endl;
+            return "";
+    }
+}
+
+std::string getConfigTypeName(int configType) {
+    switch (configType) {
+        case 1: return "VMess";
+        case 2: return "Custom";
+        case 3: return "Shadowsocks";
+        case 4: return "Socks";
+        case 5: return "VLESS";
+        case 6: return "Trojan";
+        case 7: return "Hysteria2";
+        case 8: return "TUIC";
+        case 9: return "WireGuard";
+        case 10: return "HTTP";
+        case 11: return "Anytls";
+        default: return "Unknown";
+    }
+}
+
+}

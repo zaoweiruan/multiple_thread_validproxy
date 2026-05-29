@@ -1,14 +1,24 @@
 #include <sstream>
 #include <iomanip>
+#include <algorithm>
 #include <sqlite3.h>
 #include <stdexcept>
 #include <set>
 
 #include "ConfigGenerator.h"
 #include "Profileitem.h"
-#include "Profileexitem.h"
+#include "ProfileExItem.h"
+#include "Logger.h"
 
 namespace config {
+
+void bindTextOrNull(sqlite3_stmt* stmt, int idx, const std::string& val) {
+    if (val.empty()) {
+        sqlite3_bind_null(stmt, idx);
+    } else {
+        sqlite3_bind_text(stmt, idx, val.c_str(), -1, SQLITE_TRANSIENT);
+    }
+}
 
 bool isValidNetwork(const std::string& network);
 
@@ -16,54 +26,73 @@ ConfigGenerator::ConfigGenerator(sqlite3* db) : db_(db) {}
 
 std::vector<db::models::Profileitem> ConfigGenerator::loadProfiles(const std::string& sqlQuery) {
     db::models::ProfileitemDAO dao(db_);
-    auto profiles = dao.getAll(sqlQuery);
+    // When sqlQuery is empty (default), use the DAO's own default query
+    // instead of passing "" which bypasses the default parameter.
+    auto profiles = dao.getAll(sqlQuery.empty() ? "SELECT * FROM ProfileItem;" : sqlQuery);
+    
+    Logger::write("[ConfigGenerator] SQL returned " + std::to_string(profiles.size()) + " profiles", LogLevel::INFO);
     
     std::vector<db::models::Profileitem> validProfiles;
     for (auto& p : profiles) {
-        if (p.network.empty()&&p.configtype == "3") {
+        if (p.network.empty()) {
+            Logger::write("[ConfigGenerator] Using default network 'tcp' for " + p.address + ":" + p.port, LogLevel::WARN);
             p.network = "tcp";
         }
         
         if (!isValidNetwork(p.network)) {
+            Logger::write("[ConfigGenerator] Skipping " + p.address + ":" + p.port + " - invalid network: '" + p.network + "'", LogLevel::WARN);
             continue;
         }
         
         validProfiles.push_back(p);
     }
     
+    Logger::write("[ConfigGenerator] Valid profiles: " + std::to_string(validProfiles.size()), LogLevel::INFO);
     return validProfiles;
 }
 
-std::vector<db::models::Profileexitem> ConfigGenerator::loadProfileExItems() {
-    db::models::ProfileexitemDAO dao(db_);
+std::vector<db::models::ProfileExItem> ConfigGenerator::loadProfileExItems() {
+    db::models::ProfileExItemDAO dao(db_);
     return dao.getAll();
 }
 
-bool ConfigGenerator::updateProfileExItem(const db::models::Profileexitem& exitem) {
+bool ConfigGenerator::updateProfileExItem(const db::models::ProfileExItem& exitem) {
     std::ostringstream sql;
-    sql << "INSERT OR REPLACE INTO ProfileExItem (IndexId, Delay, Speed, Sort, Message) VALUES (?, ?, ?, ?, ?)";
-    
+    sql << "INSERT OR REPLACE INTO ProfileExItem (IndexId, Delay, Speed, Sort, Message, consecutive_failures) VALUES (?, ?, ?, ?, ?, ?)";
+
     sqlite3_stmt* stmt = nullptr;
     if (sqlite3_prepare_v2(db_, sql.str().c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
         return false;
     }
-    
+
     sqlite3_bind_text(stmt, 1, exitem.indexid.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt, 2, exitem.delay.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt, 3, exitem.speed.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt, 4, exitem.sort.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt, 5, exitem.message.c_str(), -1, SQLITE_TRANSIENT);
-    
+    bindTextOrNull(stmt, 2, exitem.delay);
+    bindTextOrNull(stmt, 3, exitem.speed);
+    bindTextOrNull(stmt, 4, exitem.sort);
+    bindTextOrNull(stmt, 5, exitem.message);
+    sqlite3_bind_int(stmt, 6, exitem.consecutive_failures);
+
     bool success = sqlite3_step(stmt) == SQLITE_DONE;
     sqlite3_finalize(stmt);
     return success;
 }
 
 bool isValidNetwork(const std::string& network) {
+    if (network.empty()) return false;
+    
+    std::string lower = network;
+    std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+    
     static const std::set<std::string> valid = {
-        "tcp","ws","grpc","h2","httpupgrade","kcp","xhttp"
+        "tcp","ws","grpc","h2","httpupgrade","kcp","xhttp","http","quic"
     };
-    return valid.count(network) > 0;
+    
+    if (valid.count(lower) == 0) {
+        if (lower == "raw" || lower == "tcp,udp") {
+            return true;
+        }
+    }
+    return valid.count(lower) > 0;
 }
 
 boost::json::object ConfigGenerator::buildStreamSettings(const db::models::Profileitem& p) {
@@ -97,6 +126,35 @@ boost::json::object ConfigGenerator::buildStreamSettings(const db::models::Profi
             }
             if (!p.fingerprint.empty()) {
                 tlsSettings["fingerprint"] = p.fingerprint;
+            }
+            if (!p.echconfiglist.empty()) {
+                tlsSettings["echConfigList"] = boost::json::value(p.echconfiglist);
+            }
+            if (!p.echforcequery.empty()) {
+                tlsSettings["echForceQuery"] = (p.echforcequery == "1");
+            }
+            if (!p.cert.empty()) {
+                boost::json::array certsArr;
+                boost::json::object certObj;
+                std::stringstream certSs(p.cert);
+                std::string line;
+                boost::json::array certLines;
+                while (std::getline(certSs, line)) {
+                    certLines.push_back(boost::json::value(line));
+                }
+                certObj["certificate"] = certLines;
+                certObj["usage"] = "verify";
+                certsArr.push_back(certObj);
+                
+                boost::json::object certSettings;
+                certSettings["certificates"] = certsArr;
+                certSettings["disableSystemRoot"] = true;
+                tlsSettings["allowInsecure"] = false;
+                tlsSettings["disableSystemRoot"] = true;
+            }
+            if (!p.certsha.empty()) {
+                tlsSettings["pinnedPeerCertSha256"] = p.certsha;
+                tlsSettings["allowInsecure"] = false;
             }
             streamSettings["tlsSettings"] = tlsSettings;
         } else if (p.streamsecurity == "reality") {
@@ -133,67 +191,6 @@ boost::json::object ConfigGenerator::buildStreamSettings(const db::models::Profi
         }
     }
     
-    if (!p.streamsecurity.empty()) {
-        streamSettings["security"] = p.streamsecurity;
-        
-        if (p.streamsecurity == "tls") {
-        boost::json::object tlsSettings;
-        tlsSettings["allowInsecure"] = (p.allowinsecure == "1");
-        if (!p.sni.empty()) {
-            tlsSettings["serverName"] = p.sni;
-        }
-        if (!p.alpn.empty()) {
-            std::vector<std::string> alpnList;
-            std::stringstream ss(p.alpn);
-            std::string item;
-            while (std::getline(ss, item, ',')) {
-                alpnList.push_back(item);
-            }
-            boost::json::array alpnArr;
-            for (const auto& a : alpnList) {
-                alpnArr.push_back(boost::json::value(a));
-            }
-            tlsSettings["alpn"] = alpnArr;
-        }
-        if (!p.fingerprint.empty()) {
-            tlsSettings["fingerprint"] = p.fingerprint;
-        }
-        streamSettings["tlsSettings"] = tlsSettings;
-        }
-        if (p.streamsecurity == "reality") {
-            boost::json::object realitySettings;
-            if (p.publickey.empty()) {
-                throw std::runtime_error("REALITY配置错误：publicKey不能为空");
-            }
-            if (p.sni.empty()) {
-                throw std::runtime_error("REALITY配置错误：sni(serverName)不能为空");
-            }
-
-            realitySettings["publicKey"] = p.publickey;
-            realitySettings["serverName"] = p.sni;
-
-            if (!p.shortid.empty()) {
-                realitySettings["shortId"] = p.shortid;
-            } else {
-                realitySettings["shortId"] = "";
-            }
-            
-            if (!p.spiderx.empty()) {
-                realitySettings["spiderX"] = p.spiderx;
-            } else {
-                realitySettings["spiderX"] = "";
-            }
-
-            if (!p.fingerprint.empty()) {
-                realitySettings["fingerprint"] = p.fingerprint;
-            } else {
-                realitySettings["fingerprint"] = "chrome";
-            }
-
-            streamSettings["realitySettings"] = realitySettings;
-        }
-    }
-
     if (p.network == "grpc") {
         boost::json::object grpcSettings;
         grpcSettings["serviceName"] = p.path;
@@ -211,6 +208,7 @@ boost::json::object ConfigGenerator::buildStreamSettings(const db::models::Profi
             wsSettings["path"] = p.path;
         }
         if (!p.requesthost.empty()) {
+            wsSettings["host"] = p.requesthost;
             boost::json::object headers;
             headers["host"] = p.requesthost;
             wsSettings["headers"] = headers;
@@ -273,12 +271,18 @@ boost::json::object ConfigGenerator::buildVLESSOutbound(const db::models::Profil
     user["email"] = "t@t.tt";
     user["encryption"] = "none";
 
-    if (!p.flow.empty()) {
-        user["flow"] = p.flow;
+    std::string flowValue = p.flow;
+    if (!flowValue.empty()) {
+        if (flowValue.find("xtls") != std::string::npos || flowValue.find("vision") != std::string::npos) {
+            if (p.streamsecurity != "reality" && !p.publickey.empty()) {
+                flowValue = "";
+            }
+        }
+        user["flow"] = flowValue;
     }
 
-    if (!p.security.empty()) {
-        user["security"] = "auto";
+    if (!p.security.empty() && p.security != "none") {
+        user["security"] = p.security;
     }
     usersArr.push_back(user);
 
@@ -379,6 +383,15 @@ boost::json::object ConfigGenerator::buildTrojanOutbound(const db::models::Profi
     server["address"] = p.address;
     server["port"] = std::stoi(p.port);
     server["password"] = p.id;
+    
+    if (!p.security.empty()) {
+        server["method"] = p.security;
+    } else {
+        server["method"] = "chacha20";
+    }
+    
+    server["ota"] = false;
+    server["level"] = 1;
 
     serversArr.push_back(server);
     settings["servers"] = serversArr;
@@ -391,6 +404,235 @@ boost::json::object ConfigGenerator::buildTrojanOutbound(const db::models::Profi
     mux["enabled"] = p.muxEnabled == 1;
     mux["concurrency"] = -1;
     outbound["mux"] = mux;
+
+    return outbound;
+}
+
+boost::json::object ConfigGenerator::buildSOCKSOutbound(const db::models::Profileitem& p, const std::string& outboundTag) {
+    boost::json::object outbound;
+    outbound["tag"] = outboundTag;
+    outbound["protocol"] = "socks";
+
+    boost::json::object settings;
+    boost::json::array serversArr;
+    boost::json::object server;
+    server["address"] = p.address;
+    server["port"] = std::stoi(p.port);
+    
+    if (!p.security.empty() && !p.id.empty()) {
+        boost::json::object user;
+        user["user"] = p.security;
+        user["pass"] = p.id;
+        boost::json::array usersArr;
+        usersArr.push_back(user);
+        server["users"] = usersArr;
+    }
+    
+    if (!p.requesthost.empty()) {
+        server["headers"] = boost::json::object({ {"host", p.requesthost} });
+    }
+    
+    serversArr.push_back(server);
+    settings["servers"] = serversArr;
+    outbound["settings"] = settings;
+    
+    if (!p.streamsecurity.empty() && (p.streamsecurity == "tls" || p.streamsecurity == "reality")) {
+        outbound["streamSettings"] = buildStreamSettings(p);
+    }
+    
+    return outbound;
+}
+
+boost::json::object ConfigGenerator::buildHTTPOutbound(const db::models::Profileitem& p, const std::string& outboundTag) {
+    boost::json::object outbound;
+    outbound["tag"] = outboundTag;
+    outbound["protocol"] = "http";
+
+    boost::json::object settings;
+    boost::json::array serversArr;
+    boost::json::object server;
+    server["address"] = p.address;
+    server["port"] = std::stoi(p.port);
+
+    if (!p.security.empty() && !p.id.empty()) {
+        server["user"] = p.security;
+        server["pass"] = p.id;
+    }
+
+    if (!p.requesthost.empty()) {
+        server["headers"] = boost::json::object({ {"host", p.requesthost} });
+    }
+
+    serversArr.push_back(server);
+    settings["servers"] = serversArr;
+    outbound["settings"] = settings;
+
+    if (!p.streamsecurity.empty() && (p.streamsecurity == "tls" || p.streamsecurity == "reality")) {
+        outbound["streamSettings"] = buildStreamSettings(p);
+    }
+
+    return outbound;
+}
+
+boost::json::object ConfigGenerator::buildHysteria2Outbound(const db::models::Profileitem& p, const std::string& outboundTag) {
+    boost::json::object outbound;
+    outbound["tag"] = outboundTag;
+    outbound["protocol"] = "hysteria";
+
+    boost::json::object settings;
+    settings["address"] = p.address;
+    settings["port"] = std::stoi(p.port);
+    settings["version"] = 2;
+    outbound["settings"] = settings;
+
+    boost::json::object streamSettings;
+    streamSettings["network"] = "hysteria";
+    
+    bool hasTls = !p.sni.empty() || p.allowinsecure == "1";
+    if (hasTls) {
+        streamSettings["security"] = "tls";
+        boost::json::object tlsSettings;
+        if (p.allowinsecure == "1") {
+            tlsSettings["allowInsecure"] = true;
+        }
+        if (!p.sni.empty()) {
+            tlsSettings["serverName"] = p.sni;
+        }
+        streamSettings["tlsSettings"] = tlsSettings;
+    }
+
+    boost::json::object hysteriaSettings;
+    hysteriaSettings["version"] = 2;
+    hysteriaSettings["auth"] = p.id;
+    
+    std::string upSpeed = "100mbps";
+    std::string downSpeed = "100mbps";
+    std::string extra_clean = p.extra;
+    if (!extra_clean.empty() && extra_clean.front() == ',') {
+        extra_clean.erase(extra_clean.begin());
+    }
+    if (!extra_clean.empty()) {
+        if (extra_clean.find("up=") != std::string::npos) {
+            size_t upPos = extra_clean.find("up=") + 3;
+            size_t upEnd = extra_clean.find(",", upPos);
+            if (upEnd == std::string::npos) upEnd = extra_clean.length();
+            upSpeed = extra_clean.substr(upPos, upEnd - upPos);
+        }
+        if (extra_clean.find("down=") != std::string::npos) {
+            size_t downPos = extra_clean.find("down=") + 5;
+            size_t downEnd = extra_clean.find(",", downPos);
+            if (downEnd == std::string::npos) downEnd = extra_clean.length();
+            downSpeed = extra_clean.substr(downPos, downEnd - downPos);
+        }
+    }
+    hysteriaSettings["up"] = upSpeed;
+    hysteriaSettings["down"] = downSpeed;
+    streamSettings["hysteriaSettings"] = hysteriaSettings;
+
+    std::string obfsPassword;
+    if (!extra_clean.empty() && extra_clean.find("obfs-password=") != std::string::npos) {
+        size_t keyPos = extra_clean.find("obfs-password=");
+        size_t pos = keyPos + 14;
+        size_t end = extra_clean.find(",", pos);
+        if (end == std::string::npos) end = extra_clean.length();
+        obfsPassword = extra_clean.substr(pos, end - pos);
+    }
+    
+    if (!p.path.empty() || p.extra.find("obfs=salamander") != std::string::npos) {
+        boost::json::object finalmask;
+        boost::json::array udpArr;
+        boost::json::object salamander;
+        salamander["type"] = "salamander";
+        boost::json::object salamanderSettings;
+        std::string salamanderPwd = obfsPassword.empty() ? p.id : obfsPassword;
+        salamanderSettings["password"] = salamanderPwd;
+        salamander["settings"] = salamanderSettings;
+        udpArr.push_back(salamander);
+        finalmask["udp"] = udpArr;
+        streamSettings["finalmask"] = finalmask;
+    }
+
+    outbound["streamSettings"] = streamSettings;
+
+    boost::json::object mux;
+    mux["enabled"] = false;
+    outbound["mux"] = mux;
+    
+    return outbound;
+}
+
+boost::json::object ConfigGenerator::buildTUICOutbound(const db::models::Profileitem& p, const std::string& outboundTag) {
+    boost::json::object outbound;
+    outbound["tag"] = outboundTag;
+    outbound["protocol"] = "tuic";
+
+    boost::json::object settings;
+    settings["address"] = p.address;
+    settings["port"] = std::stoi(p.port);
+    settings["password"] = p.id;
+    settings["uuid"] = p.id;
+
+    if (!p.sni.empty()) {
+        settings["sni"] = p.sni;
+    }
+
+    if (!p.alpn.empty()) {
+        std::vector<std::string> alpnList;
+        std::stringstream ss(p.alpn);
+        std::string item;
+        while (std::getline(ss, item, ',')) {
+            alpnList.push_back(item);
+        }
+        boost::json::array alpnArr;
+        for (const auto& a : alpnList) {
+            alpnArr.push_back(boost::json::value(a));
+        }
+        settings["alpn"] = alpnArr;
+    }
+
+    if (p.allowinsecure == "1") {
+        settings["allowinsecure"] = true;
+    }
+
+    if (!p.publickey.empty()) {
+        settings["publicKey"] = p.publickey;
+    }
+
+    outbound["settings"] = settings;
+
+    return outbound;
+}
+
+boost::json::object ConfigGenerator::buildWireGuardOutbound(const db::models::Profileitem& p, const std::string& outboundTag) {
+    boost::json::object outbound;
+    outbound["tag"] = outboundTag;
+    outbound["protocol"] = "wireguard";
+
+    boost::json::object settings;
+
+    if (!p.address.empty()) {
+        boost::json::array addressArr;
+        addressArr.push_back(boost::json::value(p.address));
+        settings["localAddresses"] = addressArr;
+    }
+
+    settings["privateKey"] = p.id;
+
+    boost::json::array peersArr;
+    boost::json::object peer;
+    peer["publicKey"] = p.publickey;
+    peer["endpoint"] = p.address + ":" + p.port;
+
+    if (!p.presocksport.empty()) {
+        boost::json::array reserved;
+        reserved.push_back(boost::json::value(p.presocksport));
+        peer["reserved"] = reserved;
+    }
+
+    peersArr.push_back(peer);
+    settings["peers"] = peersArr;
+
+    outbound["settings"] = settings;
 
     return outbound;
 }
@@ -428,6 +670,20 @@ XrayConfig ConfigGenerator::generateConfig(const db::models::Profileitem& profil
         outbound = buildVLESSOutbound(profile, outboundTag);
     } else if (profile.configtype == "6") {
         outbound = buildTrojanOutbound(profile, outboundTag);
+    } else if (profile.configtype == "4") {
+        outbound = buildSOCKSOutbound(profile, outboundTag);
+    } else if (profile.configtype == "10") {
+        outbound = buildHTTPOutbound(profile, outboundTag);
+    } else if (profile.configtype == "7") {
+        outbound = buildHysteria2Outbound(profile, outboundTag);
+    } else if (profile.configtype == "8") {
+        outbound = buildTUICOutbound(profile, outboundTag);
+    } else if (profile.configtype == "9") {
+        outbound = buildWireGuardOutbound(profile, outboundTag);
+    } else if (profile.configtype == "11") {
+        throw std::runtime_error("ConfigType 11 (Anytls) 暂不支持生成配置");
+    } else if (profile.configtype == "12") {
+        throw std::runtime_error("ConfigType 12 (Naive) 暂不支持生成配置");
     } else {
         throw std::runtime_error("不支持的协议类型: " + profile.configtype);
     }

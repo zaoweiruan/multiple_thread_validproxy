@@ -7,6 +7,7 @@
 #include <sqlite3.h>
 #include <iostream>
 #include <sstream>
+#include "Logger.h"
 
 namespace db {
 namespace models {
@@ -45,9 +46,8 @@ struct Subitem {
     // MoreUrl
     text = (const char*)sqlite3_column_text(stmt, 3);
     obj.moreurl = text ? text : "";
-    // Enabled
-    text = (const char*)sqlite3_column_text(stmt, 4);
-    obj.enabled = text ? text : "";
+    // Enabled (stored as INTEGER in DB)
+    obj.enabled = std::to_string(sqlite3_column_int(stmt, 4));
     // UserAgent
     text = (const char*)sqlite3_column_text(stmt, 5);
     obj.useragent = text ? text : "";
@@ -146,7 +146,7 @@ public:
 
     sqlite3_stmt* stmt = nullptr;
     if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
-      std::cerr << "SQL错误: " << sqlite3_errmsg(db_) << std::endl;
+      Logger::write("SQL错误: " + std::string(sqlite3_errmsg(db_)), LogLevel::ERR);
       return result;
     }
 
@@ -156,6 +156,64 @@ public:
 
     sqlite3_finalize(stmt);
     return result;
+  }
+
+  std::vector<Subitem> getEnabledSubscriptions() {
+    std::vector<Subitem> result;
+    const char* sql = "SELECT * FROM SubItem WHERE Enabled = 1 AND Url != '' AND Url IS NOT NULL;";
+
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+      Logger::write("SQL错误: " + std::string(sqlite3_errmsg(db_)), LogLevel::ERR);
+      return result;
+    }
+
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+      result.push_back(Subitem::fromStmt(stmt));
+    }
+
+    sqlite3_finalize(stmt);
+    return result;
+  }
+
+  bool updateEnabled(const std::string& id, bool enabled) {
+    std::string sql = "UPDATE SubItem SET Enabled = " + std::string(enabled ? "1" : "0") + " WHERE Id = '" + id + "';";
+    char* errMsg = nullptr;
+    int rc = sqlite3_exec(db_, sql.c_str(), nullptr, nullptr, &errMsg);
+    if (rc != SQLITE_OK) {
+      Logger::write("SQL error: " + std::string(errMsg ? errMsg : "unknown"), LogLevel::ERR);
+      sqlite3_free(errMsg);
+      return false;
+    }
+    return true;
+  }
+
+  bool updateSubitem(const Subitem& sub) {
+    // Escape single quotes in string fields
+    auto esc = [](const std::string& s) -> std::string {
+      std::string out;
+      out.reserve(s.size());
+      for (char c : s) { if (c == '\'') out += "''"; else out += c; }
+      return out;
+    };
+
+    std::string sql =
+        "UPDATE SubItem SET "
+        "Remarks = '" + esc(sub.remarks) + "', "
+        "Url = '" + esc(sub.url) + "', "
+        "Enabled = " + sub.enabled + ", "
+        "UserAgent = '" + esc(sub.useragent) + "', "
+        "AutoUpdateInterval = '" + esc(sub.autoupdateinterval) + "' "
+        "WHERE Id = '" + esc(sub.id) + "';";
+
+    char* errMsg = nullptr;
+    int rc = sqlite3_exec(db_, sql.c_str(), nullptr, nullptr, &errMsg);
+    if (rc != SQLITE_OK) {
+      Logger::write("SQL error: " + std::string(errMsg ? errMsg : "unknown"), LogLevel::ERR);
+      sqlite3_free(errMsg);
+      return false;
+    }
+    return true;
   }
 };
 

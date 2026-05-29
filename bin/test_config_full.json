@@ -1,0 +1,40 @@
+{
+    "database": {
+        "path": "E:/eclipse_workspace/multiple_thread_validproxy/test/guindb.db",
+        "sql": "SELECT pi.IndexId, pi.ConfigType, pi.ConfigVersion, pi.Address, pi.Port, pi.Ports, pi.Id, pi.AlterId, pi.Security, pi.Network, pi.Remarks, pi.HeaderType, pi.RequestHost, pi.Path, pi.StreamSecurity, pi.AllowInsecure, pi.Subid, pi.IsSub, pi.Flow, pi.Sni, pi.Alpn, pi.CoreType, pi.PreSocksPort, pi.Fingerprint, pi.DisplayLog, pi.PublicKey, pi.ShortId, pi.SpiderX, pi.Mldsa65Verify, pi.Extra, pi.MuxEnabled, pi.Cert, pi.CertSha, pi.EchConfigList, pi.EchForceQuery FROM ProfileItem pi LEFT JOIN ProfileExItem pe ON pi.IndexId = pe.IndexId WHERE pi.ConfigType IN ('1', '3', '4', '5', '6', '7', '8', '9', '10') AND (pe.consecutive_failures IS NULL OR pe.consecutive_failures < 5);",
+        "sql_by_subid": "SELECT pi.IndexId, pi.ConfigType, pi.ConfigVersion, pi.Address, pi.Port, pi.Ports, pi.Id, pi.AlterId, pi.Security, pi.Network, pi.Remarks, pi.HeaderType, pi.RequestHost, pi.Path, pi.StreamSecurity, pi.AllowInsecure, pi.Subid, pi.IsSub, pi.Flow, pi.Sni, pi.Alpn, pi.CoreType, pi.PreSocksPort, pi.Fingerprint, pi.DisplayLog, pi.PublicKey, pi.ShortId, pi.SpiderX, pi.Mldsa65Verify, pi.Extra, pi.MuxEnabled, pi.Cert, pi.CertSha, pi.EchConfigList, pi.EchForceQuery FROM ProfileItem pi LEFT JOIN ProfileExItem pe ON pi.IndexId = pe.IndexId WHERE pi.Subid = '{subid}' AND (pe.consecutive_failures IS NULL OR pe.consecutive_failures < 5);"
+    },
+    "xray": {
+        "executable": "E:/v2rayN-windows-64/bin/xray/xray.exe",
+        "workers": 4,
+        "start_port": 1080,
+        "api_port": 10080
+    },
+    "test": {
+        "url": "https://www.google.com/generate_204",
+        "timeout_ms": 5000
+    },
+    "log": {
+        "enabled": true,
+        "console_level": "INFO",
+        "file_level": "DEBUG"
+    },
+    "subscription": {
+        "priority_mode": "proxy_first",
+        "check_auto_update_interval": true
+    },
+    "dedup": {
+        "enabled": true,
+        "dedup_after_update": false,
+        "blacklist_threshold": 5
+    },
+    "sync": {
+        "source_db": "./worker/guindb.db",
+        "target_db": "../test/guindb.db"
+    },
+    "notification": {
+        "enabled": false,
+        "on_update": true,
+        "on_test": true
+    }
+}

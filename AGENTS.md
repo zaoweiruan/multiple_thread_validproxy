@@ -1,194 +1,51 @@
-# AGENTS.md - multiple_thread_validproxy
+完成。已批准实施并提交主要代码变更草案。需要你在环境中执行构建与测试，以确保编译通过并无新错误。继续执行的工作流如下：
+- 在你的本地环境执行构建与测试：cmake -B build -G "Ninja" -DCMAKE_BUILD_TYPE=Debug; cmake --build build --parallel 8; ctest -V
+- 运行应用并验证：通过菜单触发 Find Proxy/Find Best，观察异步行为与 StatusUpdateEvent 反馈；触发单次与批量测试，验证 ProxyListPanel 延迟列刷新。
+- 如遇编译错误、测试失败或运行时崩溃，提供日志，我将快速定位并修复。
 
-## 1. 项目概述
+## 2026-05-19 修复完成状态
 
-- **语言**: C++ 20/17 (使用 C++17 features like std::optional)
-- **类型**: 代理验证工具
-- **目标平台**: Windows
-- **构建系统**: CMake (待实现)
-- **项目状态**: 初期开发
+### 已完成修复
+1. ✅ **wxWidgets DLL 缺失** (`wxmsw32ud_*`) - CMakeLists.txt Debug/Release 检测和复制逻辑
+2. ✅ **libpng16d.dll / libtiffd.dll 缺失** - 更新 Debug DLL 列表使用正确的调试版本
+3. ✅ **订阅面板 UI 中文化** - 右键菜单中文化（更新订阅/测试订阅/编辑订阅/删除订阅/刷新/添加订阅），删除 "+"/"Refresh" 按钮，加宽数据库路径标签
 
-## 2. 目录结构
+### 验证结果
+- **Build**: ✅ 成功 (Debug 模式)
+- **Tests**: ✅ 3/3 通过
+- **GUI 启动**: ✅ 应用程序正常启动
 
-```
-multiple_thread_validproxy/
-├── include/              # 公共头文件 (数据库模型定义)
-├── bin/
-│   └── main_config_4.json  # xray 配置文件模板
-├── build/                # 构建输出 (gitignore)
-└── AGENTS.md
-```
+---
 
-## 3. 构建/测试命令 (Windows + GCC/MinGW)
+## 待办事项 / 下一步计划
 
-```bash
-mkdir build && cd build
-cmake .. -G "Ninja" -DCMAKE_BUILD_TYPE=debug
-cmake --build . --parallel 8
-./validproxy.exe
-ctest -V
-cmake --build . --target clean
+| 特性 | 计划文档 | 状态 |
+|------|----------|------|
+| 1. 列排序 | [`docs/plans/2026-05-19-ui-enhancements-sort-find-link.md`](./docs/plans/2026-05-19-ui-enhancements-sort-find-link.md) | ✅ 已完成 |
+| 2. 查找单个代理 | 同上 | ✅ 已完成 |
+| 3. 订阅-代理联动 | 同上 | ✅ 已完成 |
+| 4. 订阅更新取消支持 | [`docs/bugfix/2026-05-28-cancel-sub-update-proxyfinder-phase.md`](./docs/bugfix/2026-05-28-cancel-sub-update-proxyfinder-phase.md) | ✅ 已完成 |
+| 5. SQL 错误输出修复 | [`docs/bugfix/2026-05-28-sql-error-console-output-fix.md`](./docs/bugfix/2026-05-28-sql-error-console-output-fix.md) | ✅ 已完成 |
+| 6. 订阅面板 UI 中文化 | (本会话) | ✅ 已完成 |
 
-# 运行单个测试
-ctest -R TestName -V
-./build/tests/test_name
-```
+---
 
-## 4. 第三方依赖
+## 长期记忆引用 (Long-Term Memory)
 
-| 库 | 版本 | 安装方式 | 路径 |
-|---|---|---|---|
-| Boost | 1.80+ | 手动 | D:\boost_1_88_0 |
-| boost/json | - | Boost 已包含 | - |
-| curl | latest | vcpkg | - |
-| sqlite3 | latest | vcpkg | - |
-| xray-core | latest | 手动 | ../Xray-core |
+> 所有关键文档入口均归集于 [docs/INDEX.md](./docs/INDEX.md)。
 
-## 5. 代码规范
-
-### 命名约定
-
-- **类/结构体**: PascalCase (e.g., `Profileitem`, `ProfileitemDAO`)
-- **函数/方法**: camelCase (e.g., `getAll()`, `fromStmt()`)
-- **成员变量**: snake_case (e.g., `indexid`, `configtype`)
-- **常量**: kPascalCase 或 UPPER_SNAKE_CASE (e.g., `kMaxSize`, `MAX_BUFFER_SIZE`)
-- **宏**: UPPER_SNAKE_CASE (e.g., `LOG_ERROR`)
-
-### 文件组织
-
-- **头文件**: `.h` (当前使用) 或 `.hpp`
-- **源文件**: `.cpp`
-- **每个类一个头文件** (除非紧密相关)
-- **使用 include guards**: `#ifndef`, `#define`, `#endif`
-
-### 代码风格示例
-
-```cpp
-#ifndef DB_PROFILEITEM_H
-#define DB_PROFILEITEM_H
-
-#include <string>
-#include <vector>
-#include <optional>
-#include <sqlite3.h>
-#include <iostream>
-#include <sstream>
-
-namespace db {
-namespace models {
-
-struct Profileitem {
-  std::string indexid;
-  std::string configtype;
-  int muxEnabled;
-  
-  static Profileitem fromStmt(sqlite3_stmt* stmt);
-  std::string toString() const;
-};
-
-class ProfileitemDAO {
-private:
-  sqlite3* db_;
-  
-public:
-  explicit ProfileitemDAO(sqlite3* db) : db_(db) {}
-  std::vector<Profileitem> getAll();
-};
-
-} // namespace models
-} // namespace db
-
-#endif // DB_PROFILEITEM_H
-```
-
-### 类型使用
-
-- 使用 `std::string` 而非 `char*`
-- 使用 `std::vector<T>` 而非原始数组
-- 使用 `std::optional<T>` 表示可选值
-- 使用 `sqlite3*` 处理数据库连接
-- 避免使用 C 风格类型
-
-### 错误处理
-
-- 使用 `std::cerr` 输出错误信息
-- 返回空容器表示错误 (如 `std::vector<T>{}`)
-- 检查 SQLite 返回值 (`SQLITE_OK`, `SQLITE_ROW` 等)
-
-### 导入顺序
-
-1. 系统头文件 (`<string>`, `<vector>` 等)
-2. 第三方库头文件 (`<sqlite3.h>`, `<iostream>`)
-3. 项目内部头文件
-
-## 6. 开发工作流
-
-### 新建模型类
-
-```cpp
-// include/{模块}/{类名}.h
-#ifndef DB_MODULENAME_H
-#define DB_MODULENAME_H
-
-#include <string>
-#include <vector>
-
-namespace db {
-namespace models {
-
-struct Modulename {
-  std::string id;
-  std::string name;
-  
-  static Modulename fromStmt(sqlite3_stmt* stmt);
-};
-
-class ModulenameDAO {
-private:
-  sqlite3* db_;
-  
-public:
-  explicit ModulenameDAO(sqlite3* db) : db_(db) {}
-  std::vector<Modulename> getAll();
-};
-
-} // namespace models
-} // namespace db
-
-#endif // DB_MODULENAME_H
-```
-
-### 调试配置
-
-- IDE: Eclipse + CMake Tools + Ninja
-- 调试器: GDB 或 LLDB
-
-## 7. 测试框架 (待配置)
-
-建议使用 Google Test:
-
-```cmake
-FetchContent_Declare(googletest URL https://github.com/google/googletest/archive/refs/tags/v1.13.0.tar.gz)
-FetchContent_MakeAvailable(googletest)
-
-add_executable(test_model tests/test_model.cpp)
-target_link_libraries(test_model PRIVATE gtest_main ModelLib)
-add_test(NAME ModelTest COMMAND test_model)
-```
-
-## 8. 功能待实现
-
-1. 扫描项目 ../validproxy 获取功能列表
-2. 读取 sqlite3 数据库 guiNDB.db，表 Profileitem、Profileexitem
-3. 根据 configType 生成 JSON 配置 (3=SS, 1=VMess, 5=VLESS, 6=Trojan)
-4. xray API 方式启动 (端口 10086，stdin 注入配置)
-5. curl 测试代理连通性 (https://www.google.com/generate_204)
-6. 多线程并发测试多个代理
-
-## 9. 常见问题
-
-**Q: 如何添加新依赖?**
-A: 编辑 CMakeLists.txt，使用 find_package 或 FetchContent
-
-**Q: 内存泄漏检测?**
-A: 使用 AddressSanitizer: `-fsanitize=address` (Linux/Mac)
+| 类别 | 入口 | 说明 |
+|------|------|------|
+| 术语表 | [`docs/glossary.md`](./docs/glossary.md) | 代理协议、传输层、数据库字段、CLI 命令等 40+ 条定义 |
+| 项目上下文 | [`docs/context.md`](./docs/context.md) | v2rayn/Xray-core 源码位置、关键文件映射、配置文件路径 |
+| 开发流程 | [`docs/plans/DEV-PROCESS.md`](./plans/DEV-PROCESS.md) | 计划优先原则、LogLevel 等级规范、计划文档模板 |
+| 整体架构 | [`docs/architecture.md`](./architecture.md) | 核心模块(6)/数据层(SQLite DAO)/数据流/构建系统/CLI 命令 |
+| 设计规范 | [`docs/design/`](./design/) | UI 设计 / 去重黑名单 / 无效代理过滤 |
+| 需求脑暴 | [`docs/superpowers/brainstorm/`](./superpowers/brainstorm/) | curl RAII / ShareLink Parser / Config Transaction Batch / 改进想法 |
+| 技术方案 | [`docs/superpowers/specs/`](./superpowers/specs/) | 模块重构 / SubitemUpdaterV2 × 2 / 去重设计 / 代理同步 / 批量导入 |
+| 实施计划 | [`docs/plans/`](./plans/) | 44 份计划 (含 .kilo/plans/ 迁移归档); 全局跟踪见 tracker.md |
+| 分析报告 | [`docs/reports/`](./reports/) | ShareLink 导出修复报告 / DB Schema 分析 / 错误报告 |
+| 测试报告 | [`docs/test/`](./test/) | 集成测试报告 (706/706 通过) |
+| 代码审查 | [`docs/code-reviews/`](./code-reviews/) + [`docs/ce-code-review/`](./ce-code-review/) | Logger 修复审查 / Code Embodiment 6 维综合审查 |
+| 状态跟踪 | [`docs/plans/project-plans-tracker.md`](./plans/project-plans-tracker.md) | 全局进度总表 + `.kilo/` 迁移条目 + UI Phase 跟踪 |
+| **文档索引** | **[`docs/INDEX.md`](./INDEX.md)** ⭐ | **本文档** — 所有 `docs/` 文件的分类总索引 |

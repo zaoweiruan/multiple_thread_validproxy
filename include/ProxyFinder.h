@@ -1,0 +1,73 @@
+#ifndef PROXY_FINDER_H
+#define PROXY_FINDER_H
+
+#include <string>
+#include <vector>
+#include <utility>
+#include <atomic>
+#include <sqlite3.h>
+#include <curl/curl.h>
+
+class XrayManager;
+class ConfigGenerator;
+
+class ProxyFinder {
+public:
+    ProxyFinder(sqlite3* db, XrayManager* manager, const std::string& xrayPath, 
+                const std::string& testUrl = "https://www.google.com/generate_204", 
+                const std::string& targetUrl = "",
+                int timeoutMs = 5000,
+                std::atomic<bool>* cancelFlag = nullptr);
+    ~ProxyFinder();
+    
+    bool isCancelled() const {
+        return cancelRequested_ && cancelRequested_->load();
+    }
+
+    std::pair<int, int> findFirstWorkingProxy(const std::string& targetUrl = "");
+    std::pair<int, int> findWorkingProxy(const std::string& targetUrl = "");
+    void release();
+    
+    struct TestResult {
+        bool success;
+        long latencyMs;
+        std::string errorMsg;
+        std::string indexId;
+        std::string address;
+        int port;
+        int delay;
+    };
+    
+    TestResult getLastResult() const { return lastResult_; }
+    
+    TestResult testProxyConnectivity(int socksPort, const std::string& targetUrl = "");
+
+struct FallbackProxy {
+    std::string indexId;
+    std::string address;
+    int socksPort;
+    int delay;
+    std::string configType;   // protocol type: 1=VMess, 3=SS, 4=SOCKS, 5=VLESS, etc.
+};
+
+/** Convert config type number to human-readable protocol name */
+static std::string configTypeToProtocol(const std::string& ct);
+
+private:
+    std::vector<FallbackProxy> loadFallbackProxies(int maxCount = -1);
+    bool injectProxyToXray(const std::string& indexId);
+    void removeProxyFromXray();
+    
+    sqlite3* db_;
+    XrayManager* manager_;
+    std::string xrayPath_;
+    std::string testUrl_;
+    std::string targetUrl_;
+    int timeoutMs_;
+    int currentSocksPort_;
+    int currentApiPort_;
+    TestResult lastResult_;
+    std::atomic<bool>* cancelRequested_{nullptr};
+};
+
+#endif // PROXY_FINDER_H
