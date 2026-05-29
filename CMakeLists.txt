@@ -189,6 +189,8 @@ copy_wx_dlls(validproxy)
     # The old POST_BUILD copy-to-bin/icons/ step has been removed.
 
     # Compile definition for GUI mode
+    # WIN32 flag creates GUI subsystem executable (no console window for GUI mode)
+    set_target_properties(validproxy PROPERTIES WIN32_EXECUTABLE TRUE)
     target_compile_definitions(validproxy PRIVATE HAS_WXWIDGETS=1)
 else()
     message(STATUS "wxWidgets not found - GUI mode (-ui) will not be available")
