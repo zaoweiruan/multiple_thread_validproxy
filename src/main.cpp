@@ -241,53 +241,96 @@ int main(int argc, char* argv[]) {
     
     // ------------------------------------------------------------------
     // GUI mode: default when no CLI mode specified, or when -ui/--ui is given
+    // 启动后立即返回（非阻塞），不等待 GUI 关闭
     // ------------------------------------------------------------------
     bool shouldLaunchGui = forceGuiMode || commandMode.empty();
     
     if (shouldLaunchGui) {
 #ifdef HAS_WXWIDGETS
-        Logger::init(logDir.string(), "ui");
-        auto appConfig = config::ConfigReader::load(configPath);
-        if (!appConfig) {
-            logError("Failed to load config from: " + configPath);
+        // Check if this is the GUI worker process (internally spawned with --gui flag)
+        bool isGuiWorker = false;
+        for (int i = 1; i < argc; ++i) {
+            std::string a(argv[i]);
+            if (a == "--gui") {
+                isGuiWorker = true;
+                break;
+            }
+        }
+        
+        if (isGuiWorker) {
+            // This is the spawned worker process - run wxEntry directly (blocking)
+            auto appConfig = config::ConfigReader::load(configPath);
+            if (!appConfig) {
+                std::cerr << "Failed to load config from: " << configPath << std::endl;
+                return 1;
+            }
+            
+            sqlite3* db = nullptr;
+            if (sqlite3_open(appConfig->database_path.c_str(), &db) != SQLITE_OK) {
+                std::cerr << "Failed to open database: " << sqlite3_errmsg(db) << std::endl;
+                return 1;
+            }
+            
+            Logger::init(logDir.string(), "ui");
+            Logger::setFileEnabled(appConfig->log_enabled);
+            Logger::setFileLevel(Logger::stringToLevel(appConfig->log_file_level));
+            
+            // Strip --gui flag for wxEntry
+            std::vector<char*> wxArgv;
+            wxArgv.push_back(argv[0]);
+            for (int i = 1; i < argc; ++i) {
+                std::string a(argv[i]);
+                if (a != "-ui" && a != "--ui" && a != "--gui") {
+                    wxArgv.push_back(argv[i]);
+                }
+            }
+            int wxArgc = static_cast<int>(wxArgv.size());
+            
+            wxApp::SetInstance(new UIApp(*appConfig, db));
+            int ret = wxEntry(wxArgc, wxArgv.data());
+            
+            XrayManager::release();
+            sqlite3_close(db);
             Logger::close();
-            return 1;
+            return ret;
         }
-
-        Logger::setFileEnabled(appConfig->log_enabled);
-        Logger::setFileLevel(Logger::stringToLevel(appConfig->log_file_level));
-        Logger::setConsoleLevel(Logger::stringToLevel(appConfig->log_console_level));
-        Logger::setConsoleEnabled(false);  // UI mode: route all output to LogPanel only
-        logInfo("validproxy GUI starting...");
-
-        sqlite3* db = nullptr;
-        if (!openDatabase(*appConfig, db, "[main] ui")) {            Logger::close();
-            return 1;
+        
+        // This is the parent process - spawn detached GUI process and return
+        Logger::init(logDir.string(), "ui");
+        logInfo("Spawning GUI process...");
+        
+        std::string exePath = exeDir + "\\validproxy.exe";
+        if (!std::filesystem::exists(exePath)) {
+            exePath = exeDir + "\\validproxy";
         }
-
-        // Strip -ui / --ui from argv before passing to wxEntry
-        // so wxWidgets does not complain about unknown options.
-        std::vector<char*> wxArgv;
-        wxArgv.push_back(argv[0]);
+        
+        // Build command line with --gui flag for internal use (must be mutable for CreateProcessA)
+        std::string fullCmd = "--gui";
         for (int i = 1; i < argc; ++i) {
             std::string a(argv[i]);
             if (a != "-ui" && a != "--ui") {
-                wxArgv.push_back(argv[i]);
+                fullCmd += " \"" + a + "\"";
             }
         }
-        int wxArgc = static_cast<int>(wxArgv.size());
-
-        wxApp::SetInstance(new UIApp(*appConfig, db));
-        int ret = wxEntry(wxArgc, wxArgv.data());
-
-        XrayManager::release();  // safety net: ensure xray instances are stopped
-        // Use the final db handle (may have been switched at runtime via ConfigDialog)
-        if (UIApp* theApp = wxDynamicCast(wxApp::GetInstance(), UIApp)) {
-            db = theApp->getDb();
+        
+        STARTUPINFOA si = {sizeof(si)};
+        PROCESS_INFORMATION pi = {};
+        // CreateProcessA modifies the command line buffer, so copy to mutable buffer
+        std::vector<char> cmdBuffer(fullCmd.begin(), fullCmd.end());
+        cmdBuffer.push_back('\0');
+        
+        // Use exe path as first param (CreateProcessA lpApplicationName)
+        if (CreateProcessA(exePath.c_str(), cmdBuffer.data(), nullptr, nullptr, FALSE,
+                          DETACHED_PROCESS, nullptr, nullptr, &si, &pi)) {
+            logInfo("GUI process spawned successfully");
+            CloseHandle(pi.hProcess);
+            CloseHandle(pi.hThread);
+        } else {
+            logError("Failed to spawn GUI process: " + std::to_string(GetLastError()));
         }
-        sqlite3_close(db);
+        
         Logger::close();
-        return ret;
+        return 0;
 #else
         if (forceGuiMode) {
             std::cerr << "Error: GUI mode not available. Rebuild with wxWidgets support." << std::endl;
