@@ -22,12 +22,11 @@ public:
     void loadSubscriptions();
     std::string getSelectedSubId() const;
     const std::vector<db::models::Subitem>& getSubscriptions() const { return subs_; }
-    void showAddDialog();
 
 private:
     void onSelectionChanged(wxDataViewEvent& event);
     void onContextMenu(wxDataViewEvent& event);
-    void onAddSubscription(wxCommandEvent& event);
+    void onRefreshSubscription(wxCommandEvent& event);
     void onEditSubscription(wxCommandEvent& event);
     void onDeleteSubscription(wxCommandEvent& event);
     void onUpdateSubscription(wxCommandEvent& event);

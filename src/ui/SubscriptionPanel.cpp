@@ -13,24 +13,24 @@
 #include <sstream>
 
 enum {
-    ID_SUB_ADD = wxID_HIGHEST + 400,
-    ID_SUB_EDIT,
+    ID_SUB_EDIT = wxID_HIGHEST + 400,
     ID_SUB_DELETE,
     ID_SUB_UPDATE,
     ID_SUB_TEST,
     ID_SUB_IMPORT,
+    ID_SUB_REFRESH,
 };
 
 // -------------------------------------------------------------------
 wxBEGIN_EVENT_TABLE(SubscriptionPanel, wxPanel)
     EVT_DATAVIEW_SELECTION_CHANGED(wxID_ANY, SubscriptionPanel::onSelectionChanged)
     EVT_DATAVIEW_ITEM_CONTEXT_MENU(wxID_ANY, SubscriptionPanel::onContextMenu)
-    EVT_MENU(ID_SUB_ADD, SubscriptionPanel::onAddSubscription)
     EVT_MENU(ID_SUB_EDIT, SubscriptionPanel::onEditSubscription)
     EVT_MENU(ID_SUB_DELETE, SubscriptionPanel::onDeleteSubscription)
     EVT_MENU(ID_SUB_UPDATE, SubscriptionPanel::onUpdateSubscription)
     EVT_MENU(ID_SUB_TEST, SubscriptionPanel::onTestSubscription)
     EVT_MENU(ID_SUB_IMPORT, SubscriptionPanel::onImportSubscription)
+    EVT_MENU(ID_SUB_REFRESH, SubscriptionPanel::onRefreshSubscription)
 wxEND_EVENT_TABLE()
 
 // -------------------------------------------------------------------
@@ -59,17 +59,7 @@ SubscriptionPanel::SubscriptionPanel(wxWindow* parent, AppController* controller
 
     sizer->Add(listCtrl_, 1, wxEXPAND | wxALL, 2);
 
-    // Button bar
-    wxBoxSizer* btnSizer = new wxBoxSizer(wxHORIZONTAL);
-    wxButton* addBtn = new wxButton(this, ID_SUB_ADD, "+", wxDefaultPosition, wxSize(28, 28));
-    addBtn->SetToolTip("Add subscription");
-    wxButton* refreshBtn = new wxButton(this, wxID_ANY, "Refresh", wxDefaultPosition, wxSize(-1, 28));
-    refreshBtn->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { loadSubscriptions(); });
-
-    btnSizer->Add(addBtn, 0, wxRIGHT, 4);
-    btnSizer->Add(refreshBtn, 0);
-    btnSizer->AddStretchSpacer();
-    sizer->Add(btnSizer, 0, wxEXPAND | wxALL, 2);
+    // (no button bar — Add and Refresh are now in context menu)
 
     SetSizer(sizer);
 
@@ -157,14 +147,14 @@ void SubscriptionPanel::onSelectionChanged(wxDataViewEvent& event) {
 void SubscriptionPanel::onContextMenu(wxDataViewEvent&) {
     std::string subId = getSelectedSubId();
     wxMenu menu;
-    menu.Append(ID_SUB_UPDATE, "Update");
-    menu.Append(ID_SUB_TEST, "Test");
+    menu.Append(ID_SUB_UPDATE, "更新订阅");
+    menu.Append(ID_SUB_TEST, "测试订阅");
     menu.AppendSeparator();
-    menu.Append(ID_SUB_EDIT, "Edit...");
-    menu.Append(ID_SUB_DELETE, "Delete");
+    menu.Append(ID_SUB_EDIT, "编辑订阅");
+    menu.Append(ID_SUB_DELETE, "删除订阅");
     menu.AppendSeparator();
-    menu.Append(ID_SUB_ADD, "Add...");
-    menu.Append(ID_SUB_IMPORT, "Import from URL...");
+    menu.Append(ID_SUB_REFRESH, "刷新");
+    menu.Append(ID_SUB_IMPORT, "添加订阅");
 
     // Disable context-dependent items if nothing selected
     if (subId.empty()) {
@@ -177,8 +167,8 @@ void SubscriptionPanel::onContextMenu(wxDataViewEvent&) {
     PopupMenu(&menu);
 }
 
-void SubscriptionPanel::onAddSubscription(wxCommandEvent&) {
-    showAddDialog();
+void SubscriptionPanel::onRefreshSubscription(wxCommandEvent&) {
+    loadSubscriptions();
 }
 
 void SubscriptionPanel::onEditSubscription(wxCommandEvent&) {
@@ -226,52 +216,6 @@ void SubscriptionPanel::onImportSubscription(wxCommandEvent&) {
     wxTextEntryDialog dlg(this, "Enter subscription URL:", "Import Subscription", "");
     if (dlg.ShowModal() == wxID_OK) {
         wxString url = dlg.GetValue();
-        if (!url.empty()) {
-            controller_->importSubscription(url.ToStdString());
-            loadSubscriptions();
-        }
-    }
-}
-
-void SubscriptionPanel::showAddDialog() {
-    wxDialog dlg(this, wxID_ANY, "Add Subscription", wxDefaultPosition, wxSize(900, 300));
-    wxBoxSizer* topSizer = new wxBoxSizer(wxVERTICAL);
-    wxFlexGridSizer* grid = new wxFlexGridSizer(2, 10, 10);
-    grid->AddGrowableCol(1);
-
-    wxTextCtrl* urlCtrl;
-    wxTextCtrl* nameCtrl;
-    wxTextCtrl* uaCtrl;
-    wxCheckBox* enabledCtrl;
-
-    grid->Add(new wxStaticText(&dlg, wxID_ANY, "URL:"));
-    urlCtrl = new wxTextCtrl(&dlg, wxID_ANY, "", wxDefaultPosition, wxDefaultSize, wxTE_PROCESS_ENTER);
-    grid->Add(urlCtrl, 1, wxEXPAND);
-
-    grid->Add(new wxStaticText(&dlg, wxID_ANY, "Name:"));
-    nameCtrl = new wxTextCtrl(&dlg, wxID_ANY, "");
-    grid->Add(nameCtrl, 1, wxEXPAND);
-
-    grid->Add(new wxStaticText(&dlg, wxID_ANY, "User-Agent:"));
-    uaCtrl = new wxTextCtrl(&dlg, wxID_ANY, "");
-    grid->Add(uaCtrl, 1, wxEXPAND);
-
-    grid->Add(new wxStaticText(&dlg, wxID_ANY, "Enabled:"));
-    enabledCtrl = new wxCheckBox(&dlg, wxID_ANY, "");
-    enabledCtrl->SetValue(true);
-    grid->Add(enabledCtrl);
-
-    topSizer->Add(grid, 1, wxEXPAND | wxALL, 10);
-
-    wxSizer* btnSizer = dlg.CreateSeparatedButtonSizer(wxOK | wxCANCEL);
-    if (btnSizer) topSizer->Add(btnSizer, 0, wxEXPAND | wxALL, 10);
-
-    dlg.SetSizer(topSizer);
-    dlg.Layout();
-    dlg.SetMinSize(wxSize(900, 300));
-
-    if (dlg.ShowModal() == wxID_OK) {
-        wxString url = urlCtrl->GetValue();
         if (!url.empty()) {
             controller_->importSubscription(url.ToStdString());
             loadSubscriptions();

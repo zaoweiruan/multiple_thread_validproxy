@@ -126,7 +126,7 @@ origin: "Continuation of project memory consolidation task"
 | Phase 3 | U7 | 测试面板 (TestPanel) | ✅ |
 | Phase 4 | U4 | 主窗口布局 (MainFrame) — 依赖前述所有面板 | ✅ |
 | Phase 4 | INT | 集成测试 + 构建验证 | ✅ |
-| **剩余** | sort/find/link | 列排序 + 查找单个代理 + 订阅联动 | 📝 draft |
+| **已完成** | sort/find/link | 列排序 + 查找单个代理 + 订阅联动 | ✅ completed |
 
 **状态标记:** ✅ completed ｜ 🔄 in_progress ｜ 📝 draft ｜ ❌ blocked
 

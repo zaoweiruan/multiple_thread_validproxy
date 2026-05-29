@@ -7,6 +7,7 @@
 #include <sqlite3.h>
 #include <iostream>
 #include <sstream>
+#include "Logger.h"
 
 namespace db {
 namespace models {
@@ -95,7 +96,7 @@ public:
 
     sqlite3_stmt* stmt = nullptr;
     if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
-      std::cerr << "SQL错误: " << sqlite3_errmsg(db_) << std::endl;
+      Logger::write("SQL错误: " + std::string(sqlite3_errmsg(db_)), LogLevel::ERR);
       return result;
     }
 
@@ -133,7 +134,7 @@ public:
       sqlite3_finalize(selectStmt);
     } else {
       // Prepare failed, log error and use default
-      std::cerr << "SQL prepare failed for select: " << sqlite3_errmsg(execDb) << std::endl;
+      Logger::write("SQL prepare failed for select: " + std::string(sqlite3_errmsg(execDb)), LogLevel::ERR);
     }
     
     int newFailures = success ? 0 : currentFailures + 1;
@@ -149,7 +150,7 @@ public:
     std::string sql = oss.str();
     char* errMsg = nullptr;
     if (sqlite3_exec(execDb, sql.c_str(), nullptr, nullptr, &errMsg) != SQLITE_OK) {
-      std::cerr << "SQL insert error: " << errMsg << std::endl;
+      Logger::write("SQL insert error: " + std::string(errMsg ? errMsg : "unknown"), LogLevel::ERR);
       sqlite3_free(errMsg);
       return false;
     }

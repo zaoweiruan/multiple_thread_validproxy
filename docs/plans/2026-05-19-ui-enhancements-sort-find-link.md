@@ -1,7 +1,7 @@
 ---
 title: "feat(UI): ProxyListPanel column sorting + Find individual proxy + Subscription linkage"
 type: feat
-status: draft
+status: completed
 date: 2026-05-19
 origin: "User: '解析前期计划，制定实现功能文档'"
 ---

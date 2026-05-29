@@ -66,7 +66,6 @@ private:
     void onMenuSyncDb(wxCommandEvent& event);
     void onMenuExit(wxCommandEvent& event);
     void onMenuUpdateAll(wxCommandEvent& event);
-    void onMenuAddSub(wxCommandEvent& event);
     void onMenuFindProxy(wxCommandEvent& event);
     void onMenuFindBest(wxCommandEvent& event);
     void onMenuDedup(wxCommandEvent& event);
