@@ -81,6 +81,8 @@ if(wxWidgets_FOUND)
         src/ui/MainFrame.cpp
         src/ui/SubscriptionPanel.h
         src/ui/SubscriptionPanel.cpp
+        src/ui/ProxyListModel.h
+        src/ui/ProxyListModel.cpp
         src/ui/ProxyListPanel.h
         src/ui/ProxyListPanel.cpp
         src/ui/ProxyDetailPanel.h
@@ -220,5 +222,32 @@ target_link_libraries(test_model PRIVATE
     E:/vcpkg/installed/x64-mingw-static/lib/libfmt.a
 )
 add_test(NAME ProfileitemTest COMMAND test_model)
+
+# -- Logger unit tests (zero external deps beyond gtest) --
+add_executable(test_logger tests/test_logger.cpp src/Logger.cpp)
+target_include_directories(test_logger PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(test_logger PRIVATE gtest_main gtest)
+add_test(NAME LoggerTest COMMAND test_logger)
+
+# -- ShareLink unit tests (pure functions, no external deps beyond gtest) --
+add_executable(test_sharelink tests/test_sharelink.cpp src/ShareLink.cpp)
+target_include_directories(test_sharelink PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(test_sharelink PRIVATE gtest_main gtest)
+add_test(NAME ShareLinkTest COMMAND test_sharelink)
+
+# -- ConfigReader unit tests - skip due to Windows API dependency
+# add_executable(test_config_reader tests/test_config_reader.cpp src/ConfigReader.cpp src/Logger.cpp)
+# target_include_directories(test_config_reader PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+# target_link_libraries(test_config_reader PRIVATE gtest_main gtest D:/boost_1_88_0/lib/libboost_json-mgw14-mt-x64-1_88.a)
+# add_test(NAME ConfigReaderTest COMMAND test_config_reader)
+
+# -- ConfigGenerator unit tests (SQLite + boost_json) --
+add_executable(test_config_generator tests/test_config_generator.cpp src/ConfigGenerator.cpp src/Logger.cpp)
+target_include_directories(test_config_generator PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(test_config_generator PRIVATE gtest_main gtest
+    E:/vcpkg/installed/x64-mingw-static/lib/libsqlite3.a
+    D:/boost_1_88_0/lib/libboost_json-mgw14-mt-x64-1_88.a
+)
+add_test(NAME ConfigGeneratorTest COMMAND test_config_generator)
 
 install(TARGETS validproxy DESTINATION bin)

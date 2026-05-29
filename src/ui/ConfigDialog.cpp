@@ -31,7 +31,9 @@ ConfigDialog::ConfigDialog(wxWindow* parent, const config::AppConfig& cfg)
 
     // --- 数据库 配置 ---
     propGrid_->Append(new wxPropertyCategory(L"数据库"));
-    propGrid_->Append(new wxStringProperty(L"路径", "database_path", cfg.database_path));
+    wxFileProperty* dbPathProp = new wxFileProperty(L"路径", "database_path", cfg.database_path);
+    propGrid_->Append(dbPathProp);
+    propGrid_->SetPropertyAttribute("database_path", wxPG_FILE_SHOW_FULL_PATH, (long)1);
     propGrid_->Append(new wxStringProperty(L"SQL 查询", "sql_query", cfg.sql_query));
     propGrid_->Append(new wxStringProperty(L"按 SubId 查询", "sql_by_subid", cfg.sql_by_subid));
 

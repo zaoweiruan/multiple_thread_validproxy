@@ -281,6 +281,10 @@ int main(int argc, char* argv[]) {
         int ret = wxEntry(wxArgc, wxArgv.data());
 
         XrayManager::release();  // safety net: ensure xray instances are stopped
+        // Use the final db handle (may have been switched at runtime via ConfigDialog)
+        if (UIApp* theApp = wxDynamicCast(wxApp::GetInstance(), UIApp)) {
+            db = theApp->getDb();
+        }
         sqlite3_close(db);
         Logger::close();
         return ret;

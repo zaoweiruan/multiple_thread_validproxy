@@ -11,6 +11,7 @@
 #include "ProfileExItem.h"
 #include "AppController.h"
 #include "Events.h"
+#include "ProxyListModel.h"
 
 // Forward declarations
 
@@ -18,9 +19,11 @@
 // ProxyListPanel — right panel showing the proxy list with Delay
 // column populated from ProfileExItem.
 //
-// Two-phase store pattern:
-//   allProxies_ / exItems_  — source of truth (stays in DB)
-//   model_                   — shallow copy used by wxDataViewCtrl
+// Virtual model pattern:
+//   allProxies_ / exItems_  — source of truth (owned by panel)
+//   model_                   — wxDataViewIndexListModel providing
+//                               viewport-lazy access via non-owning
+//                               pointers to the above vectors.
 // ---------------------------------------------------------------
 class ProxyListPanel : public wxPanel {
 public:
@@ -41,14 +44,14 @@ private:
     void onProxyTestProgress(ProxyTestProgressEvent& event);
     void onColumnHeaderClick(wxDataViewEvent& event);
     void onSelectionChanged(wxDataViewEvent& event);
-    void sortProxiesByColumn(int col, SortDirection dir);
-    void resetSort();
+
+    void selectFirstProxy();
 
     AppController* controller_;
     sqlite3* db_;
 
     wxDataViewCtrl* listCtrl_;
-    wxDataViewListStore* store_;
+    ProxyListModel* model_;
 
     std::vector<db::models::Profileitem> proxies_;
     std::vector<db::models::ProfileExItem> exItems_;
