@@ -29,7 +29,7 @@ enum {
     ID_MENU_SYNC_DB       = wxID_HIGHEST + 101,
     ID_MENU_EXIT          = wxID_HIGHEST + 102,
     ID_MENU_UPDATE_ALL    = wxID_HIGHEST + 103,
-    ID_MENU_ADD_SUB       = wxID_HIGHEST + 104,
+
     ID_MENU_FIND_PROXY    = wxID_HIGHEST + 105,
     ID_MENU_FIND_BEST     = wxID_HIGHEST + 106,
     ID_MENU_DEDUP         = wxID_HIGHEST + 107,
@@ -60,7 +60,6 @@ wxBEGIN_EVENT_TABLE(MainFrame, wxFrame)
     EVT_MENU(ID_MENU_SYNC_DB,     MainFrame::onMenuSyncDb)
     EVT_MENU(ID_MENU_EXIT,        MainFrame::onMenuExit)
     EVT_MENU(ID_MENU_UPDATE_ALL,  MainFrame::onMenuUpdateAll)
-    EVT_MENU(ID_MENU_ADD_SUB,     MainFrame::onMenuAddSub)
     EVT_MENU(ID_MENU_FIND_PROXY,  MainFrame::onMenuFindProxy)
     EVT_MENU(ID_MENU_FIND_BEST,   MainFrame::onMenuFindBest)
     EVT_MENU(ID_MENU_DEDUP,       MainFrame::onMenuDedup)
@@ -325,7 +324,7 @@ void MainFrame::initToolBar() {
 
     // Database path — dynamically resized in onResize()
     m_dbPathLabel = new wxStaticText(tb, wxID_ANY, wxString(getDbPath()),
-                                     wxDefaultPosition, wxSize(300, -1),
+                                     wxDefaultPosition, wxSize(500, -1),
                                      wxALIGN_RIGHT | wxST_ELLIPSIZE_START);
     tb->AddControl(m_dbPathLabel);
 
@@ -450,13 +449,6 @@ void MainFrame::onMenuExit(wxCommandEvent&) {
 void MainFrame::onMenuUpdateAll(wxCommandEvent&) {
     setOperationState(OperationType::UPDATE);
     controller_->updateAllSubscriptionsAsync(this);
-}
-
-void MainFrame::onMenuAddSub(wxCommandEvent&) {
-    // Forward to SubscriptionPanel
-    if (subPanel_) {
-        subPanel_->showAddDialog();
-    }
 }
 
 void MainFrame::onMenuFindProxy(wxCommandEvent&) {
@@ -602,7 +594,7 @@ void MainFrame::onResize(wxSizeEvent& event) {
     // Defensive: if toolbar is too narrow and controls overlap, fall back to minima
     if (dbPos.x <= searchPos.x) {
         m_searchBox->SetSize(80, -1);
-        m_dbPathLabel->SetSize(60, -1);
+        m_dbPathLabel->SetSize(200, -1);
     } else {
         // Search box: everything from its x-position up to the db-path label
         int searchWidth = dbPos.x - searchPos.x;
@@ -611,7 +603,7 @@ void MainFrame::onResize(wxSizeEvent& event) {
 
         // DB path label: from its x-position to toolbar right edge (minus margin)
         int dbWidth = tbWidth - dbPos.x - 8;
-        dbWidth = std::max(60, dbWidth);
+        dbWidth = std::max(200, dbWidth);
         m_dbPathLabel->SetSize(dbWidth, -1);
     }
 

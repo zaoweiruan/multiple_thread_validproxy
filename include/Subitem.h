@@ -181,7 +181,7 @@ public:
     char* errMsg = nullptr;
     int rc = sqlite3_exec(db_, sql.c_str(), nullptr, nullptr, &errMsg);
     if (rc != SQLITE_OK) {
-      std::cerr << "SQL error: " << (errMsg ? errMsg : "unknown") << std::endl;
+      Logger::write("SQL error: " + std::string(errMsg ? errMsg : "unknown"), LogLevel::ERR);
       sqlite3_free(errMsg);
       return false;
     }
@@ -209,7 +209,7 @@ public:
     char* errMsg = nullptr;
     int rc = sqlite3_exec(db_, sql.c_str(), nullptr, nullptr, &errMsg);
     if (rc != SQLITE_OK) {
-      std::cerr << "SQL error: " << (errMsg ? errMsg : "unknown") << std::endl;
+      Logger::write("SQL error: " + std::string(errMsg ? errMsg : "unknown"), LogLevel::ERR);
       sqlite3_free(errMsg);
       return false;
     }
