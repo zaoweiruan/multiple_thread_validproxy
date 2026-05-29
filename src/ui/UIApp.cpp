@@ -3,6 +3,8 @@
 
 #include <wx/image.h>
 #include <wx/msgdlg.h>
+#include <wx/stdpaths.h>
+#include <filesystem>
 #include <exception>
 #include <iostream>
 
@@ -26,11 +28,36 @@ bool UIApp::OnInit()
     // Initialize image handlers (required for XPM/PNG support)
     wxInitAllImageHandlers();
 
-    // Ensure we have a database connection
+    // If config/database not set (detached launch), load defaults
     if (!db_) {
-        wxMessageBox("No database connection available.\nThe application cannot start.",
-                     "Database Error", wxOK | wxICON_ERROR);
-        return false;
+        std::string exeDir = wxStandardPaths::Get().GetExecutablePath().ToStdString();
+        size_t pos = exeDir.find_last_of("/\\");
+        if (pos != std::string::npos) {
+            exeDir = exeDir.substr(0, pos);
+        }
+        
+        std::filesystem::path configPath = std::filesystem::path(exeDir) / "config.json";
+        if (!std::filesystem::exists(configPath)) {
+            configPath = std::filesystem::path(exeDir) / ".." / "config.json";
+        }
+        
+        auto loadedConfig = config::ConfigReader::load(configPath.string());
+        if (loadedConfig) {
+            cfg_ = *loadedConfig;
+        } else {
+            // Try default config path
+            loadedConfig = config::ConfigReader::load(config::ConfigReader::getDefaultConfigPath());
+            if (loadedConfig) {
+                cfg_ = *loadedConfig;
+            }
+        }
+        
+        // Open database
+        if (sqlite3_open(cfg_.database_path.c_str(), &db_) != SQLITE_OK) {
+            wxMessageBox("Failed to open database.\nThe application cannot start.",
+                         "Database Error", wxOK | wxICON_ERROR);
+            return false;
+        }
     }
 
     // Create the main application frame
