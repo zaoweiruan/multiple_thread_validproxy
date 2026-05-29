@@ -274,6 +274,7 @@ int main(int argc, char* argv[]) {
             Logger::init(logDir.string(), "ui");
             Logger::setFileEnabled(appConfig->log_enabled);
             Logger::setFileLevel(Logger::stringToLevel(appConfig->log_file_level));
+            Logger::setConsoleEnabled(false);  // Detached GUI: no console output
             
             // Strip --gui flag for wxEntry
             std::vector<char*> wxArgv;
