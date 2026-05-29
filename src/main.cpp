@@ -296,7 +296,7 @@ int main(int argc, char* argv[]) {
             return ret;
         }
         
-        // This is the parent process - spawn detached GUI process and return
+        // This is the parent process - spawn GUI process and return
         Logger::init(logDir.string(), "ui");
         logInfo("Spawning GUI process...");
         
@@ -305,7 +305,7 @@ int main(int argc, char* argv[]) {
             exePath = exeDir + "\\validproxy";
         }
         
-        // Build command line with --gui flag for internal use (must be mutable for CreateProcessA)
+        // Build command line with --gui flag for internal use
         std::string fullCmd = "--gui";
         for (int i = 1; i < argc; ++i) {
             std::string a(argv[i]);
@@ -320,7 +320,7 @@ int main(int argc, char* argv[]) {
         std::vector<char> cmdBuffer(fullCmd.begin(), fullCmd.end());
         cmdBuffer.push_back('\0');
         
-        // Use exe path as first param (CreateProcessA lpApplicationName)
+        // DETACHED_PROCESS prevents console window creation, avoiding flicker
         if (CreateProcessA(exePath.c_str(), cmdBuffer.data(), nullptr, nullptr, FALSE,
                           DETACHED_PROCESS, nullptr, nullptr, &si, &pi)) {
             logInfo("GUI process spawned successfully");
