@@ -213,15 +213,16 @@ target_link_libraries(test_dedup PRIVATE
 )
 add_test(NAME DedupTest COMMAND test_dedup)
 
-add_executable(test_model tests/test_model.cpp)
-target_include_directories(test_model PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_link_libraries(test_model PRIVATE
-    gtest_main
-    gtest
-    E:/vcpkg/installed/x64-mingw-static/lib/libspdlog.a
-    E:/vcpkg/installed/x64-mingw-static/lib/libfmt.a
-)
-add_test(NAME ProfileitemTest COMMAND test_model)
+# -- Profileitem model tests - DISABLED until test_model.cpp is created
+# add_executable(test_model tests/test_model.cpp)
+# target_include_directories(test_model PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+# target_link_libraries(test_model PRIVATE
+#     gtest_main
+#     gtest
+#     E:/vcpkg/installed/x64-mingw-static/lib/libspdlog.a
+#     E:/vcpkg/installed/x64-mingw-static/lib/libfmt.a
+# )
+# add_test(NAME ProfileitemTest COMMAND test_model)
 
 # -- Logger unit tests (zero external deps beyond gtest) --
 add_executable(test_logger tests/test_logger.cpp src/Logger.cpp)
