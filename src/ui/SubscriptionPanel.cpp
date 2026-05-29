@@ -81,6 +81,10 @@ SubscriptionPanel::SubscriptionPanel(wxWindow* parent, AppController* controller
 
 void SubscriptionPanel::loadSubscriptions() {
     subs_ = controller_->loadSubscriptions();
+
+    // Single efficient GROUP BY query for all proxy counts instead of N+1 full-table scans
+    auto proxyCounts = controller_->countProxiesBySubId();
+
     store_->DeleteAllItems();
 
     int rowNum = 1;  // Counter for row number
@@ -90,9 +94,10 @@ void SubscriptionPanel::loadSubscriptions() {
         row.push_back(wxVariant(sub.enabled == "1"));
         row.push_back(wxVariant(sub.remarks));
 
-        // Count proxies for this subscription
-        auto proxies = controller_->loadProxies(sub.id);
-        row.push_back(wxVariant(wxString::Format("%d", static_cast<int>(proxies.size()))));
+        // Look up proxy count from preloaded map (O(1) per subscription)
+        auto it = proxyCounts.find(sub.id);
+        int count = (it != proxyCounts.end()) ? it->second : 0;
+        row.push_back(wxVariant(wxString::Format("%d", count)));
         
         // Format updatetime from unix timestamp to readable datetime
         wxString updateTimeStr = formatUpdateTime(sub.updatetime);

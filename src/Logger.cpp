@@ -137,6 +137,14 @@ void Logger::writeTimestamp(const std::string& msg, LogLevel level) {
         *outFile_ << fullMsg << std::endl;
          outFile_->flush();
     }
+    
+    // UI callback (same as write())
+    {
+        std::lock_guard<std::mutex> cbLock(callbackMutex_);
+        if (logCallback_) {
+            logCallback_(fullMsg, level);
+        }
+    }
 }
 
 void Logger::flush() {

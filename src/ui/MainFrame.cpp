@@ -5,6 +5,7 @@
 #include "ProxyListPanel.h"
 #include "SubscriptionPanel.h"
 #include "TrayIcon.h"
+#include "UIApp.h"
 #include "AppController.h"
 #include "Events.h"
 #include "Profileitem.h"
@@ -114,9 +115,9 @@ MainFrame::MainFrame(const config::AppConfig& cfg, sqlite3* db)
      // Prevent too-narrow window that breaks toolbar right-side control layout
      SetMinSize(wxSize(900, 600));
 
-     // ── Find-proxy completion ──────────────────────────────────────
-     // Payload: "FOUND:<indexId>:<address>" | "NOTFOUND" | "ERR:..."
-     Bind(wxEVT_STATUS_UPDATE, [this](StatusUpdateEvent& evt) {
+    // ── Find-proxy completion ──────────────────────────────────────
+    // Payload: "FOUND:<indexId>:<address>" | "NOTFOUND" | "ERR:..."
+    Bind(wxEVT_STATUS_UPDATE, [this](StatusUpdateEvent& evt) {
         wxString payload = evt.getText();
         if (payload.StartsWith("FOUND:")) {
             if (proxyPanel_) {
@@ -136,6 +137,15 @@ MainFrame::MainFrame(const config::AppConfig& cfg, sqlite3* db)
             wxMessageBox(payload.Mid(7), "Operation Busy",
                          wxOK | wxICON_INFORMATION, this);
         } else {
+            // Auto-refresh the subscription panel when an update completes,
+            // so the user sees updated proxy counts without manual "刷新".
+            if (payload.StartsWith("Update completed:") ||
+                payload.StartsWith("All subscriptions updated") ||
+                payload.StartsWith("Update (all)")) {
+                if (subPanel_) {
+                    subPanel_->loadSubscriptions();
+                }
+            }
             onStatusUpdate(evt);
         }
     });
@@ -512,7 +522,46 @@ void MainFrame::onMenuConfig(wxCommandEvent&) {
     configDialog_ = new ConfigDialog(this, controller_->getConfig());
     if (configDialog_->ShowModal() == wxID_OK) {
         config::AppConfig cfg = configDialog_->getConfig();
+        std::string oldDbPath = config_.database_path;
         controller_->saveConfig(cfg);
+
+        // If database path changed, switch to the new database at runtime
+        if (cfg.database_path != oldDbPath && !cfg.database_path.empty()) {
+            sqlite3* newDb = controller_->switchDatabase(cfg.database_path);
+            if (newDb) {
+                db_ = newDb;
+
+                // Notify UIApp so main.cpp can close the correct handle on exit
+                if (UIApp* uiApp = wxDynamicCast(wxApp::GetInstance(), UIApp)) {
+                    uiApp->setDb(newDb);
+                }
+
+                // Update toolbar label
+                config_.database_path = cfg.database_path;
+                m_dbPathLabel->SetLabel(wxString(cfg.database_path));
+
+                // Refresh all panels with the new database
+                if (subPanel_) {
+                    subPanel_->loadSubscriptions();
+                }
+                // Reload proxy list (empty subId = show all / first sub)
+                if (subPanel_ && !subPanel_->getSubscriptions().empty()) {
+                    std::string firstSubId = subPanel_->getSubscriptions()[0].id;
+                    if (proxyPanel_) proxyPanel_->loadProxies(firstSubId);
+                } else {
+                    if (proxyPanel_) proxyPanel_->loadProxies("");
+                }
+
+                setStatusText(0, wxString("Switched to database: ") + cfg.database_path);
+            } else {
+                // Failed to open new database — restore old path in config
+                cfg.database_path = oldDbPath;
+                controller_->saveConfig(cfg);
+                wxMessageBox("Failed to open the selected database file.\n"
+                             "The previous database path has been restored.",
+                             "Database Error", wxOK | wxICON_ERROR);
+            }
+        }
     }
     delete configDialog_;
     configDialog_ = nullptr;

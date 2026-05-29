@@ -3,6 +3,7 @@
 
 #include <string>
 #include <vector>
+#include <unordered_map>
 #include <tuple>
 #include <atomic>
 #include <thread>
@@ -26,6 +27,9 @@ public:
   config::AppConfig getConfig() const { return config_; }
   bool saveConfig(const config::AppConfig& cfg);
 
+  // Database switching (close old + open new)
+  sqlite3* switchDatabase(const std::string& newPath);
+
 // Subscriptions
    std::vector<db::models::Subitem> loadSubscriptions();
    bool updateSubscriptionEnabled(const std::string& id, bool enabled);
@@ -36,6 +40,7 @@ public:
 
 // Proxies
 std::vector<db::models::Profileitem> loadProxies(const std::string& subId = "");
+std::unordered_map<std::string, int> countProxiesBySubId();
 std::optional<db::models::Profileitem> getProxyByIndexId(const std::string& indexId);
 std::vector<db::models::ProfileExItem> loadProxyResults();
 

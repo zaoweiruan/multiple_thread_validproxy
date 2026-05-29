@@ -79,6 +79,37 @@ bool AppController::saveConfig(const config::AppConfig& cfg) {
 }
 
 // ---------------------------------------------------------------
+// Database switching
+// ---------------------------------------------------------------
+sqlite3* AppController::switchDatabase(const std::string& newPath) {
+    // Save the old handle; only close it after the new one opens successfully
+    sqlite3* oldDb = db_;
+    db_ = nullptr;
+
+    // Open the new database into a local variable first
+    sqlite3* newDb = nullptr;
+    int rc = sqlite3_open(newPath.c_str(), &newDb);
+    if (rc != SQLITE_OK) {
+        Logger::write("Failed to switch database: " + std::string(sqlite3_errmsg(newDb)), LogLevel::ERR);
+        if (newDb) sqlite3_close(newDb);
+        // Restore the old handle so the controller stays operational
+        db_ = oldDb;
+        return nullptr;
+    }
+
+    // Open succeeded — now it is safe to close the old handle
+    if (oldDb) {
+        sqlite3_close(oldDb);
+    }
+    db_ = newDb;
+
+    sqlite3_busy_timeout(db_, 5000);
+    sqlite3_exec(db_, "PRAGMA journal_mode=WAL", nullptr, nullptr, nullptr);
+    config_.database_path = newPath;
+    return db_;
+}
+
+// ---------------------------------------------------------------
 // Subscription operations
 // ---------------------------------------------------------------
 std::vector<db::models::Subitem> AppController::loadSubscriptions() {
@@ -141,15 +172,30 @@ bool AppController::importSubscription(const std::string& url) {
 // ---------------------------------------------------------------
 // Proxy operations
 // ---------------------------------------------------------------
+std::unordered_map<std::string, int> AppController::countProxiesBySubId() {
+    db::models::ProfileitemDAO dao(db_);
+    return dao.countBySubId();
+}
+
 std::vector<db::models::Profileitem> AppController::loadProxies(const std::string& subId) {
     db::models::ProfileitemDAO dao(db_);
     if (subId.empty()) {
-        return dao.getAll();
+        auto result = dao.getAll();
+        Logger::write("[DIAG] AppController::loadProxies(subId=empty) -> " + std::to_string(result.size()) + " items", LogLevel::INFO);
+        return result;
     }
     std::vector<db::models::Profileitem> all = dao.getAll();
     std::vector<db::models::Profileitem> filtered;
     std::copy_if(all.begin(), all.end(), std::back_inserter(filtered),
         [&subId](const db::models::Profileitem& p) { return p.subid == subId; });
+    Logger::write("[DIAG] AppController::loadProxies(subId=" + subId + "): total=" + std::to_string(all.size())
+                  + " filtered=" + std::to_string(filtered.size()), LogLevel::INFO);
+    if (filtered.empty() && !all.empty()) {
+        for (size_t i = 0; i < all.size(); ++i) {
+            Logger::write("[DIAG]   item[" + std::to_string(i) + "].subid=▸" + all[i].subid + "◂  (len="
+                          + std::to_string(all[i].subid.size()) + ")  matches=" + (all[i].subid == subId ? "Y" : "N"), LogLevel::INFO);
+        }
+    }
     return filtered;
 }
 

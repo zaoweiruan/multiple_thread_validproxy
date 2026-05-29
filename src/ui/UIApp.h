@@ -18,6 +18,11 @@ public:
     int OnExit() override;
     void OnUnhandledException() override;
     bool OnExceptionInMainLoop() override;
+
+    // Database handle access (may be updated during runtime if db is switched)
+    sqlite3* getDb() const { return db_; }
+    void setDb(sqlite3* db) { db_ = db; }
+
 private:
     config::AppConfig cfg_;
     sqlite3* db_{nullptr};
