@@ -147,6 +147,8 @@ int main(int argc, char* argv[]) {
             }
         } else if (arg == "-ui" || arg == "--ui") {
             forceGuiMode = true;
+        } else if (arg == "--gui") {
+            // Internal flag: GUI worker process, handled after arg parsing
         } else if (arg == "-show-sub" || arg == "--show-sub") {
             commandMode = "show-sub";
         } else if (arg == "-G" || arg == "-generator" || arg == "--generator") {
@@ -247,9 +249,11 @@ int main(int argc, char* argv[]) {
     
     if (shouldLaunchGui) {
 #ifdef HAS_WXWIDGETS
-        // Check if this is the GUI worker process (internally spawned with --gui flag)
+        // Check if this is the GUI worker process (internally spawned with --gui flag).
+        // Check both argv[0] (safety net for CRT variants that parse command line differently)
+        // and argv[1..] (normal case) to prevent fork loops.
         bool isGuiWorker = false;
-        for (int i = 1; i < argc; ++i) {
+        for (int i = 0; i < argc; ++i) {
             std::string a(argv[i]);
             if (a == "--gui") {
                 isGuiWorker = true;
@@ -297,6 +301,7 @@ int main(int argc, char* argv[]) {
         }
         
         // This is the parent process - spawn GUI process and return
+        Logger::setConsoleEnabled(false);  // No console output for detached parent
         Logger::init(logDir.string(), "ui");
         logInfo("Spawning GUI process...");
         
@@ -305,11 +310,14 @@ int main(int argc, char* argv[]) {
             exePath = exeDir + "\\validproxy";
         }
         
-        // Build command line with --gui flag for internal use
-        std::string fullCmd = "--gui";
+        // Build command line with --gui flag for internal use.
+        // First token must be the executable path so Windows CRT correctly
+        // passes it as argv[0]; otherwise --gui may land in argv[0] and the
+        // isGuiWorker detection (which starts at i=1) fails — causing a fork loop.
+        std::string fullCmd = "\"" + exePath + "\" --gui";
         for (int i = 1; i < argc; ++i) {
             std::string a(argv[i]);
-            if (a != "-ui" && a != "--ui") {
+            if (a != "-ui" && a != "--ui" && a != "--gui") {
                 fullCmd += " \"" + a + "\"";
             }
         }
