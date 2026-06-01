@@ -29,14 +29,11 @@
 #include "Utils.h"
 #include "Logger.h"
 
-#ifdef HAS_WXWIDGETS
-#include "UIApp.h"
-#endif
+
 
 namespace {
 
 XrayManager* g_xrayManager = nullptr;
-std::string g_commandMode;
 std::string syncSourceDb;
 std::string syncTargetDb;
 std::string importFilePath;
@@ -84,7 +81,7 @@ void printHelp() {
               << "  -S, -sync [src[:dst]] Sync valid proxies from source to target DB\n"
               << "  -IS, -import-sub-config <file|url>  Batch import subitems from file or URL\n"
               << "  -h, --help           Show this help\n\n"
-              << "If no options are provided, the graphical user interface launches.\n";
+               << "If no options are provided, help is displayed.\n";
 }
 
 BOOL WINAPI consoleCtrlHandler(DWORD ctrlType) {
@@ -93,19 +90,7 @@ BOOL WINAPI consoleCtrlHandler(DWORD ctrlType) {
         if (g_xrayManager) {
             g_xrayManager->stopAll();
         }
-#ifdef HAS_WXWIDGETS
-        // In GUI mode, post a close event to the main frame
-        if (g_commandMode == "ui") {
-            wxApp* app = static_cast<wxApp*>(wxApp::GetInstance());
-            if (app) {
-                wxWindow* topWindow = app->GetTopWindow();
-                if (topWindow) {
-                    // Try graceful shutdown first, then force exit if needed
-                    topWindow->Close(true);
-                }
-            }
-        }
-#endif
+
         return TRUE;
     }
     return FALSE;
@@ -113,6 +98,9 @@ BOOL WINAPI consoleCtrlHandler(DWORD ctrlType) {
 
 static int runDefaultTest(const std::string& configPath, const std::string& exeDir,
                           const std::filesystem::path& logDir, const std::string& logMode) {
+    // Init Logger before config loading, so config load errors are visible
+    Logger::init(logDir.string(), logMode);
+
     auto appConfig = config::ConfigReader::load(configPath);
     if (!appConfig) {
         logError("Failed to load config from: " + configPath);
@@ -120,7 +108,7 @@ static int runDefaultTest(const std::string& configPath, const std::string& exeD
         return 1;
     }
 
-    Logger::init(logDir.string(), logMode);
+    // Re-configure Logger with config-specified settings
     Logger::setFileEnabled(appConfig->log_enabled);
     Logger::setFileLevel(Logger::stringToLevel(appConfig->log_file_level));
     Logger::setConsoleLevel(Logger::stringToLevel(appConfig->log_console_level));
@@ -156,6 +144,12 @@ static int runDefaultTest(const std::string& configPath, const std::string& exeD
     ProxyBatchTester tester(db, *appConfig, exeDir);
     g_xrayManager = tester.getXrayManager();
     bool testResult = tester.run();
+
+    if (!testResult) {
+        logError("No testable proxies found. Check your SQL query and database.");
+        logError("  SQL: " + appConfig->sql_query);
+        logError("  DB:  " + appConfig->database_path);
+    }
 
     if (appConfig->notification_enabled && appConfig->notification_on_test) {
         utils::sendNotification("Proxy Test Complete", testResult ? "All tests completed successfully" : "Some tests failed");
@@ -194,7 +188,6 @@ int main(int argc, char* argv[]) {
     std::string singleSubId;
     std::string commandMode;
     std::string generatorIndexId;
-    bool forceGuiMode = false;  // Set by -ui/--ui flag
     
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
@@ -208,9 +201,13 @@ int main(int argc, char* argv[]) {
                 configPath = fp.lexically_normal().string();
             }
         } else if (arg == "-ui" || arg == "--ui") {
-            forceGuiMode = true;
+            std::cerr << "Error: GUI mode not available in CLI build.\n"
+                      << "Use validproxy.exe for GUI mode.\n";
+            return 1;
         } else if (arg == "--gui") {
-            // Internal flag: GUI worker process, handled after arg parsing
+            std::cerr << "Error: GUI mode not available in CLI build.\n"
+                      << "Use validproxy.exe for GUI mode.\n";
+            return 1;
         } else if (arg == "-show-sub" || arg == "--show-sub") {
             commandMode = "show-sub";
         } else if (arg == "-G" || arg == "-generator" || arg == "--generator") {
@@ -303,121 +300,10 @@ int main(int argc, char* argv[]) {
         }
     }
     
-    g_commandMode = commandMode;
-    
     if (commandMode == "test-all") {
         return runDefaultTest(configPath, exeDir, logDir, "test-all");
     }
     
-    // ------------------------------------------------------------------
-    // GUI mode: default when no CLI mode specified, or when -ui/--ui is given
-    // 启动后立即返回（非阻塞），不等待 GUI 关闭
-    // ------------------------------------------------------------------
-    bool shouldLaunchGui = forceGuiMode || commandMode.empty();
-    
-    if (shouldLaunchGui) {
-#ifdef HAS_WXWIDGETS
-        // Check if this is the GUI worker process (internally spawned with --gui flag).
-        // Check both argv[0] (safety net for CRT variants that parse command line differently)
-        // and argv[1..] (normal case) to prevent fork loops.
-        bool isGuiWorker = false;
-        for (int i = 0; i < argc; ++i) {
-            std::string a(argv[i]);
-            if (a == "--gui") {
-                isGuiWorker = true;
-                break;
-            }
-        }
-        
-        if (isGuiWorker) {
-            // This is the spawned worker process - run wxEntry directly (blocking)
-            auto appConfig = config::ConfigReader::load(configPath);
-            if (!appConfig) {
-                std::cerr << "Failed to load config from: " << configPath << std::endl;
-                return 1;
-            }
-            
-            sqlite3* db = nullptr;
-            if (sqlite3_open(appConfig->database_path.c_str(), &db) != SQLITE_OK) {
-                std::cerr << "Failed to open database: " << sqlite3_errmsg(db) << std::endl;
-                return 1;
-            }
-            
-            Logger::init(logDir.string(), "ui");
-            Logger::setFileEnabled(appConfig->log_enabled);
-            Logger::setFileLevel(Logger::stringToLevel(appConfig->log_file_level));
-            Logger::setConsoleEnabled(false);  // Detached GUI: no console output
-            
-            // Strip --gui flag for wxEntry
-            std::vector<char*> wxArgv;
-            wxArgv.push_back(argv[0]);
-            for (int i = 1; i < argc; ++i) {
-                std::string a(argv[i]);
-                if (a != "-ui" && a != "--ui" && a != "--gui") {
-                    wxArgv.push_back(argv[i]);
-                }
-            }
-            int wxArgc = static_cast<int>(wxArgv.size());
-            
-            wxApp::SetInstance(new UIApp(*appConfig, db));
-            int ret = wxEntry(wxArgc, wxArgv.data());
-            
-            XrayManager::release();
-            sqlite3_close(db);
-            Logger::close();
-            return ret;
-        }
-        
-        // This is the parent process - spawn GUI process and return
-        Logger::setConsoleEnabled(false);  // No console output for detached parent
-        Logger::init(logDir.string(), "ui");
-        logInfo("Spawning GUI process...");
-        
-        std::string exePath = exeDir + "\\validproxy.exe";
-        if (!std::filesystem::exists(exePath)) {
-            exePath = exeDir + "\\validproxy";
-        }
-        
-        // Build command line with --gui flag for internal use.
-        // First token must be the executable path so Windows CRT correctly
-        // passes it as argv[0]; otherwise --gui may land in argv[0] and the
-        // isGuiWorker detection (which starts at i=1) fails — causing a fork loop.
-        std::string fullCmd = "\"" + exePath + "\" --gui";
-        for (int i = 1; i < argc; ++i) {
-            std::string a(argv[i]);
-            if (a != "-ui" && a != "--ui" && a != "--gui") {
-                fullCmd += " \"" + a + "\"";
-            }
-        }
-        
-        STARTUPINFOA si = {sizeof(si)};
-        PROCESS_INFORMATION pi = {};
-        // CreateProcessA modifies the command line buffer, so copy to mutable buffer
-        std::vector<char> cmdBuffer(fullCmd.begin(), fullCmd.end());
-        cmdBuffer.push_back('\0');
-        
-        // DETACHED_PROCESS prevents console window creation, avoiding flicker
-        if (CreateProcessA(exePath.c_str(), cmdBuffer.data(), nullptr, nullptr, FALSE,
-                          DETACHED_PROCESS, nullptr, nullptr, &si, &pi)) {
-            logInfo("GUI process spawned successfully");
-            CloseHandle(pi.hProcess);
-            CloseHandle(pi.hThread);
-        } else {
-            logError("Failed to spawn GUI process: " + std::to_string(GetLastError()));
-        }
-        
-        Logger::close();
-        return 0;
-#else
-        if (forceGuiMode) {
-            std::cerr << "Error: GUI mode not available. Rebuild with wxWidgets support." << std::endl;
-        } else {
-            // No CLI mode specified and no wxWidgets: show help
-            printHelp();
-        }
-        return 1;
-#endif
-    }
     
     if (commandMode == "generator") {
         Logger::init(logDir.string(), commandMode);
@@ -894,6 +780,11 @@ int main(int argc, char* argv[]) {
         Logger::close();
         
         return result ? 0 : 1;
+    }
+    
+    if (commandMode.empty()) {
+        printHelp();
+        return 0;
     }
     
     return runDefaultTest(configPath, exeDir, logDir, "test");

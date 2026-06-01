@@ -2,22 +2,20 @@
 // No CLI command handling. No console output (stdout/stderr are discarded by WIN32 subsystem).
 
 #include "UIApp.h"
-#include <wx/app.h>
-#include <wx/msgdlg.h>
+#include "Utils.h"
+#include "Logger.h"
+#include "ConfigReader.h"
+#include "XrayManager.h"
 
-#include <cstdlib>
+#include <sqlite3.h>
 #include <string>
 #include <vector>
 #include <filesystem>
+#include <iostream>
 
 int main(int argc, char* argv[]) {
-    // Only parse -c/--config for config path
     std::string configPath = "config.json";
-    std::string exeDir;
-    {
-        std::filesystem::path p(argv[0]);
-        exeDir = p.parent_path().lexically_normal().string();
-    }
+    std::string exeDir = utils::getExecutableDir();
 
     for (int i = 1; i < argc; ++i) {
         std::string arg(argv[i]);
@@ -30,11 +28,55 @@ int main(int argc, char* argv[]) {
                 configPath = fp.lexically_normal().string();
             }
         }
-        // -ui, --ui, --gui: silently accepted for backward compatibility
-        // -h, --help: silently ignored (no console to output to)
-        // All other unknown args: silently ignored
     }
 
-    wxApp::SetInstance(new UIApp());
-    return wxEntry(argc, argv);
+    // Create log directory
+    std::filesystem::path logDir = std::filesystem::path(exeDir) / "log";
+    if (!std::filesystem::exists(logDir)) {
+        std::filesystem::create_directory(logDir);
+    }
+
+    // Load configuration
+    std::optional<config::AppConfig> appConfig = config::ConfigReader::load(configPath);
+    if (!appConfig) {
+        std::cerr << "Failed to load config from: " << configPath << std::endl;
+        return 1;
+    }
+
+    // Open database
+    sqlite3* db = nullptr;
+    if (sqlite3_open(appConfig->database_path.c_str(), &db) != SQLITE_OK) {
+        std::cerr << "Failed to open database: " << sqlite3_errmsg(db) << std::endl;
+        return 1;
+    }
+
+    // Initialize Logger for UI mode
+    Logger::init(logDir.string(), "ui");
+    Logger::setFileEnabled(appConfig->log_enabled);
+    Logger::setFileLevel(Logger::stringToLevel(appConfig->log_file_level));
+    Logger::setConsoleEnabled(false);
+
+    // Strip non-wxWidgets flags from argv before passing to wxEntry
+    // (-ui, --ui, --gui are CLI-legacy flags from the old hybrid binary)
+    std::vector<char*> wxArgv;
+    wxArgv.reserve(argc);
+    wxArgv.push_back(argv[0]);
+    for (int i = 1; i < argc; ++i) {
+        std::string a(argv[i]);
+        if (a != "-ui" && a != "--ui" && a != "--gui") {
+            wxArgv.push_back(argv[i]);
+        }
+    }
+    int wxArgc = static_cast<int>(wxArgv.size());
+
+    // Enter wxWidgets event loop (blocks until GUI exits)
+    wxApp::SetInstance(new UIApp(*appConfig, db));
+    int ret = wxEntry(wxArgc, wxArgv.data());
+
+    // Cleanup after GUI exits
+    XrayManager::release();
+    sqlite3_close(db);
+    Logger::close();
+
+    return ret;
 }
