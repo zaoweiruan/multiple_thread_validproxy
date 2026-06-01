@@ -110,6 +110,67 @@ BOOL WINAPI consoleCtrlHandler(DWORD ctrlType) {
     return FALSE;
 }
 
+static int runDefaultTest(const std::string& configPath, const std::string& exeDir,
+                          const std::filesystem::path& logDir, const std::string& logMode) {
+    auto appConfig = config::ConfigReader::load(configPath);
+    if (!appConfig) {
+        logError("Failed to load config from: " + configPath);
+        Logger::close();
+        return 1;
+    }
+
+    Logger::init(logDir.string(), logMode);
+    Logger::setFileEnabled(appConfig->log_enabled);
+    Logger::setFileLevel(Logger::stringToLevel(appConfig->log_file_level));
+    Logger::setConsoleLevel(Logger::stringToLevel(appConfig->log_console_level));
+    logInfo("validproxy starting...");
+    logInfo("Config loaded from: " + configPath);
+    logInfo("Database path: " + appConfig->database_path);
+
+    int numWorkers = appConfig->xray_workers;
+    int startPort = appConfig->xray_start_port;
+
+    logInfo("Workers: " + std::to_string(numWorkers));
+    logInfo("Start port: " + std::to_string(startPort));
+
+    auto startTime = std::chrono::system_clock::now();
+    time_t startTimeT = std::chrono::system_clock::to_time_t(startTime);
+    char startTimeStr[32];
+    strftime(startTimeStr, sizeof(startTimeStr), "%Y-%m-%d %H:%M:%S", localtime(&startTimeT));
+
+    char timestamp[32];
+    strftime(timestamp, sizeof(timestamp), "%Y%m%d_%H%M%S", localtime(&startTimeT));
+
+    std::cout << "Log file: " << Logger::getLogDir() << "/" << Logger::getPrefix() << "_" << timestamp << ".log" << std::endl;
+
+    sqlite3* db = nullptr;
+    if (!openDatabase(*appConfig, db, "[main] default")) {
+        Logger::close();
+        return 1;
+    }
+    sqlite3_busy_timeout(db, 5000);
+    sqlite3_exec(db, "PRAGMA journal_mode=WAL", nullptr, nullptr, nullptr);
+    std::cout << "Database opened: " << appConfig->database_path << std::endl;
+
+    ProxyBatchTester tester(db, *appConfig, exeDir);
+    g_xrayManager = tester.getXrayManager();
+    bool testResult = tester.run();
+
+    if (appConfig->notification_enabled && appConfig->notification_on_test) {
+        utils::sendNotification("Proxy Test Complete", testResult ? "All tests completed successfully" : "Some tests failed");
+    }
+
+    if (g_xrayManager) {
+        XrayManager::release();
+    }
+
+    sqlite3_close(db);
+    Logger::close();
+
+    std::cout << "validproxy " << (testResult ? "finished" : "failed") << std::endl;
+    return testResult ? 0 : 1;
+}
+
 } // anonymous namespace
 
 int main(int argc, char* argv[]) {
