@@ -1,7 +1,4 @@
-#include <iostream>
-#include <fstream>
 #include <sstream>
-#include <cstdlib>
 #include <string>
 #include <thread>
 #include <chrono>
@@ -20,25 +17,97 @@ static std::string normalizePath(const std::string& path) {
     return result;
 }
 
+// -------------------------------------------------------------------
+// Helper: run a process with CREATE_NO_WINDOW and capture stdout,
+// optionally providing stdin data (e.g., piping JSON into xray api).
+// Returns exit code (negative on creation failure).
+// -------------------------------------------------------------------
+static int runProcess(const std::string& cmd, std::string& output,
+                      const std::string* stdinData = nullptr) {
+    SECURITY_ATTRIBUTES sa = {sizeof(SECURITY_ATTRIBUTES), nullptr, TRUE};
+
+    // Create stdout pipe (child writes, parent reads)
+    HANDLE hOutRead = nullptr, hOutWrite = nullptr;
+    if (!CreatePipe(&hOutRead, &hOutWrite, &sa, 0))
+        return -1;
+    SetHandleInformation(hOutRead, HANDLE_FLAG_INHERIT, 0);
+
+    // Create stdin pipe only when input is provided
+    HANDLE hInRead = nullptr, hInWrite = nullptr;
+    if (stdinData) {
+        if (!CreatePipe(&hInRead, &hInWrite, &sa, 0)) {
+            CloseHandle(hOutRead); CloseHandle(hOutWrite);
+            return -1;
+        }
+        SetHandleInformation(hInWrite, HANDLE_FLAG_INHERIT, 0);
+    }
+
+    STARTUPINFOA si = {0};
+    si.cb           = sizeof(si);
+    si.dwFlags      = STARTF_USESTDHANDLES;
+    si.hStdOutput   = hOutWrite;
+    si.hStdError    = hOutWrite;  // merge stderr with stdout
+    si.hStdInput    = stdinData ? hInRead : INVALID_HANDLE_VALUE;
+
+    PROCESS_INFORMATION pi = {0};
+
+    // CreateProcessA modifies the command line buffer
+    std::vector<char> cmdBuf(cmd.begin(), cmd.end());
+    cmdBuf.push_back('\0');
+
+    BOOL created = CreateProcessA(nullptr, cmdBuf.data(), nullptr, nullptr,
+                                  TRUE, CREATE_NO_WINDOW, nullptr, nullptr,
+                                  &si, &pi);
+
+    // Parent no longer needs the child-side write/stdin ends
+    CloseHandle(hOutWrite);
+    if (hInRead) CloseHandle(hInRead);
+
+    if (!created) {
+        CloseHandle(hOutRead);
+        if (hInWrite) CloseHandle(hInWrite);
+        return -1;
+    }
+
+    // Write stdin data if requested (pipe JSON to xray api ado)
+    if (stdinData && hInWrite) {
+        DWORD written = 0;
+        WriteFile(hInWrite, stdinData->c_str(), (DWORD)stdinData->size(),
+                  &written, nullptr);
+        CloseHandle(hInWrite);
+    }
+
+    // Read all stdout output
+    char buf[4096];
+    DWORD bytesRead = 0;
+    output.clear();
+    while (ReadFile(hOutRead, buf, sizeof(buf) - 1, &bytesRead, nullptr) &&
+           bytesRead > 0) {
+        buf[bytesRead] = '\0';
+        output += buf;
+    }
+
+    WaitForSingleObject(pi.hProcess, 5000);
+
+    DWORD exitCode = 0;
+    GetExitCodeProcess(pi.hProcess, &exitCode);
+
+    CloseHandle(hOutRead);
+    CloseHandle(pi.hProcess);
+    CloseHandle(pi.hThread);
+    return static_cast<int>(exitCode);
+}
+
 XrayApi::XrayApi(const std::string& xrayPath, const std::string& serverAddr)
     : xrayPath_(normalizePath(xrayPath)), serverAddr_(serverAddr) {}
 
 bool XrayApi::runCommand(const std::string& args, std::string& output) {
     std::string cmd = "\"" + xrayPath_ + "\" " + args;
-    
-    char buffer[4096];
-    FILE* pipe = _popen(cmd.c_str(), "r");
-    if (!pipe) {
+    int exitCode = runProcess(cmd, output);
+    if (exitCode < 0) {
         lastError_ = "Failed to run command: " + cmd;
         return false;
     }
-    
-    output.clear();
-    while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
-        output += buffer;
-    }
-    
-    int exitCode = _pclose(pipe);
     return exitCode == 0;
 }
 
@@ -56,22 +125,17 @@ bool XrayApi::addOutbound(const std::string& outboundJson, const std::string& ta
         if (c == '/') c = '\\';
     }
     
-    std::string cmd = "cmd /c echo " + outboundJson + " | " + normalizedXray + " api ado --server=" + normalizedServer + " stdin:";
+    // Run xray api ado with JSON as stdin (no cmd.exe wrapper, no console flash)
+    std::string cmd = "\"" + normalizedXray + "\" api ado --server=" + normalizedServer + " stdin:";
     Logger::write("[XrayApi] command: " + cmd, LogLevel::DEBUG);
 
-    char buffer[4096];
-    FILE* pipe = _popen(cmd.c_str(), "r");
-    if (!pipe) {
+    std::string output;
+    int exitCode = runProcess(cmd, output, &outboundJson);
+    if (exitCode < 0) {
         lastError_ = "Failed to run xray api ado command";
         return false;
     }
 
-    std::string output;
-    while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
-        output += buffer;
-    }
-    int exitCode = _pclose(pipe);
-    
     resultOutput = output;
 
     bool success = (exitCode == 0) || (output.find("adding") != std::string::npos);
@@ -87,15 +151,11 @@ bool XrayApi::addOutbound(const std::string& outboundJson, const std::string& ta
 
     Logger::write("[XrayApi] addOutbound SUCCESS for tag: " + tag, LogLevel::DEBUG);
 
+    // List outbounds after add to confirm
     std::string lsoCmd = "\"" + xrayPath_ + "\" api lso --server=" + serverAddr_;
-    FILE* lsoPipe = _popen(lsoCmd.c_str(), "r");
-    if (lsoPipe) {
-        char lsoBuffer[4096];
-        std::string lsoOutput;
-        while (fgets(lsoBuffer, sizeof(lsoBuffer), lsoPipe) != nullptr) {
-            lsoOutput += lsoBuffer;
-        }
-        _pclose(lsoPipe);
+    std::string lsoOutput;
+    int lsoCode = runProcess(lsoCmd, lsoOutput);
+    if (lsoCode >= 0 && !lsoOutput.empty()) {
         resultOutput += "\n[Outbounds]:\n" + lsoOutput;
     }
 
@@ -145,17 +205,16 @@ bool XrayApi::removeOutbound(const std::string& tag) {
 bool XrayApi::listOutbounds() {
     std::string cmd = "\"" + xrayPath_ + "\" api lso --server " + serverAddr_;
 
-    char buffer[4096];
-    FILE* pipe = _popen(cmd.c_str(), "r");
-    if (!pipe) {
+    std::string output;
+    int exitCode = runProcess(cmd, output);
+    if (exitCode < 0) {
         lastError_ = "Failed to run xray api lso command";
         return false;
     }
 
-    while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
-        std::cout << "  " << buffer;
-    }
-    int exitCode = _pclose(pipe);
+    // Log output for debugging
+    if (!output.empty())
+        Logger::write("[XrayApi] listOutbounds:\n" + output, LogLevel::DEBUG);
 
     return exitCode == 0;
 }
@@ -163,19 +222,13 @@ bool XrayApi::listOutbounds() {
 bool XrayApi::ping(std::string& resultOutput) {
     std::string cmd = "\"" + xrayPath_ + "\" api lsi --server " + serverAddr_;
 
-    char buffer[4096];
-    FILE* pipe = _popen(cmd.c_str(), "r");
-    if (!pipe) {
+    std::string output;
+    int exitCode = runProcess(cmd, output);
+    if (exitCode < 0) {
         lastError_ = "Failed to run xray api lsi command";
         return false;
     }
 
-    std::string output;
-    while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
-        output += buffer;
-    }
-    int exitCode = _pclose(pipe);
-    
     resultOutput = output;
     return exitCode == 0;
 }
