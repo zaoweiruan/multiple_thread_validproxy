@@ -78,6 +78,7 @@ void printHelp() {
               << "  -U, -update <id>      Update single subscription by ID\n"
               << "  -UA, -update-all     Update all enabled subscriptions\n"
               << "  -T, -test-sub <id>   Test proxies from subscription by ID\n"
+              << "  -TA, -test-all      Test all proxies in the database\n"
               << "  -D, -dedup           Remove duplicate proxies from database\n"
               << "  -TU, -tourl         Export proxies (delay>0) to share links file\n"
               << "  -S, -sync [src[:dst]] Sync valid proxies from source to target DB\n"
@@ -236,6 +237,8 @@ int main(int argc, char* argv[]) {
             }
         } else if (arg == "-D" || arg == "-dedup" || arg == "--dedup") {
             commandMode = "dedup";
+        } else if (arg == "-TA" || arg == "-test-all" || arg == "--test-all") {
+            commandMode = "test-all";
         } else if (arg == "-TU" || arg == "-tourl" || arg == "--tourl") {
             commandMode = "tourl";
         } else if (arg == "-S" || arg == "-sync" || arg == "--sync") {
@@ -301,6 +304,10 @@ int main(int argc, char* argv[]) {
     }
     
     g_commandMode = commandMode;
+    
+    if (commandMode == "test-all") {
+        return runDefaultTest(configPath, exeDir, logDir, "test-all");
+    }
     
     // ------------------------------------------------------------------
     // GUI mode: default when no CLI mode specified, or when -ui/--ui is given
@@ -889,61 +896,5 @@ int main(int argc, char* argv[]) {
         return result ? 0 : 1;
     }
     
-    auto appConfig = config::ConfigReader::load(configPath);
-    if (!appConfig) {
-        logError("Failed to load config from: " + configPath);
-        Logger::close();
-        return 1;
-    }
-    
-    Logger::init(logDir.string(), "test");
-    Logger::setFileEnabled(appConfig->log_enabled);
-    Logger::setFileLevel(Logger::stringToLevel(appConfig->log_file_level));
-    Logger::setConsoleLevel(Logger::stringToLevel(appConfig->log_console_level));
-    logInfo("validproxy starting...");
-    logInfo("Config loaded from: " + configPath);
-    logInfo("Database path: " + appConfig->database_path);
-    
-    int numWorkers = appConfig->xray_workers;
-    int startPort = appConfig->xray_start_port;
-    
-    logInfo("Workers: " + std::to_string(numWorkers));
-    logInfo("Start port: " + std::to_string(startPort));
-
-    auto startTime = std::chrono::system_clock::now();
-    time_t startTimeT = std::chrono::system_clock::to_time_t(startTime);
-    char startTimeStr[32];
-    strftime(startTimeStr, sizeof(startTimeStr), "%Y-%m-%d %H:%M:%S", localtime(&startTimeT));
-    
-    char timestamp[32];
-    strftime(timestamp, sizeof(timestamp), "%Y%m%d_%H%M%S", localtime(&startTimeT));
-    
-    std::cout << "Log file: " << Logger::getLogDir() << "/" << Logger::getPrefix() << "_" << timestamp << ".log" << std::endl;
-    
-    sqlite3* db = nullptr;
-    if (!openDatabase(*appConfig, db, "[main] default")) {
-        Logger::close();
-        return 1;
-    }
-    sqlite3_busy_timeout(db, 5000);
-    sqlite3_exec(db, "PRAGMA journal_mode=WAL", nullptr, nullptr, nullptr);
-    std::cout << "Database opened: " << appConfig->database_path << std::endl;
-
-    ProxyBatchTester tester(db, *appConfig, exeDir);
-    g_xrayManager = tester.getXrayManager();
-    bool testResult = tester.run();
-
-    if (appConfig->notification_enabled && appConfig->notification_on_test) {
-        utils::sendNotification("Proxy Test Complete", testResult ? "All tests completed successfully" : "Some tests failed");
-    }
-
-    if (g_xrayManager) {
-        XrayManager::release();
-    }
-    
-    sqlite3_close(db);
-    Logger::close();
-
-    std::cout << "validproxy " << (testResult ? "finished" : "failed") << std::endl;
-    return testResult ? 0 : 1;
+    return runDefaultTest(configPath, exeDir, logDir, "test");
 }
