@@ -34,6 +34,7 @@
 namespace {
 
 XrayManager* g_xrayManager = nullptr;
+std::atomic<bool> g_cancelRequested{false};
 std::string syncSourceDb;
 std::string syncTargetDb;
 std::string importFilePath;
@@ -87,6 +88,7 @@ void printHelp() {
 BOOL WINAPI consoleCtrlHandler(DWORD ctrlType) {
     if (ctrlType == CTRL_C_EVENT || ctrlType == CTRL_BREAK_EVENT) {
         std::cout << "\nCtrl+C detected, stopping xray instances..." << std::endl;
+        g_cancelRequested.store(true);
         if (g_xrayManager) {
             g_xrayManager->stopAll();
         }
@@ -141,8 +143,8 @@ static int runDefaultTest(const std::string& configPath, const std::string& exeD
     sqlite3_exec(db, "PRAGMA journal_mode=WAL", nullptr, nullptr, nullptr);
     std::cout << "Database opened: " << appConfig->database_path << std::endl;
 
-    ProxyBatchTester tester(db, *appConfig, exeDir);
-    g_xrayManager = tester.getXrayManager();
+ProxyBatchTester tester(db, *appConfig, exeDir, &g_cancelRequested);
+     g_xrayManager = tester.getXrayManager();
     bool testResult = tester.run();
 
     if (!testResult) {
@@ -749,9 +751,9 @@ int main(int argc, char* argv[]) {
         
         bool result = false;
         
-        if (commandMode == "test-sub") {
-            ProxyBatchTester tester(db, *appConfig, exeDir);
-            g_xrayManager = tester.getXrayManager();
+if (commandMode == "test-sub") {
+             ProxyBatchTester tester(db, *appConfig, exeDir, &g_cancelRequested);
+             g_xrayManager = tester.getXrayManager();
             result = tester.runWithSubId(singleSubId);
             
             if (appConfig->notification_enabled && appConfig->notification_on_test) {

@@ -62,6 +62,7 @@ public:
     TestResult lastResult_;
     std::string lastIndexId_;
     std::atomic<bool>* externalCancel_{nullptr};
+    std::vector<std::thread> workerThreads_;
 };
 
 #endif // PROXY_BATCH_TESTER_H
