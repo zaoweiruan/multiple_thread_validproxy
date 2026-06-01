@@ -27,25 +27,31 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/bin)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/bin)
 
-add_executable(validproxy
-    src/main.cpp
+# Shared core sources (compiled into both CLI and GUI targets)
+set(CORE_SOURCES
     src/ConfigGenerator.cpp
     src/ConfigReader.cpp
-    src/XrayApi.cpp
-    src/SubitemUpdaterV2.cpp
-    src/PortManager.cpp
     src/Logger.cpp
-    src/XrayInstance.cpp
-    src/XrayManager.cpp
-    src/ProxyTester.cpp
-    src/UrlFetcher.cpp
+    src/PortManager.cpp
     src/ProxyBatchTester.cpp
     src/ProxyFinder.cpp
-    src/Utils.cpp
+    src/ProxyTester.cpp
     src/ShareLink.cpp
+    src/SubitemUpdaterV2.cpp
+    src/UrlFetcher.cpp
+    src/Utils.cpp
+    src/XrayApi.cpp
+    src/XrayInstance.cpp
+    src/XrayManager.cpp
 )
 
-target_link_libraries(validproxy PRIVATE
+# ===== CLI target (CONSOLE subsystem) =====
+add_executable(validproxy-cli
+    src/main_cli.cpp
+    ${CORE_SOURCES}
+)
+
+target_link_libraries(validproxy-cli PRIVATE
     Threads::Threads
     CURL::libcurl
     E:/vcpkg/installed/x64-mingw-static/lib/libsqlite3.a
@@ -70,7 +76,7 @@ find_package(wxWidgets CONFIG QUIET
 
 if(wxWidgets_FOUND)
     message(STATUS "wxWidgets found: ${wxWidgets_VERSION}")
-    
+
     # Create UI source file list
     set(UI_SOURCES
         src/ui/Events.h
@@ -96,16 +102,28 @@ if(wxWidgets_FOUND)
         src/ui/TrayIcon.h
         src/ui/TrayIcon.cpp
         src/ui/UIApp.h
-src/ui/UIApp.cpp
+        src/ui/UIApp.cpp
         src/ui/TestLogMediator.cpp
         src/ui/icons.rc
-        )
-    
+    )
+
     # RC flags: let windres find data files relative to CMAKE_SOURCE_DIR
     set(CMAKE_RC_FLAGS "${CMAKE_RC_FLAGS} -I${CMAKE_SOURCE_DIR}")
-    
-    target_sources(validproxy PRIVATE ${UI_SOURCES})
-    
+
+    # ===== GUI target (WIN32 subsystem) =====
+    add_executable(validproxy
+        src/main_gui.cpp
+        ${CORE_SOURCES}
+        ${UI_SOURCES}
+    )
+
+    target_link_libraries(validproxy PRIVATE
+        Threads::Threads
+        CURL::libcurl
+        E:/vcpkg/installed/x64-mingw-static/lib/libsqlite3.a
+        D:/boost_1_88_0/lib/libboost_json-mgw14-mt-x64-1_88.a
+    )
+
     # Link wxWidgets imported targets
     target_link_libraries(validproxy PRIVATE
         wx::wxbase
@@ -116,39 +134,39 @@ src/ui/UIApp.cpp
         wx::wxpropgrid
         wx::wxnet
     )
-    
+
     # Add include directory for wx headers (dynamic variant headers)
     target_include_directories(validproxy PRIVATE "E:/vcpkg/installed/x64-mingw-dynamic/include")
-    
-    # Add include directory for UI source headers (so main.cpp can #include "UIApp.h" etc.)
+
+    # Add include directory for UI source headers
     target_include_directories(validproxy PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/ui)
-    
+
     # Copy wx DLLs to output directory
     function(copy_wx_dlls TARGET_NAME)
         get_target_property(_bin_dir ${TARGET_NAME} RUNTIME_OUTPUT_DIRECTORY)
         if(NOT _bin_dir)
             set(_bin_dir "${CMAKE_SOURCE_DIR}/bin")
         endif()
-        
+
         # Determine if we're building Debug or Release to choose correct DLL directory
-if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-             set(wx_bin_dir "E:/vcpkg/installed/x64-mingw-dynamic/debug/bin")
-             # Debug DLLs have 'd' suffix: wxbase32ud_gcc_custom.dll, libpcre2-16d.dll, libzlibd1.dll
-             set(WX_DLLS
-                 wxbase32ud_gcc_custom.dll
-                 wxbase32ud_net_gcc_custom.dll
-                 wxmsw32ud_adv_gcc_custom.dll
-                 wxmsw32ud_aui_gcc_custom.dll
-                 wxmsw32ud_core_gcc_custom.dll
-                 wxmsw32ud_html_gcc_custom.dll
-                 wxmsw32ud_propgrid_gcc_custom.dll
-                 libpcre2-16d.dll
-                 libzlibd1.dll
-                 libjpeg-62.dll
-                 libpng16d.dll
-                 libtiffd.dll
-                 liblzma.dll
-             )
+        if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+            set(wx_bin_dir "E:/vcpkg/installed/x64-mingw-dynamic/debug/bin")
+            # Debug DLLs have 'd' suffix
+            set(WX_DLLS
+                wxbase32ud_gcc_custom.dll
+                wxbase32ud_net_gcc_custom.dll
+                wxmsw32ud_adv_gcc_custom.dll
+                wxmsw32ud_aui_gcc_custom.dll
+                wxmsw32ud_core_gcc_custom.dll
+                wxmsw32ud_html_gcc_custom.dll
+                wxmsw32ud_propgrid_gcc_custom.dll
+                libpcre2-16d.dll
+                libzlibd1.dll
+                libjpeg-62.dll
+                libpng16d.dll
+                libtiffd.dll
+                liblzma.dll
+            )
         else()
             set(wx_bin_dir "E:/vcpkg/installed/x64-mingw-dynamic/bin")
             # Release DLLs
@@ -168,7 +186,7 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug")
                 liblzma.dll
             )
         endif()
-        
+
         foreach(dll ${WX_DLLS})
             set(src_dll "${wx_bin_dir}/${dll}")
             if(EXISTS "${src_dll}")
@@ -181,15 +199,10 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug")
             endif()
         endforeach()
     endfunction()
-    
-copy_wx_dlls(validproxy)
-    
-    # Icons are now embedded into the executable via src/ui/icons.rc
-    # (see ToolbarIcons.h for the resource-based loading path)
-    # The old POST_BUILD copy-to-bin/icons/ step has been removed.
 
-    # Compile definition for GUI mode
-    # WIN32 flag creates GUI subsystem executable (no console window for GUI mode)
+    copy_wx_dlls(validproxy)
+
+    # WIN32_EXECUTABLE creates GUI subsystem executable (no console window)
     set_target_properties(validproxy PROPERTIES WIN32_EXECUTABLE TRUE)
     target_compile_definitions(validproxy PRIVATE HAS_WXWIDGETS=1)
 else()
@@ -253,4 +266,4 @@ target_link_libraries(test_config_generator PRIVATE gtest_main gtest
 )
 add_test(NAME ConfigGeneratorTest COMMAND test_config_generator)
 
-install(TARGETS validproxy DESTINATION bin)
+install(TARGETS validproxy validproxy-cli DESTINATION bin)
