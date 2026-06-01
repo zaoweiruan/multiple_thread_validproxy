@@ -69,7 +69,7 @@ void ProxyListModel::detectIdOffset() {
             Logger::write("[DIAG] ProxyListModel::detectIdOffset: idOffset_="
                           + std::to_string(static_cast<int>(idOffset_))
                           + " (GetItem(0).GetID()=" + std::to_string(id) + ")",
-                          LogLevel::DEBUG);
+                          LogLevel::TRACE);
         }
     }
 }
@@ -89,7 +89,7 @@ unsigned int ProxyListModel::GetCount() const {
     unsigned int c = proxies_ ? static_cast<unsigned int>(proxies_->size()) : 0;
     // Log only when returning > 0 to reduce noise
     if (c > 0) {
-        Logger::write("[DIAG] ProxyListModel::GetCount() = " + std::to_string(c), LogLevel::DEBUG);
+        Logger::write("[DIAG] ProxyListModel::GetCount() = " + std::to_string(c), LogLevel::TRACE);
     }
     return c;
 }

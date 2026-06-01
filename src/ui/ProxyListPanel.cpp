@@ -75,18 +75,18 @@ void ProxyListPanel::loadProxies(const std::string& subId) {
     currentSubId_ = subId;
     allProxies_ = controller_->loadProxies(subId);
     Logger::write("[DIAG] ProxyListPanel::loadProxies(subId=" + subId + "): allProxies_="
-                  + std::to_string(allProxies_.size()), LogLevel::INFO);
+                  + std::to_string(allProxies_.size()), LogLevel::TRACE);
 
     // Reset sort state and copy fresh data unconditionally
     sortState_.column = -1;
     sortState_.direction = SortDirection::None;
     proxies_ = allProxies_;
     Logger::write("[DIAG] ProxyListPanel::loadProxies: proxies_=" + std::to_string(proxies_.size())
-                  + " exItems_=" + std::to_string(exItems_.size()), LogLevel::INFO);
+                  + " exItems_=" + std::to_string(exItems_.size()), LogLevel::TRACE);
 
     exItems_ = controller_->loadProxyResults();
     Logger::write("[DIAG] ProxyListPanel::loadProxies: after exItems_ reload → exItems_="
-                  + std::to_string(exItems_.size()), LogLevel::INFO);
+                  + std::to_string(exItems_.size()), LogLevel::TRACE);
 
     // Point the model at our data and reset the view
     model_->setData(&proxies_, &exItems_);
@@ -95,12 +95,12 @@ void ProxyListPanel::loadProxies(const std::string& subId) {
     // persist and cause getDataIndex(row) to return stale indices >= proxies_->size().
     // Double-Reset (0 then N) forces a full internal rebuild in all versions.
     Logger::write("[DIAG] ProxyListPanel::loadProxies: calling model_->Reset("
-                  + std::to_string(proxies_.size()) + ")", LogLevel::INFO);
+                  + std::to_string(proxies_.size()) + ")", LogLevel::TRACE);
     model_->Reset(0);
     model_->Reset(static_cast<unsigned int>(proxies_.size()));
     model_->detectIdOffset();
     Logger::write("[DIAG] ProxyListPanel::loadProxies: model_->GetCount()="
-                  + std::to_string(model_->GetCount()), LogLevel::INFO);
+                  + std::to_string(model_->GetCount()), LogLevel::TRACE);
 
     // When no row is selected (startup, subscription switch), select the first
     // proxy and queue a ProxySelectionEvent directly.  On wxMSW, Select() during

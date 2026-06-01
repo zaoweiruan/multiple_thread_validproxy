@@ -181,7 +181,7 @@ std::vector<db::models::Profileitem> AppController::loadProxies(const std::strin
     db::models::ProfileitemDAO dao(db_);
     if (subId.empty()) {
         auto result = dao.getAll();
-        Logger::write("[DIAG] AppController::loadProxies(subId=empty) -> " + std::to_string(result.size()) + " items", LogLevel::INFO);
+        Logger::write("[DIAG] AppController::loadProxies(subId=empty) -> " + std::to_string(result.size()) + " items", LogLevel::TRACE);
         return result;
     }
     std::vector<db::models::Profileitem> all = dao.getAll();
@@ -189,11 +189,11 @@ std::vector<db::models::Profileitem> AppController::loadProxies(const std::strin
     std::copy_if(all.begin(), all.end(), std::back_inserter(filtered),
         [&subId](const db::models::Profileitem& p) { return p.subid == subId; });
     Logger::write("[DIAG] AppController::loadProxies(subId=" + subId + "): total=" + std::to_string(all.size())
-                  + " filtered=" + std::to_string(filtered.size()), LogLevel::INFO);
+                  + " filtered=" + std::to_string(filtered.size()), LogLevel::TRACE);
     if (filtered.empty() && !all.empty()) {
         for (size_t i = 0; i < all.size(); ++i) {
             Logger::write("[DIAG]   item[" + std::to_string(i) + "].subid=▸" + all[i].subid + "◂  (len="
-                          + std::to_string(all[i].subid.size()) + ")  matches=" + (all[i].subid == subId ? "Y" : "N"), LogLevel::INFO);
+                          + std::to_string(all[i].subid.size()) + ")  matches=" + (all[i].subid == subId ? "Y" : "N"), LogLevel::TRACE);
         }
     }
     return filtered;
