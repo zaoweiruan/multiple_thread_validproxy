@@ -8,7 +8,6 @@
 ### 已完成修复
 1. ✅ **wxWidgets DLL 缺失** (`wxmsw32ud_*`) - CMakeLists.txt Debug/Release 检测和复制逻辑
 2. ✅ **libpng16d.dll / libtiffd.dll 缺失** - 更新 Debug DLL 列表使用正确的调试版本
-3. ✅ **订阅面板 UI 中文化** - 右键菜单中文化（更新订阅/测试订阅/编辑订阅/删除订阅/刷新/添加订阅），删除 "+"/"Refresh" 按钮，加宽数据库路径标签
 
 ### 验证结果
 - **Build**: ✅ 成功 (Debug 模式)
@@ -21,12 +20,9 @@
 
 | 特性 | 计划文档 | 状态 |
 |------|----------|------|
-| 1. 列排序 | [`docs/plans/2026-05-19-ui-enhancements-sort-find-link.md`](./docs/plans/2026-05-19-ui-enhancements-sort-find-link.md) | ✅ 已完成 |
-| 2. 查找单个代理 | 同上 | ✅ 已完成 |
-| 3. 订阅-代理联动 | 同上 | ✅ 已完成 |
-| 4. 订阅更新取消支持 | [`docs/bugfix/2026-05-28-cancel-sub-update-proxyfinder-phase.md`](./docs/bugfix/2026-05-28-cancel-sub-update-proxyfinder-phase.md) | ✅ 已完成 |
-| 5. SQL 错误输出修复 | [`docs/bugfix/2026-05-28-sql-error-console-output-fix.md`](./docs/bugfix/2026-05-28-sql-error-console-output-fix.md) | ✅ 已完成 |
-| 6. 订阅面板 UI 中文化 | (本会话) | ✅ 已完成 |
+| 1. 列排序 | [`docs/plans/2026-05-19-ui-enhancements-sort-find-link.md`](./docs/plans/2026-05-19-ui-enhancements-sort-find-link.md) | 📝 待审批 |
+| 2. 查找单个代理 | 同上 | 📝 待审批 |
+| 3. 订阅-代理联动 | 同上 | 📝 待审批 |
 
 ---
 
