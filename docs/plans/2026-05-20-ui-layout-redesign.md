@@ -1,3 +1,11 @@
+---
+title: "plan: UI Layout Redesign"
+type: plan
+status: draft
+date: 2026-05-20
+origin: "Migrated from docs/superpowers/plans/"
+---
+
 # UI Layout Redesign Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.

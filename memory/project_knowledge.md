@@ -825,4 +825,14 @@ docs/plans/
 - 每个计划文档独立管理自己的状态（`status` frontmatter）
 - 跟踪文档是只读索引，不替代计划文档的详细内容
 - 会话开始时读取跟踪文档了解全局状态
+
+### AGENTS.md 规范
+- AGENTS.md 只保存长期记忆引用（文档入口点）和项目概述
+- AGENTS.md 不包含状态跟踪、构建/测试结果、计划执行情况
+- 状态跟踪内容应放在 docs/plans/project-plans-tracker.md
+- 功能实现状态应放在 docs/plans/feature-status.md
+- Bug 修复记录应放在 docs/bugfix/
+- 分析/技术报告应放在 docs/reports/
+- 所有文档的完整索引在 docs/INDEX.md
+
 - 会话结束时更新跟踪文档和长期记忆

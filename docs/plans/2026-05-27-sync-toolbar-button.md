@@ -1,3 +1,11 @@
+---
+title: "plan: Sync Toolbar Button"
+type: plan
+status: draft
+date: 2026-05-27
+origin: "Migrated from docs/superpowers/plans/"
+---
+
 # 同步工具栏按钮 Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
