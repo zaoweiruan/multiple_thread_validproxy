@@ -22,6 +22,7 @@ bin/             配置 (config.json) + 数据库 (worker/guindb.db)
 docs/            项目文档
 skills/          Agent 技能 (14)
 scripts/         Python 辅助脚本
+temp/            调试临时文件 (脚本、输出、临时配置)
 ```
 
 ---
