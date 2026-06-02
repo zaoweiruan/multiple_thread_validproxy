@@ -79,12 +79,9 @@ SubscriptionPanel::SubscriptionPanel(wxWindow* parent, AppController* controller
     });
 }
 
-void SubscriptionPanel::loadSubscriptions() {
-    subs_ = controller_->loadSubscriptions();
-
-    // Single efficient GROUP BY query for all proxy counts instead of N+1 full-table scans
-    auto proxyCounts = controller_->countProxiesBySubId();
-
+void SubscriptionPanel::updateSubscriptionList(const std::vector<db::models::Subitem>& subs,
+                                                const std::unordered_map<std::string, int>& proxyCounts) {
+    subs_ = subs;
     store_->DeleteAllItems();
 
     int rowNum = 1;  // Counter for row number
@@ -104,6 +101,20 @@ void SubscriptionPanel::loadSubscriptions() {
         row.push_back(wxVariant(updateTimeStr));
         store_->AppendItem(row);
     }
+ }
+
+void SubscriptionPanel::loadSubscriptions() {
+    auto subs = controller_->loadSubscriptions();
+
+    // Single efficient GROUP BY query for all proxy counts instead of N+1 full-table scans
+    auto proxyCounts = controller_->countProxiesBySubId();
+
+    updateSubscriptionList(subs, proxyCounts);
+ }
+
+void SubscriptionPanel::loadSubscriptions(const std::vector<db::models::Subitem>& subs,
+                                           const std::unordered_map<std::string, int>& proxyCounts) {
+    updateSubscriptionList(subs, proxyCounts);
  }
 
  std::string SubscriptionPanel::formatUpdateTime(const std::string& updatetime) {
@@ -195,8 +206,9 @@ void SubscriptionPanel::onDeleteSubscription(wxCommandEvent&) {
         if (sub.id == subId) { remarks = sub.remarks; break; }
     }
     if (confirmDelete(subId, remarks)) {
-        // Delete via DAO
-        // TODO: implement DAO delete method
+        if (controller_) {
+            controller_->deleteSubscription(subId);
+        }
         loadSubscriptions();
     }
 }
