@@ -1,3 +1,11 @@
+---
+title: "plan: Non-Reentrant Update Cancel"
+type: plan
+status: draft
+date: 2026-05-28
+origin: "Migrated from docs/superpowers/plans/"
+---
+
 # 更新订阅不可再入与取消功能 — 实施计划
 
 > **For agentic workers:** Use subagent-driven-development to implement plan task-by-task.

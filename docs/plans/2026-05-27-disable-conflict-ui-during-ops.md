@@ -1,3 +1,11 @@
+---
+title: "plan: Disable Conflicting UI During Operations"
+type: plan
+status: draft
+date: 2026-05-27
+origin: "Migrated from docs/superpowers/plans/"
+---
+
 # 批量测试/更新时禁用 UI 操作按钮实施方案
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
