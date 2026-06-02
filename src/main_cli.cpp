@@ -81,8 +81,8 @@ void printHelp() {
               << "  -TU, -tourl         Export proxies (delay>0) to share links file\n"
               << "  -S, -sync [src[:dst]] Sync valid proxies from source to target DB\n"
               << "  -IS, -import-sub-config <file|url>  Batch import subitems from file or URL\n"
-              << "  -h, --help           Show this help\n\n"
-               << "If no options are provided, help is displayed.\n";
+              << "  -h, --help           Ignored (test-all runs by default)\n\n"
+               << "If no options are provided, test-all mode is executed silently.\n";
 }
 
 BOOL WINAPI consoleCtrlHandler(DWORD ctrlType) {
@@ -286,9 +286,6 @@ int main(int argc, char* argv[]) {
                 std::cerr << "Error: -IS requires a file path or URL" << std::endl;
                 return 1;
             }
-        } else if (arg == "-h" || arg == "--help") {
-            printHelp();
-            return 0;
         } else if (arg.find(".json") != std::string::npos) {
             std::filesystem::path p(arg);
             if (p.is_relative()) {
