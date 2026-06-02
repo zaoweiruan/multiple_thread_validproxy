@@ -266,4 +266,12 @@ target_link_libraries(test_config_generator PRIVATE gtest_main gtest
 )
 add_test(NAME ConfigGeneratorTest COMMAND test_config_generator)
 
+# -- Delete Subscription tests --
+add_executable(test_delete_subscription tests/test_delete_subscription.cpp src/Logger.cpp)
+target_include_directories(test_delete_subscription PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(test_delete_subscription PRIVATE gtest_main gtest
+    E:/vcpkg/installed/x64-mingw-static/lib/libsqlite3.a
+)
+add_test(NAME DeleteSubscriptionTest COMMAND test_delete_subscription)
+
 install(TARGETS validproxy validproxy-cli DESTINATION bin)
