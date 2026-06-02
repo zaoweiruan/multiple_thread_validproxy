@@ -784,9 +784,9 @@ if (commandMode == "test-sub") {
         return result ? 0 : 1;
     }
     
+    // No arguments: silent default to test-all mode
     if (commandMode.empty()) {
-        printHelp();
-        return 0;
+        commandMode = "test-all";
     }
     
     return runDefaultTest(configPath, exeDir, logDir, "test");
