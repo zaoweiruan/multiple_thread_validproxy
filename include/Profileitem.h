@@ -318,7 +318,7 @@ private:
 public:
   explicit ProfileitemDAO(sqlite3* db) : db_(db) {}
 
-  std::vector<Profileitem> getAll(const std::string& sql = "SELECT * FROM ProfileItem;") {
+std::vector<Profileitem> getAll(const std::string& sql = "SELECT * FROM ProfileItem;") {
     std::vector<Profileitem> result;
 
     sqlite3_stmt* stmt = nullptr;
@@ -334,7 +334,7 @@ public:
     sqlite3_finalize(stmt);
     return result;
   }
-  
+   
   /// Efficiently count profiles per subscription using a single GROUP BY query.
   /// Returns a map of subid → profile count, avoiding N+1 full-table scans.
   std::unordered_map<std::string, int> countBySubId() {
@@ -380,17 +380,17 @@ public:
     return out;
   }
 
-bool deleteBySubId(const std::string& subId) {
-     std::string sql = "DELETE FROM ProfileItem WHERE Subid = '" + escape(subId) + "';";
-     char* errMsg = nullptr;
-     int rc = sqlite3_exec(db_, sql.c_str(), nullptr, nullptr, &errMsg);
-     if (rc != SQLITE_OK) {
-       Logger::write("Delete proxies by subId error: " + std::string(errMsg ? errMsg : "unknown"), LogLevel::ERR);
-       sqlite3_free(errMsg);
-       return false;
-     }
-     return sqlite3_changes(db_) > 0;
-   }
+  bool deleteBySubId(const std::string& subId) {
+    std::string sql = "DELETE FROM ProfileItem WHERE Subid = '" + escape(subId) + "';";
+    char* errMsg = nullptr;
+    int rc = sqlite3_exec(db_, sql.c_str(), nullptr, nullptr, &errMsg);
+    if (rc != SQLITE_OK) {
+      Logger::write("Delete proxies by subId error: " + std::string(errMsg ? errMsg : "unknown"), LogLevel::ERR);
+      sqlite3_free(errMsg);
+      return false;
+    }
+    return sqlite3_changes(db_) > 0;
+  }
 };
 
 } // namespace models

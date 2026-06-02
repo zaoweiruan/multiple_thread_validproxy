@@ -223,17 +223,17 @@ public:
     return out;
   }
 
-bool deleteById(const std::string& id) {
-     std::string sql = "DELETE FROM SubItem WHERE Id = '" + escape(id) + "';";
-     char* errMsg = nullptr;
-     int rc = sqlite3_exec(db_, sql.c_str(), nullptr, nullptr, &errMsg);
-     if (rc != SQLITE_OK) {
-       Logger::write("Delete subscription error: " + std::string(errMsg ? errMsg : "unknown"), LogLevel::ERR);
-       sqlite3_free(errMsg);
-       return false;
-     }
-     return sqlite3_changes(db_) > 0;
-   }
+  bool deleteById(const std::string& id) {
+    std::string sql = "DELETE FROM SubItem WHERE Id = '" + escape(id) + "';";
+    char* errMsg = nullptr;
+    int rc = sqlite3_exec(db_, sql.c_str(), nullptr, nullptr, &errMsg);
+    if (rc != SQLITE_OK) {
+      Logger::write("Delete subscription error: " + std::string(errMsg ? errMsg : "unknown"), LogLevel::ERR);
+      sqlite3_free(errMsg);
+      return false;
+    }
+    return sqlite3_changes(db_) > 0;
+  }
 };
 
 } // namespace models
