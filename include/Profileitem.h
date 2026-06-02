@@ -372,6 +372,25 @@ public:
     sqlite3_finalize(stmt);
     return std::nullopt;
   }
+
+  static std::string escape(const std::string& s) {
+    std::string out;
+    out.reserve(s.size());
+    for (char c : s) { if (c == '\'') out += "''"; else out += c; }
+    return out;
+  }
+
+bool deleteBySubId(const std::string& subId) {
+     std::string sql = "DELETE FROM ProfileItem WHERE Subid = '" + escape(subId) + "';";
+     char* errMsg = nullptr;
+     int rc = sqlite3_exec(db_, sql.c_str(), nullptr, nullptr, &errMsg);
+     if (rc != SQLITE_OK) {
+       Logger::write("Delete proxies by subId error: " + std::string(errMsg ? errMsg : "unknown"), LogLevel::ERR);
+       sqlite3_free(errMsg);
+       return false;
+     }
+     return sqlite3_changes(db_) > 0;
+   }
 };
 
 } // namespace models
