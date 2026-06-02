@@ -42,20 +42,20 @@ SubscriptionPanel::SubscriptionPanel(wxWindow* parent, AppController* controller
 
     // Data view control
     listCtrl_ = new wxDataViewCtrl(this, wxID_ANY,
-                                    wxDefaultPosition, wxDefaultSize,
-                                    wxDV_ROW_LINES | wxDV_SINGLE);
+                                     wxDefaultPosition, wxDefaultSize,
+                                     wxDV_ROW_LINES | wxDV_SINGLE);
 
-    // Store
-    store_ = new wxDataViewListStore();
-    listCtrl_->AssociateModel(store_);
-    store_->DecRef(); // AssociateModel took ownership
+    // Model
+    model_ = new SubscriptionListModel();
+    listCtrl_->AssociateModel(model_);
+    model_->DecRef(); // AssociateModel took ownership
 
     // Columns — Append[Toggle|Text]Column(label, model_column, mode, width, ...)
-    listCtrl_->AppendTextColumn("#", 0, wxDATAVIEW_CELL_INERT, 30);  // Counter for row number
-    listCtrl_->AppendToggleColumn("启用", 1, wxDATAVIEW_CELL_ACTIVATABLE, 30);  // Changed "On" to "启用"
-    listCtrl_->AppendTextColumn("Name", 2, wxDATAVIEW_CELL_EDITABLE, 200);
-    listCtrl_->AppendTextColumn("Proxies", 3, wxDATAVIEW_CELL_INERT, 70, wxALIGN_RIGHT);
-    listCtrl_->AppendTextColumn("Update", 4, wxDATAVIEW_CELL_INERT, 130);
+    listCtrl_->AppendTextColumn("#", 0, wxDATAVIEW_CELL_INERT, 30);
+    listCtrl_->AppendToggleColumn("启用", 1, wxDATAVIEW_CELL_ACTIVATABLE, 30);
+    listCtrl_->AppendTextColumn("Name ↕", 2, wxDATAVIEW_CELL_EDITABLE, 200);
+    listCtrl_->AppendTextColumn("Proxies ↕", 3, wxDATAVIEW_CELL_INERT, 70, wxALIGN_RIGHT);
+    listCtrl_->AppendTextColumn("Update ↕", 4, wxDATAVIEW_CELL_INERT, 130);
 
     sizer->Add(listCtrl_, 1, wxEXPAND | wxALL, 2);
 
@@ -77,31 +77,20 @@ SubscriptionPanel::SubscriptionPanel(wxWindow* parent, AppController* controller
             }
         }
     });
+
+    // Bind column header click for sorting
+    listCtrl_->Bind(wxEVT_DATAVIEW_COLUMN_HEADER_CLICK, &SubscriptionPanel::onColumnHeaderClick, this);
 }
 
 void SubscriptionPanel::updateSubscriptionList(const std::vector<db::models::Subitem>& subs,
-                                                const std::unordered_map<std::string, int>& proxyCounts) {
+                                                 const std::unordered_map<std::string, int>& proxyCounts) {
     subs_ = subs;
-    store_->DeleteAllItems();
-
-    int rowNum = 1;  // Counter for row number
-    for (const auto& sub : subs_) {
-        wxVector<wxVariant> row;
-        row.push_back(wxVariant(wxString::Format("%d", rowNum++)));  // Counter for numbering
-        row.push_back(wxVariant(sub.enabled == "1"));
-        row.push_back(wxVariant(sub.remarks));
-
-        // Look up proxy count from preloaded map (O(1) per subscription)
-        auto it = proxyCounts.find(sub.id);
-        int count = (it != proxyCounts.end()) ? it->second : 0;
-        row.push_back(wxVariant(wxString::Format("%d", count)));
-        
-        // Format updatetime from unix timestamp to readable datetime
-        wxString updateTimeStr = formatUpdateTime(sub.updatetime);
-        row.push_back(wxVariant(updateTimeStr));
-        store_->AppendItem(row);
-    }
- }
+    proxyCounts_ = proxyCounts;
+    model_->setData(&subs_, &proxyCounts_);
+    model_->Reset(0);
+    model_->Reset(static_cast<unsigned int>(subs_.size()));
+    model_->detectIdOffset();
+}
 
 void SubscriptionPanel::loadSubscriptions() {
     auto subs = controller_->loadSubscriptions();
@@ -238,6 +227,54 @@ void SubscriptionPanel::onImportSubscription(wxCommandEvent&) {
             loadSubscriptions();
         }
     }
+}
+
+// -------------------------------------------------------------------
+// Column header click handler for Name/Proxies/Update sorting
+// -------------------------------------------------------------------
+void SubscriptionPanel::onColumnHeaderClick(wxDataViewEvent& event) {
+    int col = event.GetColumn();
+    Logger::write("[SubscriptionPanel] Column header click: column=" + std::to_string(col), LogLevel::DEBUG);
+
+    // Only Name (SUB_COL_NAME=2), Proxies (SUB_COL_PROXIES=3), and Update (SUB_COL_UPDATE=4) are sortable
+    if (col == SUB_COL_NAME || col == SUB_COL_PROXIES || col == SUB_COL_UPDATE) {
+        // Cycle direction: None -> Asc -> Desc -> None
+        if (sortState_.column == col) {
+            switch (sortState_.direction) {
+                case SortDirection::Asc:
+                    sortState_.direction = SortDirection::Desc;
+                    break;
+                case SortDirection::Desc:
+                    sortState_.direction = SortDirection::None;
+                    sortState_.column = -1;
+                    break;
+                default:
+                    sortState_.direction = SortDirection::Asc;
+                    break;
+            }
+        } else {
+            sortState_.column = col;
+            sortState_.direction = SortDirection::Asc;
+        }
+
+        if (sortState_.direction != SortDirection::None) {
+            // Set the sort indicator on the column and trigger re-sort.
+            wxDataViewColumn* dvCol = listCtrl_->GetColumn(col);
+            if (dvCol) {
+                dvCol->SetSortOrder(sortState_.direction == SortDirection::Asc);
+            }
+            listCtrl_->GetModel()->Resort();
+        } else {
+            // Clear sort — remove indicator and restore identity order
+            wxDataViewColumn* currentSort = listCtrl_->GetSortingColumn();
+            if (currentSort) {
+                currentSort->UnsetAsSortKey();
+            }
+            model_->Reset(0);
+            model_->Reset(static_cast<unsigned int>(subs_.size()));
+        }
+    }
+    event.Skip();
 }
 
 void SubscriptionPanel::showEditDialog(const db::models::Subitem& sub) {
