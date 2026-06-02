@@ -85,6 +85,8 @@ if(wxWidgets_FOUND)
         src/ui/AppController.cpp
         src/ui/MainFrame.h
         src/ui/MainFrame.cpp
+        src/ui/SubscriptionListModel.h
+        src/ui/SubscriptionListModel.cpp
         src/ui/SubscriptionPanel.h
         src/ui/SubscriptionPanel.cpp
         src/ui/ProxyListModel.h
