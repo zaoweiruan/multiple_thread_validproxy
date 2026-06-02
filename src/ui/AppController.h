@@ -7,6 +7,7 @@
 #include <tuple>
 #include <atomic>
 #include <thread>
+#include <memory>
 #include <sqlite3.h>
 #include <wx/event.h>
 
@@ -32,14 +33,17 @@ public:
 
 // Subscriptions
    std::vector<db::models::Subitem> loadSubscriptions();
+   void loadSubscriptionsAsync(wxEvtHandler* handler);
    bool updateSubscriptionEnabled(const std::string& id, bool enabled);
-   bool updateSubitem(const db::models::Subitem& sub);
-   void updateSubscriptionAsync(const std::string& subId, wxEvtHandler* wxHandler);
+bool updateSubitem(const db::models::Subitem& sub);
+    bool deleteSubscription(const std::string& subId);
+    void updateSubscriptionAsync(const std::string& subId, wxEvtHandler* wxHandler);
   void updateAllSubscriptionsAsync(wxEvtHandler* wxHandler);
   bool importSubscription(const std::string& url);
 
 // Proxies
 std::vector<db::models::Profileitem> loadProxies(const std::string& subId = "");
+void loadProxiesAsync(const std::string& subId, wxEvtHandler* handler);
 std::unordered_map<std::string, int> countProxiesBySubId();
 std::optional<db::models::Profileitem> getProxyByIndexId(const std::string& indexId);
 std::vector<db::models::ProfileExItem> loadProxyResults();

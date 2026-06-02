@@ -117,6 +117,34 @@ std::vector<db::models::Subitem> AppController::loadSubscriptions() {
     return dao.getAll();
 }
 
+void AppController::loadSubscriptionsAsync(wxEvtHandler* handler) {
+    std::string dbPath = config_.database_path;
+
+    std::thread([dbPath, handler]() {
+        sqlite3* readerDb = nullptr;
+        if (sqlite3_open(dbPath.c_str(), &readerDb) != SQLITE_OK) {
+            Logger::write("sqlite3_open failed for loadSubscriptionsAsync: " + dbPath, LogLevel::ERR);
+            if (readerDb) sqlite3_close(readerDb);
+            wxQueueEvent(handler, new SubListLoadedEvent({}, {}));
+            return;
+        }
+        if (sqlite3_exec(readerDb, "PRAGMA journal_mode=WAL;", nullptr, nullptr, nullptr) != SQLITE_OK) {
+            Logger::write("PRAGMA journal_mode=WAL failed for async reader: " + dbPath, LogLevel::WARN);
+        }
+        sqlite3_busy_timeout(readerDb, 5000);
+
+        db::models::SubitemDAO subDao(readerDb);
+        auto subs = subDao.getAll();
+
+        db::models::ProfileitemDAO proxyDao(readerDb);
+        auto proxyCounts = proxyDao.countBySubId();
+
+        sqlite3_close(readerDb);
+
+        wxQueueEvent(handler, new SubListLoadedEvent(std::move(subs), std::move(proxyCounts)));
+    }).detach();
+}
+
 bool AppController::updateSubscriptionEnabled(const std::string& id, bool enabled) {
     db::models::SubitemDAO dao(db_);
     return dao.updateEnabled(id, enabled);
@@ -125,6 +153,16 @@ bool AppController::updateSubscriptionEnabled(const std::string& id, bool enable
 bool AppController::updateSubitem(const db::models::Subitem& sub) {
     db::models::SubitemDAO dao(db_);
     return dao.updateSubitem(sub);
+}
+
+bool AppController::deleteSubscription(const std::string& subId) {
+    // Delete associated proxies first
+    db::models::ProfileitemDAO proxyDao(db_);
+    proxyDao.deleteBySubId(subId);
+    
+    // Then delete the subscription itself
+    db::models::SubitemDAO subDao(db_);
+    return subDao.deleteById(subId);
 }
 
 void AppController::updateSubscriptionAsync(const std::string& subId, wxEvtHandler* wxHandler) {
@@ -197,6 +235,44 @@ std::vector<db::models::Profileitem> AppController::loadProxies(const std::strin
         }
     }
     return filtered;
+}
+
+void AppController::loadProxiesAsync(const std::string& subId, wxEvtHandler* handler) {
+    std::string dbPath = config_.database_path;
+    std::string subIdCopy = subId;
+
+    std::thread([dbPath, subIdCopy, handler]() {
+        sqlite3* readerDb = nullptr;
+        if (sqlite3_open(dbPath.c_str(), &readerDb) != SQLITE_OK) {
+            Logger::write("sqlite3_open failed for loadProxiesAsync: " + dbPath, LogLevel::ERR);
+            if (readerDb) sqlite3_close(readerDb);
+            wxQueueEvent(handler, new ProxyListLoadedEvent(subIdCopy, {}, {}));
+            return;
+        }
+        if (sqlite3_exec(readerDb, "PRAGMA journal_mode=WAL;", nullptr, nullptr, nullptr) != SQLITE_OK) {
+            Logger::write("PRAGMA journal_mode=WAL failed for async reader: " + dbPath, LogLevel::WARN);
+        }
+        sqlite3_busy_timeout(readerDb, 5000);
+
+        db::models::ProfileitemDAO dao(readerDb);
+        std::vector<db::models::Profileitem> allProxies = dao.getAll();
+
+        std::vector<db::models::Profileitem> proxies;
+        if (subIdCopy.empty()) {
+            proxies = std::move(allProxies);
+        } else {
+            std::copy_if(allProxies.begin(), allProxies.end(), std::back_inserter(proxies),
+                [&subIdCopy](const db::models::Profileitem& p) { return p.subid == subIdCopy; });
+        }
+
+        db::models::ProfileExItemDAO exDao(readerDb);
+        std::vector<db::models::ProfileExItem> exItems = exDao.getAll();
+
+        sqlite3_close(readerDb);
+
+        wxQueueEvent(handler, new ProxyListLoadedEvent(subIdCopy,
+                     std::move(proxies), std::move(exItems)));
+    }).detach();
 }
 
 std::optional<db::models::Profileitem> AppController::getProxyByIndexId(const std::string& indexId) {
