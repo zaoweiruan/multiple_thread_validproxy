@@ -27,11 +27,6 @@ tests/
 !docs/**/*.md
 !docs/*.md
 *.png
-test*.json
-temp/
-test*/
-*.ico
-*.png
 kilo*.*
 skill*.json
 model*.md
@@ -58,6 +53,9 @@ bin/.other/
 bin/bin/
 bin/nul
 bin/proxies/
+
+# Temp directory for debug files (tracked but contents ignored)
+temp/
 
 # Root log files
 log/
