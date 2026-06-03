@@ -5,6 +5,11 @@
 #include <wx/event.h>
 #include <string>
 #include "Logger.h"
+#include <vector>
+#include <unordered_map>
+#include "Profileitem.h"
+#include "ProfileExItem.h"
+#include "Subitem.h"
 
 // ---------------------------------------------------------------
 // Custom event IDs — range starting from wxID_HIGHEST + 1
@@ -17,7 +22,9 @@ enum class UIEventId {
     LOG_MESSAGE,
     CONFIG_CHANGED,
     STATUS_UPDATE,
-    SUBSCRIPTION_SELECTED
+    SUBSCRIPTION_SELECTED,
+    PROXY_LIST_LOADED,
+    SUB_LIST_LOADED
 };
 
 // ---------------------------------------------------------------
@@ -32,6 +39,8 @@ class StatusUpdateEvent;
 class SubscriptionSelectedEvent;
 class SubscriptionTestEvent;
 class ProxySelectionEvent;
+class ProxyListLoadedEvent;
+class SubListLoadedEvent;
 
 wxDECLARE_EVENT(wxEVT_PROXY_TEST_PROGRESS, ProxyTestProgressEvent);
 wxDECLARE_EVENT(wxEVT_LOG_MESSAGE, LogMessageEvent);
@@ -39,6 +48,8 @@ wxDECLARE_EVENT(wxEVT_STATUS_UPDATE, StatusUpdateEvent);
 wxDECLARE_EVENT(wxEVT_SUBSCRIPTION_SELECTED, SubscriptionSelectedEvent);
 wxDECLARE_EVENT(wxEVT_SUBSCRIPTION_TEST, SubscriptionTestEvent);
 wxDECLARE_EVENT(wxEVT_PROXY_SELECTION, ProxySelectionEvent);
+wxDECLARE_EVENT(wxEVT_PROXY_LIST_LOADED, ProxyListLoadedEvent);
+wxDECLARE_EVENT(wxEVT_SUB_LIST_LOADED, SubListLoadedEvent);
 
 // ---------------------------------------------------------------
 // ProxyTestProgressEvent — sent during batch testing
@@ -172,6 +183,52 @@ public:
 private:
     std::string indexId_, host_, port_, delay_, message_, remarks_;
     int failures_;
+};
+
+// ---------------------------------------------------------------
+// ProxyListLoadedEvent — proxy list data ready from async reader
+// ---------------------------------------------------------------
+class ProxyListLoadedEvent : public wxEvent {
+public:
+    ProxyListLoadedEvent(const std::string& subId,
+                        std::vector<db::models::Profileitem> proxies,
+                        std::vector<db::models::ProfileExItem> exItems)
+        : wxEvent(0, wxEVT_PROXY_LIST_LOADED),
+          subId_(subId),
+          proxies_(std::move(proxies)),
+          exItems_(std::move(exItems)) {}
+
+    wxEvent* Clone() const override { return new ProxyListLoadedEvent(*this); }
+
+    const std::string& getSubId() const { return subId_; }
+    std::vector<db::models::Profileitem> takeProxies() { return std::move(proxies_); }
+    std::vector<db::models::ProfileExItem> takeExItems() { return std::move(exItems_); }
+
+private:
+    std::string subId_;
+    std::vector<db::models::Profileitem> proxies_;
+    std::vector<db::models::ProfileExItem> exItems_;
+};
+
+// ---------------------------------------------------------------
+// SubListLoadedEvent — subscription list data ready from async reader
+// ---------------------------------------------------------------
+class SubListLoadedEvent : public wxEvent {
+public:
+    SubListLoadedEvent(std::vector<db::models::Subitem> subs,
+                      std::unordered_map<std::string, int> proxyCounts)
+        : wxEvent(0, wxEVT_SUB_LIST_LOADED),
+          subs_(std::move(subs)),
+          proxyCounts_(std::move(proxyCounts)) {}
+
+    wxEvent* Clone() const override { return new SubListLoadedEvent(*this); }
+
+    std::vector<db::models::Subitem> takeSubs() { return std::move(subs_); }
+    std::unordered_map<std::string, int> takeProxyCounts() { return std::move(proxyCounts_); }
+
+private:
+    std::vector<db::models::Subitem> subs_;
+    std::unordered_map<std::string, int> proxyCounts_;
 };
 
 #endif // UI_EVENTS_H

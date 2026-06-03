@@ -17,13 +17,8 @@
 
 | 功能 | 状态 | 说明 |
 |------|------|------|
-| 订阅列表加载展示 | ✅ | `SubscriptionPanel::loadSubscriptions()` → `SubitemDAO::getAll()` |
-| 点选订阅 → 代理列表联动 | ✅ | `onSelectionChanged` → `wxEVT_SUBSCRIPTION_SELECTED` → `ProxyListPanel::loadProxies()` |
-| 订阅启用/禁用切换 | ✅ | 勾选状态通过 `wxEVT_DATAVIEW_ITEM_VALUE_CHANGED` 读入内存 |
-| 右键 → 更新单个订阅 | ✅ | `onUpdateSubscription` → `controller_->updateSubscriptionAsync()` |
-| 右键 → 测试订阅 | ⚠️ | `onTestSubscription` 只 `wxPostEvent(GetParent(), evt)`，**未串联到 TestPanel** |
-| 右键 → 编辑订阅 | ⚠️ | `showEditDialog` 对话框展示但**未保存到数据库** |
-| 右键 → 删除订阅 | ⚠️ | `// TODO: implement DAO delete method` — 确认弹框有，不执行 SQL |
+| 列排序 (Name/Proxies/Update) | ✅ | 点击列标题 → `onColumnHeaderClick` → `SubscriptionListModel::Compare()` 三态循环排序 |
+| 订阅排序清除后 ID 映射恢复 | ✅ | **2026-06-02 修复**: `detectIdOffset()` 现在在排序清除后正确调用 |
 | 右键 → 添加订阅 | ✅ | `showAddDialog` 对话框 UI 完整，保存时调用 `controller_->importSubscription()` + `loadSubscriptions()` |
 | 右键 → 从 URL 导入 | ✅ | `onImportSubscription` → `controller_->importSubscription()` |
 | 已选订阅 ID 获取 | ✅ | `getSelectedSubId()` |
@@ -39,7 +34,7 @@
 | 右键 → 查看详情 | ✅ | `onViewDetail` 显示 IndexId/Remarks/类型/地址/延迟等完整信息 |
 | 类型筛选 | ⚠️ | `// TODO: apply filters` — 选择器有但未过滤 |
 | 搜索框 | ⚠️ | `// TODO: implement search filtering` — 输入框有但未过滤 |
-| 列排序 | ✅ | `onColumnHeaderClick` 完整 Asc/Desc/None 三态循环 + `sortProxiesByColumn()` 按 Address/Delay/Speed/IndexId 排序 |
+| 列排序 | ✅ | `onColumnHeaderClick` 完整 Asc/Desc/None 三态循环 + `sortProxiesByColumn()` 按 Address/Delay/Speed/IndexId/Row# 排序（2026-06-02 修复 Row# 列） |
 
 ## 3. 批量测试
 
@@ -83,11 +78,10 @@
 ### ⚠️ 桩函数（界面存在，逻辑未完成）
 
 1. **编辑订阅保存** — `showEditDialog`：数据显示但不持久化，`// TODO: implement DAO update`
-2. **删除订阅** — `onDeleteSubscription`：确认框后 `// TODO: implement DAO delete method`
-3. **代理类型/状态筛选** — `ProxyListPanel`：`// TODO: apply filters`
-4. **代理搜索** — `ProxyListPanel`：`// TODO: implement search filtering`
-5. **订阅右键测试** — `onTestSubscription`：`wxQueueEvent` 发出事件但**无 handler 接收**
-6. **AUI 布局持久化** — `loadSettings()`：空函数
+2. **代理类型/状态筛选** — `ProxyListPanel`：`// TODO: apply filters`
+3. **代理搜索** — `ProxyListPanel`：`// TODO: implement search filtering`
+4. **订阅右键测试** — `onTestSubscription`：`wxQueueEvent` 发出事件但**无 handler 接收**
+5. **AUI 布局持久化** — `loadSettings()`：空函数
 
 ### ❌ 完全未实现
 

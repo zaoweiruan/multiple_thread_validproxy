@@ -16,10 +16,14 @@ ProxyDetailPanel::ProxyDetailPanel(wxWindow* parent)
     mainSizer_->Add(title, 0, wxLEFT | wxTOP | wxRIGHT, 10);
     mainSizer_->AddSpacer(10);
     
-    // Create labels for all 33 ProfileItem fields
+    // Create labels for all 33 ProfileItem fields (read-only text for select/copy, no border)
     for (int i = 0; i < 33; ++i) {
-        fieldLabels_[i] = new wxStaticText(this, wxID_ANY, std::string(allFields_[i]) + ": -");
-        mainSizer_->Add(fieldLabels_[i], 0, wxLEFT | wxRIGHT | wxBOTTOM, 5);
+        fieldLabels_[i] = new wxTextCtrl(this, wxID_ANY, std::string(allFields_[i]) + ": -",
+                                         wxDefaultPosition, wxDefaultSize,
+                                         wxTE_READONLY | wxBORDER_NONE);
+        fieldLabels_[i]->SetBackgroundColour(GetBackgroundColour());
+        fieldLabels_[i]->SetMinSize(wxSize(-1, 22));
+        mainSizer_->Add(fieldLabels_[i], 0, wxLEFT | wxRIGHT | wxBOTTOM | wxEXPAND, 2);
     }
     
     SetSizer(mainSizer_);
@@ -43,43 +47,43 @@ void ProxyDetailPanel::UpdateDetail(const std::string& indexId, const std::strin
     
     if (proxy) {
         // Update all 33 fields from proxy
-        fieldLabels_[0]->SetLabel("ConfigType: " + proxy->configtype);
-        fieldLabels_[1]->SetLabel("ConfigVersion: " + proxy->configversion);
-        fieldLabels_[2]->SetLabel("Address: " + proxy->address);
-        fieldLabels_[3]->SetLabel("Port: " + proxy->port);
-        fieldLabels_[4]->SetLabel("Ports: " + proxy->ports);
-        fieldLabels_[5]->SetLabel("Id: " + proxy->id);
-        fieldLabels_[6]->SetLabel("AlterId: " + proxy->alterid);
-        fieldLabels_[7]->SetLabel("Security: " + proxy->security);
-        fieldLabels_[8]->SetLabel("Network: " + proxy->network);
-        fieldLabels_[9]->SetLabel("Remarks: " + proxy->remarks);
-        fieldLabels_[10]->SetLabel("HeaderType: " + proxy->headertype);
-        fieldLabels_[11]->SetLabel("RequestHost: " + proxy->requesthost);
-        fieldLabels_[12]->SetLabel("Path: " + proxy->path);
-        fieldLabels_[13]->SetLabel("StreamSecurity: " + proxy->streamsecurity);
-        fieldLabels_[14]->SetLabel("AllowInsecure: " + proxy->allowinsecure);
-        fieldLabels_[15]->SetLabel("Subid: " + proxy->subid);
-        fieldLabels_[16]->SetLabel("IsSub: " + proxy->issub);
-        fieldLabels_[17]->SetLabel("Flow: " + proxy->flow);
-        fieldLabels_[18]->SetLabel("Sni: " + proxy->sni);
-        fieldLabels_[19]->SetLabel("Alpn: " + proxy->alpn);
-        fieldLabels_[20]->SetLabel("CoreType: " + proxy->coretype);
-        fieldLabels_[21]->SetLabel("PreSocksPort: " + proxy->presocksport);
-        fieldLabels_[22]->SetLabel("Fingerprint: " + proxy->fingerprint);
-        fieldLabels_[23]->SetLabel("DisplayLog: " + proxy->displaylog);
-        fieldLabels_[24]->SetLabel("PublicKey: " + proxy->publickey);
-        fieldLabels_[25]->SetLabel("ShortId: " + proxy->shortid);
-        fieldLabels_[26]->SetLabel("SpiderX: " + proxy->spiderx);
-        fieldLabels_[27]->SetLabel("Mldsa65Verify: " + proxy->mldsa65verify);
-        fieldLabels_[28]->SetLabel("Extra: " + proxy->extra);
-        fieldLabels_[29]->SetLabel("MuxEnabled: " + proxy->muxenabled);
-        fieldLabels_[30]->SetLabel("Cert: " + proxy->cert);
-        fieldLabels_[31]->SetLabel("CertSha: " + proxy->certsha);
-        fieldLabels_[32]->SetLabel("EchConfigList: " + proxy->echconfiglist);
+        fieldLabels_[0]->SetValue("ConfigType: " + proxy->configtype);
+        fieldLabels_[1]->SetValue("ConfigVersion: " + proxy->configversion);
+        fieldLabels_[2]->SetValue("Address: " + proxy->address);
+        fieldLabels_[3]->SetValue("Port: " + proxy->port);
+        fieldLabels_[4]->SetValue("Ports: " + proxy->ports);
+        fieldLabels_[5]->SetValue("Id: " + proxy->id);
+        fieldLabels_[6]->SetValue("AlterId: " + proxy->alterid);
+        fieldLabels_[7]->SetValue("Security: " + proxy->security);
+        fieldLabels_[8]->SetValue("Network: " + proxy->network);
+        fieldLabels_[9]->SetValue("Remarks: " + proxy->remarks);
+        fieldLabels_[10]->SetValue("HeaderType: " + proxy->headertype);
+        fieldLabels_[11]->SetValue("RequestHost: " + proxy->requesthost);
+        fieldLabels_[12]->SetValue("Path: " + proxy->path);
+        fieldLabels_[13]->SetValue("StreamSecurity: " + proxy->streamsecurity);
+        fieldLabels_[14]->SetValue("AllowInsecure: " + proxy->allowinsecure);
+        fieldLabels_[15]->SetValue("Subid: " + proxy->subid);
+        fieldLabels_[16]->SetValue("IsSub: " + proxy->issub);
+        fieldLabels_[17]->SetValue("Flow: " + proxy->flow);
+        fieldLabels_[18]->SetValue("Sni: " + proxy->sni);
+        fieldLabels_[19]->SetValue("Alpn: " + proxy->alpn);
+        fieldLabels_[20]->SetValue("CoreType: " + proxy->coretype);
+        fieldLabels_[21]->SetValue("PreSocksPort: " + proxy->presocksport);
+        fieldLabels_[22]->SetValue("Fingerprint: " + proxy->fingerprint);
+        fieldLabels_[23]->SetValue("DisplayLog: " + proxy->displaylog);
+        fieldLabels_[24]->SetValue("PublicKey: " + proxy->publickey);
+        fieldLabels_[25]->SetValue("ShortId: " + proxy->shortid);
+        fieldLabels_[26]->SetValue("SpiderX: " + proxy->spiderx);
+        fieldLabels_[27]->SetValue("Mldsa65Verify: " + proxy->mldsa65verify);
+        fieldLabels_[28]->SetValue("Extra: " + proxy->extra);
+        fieldLabels_[29]->SetValue("MuxEnabled: " + proxy->muxenabled);
+        fieldLabels_[30]->SetValue("Cert: " + proxy->cert);
+        fieldLabels_[31]->SetValue("CertSha: " + proxy->certsha);
+        fieldLabels_[32]->SetValue("EchConfigList: " + proxy->echconfiglist);
     } else {
         // Reset all to "-"
         for (int i = 0; i < 33; ++i) {
-            fieldLabels_[i]->SetLabel(std::string(allFields_[i]) + ": -");
+            fieldLabels_[i]->SetValue(std::string(allFields_[i]) + ": -");
         }
     }
     

@@ -41,7 +41,10 @@ unsigned int SubscriptionListModel::GetCount() const {
 
 // -------------------------------------------------------------------
 wxString SubscriptionListModel::GetColumnType(unsigned int col) const {
-    (void)col;
+    // Toggle column requires "bool" type for proper editing
+    if (col == SUB_COL_ENABLED) {
+        return wxT("bool");
+    }
     return wxT("string");
 }
 
@@ -102,6 +105,11 @@ void SubscriptionListModel::GetValueByRow(wxVariant& variant, unsigned int row, 
 bool SubscriptionListModel::SetValueByRow(const wxVariant& variant, unsigned int row, unsigned int col) {
     if (!subscriptions_ || row >= subscriptions_->size())
         return false;
+    if (col == SUB_COL_ENABLED) {
+        // Handle enabled toggle - update the subscription's enabled field
+        (*subscriptions_)[row].enabled = variant.GetBool() ? "1" : "0";
+        return true;
+    }
     if (col == SUB_COL_NAME) {
         (*subscriptions_)[row].remarks = variant.GetString().ToStdString();
         return true;

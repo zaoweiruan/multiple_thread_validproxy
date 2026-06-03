@@ -64,53 +64,59 @@ ProxyListPanel::ProxyListPanel(wxWindow* parent, AppController* controller,
 ProxyListPanel::~ProxyListPanel() = default;
 
 // -------------------------------------------------------------------
-// Load both proxy list and test results from DB.
-// Updates the virtual model's data pointers and resets the view.
+// UI update helper — sets member data, resets model, selects first row.
+// Called by both loadProxies overloads.
 // -------------------------------------------------------------------
-void ProxyListPanel::loadProxies(const std::string& subId) {
-    // Always refresh proxy data from the controller (DB).
-    // The subIdChanged guard previously kept stale data in proxies_ when the same
-    // subscription was reloaded after an update/dedup/DB-switch, causing an empty
-    // display even though the DB contained fresh rows.
+void ProxyListPanel::updateProxyList(const std::vector<db::models::Profileitem>& proxies,
+                                      const std::vector<db::models::ProfileExItem>& exItems,
+                                      const std::string& subId) {
     currentSubId_ = subId;
-    allProxies_ = controller_->loadProxies(subId);
-    Logger::write("[DIAG] ProxyListPanel::loadProxies(subId=" + subId + "): allProxies_="
+    allProxies_ = proxies;
+
+    Logger::write("[DIAG] ProxyListPanel::updateProxyList(subId=" + subId + "): allProxies_="
                   + std::to_string(allProxies_.size()), LogLevel::TRACE);
 
-    // Reset sort state and copy fresh data unconditionally
     sortState_.column = -1;
     sortState_.direction = SortDirection::None;
-    proxies_ = allProxies_;
-    Logger::write("[DIAG] ProxyListPanel::loadProxies: proxies_=" + std::to_string(proxies_.size())
+    proxies_ = proxies;
+    exItems_ = exItems;
+
+    Logger::write("[DIAG] ProxyListPanel::updateProxyList: proxies_=" + std::to_string(proxies_.size())
                   + " exItems_=" + std::to_string(exItems_.size()), LogLevel::TRACE);
 
-    exItems_ = controller_->loadProxyResults();
-    Logger::write("[DIAG] ProxyListPanel::loadProxies: after exItems_ reload → exItems_="
-                  + std::to_string(exItems_.size()), LogLevel::TRACE);
-
-    // Point the model at our data and reset the view
     model_->setData(&proxies_, &exItems_);
-    // Workaround: some wxWidgets versions' wxDataViewIndexListModel::Reset(N)
-    // does NOT properly clear the internal m_list; old entries (with larger IDs)
-    // persist and cause getDataIndex(row) to return stale indices >= proxies_->size().
-    // Double-Reset (0 then N) forces a full internal rebuild in all versions.
-    Logger::write("[DIAG] ProxyListPanel::loadProxies: calling model_->Reset("
+    Logger::write("[DIAG] ProxyListPanel::updateProxyList: calling model_->Reset("
                   + std::to_string(proxies_.size()) + ")", LogLevel::TRACE);
     model_->Reset(0);
     model_->Reset(static_cast<unsigned int>(proxies_.size()));
     model_->detectIdOffset();
-    Logger::write("[DIAG] ProxyListPanel::loadProxies: model_->GetCount()="
+    Logger::write("[DIAG] ProxyListPanel::updateProxyList: model_->GetCount()="
                   + std::to_string(model_->GetCount()), LogLevel::TRACE);
 
-    // When no row is selected (startup, subscription switch), select the first
-    // proxy and queue a ProxySelectionEvent directly.  On wxMSW, Select() during
-    // initialisation may not fire a selection-changed notification, so we also
-    // fire the event directly to guarantee the ProxyDetailPanel gets populated.
     if (!proxies_.empty()) {
         if (!listCtrl_->GetSelection().IsOk()) {
             selectFirstProxy();
         }
     }
+}
+
+// -------------------------------------------------------------------
+// Load both proxy list and test results from DB.
+// Updates the virtual model's data pointers and resets the view.
+// -------------------------------------------------------------------
+void ProxyListPanel::loadProxies(const std::string& subId) {
+    std::vector<db::models::Profileitem> proxies = controller_->loadProxies(subId);
+    std::vector<db::models::ProfileExItem> exItems = controller_->loadProxyResults();
+    updateProxyList(proxies, exItems, subId);
+}
+
+// -------------------------------------------------------------------
+// Accept pre-fetched proxy data directly (no DB read).
+// -------------------------------------------------------------------
+void ProxyListPanel::loadProxies(std::vector<db::models::Profileitem> proxies,
+                                  std::vector<db::models::ProfileExItem> exItems,
+                                  const std::string& subId) {
+    updateProxyList(proxies, exItems, subId);
 }
 
 // -------------------------------------------------------------------

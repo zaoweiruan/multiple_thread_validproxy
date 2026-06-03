@@ -67,12 +67,11 @@ SubscriptionPanel::SubscriptionPanel(wxWindow* parent, AppController* controller
     listCtrl_->Bind(wxEVT_DATAVIEW_ITEM_VALUE_CHANGED, [this](wxDataViewEvent& event) {
         int row = wxPtrToUInt(event.GetItem().GetID()) - 1;
         if (row >= 0 && row < (int)subs_.size()) {
-            wxVariant val;
-            event.GetModel()->GetValue(val, event.GetItem(), 1);
-            bool enabled = val.GetBool();
-            subs_[row].enabled = enabled ? "1" : "0";
-            // Persist to database
+            // Model already updated by SetValueByRow, just persist to database
             if (controller_) {
+                wxVariant val;
+                event.GetModel()->GetValue(val, event.GetItem(), 1);
+                bool enabled = val.GetBool();
                 controller_->updateSubscriptionEnabled(subs_[row].id, enabled);
             }
         }
@@ -272,6 +271,7 @@ void SubscriptionPanel::onColumnHeaderClick(wxDataViewEvent& event) {
             }
             model_->Reset(0);
             model_->Reset(static_cast<unsigned int>(subs_.size()));
+            model_->detectIdOffset();  // Required to restore correct ID mapping after Reset
         }
     }
     event.Skip();

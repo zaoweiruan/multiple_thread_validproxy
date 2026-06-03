@@ -215,8 +215,8 @@ int ProxyListModel::Compare(const wxDataViewItem& item1,
     int cmp = 0;
     switch (col) {
         case COL_ROWNUM:
-            // Natural order by indexId (stable original order)
-            cmp = a.indexid.compare(b.indexid);
+            // Sort by row number (1, 2, 3...) numerically
+            cmp = static_cast<int>(idx1 - idx2);
             break;
         case COL_TYPE:
             cmp = a.configtype.compare(b.configtype);

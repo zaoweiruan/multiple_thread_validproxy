@@ -31,6 +31,9 @@ public:
     ~ProxyListPanel() override;
 
     void loadProxies(const std::string& subId = "");
+    void loadProxies(std::vector<db::models::Profileitem> proxies,
+                     std::vector<db::models::ProfileExItem> exItems,
+                     const std::string& subId);
     void refreshResults();
     void selectProxyByIndexId(const std::string& indexId);
     void filterBySearch(const wxString& query);
@@ -46,6 +49,9 @@ private:
     void onSelectionChanged(wxDataViewEvent& event);
 
     void selectFirstProxy();
+    void updateProxyList(const std::vector<db::models::Profileitem>& proxies,
+                         const std::vector<db::models::ProfileExItem>& exItems,
+                         const std::string& subId);
 
     AppController* controller_;
     sqlite3* db_;

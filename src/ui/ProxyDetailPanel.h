@@ -7,6 +7,7 @@
 #include <wx/sizer.h>
 #include <wx/scrolwin.h>
 #include <wx/statbox.h>
+#include <wx/textctrl.h>
 
 #include <string>
 #include <array>
@@ -24,8 +25,8 @@ public:
                       const db::models::Profileitem* proxy = nullptr);
 
 private:
-    // Store labels for all ProfileItem fields (33 fields)
-    wxStaticText* fieldLabels_[33];
+    // Store labels for all ProfileItem fields (33 fields) - using wxTextCtrl for select/copy
+    std::array<wxTextCtrl*, 33> fieldLabels_;
     
     // Field names for labels
     const std::array<const char*, 33> allFields_ = {
