@@ -245,6 +245,10 @@ bool SubitemUpdaterV2::run() {
                     successCount++;
                     directSuccessCount++;
                     Logger::write("INFO: Updated successfully: " + sub.id, LogLevel::INFO);
+                    // Only update UpdateTime on successful update
+                    std::string newTime = getCurrentTimestamp();
+                    std::string updateSql = "UPDATE SubItem SET UpdateTime = '" + newTime + "' WHERE Id = '" + sub.id + "'";
+                    execSql(updateSql, "[SubitemUpdaterV2] SQL exec failed");
                 } else {
                     directFailCount++;
                     failedSubs.push_back({sub.id, sub.remarks, sub.url});
@@ -256,9 +260,6 @@ bool SubitemUpdaterV2::run() {
                 failedSubs.push_back({sub.id, sub.remarks, sub.url});
                 Logger::write("ERROR: Failed to update: " + sub.id, LogLevel::ERR);
             }
-            std::string newTime = getCurrentTimestamp();
-            std::string updateSql = "UPDATE SubItem SET UpdateTime = '" + newTime + "' WHERE Id = '" + sub.id + "'";
-            execSql(updateSql, "[SubitemUpdaterV2] SQL exec failed");
         }
     } else if (runProxyPhase) {
         for (const auto& sub : enabledSubs) {
@@ -286,7 +287,7 @@ bool SubitemUpdaterV2::run() {
             const auto& sub = failedSubs[i];
             Logger::write("[" + std::to_string(i + 1) + "/" + std::to_string(failedSubs.size()) + "] Trying via proxy: " + std::get<2>(sub), LogLevel::REPORT);
             
-            std::string content = fetchUrlViaProxy(std::get<2>(sub), proxySocksPort);
+std::string content = fetchUrlViaProxy(std::get<2>(sub), proxySocksPort);
             if (isCancelled()) {
                 Logger::write("INFO: Update cancelled after proxy fetch", LogLevel::REPORT);
                 break;
@@ -299,6 +300,10 @@ bool SubitemUpdaterV2::run() {
                     successCount++;
                     proxySuccessCount++;
                     Logger::write("INFO: Updated successfully: " + std::get<0>(sub), LogLevel::INFO);
+                    // Only update UpdateTime on successful update
+                    std::string newTime = getCurrentTimestamp();
+                    std::string updateSql = "UPDATE SubItem SET UpdateTime = '" + newTime + "' WHERE Id = '" + std::get<0>(sub) + "'";
+                    execSql(updateSql, "[SubitemUpdaterV2] SQL exec failed");
                 } else {
                     proxyFailCount++;
                     stillFailedSubs.push_back(sub);
@@ -310,9 +315,6 @@ bool SubitemUpdaterV2::run() {
                 stillFailedSubs.push_back(sub);
                 Logger::write("ERROR: Failed to update: " + std::get<0>(sub), LogLevel::ERR);
             }
-            std::string newTime = getCurrentTimestamp();
-            std::string updateSql = "UPDATE SubItem SET UpdateTime = '" + newTime + "' WHERE Id = '" + std::get<0>(sub) + "'";
-            execSql(updateSql, "[SubitemUpdaterV2] SQL exec failed");
         }
         failedSubs = stillFailedSubs;
     }
@@ -372,7 +374,8 @@ bool SubitemUpdaterV2::runSingle(const std::string& subId) {
     }
     bool result = updateWithStrategy(sub.url, sub.id, strategy);
 
-    {
+    // Only update UpdateTime on successful update
+    if (result) {
         std::string newTime = getCurrentTimestamp();
         std::string updateSql = "UPDATE SubItem SET UpdateTime = '" + newTime + "' WHERE Id = '" + sub.id + "'";
         execSql(updateSql, "[SubitemUpdaterV2] SQL exec failed");
@@ -416,7 +419,8 @@ bool SubitemUpdaterV2::runSingleWithProxy(const std::string& subId, int socksPor
 
     auto profiles = parseSubscription(content, sub.id);
     bool result = updateProfileItems(sub.id, profiles);
-    {
+    // Only update UpdateTime when we actually fetched and parsed content successfully
+    if (result) {
         std::string newTime = getCurrentTimestamp();
         std::string updateSql = "UPDATE SubItem SET UpdateTime = '" + newTime + "' WHERE Id = '" + sub.id + "'";
         execSql(updateSql, "[SubitemUpdaterV2] SQL exec failed");
@@ -458,6 +462,7 @@ bool SubitemUpdaterV2::updateWithStrategy(const std::string& subUrl, const std::
     bool tryDirect = (strategy != Strategy::ProxyFirst);
     bool tryProxy = (strategy != Strategy::DirectOnly);
 
+    // Try direct first (for direct_first mode)
     if (tryDirect) {
         Logger::write("INFO: Trying direct connection...", LogLevel::INFO);
         std::string content = fetchUrl(subUrl);
@@ -471,9 +476,15 @@ bool SubitemUpdaterV2::updateWithStrategy(const std::string& subUrl, const std::
         Logger::write("WARN: Direct connection failed", LogLevel::WARN);
     }
 
-    if (tryProxy && !tryDirect) {
+    // Fallback to proxy (for direct_first mode) or primary (for proxy_first mode)
+    if (tryProxy) {
         Logger::write("INFO: Trying proxy connection...", LogLevel::INFO);
-        auto [socksPort, apiPort] = getProxyPorts(subUrl);
+        int socksPort = -1;
+        // Get proxy port for this subscription URL
+        auto [socks, api] = getProxyPorts(subUrl);
+        socksPort = socks;
+        (void)api;  // unused
+
         if (socksPort > 0) {
             Logger::write("INFO: Using proxy at socks port: " + std::to_string(socksPort), LogLevel::INFO);
             std::string content = fetchUrlViaProxy(subUrl, socksPort);
@@ -484,6 +495,8 @@ bool SubitemUpdaterV2::updateWithStrategy(const std::string& subUrl, const std::
                     return updateProfileItems(subId, profiles);
                 }
             }
+        } else {
+            Logger::write("WARN: No proxy available", LogLevel::WARN);
         }
     }
 
@@ -497,7 +510,8 @@ std::string SubitemUpdaterV2::fetchUrl(const std::string& url) {
         curl.setUrl(url)
             .setWriteCallback(CurlEasyHandle::writeCallback, &response)
             .setFollowLocation()
-            .setTimeoutSec(30)
+            .setConnectTimeoutMs(config_.subscription_connect_timeout_ms)
+            .setTimeoutMs(config_.subscription_timeout_ms)
             .setSslVerifyPeer(false)
             .setSslVerifyHost(false);
 
@@ -520,7 +534,8 @@ std::string SubitemUpdaterV2::fetchUrlViaProxy(const std::string& url, int socks
             .setUrl(url)
             .setWriteCallback(CurlEasyHandle::writeCallback, &response)
             .setFollowLocation()
-            .setTimeoutSec(30)
+            .setConnectTimeoutMs(config_.subscription_connect_timeout_ms)
+            .setTimeoutMs(config_.subscription_timeout_ms)
             .setSslVerifyPeer(false)
             .setSslVerifyHost(false);
 
@@ -622,9 +637,17 @@ std::vector<db::models::Profileitem> SubitemUpdaterV2::parseSubscription(const s
                     profile.alterid = "0";
                 }
                 
-                profile.security = getJsonValueString(obj, "scy", "auto");
-                profile.network = getJsonValueString(obj, "net", "tcp");
-                profile.remarks = getJsonValueString(obj, "ps", "");
+profile.security = getJsonValueString(obj, "scy", "auto");
+                 profile.network = getJsonValueString(obj, "net", "tcp");
+                 // Map splithttp to xhttp and validate network value
+                 if (profile.network == "splithttp") {
+                     profile.network = "xhttp";
+                 }
+                 if (profile.network != "tcp" && profile.network != "ws" && profile.network != "h2" &&
+                     profile.network != "xhttp" && profile.network != "grpc") {
+                     profile.network = "tcp";
+                 }
+                 profile.remarks = getJsonValueString(obj, "ps", "");
                 profile.path = getJsonValueString(obj, "path", "");
                 profile.requesthost = getJsonValueString(obj, "host", "");
                 profile.streamsecurity = getJsonValueString(obj, "tls", "");
@@ -726,13 +749,22 @@ parseSuccess = true;
                     else if (key == "headerType") profile.headertype = val;
                     else if (key == "allowInsecure") profile.allowinsecure = (val == "1" || val == "true") ? "true" : "false";
                     else if (key == "alpn") profile.alpn = val;
-                    else if (key == "e" || key == "ech") profile.echconfiglist = val;
-                }
-                
-                if (hashPos != std::string::npos) {
-                    profile.remarks = urlDecode(params.substr(hashPos + 1));
-                }
-            }
+else if (key == "e" || key == "ech") profile.echconfiglist = val;
+                 }
+                 
+                 // Validate and map network value for vless
+                 if (profile.network == "splithttp") {
+                     profile.network = "xhttp";
+                 }
+                 if (profile.network != "tcp" && profile.network != "ws" && profile.network != "h2" &&
+                     profile.network != "xhttp" && profile.network != "grpc") {
+                     profile.network = "tcp";
+                 }
+                 
+                 if (hashPos != std::string::npos) {
+                     profile.remarks = urlDecode(params.substr(hashPos + 1));
+                 }
+             }
         } else if (line.find("ss://") == 0) {
             std::string uri = line.substr(5);
             size_t hashPos = uri.find('#');
@@ -901,9 +933,18 @@ auto [addr, port] = parseAddressPort(addrPart);
                     else if (key == "security") profile.streamsecurity = val;
                     else if (key == "path") profile.path = val;
                     else if (key == "host") profile.requesthost = val;
-                    else if (key == "type") profile.network = val;
-                    else if (key == "network") profile.network = val;
-                }
+else if (key == "type") profile.network = val;
+                     else if (key == "network") profile.network = val;
+                 }
+                 
+                 // Validate and map network value
+                 if (profile.network == "splithttp") {
+                     profile.network = "xhttp";
+                 }
+                 if (profile.network != "tcp" && profile.network != "ws" && profile.network != "h2" &&
+                     profile.network != "xhttp" && profile.network != "grpc") {
+                     profile.network = "tcp";
+                 }
                 
                 if (hashPos != std::string::npos) {
                     profile.remarks = urlDecode(params.substr(hashPos + 1));
@@ -1550,6 +1591,35 @@ int SubitemUpdaterV2::deduplicateMergedPhase() {
     return deleted;
 }
 
+int SubitemUpdaterV2::deduplicateBlacklistPhase() {
+    if (!config_.blacklist_enabled) {
+        Logger::write("INFO: Blacklist phase skipped - blacklist_enabled=false", LogLevel::INFO);
+        return 0;
+    }
+    
+    if (config_.blacklist_subid.empty()) {
+        Logger::write("INFO: Blacklist phase skipped - blacklist_subid not configured", LogLevel::INFO);
+        return 0;
+    }
+    
+    int threshold = config_.blacklist_threshold;
+    
+    std::string sql = "UPDATE ProfileItem SET SubId = '" + config_.blacklist_subid + "' "
+                      "WHERE IndexId IN (SELECT IndexId FROM ProfileExItem "
+                      "WHERE consecutive_failures >= " + std::to_string(threshold) + ")";
+    
+    char* errMsg = nullptr;
+    if (sqlite3_exec(db_, sql.c_str(), nullptr, nullptr, &errMsg) != SQLITE_OK) {
+        Logger::write("ERROR: Blacklist phase failed - " + std::string(errMsg), LogLevel::ERR);
+        sqlite3_free(errMsg);
+        return 0;
+    }
+    
+    int updated = sqlite3_changes(db_);
+    Logger::write("INFO: Blacklist phase moved " + std::to_string(updated) + " proxies to blacklist subid: " + config_.blacklist_subid, LogLevel::INFO);
+    return updated;
+}
+
 void SubitemUpdaterV2::cleanupProfileExItem() {
     std::string sql = "DELETE FROM ProfileExItem WHERE IndexId NOT IN (SELECT IndexId FROM ProfileItem)";
     
@@ -1946,17 +2016,21 @@ bool SubitemUpdaterV2::deduplicate() {
         return false;
     }
     
-    Logger::write("Phase 1/3 - Marking working proxies with protected subid", LogLevel::REPORT);
+    Logger::write("Phase 1/4 - Marking working proxies with protected subid", LogLevel::REPORT);
     int p0 = deduplicatePhase0();
     Logger::write("Phase 1 completed: " + std::to_string(p0) + " proxies marked", LogLevel::REPORT);
     
-    Logger::write("Phase 2/3 - Removing invalid addresses (private IPs)", LogLevel::REPORT);
-    int p1 = deduplicatePhase1();
-    Logger::write("Phase 2 completed: removed " + std::to_string(p1) + " proxies", LogLevel::REPORT);
+    Logger::write("Phase 2/4 - Moving blacklisted proxies to blacklist subid", LogLevel::REPORT);
+    int pBlacklist = deduplicateBlacklistPhase();
+    Logger::write("Phase 2 completed: moved " + std::to_string(pBlacklist) + " proxies to blacklist", LogLevel::REPORT);
     
-    Logger::write("Phase 3/3 - Removing duplicates (merged CTE)", LogLevel::REPORT);
+    Logger::write("Phase 3/4 - Removing invalid addresses (private IPs)", LogLevel::REPORT);
+    int p1 = deduplicatePhase1();
+    Logger::write("Phase 3 completed: removed " + std::to_string(p1) + " proxies", LogLevel::REPORT);
+    
+    Logger::write("Phase 4/4 - Removing duplicates (merged CTE)", LogLevel::REPORT);
     int pMerged = deduplicateMergedPhase();
-    Logger::write("Phase 3 completed: removed " + std::to_string(pMerged) + " proxies", LogLevel::REPORT);
+    Logger::write("Phase 4 completed: removed " + std::to_string(pMerged) + " proxies", LogLevel::REPORT);
     
     Logger::write("Cleaning up ProfileExItem...", LogLevel::REPORT);
     cleanupProfileExItem();

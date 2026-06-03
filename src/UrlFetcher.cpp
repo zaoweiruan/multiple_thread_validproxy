@@ -11,6 +11,7 @@ std::string UrlFetcher::fetch(const std::string& url) {
         curl.setUrl(url)
             .setWriteCallback(CurlEasyHandle::writeCallback, &result)
             .setFollowLocation(true)
+            .setConnectTimeoutMs(10000)  // 10秒连接超时
             .setTimeoutMs(10000)
             .setSslVerifyPeer(false)
             .setSslVerifyHost(false)
@@ -37,6 +38,7 @@ std::string UrlFetcher::fetchViaProxy(const std::string& url, int socksPort) {
             .setUrl(url)
             .setWriteCallback(CurlEasyHandle::writeCallback, &result)
             .setFollowLocation(true)
+            .setConnectTimeoutMs(10000)  // 10秒连接超时
             .setTimeoutMs(10000)
             .setSslVerifyPeer(false)
             .setSslVerifyHost(false)

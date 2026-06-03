@@ -68,10 +68,16 @@ ConfigDialog::ConfigDialog(wxWindow* parent, const config::AppConfig& cfg)
     propGrid_->Append(new wxEnumProperty(L"优先级模式", "priority_mode", modeChoices));
     propGrid_->Append(new wxBoolProperty(L"检查自动更新", "check_auto_update_interval",
                                          cfg.check_auto_update_interval));
+    propGrid_->Append(new wxIntProperty(L"连接超时(毫秒)", "subscription_connect_timeout_ms",
+                                       cfg.subscription_connect_timeout_ms));
+    propGrid_->Append(new wxIntProperty(L"请求超时(毫秒)", "subscription_timeout_ms",
+                                       cfg.subscription_timeout_ms));
 
     // --- 去重 配置 ---
     propGrid_->Append(new wxPropertyCategory(L"去重"));
     propGrid_->Append(new wxBoolProperty(L"更新后去重", "dedup_after_update", cfg.dedup_after_update));
+    propGrid_->Append(new wxBoolProperty(L"启用黑名单", "blacklist_enabled", cfg.blacklist_enabled));
+    propGrid_->Append(new wxStringProperty(L"黑名单订阅ID", "blacklist_subid", cfg.blacklist_subid));
     propGrid_->Append(new wxIntProperty(L"黑名单阈值", "blacklist_threshold",
                                        cfg.blacklist_threshold));
     // dedup_subids: 逗号分隔的订阅ID列表
@@ -116,6 +122,7 @@ ConfigDialog::ConfigDialog(wxWindow* parent, const config::AppConfig& cfg)
     topSizer->SetSizeHints(this);
     SetMinSize(wxSize(1000, 600));
     SetSize(wxSize(1000, 600));
+    CentreOnScreen();  // Center dialog on screen
 
     loadConfig(cfg);
 }
@@ -123,6 +130,10 @@ ConfigDialog::ConfigDialog(wxWindow* parent, const config::AppConfig& cfg)
 // -------------------------------------------------------------------
 void ConfigDialog::loadConfig(const config::AppConfig& cfg) {
     editedConfig_ = cfg;
+    // Set the property grid values to match the config (needed for wxEnumProperty)
+    propGrid_->SetPropertyValue("log_console_level", wxString(cfg.log_console_level));
+    propGrid_->SetPropertyValue("log_file_level", wxString(cfg.log_file_level));
+    propGrid_->SetPropertyValue("priority_mode", wxString(cfg.priority_mode));
 }
 
 bool ConfigDialog::saveConfig() {
@@ -150,10 +161,14 @@ bool ConfigDialog::saveConfig() {
     // Subscription fields
     editedConfig_.priority_mode = propGrid_->GetPropertyValueAsString("priority_mode").ToStdString();
     editedConfig_.check_auto_update_interval = propGrid_->GetPropertyValueAsBool("check_auto_update_interval");
+    editedConfig_.subscription_connect_timeout_ms = propGrid_->GetPropertyValueAsInt("subscription_connect_timeout_ms");
+    editedConfig_.subscription_timeout_ms = propGrid_->GetPropertyValueAsInt("subscription_timeout_ms");
 
     // Dedup fields - dedup_enabled is always true now (removed from UI)
     editedConfig_.dedup_enabled = true;
     editedConfig_.dedup_after_update = propGrid_->GetPropertyValueAsBool("dedup_after_update");
+    editedConfig_.blacklist_enabled = propGrid_->GetPropertyValueAsBool("blacklist_enabled");
+    editedConfig_.blacklist_subid = propGrid_->GetPropertyValueAsString("blacklist_subid").ToStdString();
     editedConfig_.blacklist_threshold = propGrid_->GetPropertyValueAsInt("blacklist_threshold");
     // Parse comma-separated dedup_subids
     {
@@ -200,6 +215,14 @@ bool ConfigDialog::validateConfig() {
     }
     if (editedConfig_.test_timeout_ms < 1000 || editedConfig_.test_timeout_ms > 120000) {
         wxMessageBox("Timeout must be between 1000 and 120000 ms", "Validation Error", wxOK | wxICON_ERROR);
+        return false;
+    }
+    if (editedConfig_.subscription_connect_timeout_ms < 1000 || editedConfig_.subscription_connect_timeout_ms > 120000) {
+        wxMessageBox("Subscription connect timeout must be between 1000 and 120000 ms", "Validation Error", wxOK | wxICON_ERROR);
+        return false;
+    }
+    if (editedConfig_.subscription_timeout_ms < 1000 || editedConfig_.subscription_timeout_ms > 120000) {
+        wxMessageBox("Subscription timeout must be between 1000 and 120000 ms", "Validation Error", wxOK | wxICON_ERROR);
         return false;
     }
     return true;

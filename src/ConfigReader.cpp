@@ -155,9 +155,23 @@ std::optional<AppConfig> ConfigReader::load(const std::string& configPath) {
         } else {
             config.check_auto_update_interval = false;
         }
+        if (sub.contains("connect_timeout_ms") && sub["connect_timeout_ms"].is_int64()) {
+            config.subscription_connect_timeout_ms = static_cast<int>(sub["connect_timeout_ms"].as_int64());
+            if (config.subscription_connect_timeout_ms <= 0) config.subscription_connect_timeout_ms = 10000;
+        } else {
+            config.subscription_connect_timeout_ms = 10000;
+        }
+        if (sub.contains("timeout_ms") && sub["timeout_ms"].is_int64()) {
+            config.subscription_timeout_ms = static_cast<int>(sub["timeout_ms"].as_int64());
+            if (config.subscription_timeout_ms <= 0) config.subscription_timeout_ms = 30000;
+        } else {
+            config.subscription_timeout_ms = 30000;
+        }
     } else {
         config.priority_mode = "direct_first";
         config.check_auto_update_interval = false;
+        config.subscription_connect_timeout_ms = 10000;
+        config.subscription_timeout_ms = 30000;
     }
     
     if (obj.contains("dedup") && obj["dedup"].is_object()) {
@@ -178,6 +192,14 @@ std::optional<AppConfig> ConfigReader::load(const std::string& configPath) {
         } else {
             config.blacklist_threshold = 5;
         }
+        if (dedup.contains("blacklist_enabled") && dedup["blacklist_enabled"].is_bool()) {
+            config.blacklist_enabled = dedup["blacklist_enabled"].as_bool();
+        } else {
+            config.blacklist_enabled = true;
+        }
+        if (dedup.contains("blacklist_subid") && dedup["blacklist_subid"].is_string()) {
+            config.blacklist_subid = dedup["blacklist_subid"].as_string().c_str();
+        }
         if (dedup.contains("subids") && dedup["subids"].is_array()) {
             for (const auto& sid : dedup["subids"].as_array()) {
                 if (sid.is_string()) {
@@ -189,6 +211,8 @@ std::optional<AppConfig> ConfigReader::load(const std::string& configPath) {
         config.dedup_enabled = true;
         config.dedup_after_update = false;
         config.blacklist_threshold = 5;
+        config.blacklist_enabled = true;
+        config.blacklist_subid = "";
     }
     
     if (obj.contains("notification") && obj["notification"].is_object()) {
@@ -314,6 +338,8 @@ bool ConfigReader::save(const std::string& configPath, const AppConfig& config) 
     boost::json::object subObj;
     subObj["priority_mode"] = config.priority_mode;
     subObj["check_auto_update_interval"] = config.check_auto_update_interval;
+    subObj["connect_timeout_ms"] = config.subscription_connect_timeout_ms;
+    subObj["timeout_ms"] = config.subscription_timeout_ms;
     root["subscription"] = subObj;
 
     // dedup
@@ -321,6 +347,8 @@ bool ConfigReader::save(const std::string& configPath, const AppConfig& config) 
     dedupObj["enabled"] = config.dedup_enabled;
     dedupObj["dedup_after_update"] = config.dedup_after_update;
     dedupObj["blacklist_threshold"] = config.blacklist_threshold;
+    dedupObj["blacklist_enabled"] = config.blacklist_enabled;
+    dedupObj["blacklist_subid"] = config.blacklist_subid;
     boost::json::array subidsArr;
     for (const auto& sid : config.dedup_subids) {
         subidsArr.emplace_back(sid);

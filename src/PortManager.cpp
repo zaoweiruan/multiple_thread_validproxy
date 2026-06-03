@@ -47,3 +47,8 @@ std::vector<int> PortManager::allocateRange(int startPort, int count) {
     }
     return ports;
 }
+
+// Clear all tracked ports - call when stopping all Xray instances
+void PortManager::clearPorts() {
+    usedPorts_.clear();
+}

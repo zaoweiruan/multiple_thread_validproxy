@@ -125,9 +125,49 @@ ctest -R DedupTest -V
 
 ---
 
-## 当前状态 (2026-06-01)
+## 统一文档命名规范
+
+依据 `docs/Unified-document-naming-conventions.md`，所有文档必须遵循以下规范：
+
+### 文档类型简称表
+
+| 文档类型 | 英文简称 | 说明 |
+|----------|----------|------|
+| 产品需求文档 | PRD | 用户/业务视角，含用户故事、场景、优先级、验收标准 |
+| 软件需求规格 | SRS / SRD | 工程视角细化需求，覆盖功能/非功能/约束/接口 |
+| 技术方案/技术规格 | Spec | 详细技术实现方案，含设计思路、数据结构、接口、边界与风险 |
+| 系统/服务设计文档 | SDD / Design | 系统结构、组件划分、数据流、依赖关系 |
+| 架构文档 | SAD / Architecture | 高层架构蓝图，分层/子系统/技术选型/容量规划 |
+| 架构决策记录 | ADR | 单条架构决策，说明背景、候选方案、取舍及影响 |
+| 接口文档 | API Doc | 对外 API 定义：路径、方法、参数、响应、错误码 |
+| 测试计划 | Test Plan | 测试范围、策略、环境、里程碑 |
+| 测试用例/规格 | Test Spec / Test Case | 结构化测试用例：前置条件、步骤、输入、预期结果 |
+| 运维手册 | Runbook / Playbook | 日常运维和故障处理步骤 |
+| 部署说明 | Deployment Guide | 部署/升级/回滚流程、环境依赖、配置项 |
+| 发版说明 | Release Notes | 版本变更列表、新特性、兼容性变更、修复缺陷 |
+| 项目计划 | Project Plan | 项目目标、范围、里程碑、资源分配、风险 |
+| 路线图 | Roadmap | 时间轴展示产品/平台版本规划 |
+| 会议纪要 | Meeting Minutes | 会议结论、决策、行动项 |
+| 代码仓库入口 | README | 项目简介、目录结构、构建方式（固定文件名 README.md） |
+| 代码规范 | Coding Guidelines | 命名风格、格式、错误处理、日志、安全等编码约定 |
+
+### 文件命名格式
+
+```
+[YYYY-MM-DD]-[[DocType]-[Project]-[Module]-[Version].md
+```
+
+- **格式**: 日期-文档类型-项目-模块-版本.md
+- **示例**: `2026-06-02-PRD-Payments-Checkout-v1.2.md`
+- **所有文档必须使用 `.md` 扩展名** (Markdown)
+- 创建新文档时严格按照此格式命名
+
+---
+
+## 当前状态 (2026-06-02)
 
 - **全部 54 份计划文档** 已归集至 `docs/plans/`
+- **统一文档命名规范** 已纳入 AGENTS.md 核心规范
 - **近期 Bug 修复**: CMD 窗口闪烁 (XrayApi.cpp → CreateProcessA)、DIAG 日志级别调整 (INFO→TRACE)
 - **待执行草稿**: 列排序+查找+订阅联动 (`2026-05-19-ui-enhancements-sort-find-link.md`)
 - **全量跟踪**: `docs/plans/project-plans-tracker.md`

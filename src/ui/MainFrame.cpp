@@ -8,6 +8,7 @@
 #include "UIApp.h"
 #include "AppController.h"
 #include "Events.h"
+#include "Logger.h"
 #include "Profileitem.h"
 #include "ToolbarIcons.h"
 
@@ -142,8 +143,8 @@ MainFrame::MainFrame(const config::AppConfig& cfg, sqlite3* db)
             if (payload.StartsWith("Update completed:") ||
                 payload.StartsWith("All subscriptions updated") ||
                 payload.StartsWith("Update (all)")) {
-                if (subPanel_) {
-                    subPanel_->loadSubscriptions();
+                if (subPanel_ && controller_) {
+                    controller_->loadSubscriptionsAsync(this);
                 }
             }
             onStatusUpdate(evt);
@@ -173,11 +174,26 @@ initMenuBar();
 // Bind subscription selection to filter proxy list
       Bind(wxEVT_SUBSCRIPTION_SELECTED, [this](SubscriptionSelectedEvent& evt) {
           std::string subId = evt.getSubId();
-          if (proxyPanel_) {
-              proxyPanel_->loadProxies(subId);
+          if (proxyPanel_ && controller_) {
+              controller_->loadProxiesAsync(subId, this);
           }
-          setStatusText(0, "Loaded subscription: " + wxString(subId));
+          setStatusText(0, "Loading subscription: " + wxString(subId));
       });
+
+// ── Async proxy list loaded ───────────────────────────────────
+Bind(wxEVT_PROXY_LIST_LOADED, [this](ProxyListLoadedEvent& evt) {
+    if (proxyPanel_) {
+        proxyPanel_->loadProxies(evt.takeProxies(), evt.takeExItems(), evt.getSubId());
+    }
+    setStatusText(0, "Loaded subscription: " + wxString(evt.getSubId()));
+});
+
+// ── Async subscription list loaded ────────────────────────────
+Bind(wxEVT_SUB_LIST_LOADED, [this](SubListLoadedEvent& evt) {
+    if (subPanel_) {
+        subPanel_->loadSubscriptions(evt.takeSubs(), evt.takeProxyCounts());
+    }
+});
       
 // Bind proxy selection to update detail panel
        Bind(wxEVT_PROXY_SELECTION, [this](ProxySelectionEvent& evt) {
@@ -515,6 +531,12 @@ void MainFrame::onMenuGenerateConfig(wxCommandEvent&) {
 }
 
 void MainFrame::onMenuConfig(wxCommandEvent&) {
+    // Prevent config editing during active operations
+    if (controller_->isRunning()) {
+        wxMessageBox(L"请等待当前操作完成后再编辑配置", L"操作进行中", wxOK | wxICON_WARNING);
+        return;
+    }
+
     if (configDialog_) {
         delete configDialog_;
         configDialog_ = nullptr;
@@ -525,9 +547,14 @@ void MainFrame::onMenuConfig(wxCommandEvent&) {
         std::string oldDbPath = config_.database_path;
         controller_->saveConfig(cfg);
 
+        // Apply log level changes
+        Logger::setFileLevel(Logger::stringToLevel(cfg.log_file_level));
+        Logger::setConsoleLevel(Logger::stringToLevel(cfg.log_console_level));
+
         // If database path changed, switch to the new database at runtime
         if (cfg.database_path != oldDbPath && !cfg.database_path.empty()) {
             sqlite3* newDb = controller_->switchDatabase(cfg.database_path);
+
             if (newDb) {
                 db_ = newDb;
 

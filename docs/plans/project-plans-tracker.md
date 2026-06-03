@@ -82,6 +82,16 @@ origin: "Continuation of project memory consolidation task"
 |---|------|-------------|--------|
 | 1 | 14-002 | UI 图形界面实现 — 基于 wxWidgets (见下方 UI Implementation 详表) | 📝 draft |
 
+### Recently Completed Plans
+
+| # | Plan | Description | Status |
+|---|------|-------------|--------|
+| 17 | 2026-06-02 | Subscription panel right-click delete functionality | ✅ completed |
+| 18 | 2026-06-02 | Subscription panel column sorting (Name, Proxies, Update) | ✅ completed |
+| 19 | 2026-06-02 | ProxyListPanel Row# column sorts by IndexId instead of row number | ✅ completed |
+| 20 | 2026-06-02 | SubscriptionPanel missing detectIdOffset after sort clear | ✅ completed |
+| 21 | 2026-06-02 | PortManager clearPorts() for port leak fix | ✅ completed |
+
 ---
 
 ### `.kilo/plans/` 迁移条目

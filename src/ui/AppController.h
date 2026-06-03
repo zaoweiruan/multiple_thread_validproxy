@@ -24,9 +24,10 @@ public:
   AppController(sqlite3* db, const config::AppConfig& cfg);
   ~AppController();
 
-  // Config
-  config::AppConfig getConfig() const { return config_; }
-  bool saveConfig(const config::AppConfig& cfg);
+// Config
+   config::AppConfig getConfig() const { return config_; }
+   bool saveConfig(const config::AppConfig& cfg);
+   bool isRunning() const { return isRunning_.load(); }
 
   // Database switching (close old + open new)
   sqlite3* switchDatabase(const std::string& newPath);

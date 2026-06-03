@@ -22,10 +22,14 @@ struct AppConfig {
     std::string log_file_level;
     std::string priority_mode;
     bool check_auto_update_interval = false;
+    int subscription_connect_timeout_ms = 10000;  // Default: 10s connect timeout
+    int subscription_timeout_ms = 30000;          // Default: 30s total timeout
     bool dedup_enabled;
     bool dedup_after_update;
     std::vector<std::string> dedup_subids;
-    int blacklist_threshold;  // Number of consecutive failures before blacklisting
+    int blacklist_threshold;
+    bool blacklist_enabled = true;
+    std::string blacklist_subid;
     bool notification_enabled;
     bool notification_on_update;
     bool notification_on_test;
@@ -34,7 +38,7 @@ struct AppConfig {
     struct {
         std::string source_db;
         std::string target_db;
-        bool sync_skip_subids = false;  // When true, -S skips proxies whose Subid is in dedup_subids
+        bool sync_skip_subids = false;
     } sync;
 };
 
