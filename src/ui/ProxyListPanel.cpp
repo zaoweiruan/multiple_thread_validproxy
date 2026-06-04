@@ -201,16 +201,26 @@ void ProxyListPanel::onColumnHeaderClick(wxDataViewEvent& event) {
 // -------------------------------------------------------------------
 void ProxyListPanel::onContextMenu(wxDataViewEvent& event) {
     wxDataViewItem item = event.GetItem();
-    if (!item.IsOk()) return;
+    if (!item.IsOk()) {
+        event.Skip();
+        return;
+    }
 
     wxMenu menu;
     menu.Append(ID_CONTEXT_TEST_PROXY, "测试此代理");
     menu.Append(ID_CONTEXT_EXPORT_SHARE, "有效代理分享");
     PopupMenu(&menu);
+    event.Skip();
 }
 
 // -------------------------------------------------------------------
 void ProxyListPanel::onTestProxy(wxCommandEvent& event) {
+    // Prevent testing during active operations
+    if (controller_ && controller_->isRunning()) {
+        wxMessageBox(L"操作进行中，请等待完成后再试", L"操作进行中", wxOK | wxICON_WARNING);
+        return;
+    }
+
     wxDataViewItem item = listCtrl_->GetSelection();
     if (!item.IsOk()) return;
 
@@ -232,6 +242,12 @@ void ProxyListPanel::onTestProxy(wxCommandEvent& event) {
 
 // -------------------------------------------------------------------
 void ProxyListPanel::onExportShareLink(wxCommandEvent& event) {
+    // Prevent export during active operations
+    if (controller_ && controller_->isRunning()) {
+        wxMessageBox(L"操作进行中，请等待完成后再试", L"操作进行中", wxOK | wxICON_WARNING);
+        return;
+    }
+
     auto [ok, count, filename] = controller_->exportShareLinks();
     wxString msg;
     if (ok && count > 0) {

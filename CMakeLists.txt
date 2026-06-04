@@ -58,6 +58,13 @@ target_link_libraries(validproxy-cli PRIVATE
     D:/boost_1_88_0/lib/libboost_json-mgw14-mt-x64-1_88.a
 )
 
+# Force CLI output to bin (override global setting for tests)
+set_target_properties(validproxy-cli PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/bin
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/bin
+)
+
 # -- wxWidgets (GUI mode) --
 # Find wxWidgets as a CMake CONFIG package from vcpkg (dynamic variant, which has proper cmake config)
 # Pre-find NanoSVG dependency so wxWidgets config can find it
@@ -205,7 +212,12 @@ if(wxWidgets_FOUND)
     copy_wx_dlls(validproxy)
 
     # WIN32_EXECUTABLE creates GUI subsystem executable (no console window)
-    set_target_properties(validproxy PROPERTIES WIN32_EXECUTABLE TRUE)
+    set_target_properties(validproxy PROPERTIES
+        WIN32_EXECUTABLE TRUE
+        RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin
+        RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/bin
+        RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/bin
+    )
     target_compile_definitions(validproxy PRIVATE HAS_WXWIDGETS=1)
 else()
     message(STATUS "wxWidgets not found - GUI mode (-ui) will not be available")
@@ -219,6 +231,11 @@ add_subdirectory(E:/eclipse_workspace/googletest ${CMAKE_BINARY_DIR}/googletest)
 add_executable(test_curl_easy_handle tests/test_curl_easy_handle.cpp)
 target_include_directories(test_curl_easy_handle PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(test_curl_easy_handle PRIVATE CURL::libcurl)
+set_target_properties(test_curl_easy_handle PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+)
 add_test(NAME CurlEasyHandleTest COMMAND test_curl_easy_handle)
 
 add_executable(test_dedup tests/test_dedup.cpp)
@@ -227,6 +244,11 @@ target_link_libraries(test_dedup PRIVATE
     gtest_main
     gtest
     E:/vcpkg/installed/x64-mingw-static/lib/libsqlite3.a
+)
+set_target_properties(test_dedup PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
 )
 add_test(NAME DedupTest COMMAND test_dedup)
 
@@ -245,12 +267,22 @@ add_test(NAME DedupTest COMMAND test_dedup)
 add_executable(test_logger tests/test_logger.cpp src/Logger.cpp)
 target_include_directories(test_logger PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(test_logger PRIVATE gtest_main gtest)
+set_target_properties(test_logger PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+)
 add_test(NAME LoggerTest COMMAND test_logger)
 
 # -- ShareLink unit tests (pure functions, no external deps beyond gtest) --
 add_executable(test_sharelink tests/test_sharelink.cpp src/ShareLink.cpp)
 target_include_directories(test_sharelink PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(test_sharelink PRIVATE gtest_main gtest)
+set_target_properties(test_sharelink PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+)
 add_test(NAME ShareLinkTest COMMAND test_sharelink)
 
 # -- ConfigReader unit tests - skip due to Windows API dependency
@@ -266,6 +298,11 @@ target_link_libraries(test_config_generator PRIVATE gtest_main gtest
     E:/vcpkg/installed/x64-mingw-static/lib/libsqlite3.a
     D:/boost_1_88_0/lib/libboost_json-mgw14-mt-x64-1_88.a
 )
+set_target_properties(test_config_generator PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+)
 add_test(NAME ConfigGeneratorTest COMMAND test_config_generator)
 
 # -- Delete Subscription tests --
@@ -273,6 +310,11 @@ add_executable(test_delete_subscription tests/test_delete_subscription.cpp src/L
 target_include_directories(test_delete_subscription PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(test_delete_subscription PRIVATE gtest_main gtest
     E:/vcpkg/installed/x64-mingw-static/lib/libsqlite3.a
+)
+set_target_properties(test_delete_subscription PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
 )
 add_test(NAME DeleteSubscriptionTest COMMAND test_delete_subscription)
 

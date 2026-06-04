@@ -53,7 +53,7 @@ SubscriptionPanel::SubscriptionPanel(wxWindow* parent, AppController* controller
     // Columns — Append[Toggle|Text]Column(label, model_column, mode, width, ...)
     listCtrl_->AppendTextColumn("#", 0, wxDATAVIEW_CELL_INERT, 30);
     listCtrl_->AppendToggleColumn("启用", 1, wxDATAVIEW_CELL_ACTIVATABLE, 30);
-    listCtrl_->AppendTextColumn("Name ↕", 2, wxDATAVIEW_CELL_EDITABLE, 200);
+    listCtrl_->AppendTextColumn("Name ↕", 2, wxDATAVIEW_CELL_INERT, 200);  // Changed to INERT to prevent editing
     listCtrl_->AppendTextColumn("Proxies ↕", 3, wxDATAVIEW_CELL_INERT, 70, wxALIGN_RIGHT);
     listCtrl_->AppendTextColumn("Update ↕", 4, wxDATAVIEW_CELL_INERT, 130);
 
@@ -176,6 +176,10 @@ void SubscriptionPanel::onRefreshSubscription(wxCommandEvent&) {
 }
 
 void SubscriptionPanel::onEditSubscription(wxCommandEvent&) {
+    if (controller_ && controller_->isRunning()) {
+        wxMessageBox(L"操作进行中，请等待完成后再试", L"操作进行中", wxOK | wxICON_WARNING);
+        return;
+    }
     std::string subId = getSelectedSubId();
     if (subId.empty()) return;
     for (const auto& sub : subs_) {
@@ -187,6 +191,10 @@ void SubscriptionPanel::onEditSubscription(wxCommandEvent&) {
 }
 
 void SubscriptionPanel::onDeleteSubscription(wxCommandEvent&) {
+    if (controller_ && controller_->isRunning()) {
+        wxMessageBox(L"操作进行中，请等待完成后再试", L"操作进行中", wxOK | wxICON_WARNING);
+        return;
+    }
     std::string subId = getSelectedSubId();
     if (subId.empty()) return;
     std::string remarks;
@@ -202,6 +210,10 @@ void SubscriptionPanel::onDeleteSubscription(wxCommandEvent&) {
 }
 
 void SubscriptionPanel::onUpdateSubscription(wxCommandEvent&) {
+    if (controller_ && controller_->isRunning()) {
+        wxMessageBox(L"操作进行中，请等待完成后再试", L"操作进行中", wxOK | wxICON_WARNING);
+        return;
+    }
     std::string subId = getSelectedSubId();
     if (!subId.empty()) {
         controller_->updateSubscriptionAsync(subId, GetParent());
@@ -209,6 +221,10 @@ void SubscriptionPanel::onUpdateSubscription(wxCommandEvent&) {
 }
 
 void SubscriptionPanel::onTestSubscription(wxCommandEvent&) {
+    if (controller_ && controller_->isRunning()) {
+        wxMessageBox(L"操作进行中，请等待完成后再试", L"操作进行中", wxOK | wxICON_WARNING);
+        return;
+    }
     std::string subId = getSelectedSubId();
     if (!subId.empty()) {
         if (GetParent()) {

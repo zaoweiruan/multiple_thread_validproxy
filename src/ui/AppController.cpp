@@ -352,7 +352,8 @@ bool AppController::isTestCancelled() const {
 // ---------------------------------------------------------------
 ProxyFinder::TestResult AppController::findFirstProxy() {
     std::string xrayPath = config_.xray_executable;
-    XrayManager* manager = XrayManager::getInstance(xrayPath, "", config_.xray_workers);
+    std::string configDir = utils::getExecutableDir() + "/config";
+    XrayManager* manager = XrayManager::getInstance(xrayPath, configDir, config_.xray_workers);
     ProxyFinder finder(db_, manager, xrayPath, config_.test_url, "", config_.test_timeout_ms);
     finder.findFirstWorkingProxy();
     return finder.getLastResult();
@@ -360,7 +361,8 @@ ProxyFinder::TestResult AppController::findFirstProxy() {
 
 ProxyFinder::TestResult AppController::findBestProxy() {
     std::string xrayPath = config_.xray_executable;
-    XrayManager* manager = XrayManager::getInstance(xrayPath, "", config_.xray_workers);
+    std::string configDir = utils::getExecutableDir() + "/config";
+    XrayManager* manager = XrayManager::getInstance(xrayPath, configDir, config_.xray_workers);
     ProxyFinder finder(db_, manager, xrayPath, config_.test_url, "", config_.test_timeout_ms);
     finder.findWorkingProxy();
     return finder.getLastResult();
@@ -680,7 +682,8 @@ void AppController::doFindFirstProxy(wxEvtHandler* wxHandler) {
             return;
         }
         std::string xrayPath = config_.xray_executable;
-        XrayManager* manager = XrayManager::getInstance(xrayPath, "", config_.xray_workers);
+        std::string configDir = utils::getExecutableDir() + "/config";
+        XrayManager* manager = XrayManager::getInstance(xrayPath, configDir, config_.xray_workers);
         if (!manager) {
             if (wxHandler) {
                 wxQueueEvent(wxHandler, new StatusUpdateEvent(0, "ERR:Failed to create XrayManager"));
@@ -744,7 +747,8 @@ void AppController::doFindBestProxy(wxEvtHandler* wxHandler) {
             return;
         }
         std::string xrayPath = config_.xray_executable;
-        XrayManager* manager = XrayManager::getInstance(xrayPath, "", config_.xray_workers);
+        std::string configDir = utils::getExecutableDir() + "/config";
+        XrayManager* manager = XrayManager::getInstance(xrayPath, configDir, config_.xray_workers);
         if (!manager) {
             if (wxHandler) {
                 wxQueueEvent(wxHandler, new StatusUpdateEvent(0, "ERR:Failed to create XrayManager"));

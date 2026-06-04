@@ -91,6 +91,11 @@ origin: "Continuation of project memory consolidation task"
 | 19 | 2026-06-02 | ProxyListPanel Row# column sorts by IndexId instead of row number | ✅ completed |
 | 20 | 2026-06-02 | SubscriptionPanel missing detectIdOffset after sort clear | ✅ completed |
 | 21 | 2026-06-02 | PortManager clearPorts() for port leak fix | ✅ completed |
+| 22 | 2026-06-03 | Subscription timeout config - curl CONNECTTIMEOUT + config.json | ✅ completed |
+| 23 | 2026-06-03 | Network field improvements - splithttp→xhttp mapping | ✅ completed |
+| 24 | 2026-06-03 | UI improvements - dialog centering + copyable text | ✅ completed |
+| 25 | 2026-06-03 | Proxy context menu disabled during operations | ✅ completed |
+| 26 | 2026-06-03 | Config dialog improvements - block DB switch during ops | ✅ completed |
 
 ---
 

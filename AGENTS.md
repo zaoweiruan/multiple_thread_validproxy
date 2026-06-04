@@ -17,7 +17,8 @@
 src/             源文件 (21 .cpp)
 include/         头文件 (19 .h)
 src/ui/          UI 层 — wxWidgets (AppController, MainFrame, 6 面板)
-tests/           单元测试 — Google Test (7 文件)
+tests/           单元测试 — Google Test (7 文件)、测试可执行文件
+test/            测试数据库、脚本
 bin/             配置 (config.json) + 数据库 (worker/guindb.db)
 docs/            项目文档
 skills/          Agent 技能 (14)
@@ -177,12 +178,14 @@ ctest -R DedupTest -V
 
 ## 核心规范
 
-1. **文档先行**: 任何代码修改前必须先创建/更新设计文档，制定计划文档，审批后纳入计划跟踪器 (`docs/plans/DEV-PROCESS.md`)
-2. **禁止 `auto`**: 代码中禁止 `auto` 类型推导 (项目 convention)
-3. **框架**: wxWidgets 3.2+ (wxMSW) — GUI 模式
-4. **构建**: CMake + Ninja — Debug 模式 `cmake -B build -G "Ninja" -DCMAKE_BUILD_TYPE=Debug`
-5. **日志**: Logger 类 — 级别: TRACE < DEBUG < INFO < REPORT < WARN < ERR
-6. **测试**: Google Test — `ctest -V` 全量测试，`ctest -R <TestName> -V` 单测
+1. **功能开发/调整/解析/重构/架构重构**: 均使用 Superpowers 完整工作流及文档化能力，记录完整过程
+2. **Bug 修复**: 对功能进行修复、bugfix，均使用 systematic-debugging skill 进行系统性调试和修复，使用 Superpowers 文档化能力记录完整过程
+3. **文档先行**: 任何代码修改前必须先创建/更新设计文档，制定计划文档，审批后纳入计划跟踪器 (`docs/plans/DEV-PROCESS.md`)
+4. **禁止 `auto`**: 代码中禁止 `auto` 类型推导 (项目 convention)
+5. **框架**: wxWidgets 3.2+ (wxMSW) — GUI 模式
+6. **构建**: CMake + Ninja — Debug 模式 `cmake -B build -G "Ninja" -DCMAKE_BUILD_TYPE=Debug`
+7. **日志**: Logger 类 — 级别: TRACE < DEBUG < INFO < REPORT < WARN < ERR
+8. **测试**: Google Test — `ctest -V` 全量测试，`ctest -R <TestName> -V` 单测
 
 ---
 
@@ -206,3 +209,5 @@ ctest -R DedupTest -V
 | 代码审查 | [`docs/code-reviews/`](./code-reviews/) + [`docs/ce-code-review/`](./ce-code-review/) | Logger 修复审查 / Code Embodiment 6 维综合审查 |
 | 状态跟踪 | [`docs/plans/project-plans-tracker.md`](./plans/project-plans-tracker.md) + [`docs/plans/feature-status.md`](./plans/feature-status.md) | 全局进度总表 + 功能实现状态矩阵 |
 | **文档索引** | **[`docs/INDEX.md`](./INDEX.md)** ⭐ | **所有 `docs/` 文件的分类总索引** |
+
+> **规则**: agents.md 不记录跟踪状态，只保持文档索引，状态写入其它相关文档
