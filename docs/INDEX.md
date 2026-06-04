@@ -2,7 +2,7 @@
 title: "docs: project document index"
 type: meta
 status: maintained
-updated: 2026-06-01
+updated: 2026-06-03
 ---
 
 # Project Document Index
@@ -16,20 +16,22 @@ updated: 2026-06-01
 ## 0. 快速总览
 
 | 类别 | 文件数 | 入口 |
- |------|--------|------|
- | [术语表](#1-术语表) | 1 | `docs/glossary.md` |
-  | [项目上下文](#2-项目上下文) | 4 | `docs/context.md` |
-  | [模型配置](#25-模型配置) | 1 | `docs/model-config.md` |
+|------|--------|------|
+| [术语表](#1-术语表) | 1 | `docs/glossary.md` |
+ | [项目上下文](#2-项目上下文) | 4 | `docs/context.md` |
+ | [模型配置](#25-模型配置) | 1 | `docs/model-config.md` |
  | [开发流程规范](#3-开发流程规范) | 1 | `docs/plans/DEV-PROCESS.md` |
  | [提示模式规范](#35-提示模式规范) | 1 | `docs/prompt-patterns.md` |
+ | [可用技能参考](#36-可用技能参考) | 1 | `docs/available-skills-reference.md` |
  | [整体架构](#4-整体架构) | 3 | `docs/architecture.md` |
- | [设计规范](#5-设计规范) | 9 | `docs/design/` |
- | [需求与脑暴](#6-需求与脑暴) | 4 | `docs/superpowers/brainstorm/` |
- | [技术方案](#7-技术方案) | 6 | `docs/superpowers/specs/` |
- | [实施计划](#8-实施计划) | 54 | `docs/plans/` |
- | [分析报告](#9-分析报告) | 5 | `docs/reports/` |
- | [Bug 修复记录](#91-bug-修复记录) | 1 | `docs/bugfix/` |
- | [测试报告](#10-测试报告) | 1 | `docs/test/` |
+| [设计规范](#5-设计规范) | 9 | `docs/design/` |
+| [需求与脑暴](#6-需求与脑暴) | 4 | `docs/superpowers/brainstorm/` |
+| [技术方案](#7-技术方案) | 6 | `docs/superpowers/specs/` |
+| [规范化设计](#75-规范化设计) | 4 | `docs/specs/` |
+| [实施计划](#8-实施计划) | 54 | `docs/plans/` |
+| [分析报告](#9-分析报告) | 6 | `docs/reports/` |
+| [Bug 修复记录](#91-bug-修复记录) | 6 | `docs/bugfix/` |
+| [测试报告](#10-测试报告) | 1 | `docs/test/` |
 
 ---
 
@@ -76,11 +78,17 @@ updated: 2026-06-01
 
 ## 3.5 提示模式规范
 
-| # | 文件 | 说明 | 大小 |
-|---|------|------|------|
-| 1 | [`docs/prompt-patterns.md`](./prompt-patterns.md) | **提示词模式指南** — 针对本项目各工作类型（功能开发/Bug 修复/代码审查/调研等）的最优提示结构模板和反模式 | 8.5 KB |
-
-> **用途**: 作为与 AI agent 协作的接口规范，确保每次交互信息完备。新贡献者或首次使用 agent 前先读本章。
+ | # | 文件 | 说明 | 大小 |
+ |---|------|------|------|
+ | 1 | [`docs/prompt-patterns.md`](./prompt-patterns.md) | **提示词模式指南** — 针对本项目各工作类型（功能开发/Bug 修复/代码审查/调研等）的最优提示结构模板和反模式 | 8.5 KB |
+ 
+ ## 3.6 可用技能参考
+ 
+ | # | 文件 | 说明 |
+ |---|------|------|
+ | 1 | [`docs/available-skills-reference.md`](./available-skills-reference.md) | **可用技能参考** — 代码审查、重构、代码质量评估技能清单及安装方法 |
+ 
+ > **用途**: 作为与 AI agent 协作的接口规范，确保每次交互信息完备。新贡献者或首次使用 agent 前先读本章。
 
 ---
 
@@ -131,6 +139,17 @@ updated: 2026-06-01
 | 4 | [`docs/superpowers/specs/2026-04-17-dedup-design.md`](./superpowers/specs/2026-04-17-dedup-design.md) | **去重方案设计** — 去重算法(DH 模式兼容 REALITY)、前置/后置过滤、网络字段污损清理、NULL 安全策略 | 10.8 KB |
 | 5 | [`docs/superpowers/specs/2026-04-24-proxy-sync-design.md`](./superpowers/specs/2026-04-24-proxy-sync-design.md) | **代理同步方案设计** — 主+副本 DB 同步、strategy 路由(insert_only/update_only/upsert)、事务批处理、数据流图 | 13.1 KB |
 | 6 | [`docs/superpowers/specs/2026-04-28-subitem-batch-import-design.md`](./superpowers/specs/2026-04-28-subitem-batch-import-design.md) | **Subitem 批量导入设计** — URL Fetcher 更新、StreamBuffer+PushParser、parseSubscription()→parseContext() 分割、增量防重 | 16.1 KB |
+
+---
+
+## 7.5 规范化设计 (docs/specs/)
+
+| # | 文件 | 说明 | 大小 |
+|---|------|------|------|
+| 1 | [`docs/specs/2026-06-03-subscription-timeout-config.md`](./specs/2026-06-03-subscription-timeout-config.md) | **订阅超时配置化** — 将连接超时和请求超时纳入 config.json 配置管理 | 78 lines |
+| 2 | [`docs/specs/2026-06-03-network-field-improvements.md`](./specs/2026-06-03-network-field-improvements.md) | **network 字段处理改进** — splithttp→xhttp 映射，无效值默认 tcp | 69 lines |
+| 3 | [`docs/specs/2026-06-03-ui-improvements.md`](./specs/2026-06-03-ui-improvements.md) | **UI 体验改进** — 弹窗居中 + ProxyDetail 可选择拷贝 | 54 lines |
+| 4 | [`docs/specs/2026-06-03-proxy-context-menu-disabled.md`](./specs/2026-06-03-proxy-context-menu-disabled.md) | **批量操作时禁止右键菜单** — 防止干预进行中的操作 | 43 lines |
 
 ---
 
@@ -245,17 +264,23 @@ updated: 2026-06-01
  | 5 | [`docs/reports/2026-05-19-ui-close-hang-fix-report.md`](./reports/2026-05-19-ui-close-hang-fix-report.md) | **UI 关闭挂起修复报告** — AppController/XrayInstance 析构竞态条件 + 进程句柄 BUG | 3.2 KB |
 | 6 | [`docs/reports/2026-06-01-diag-log-level-adjustment.md`](./reports/2026-06-01-diag-log-level-adjustment.md) | **诊断日志级别调整报告** — 10 处 `[DIAG]` 日志从 `INFO`/`DEBUG` 降为 `TRACE` | 0.7 KB |
 
+---
+
 ## 9.1 Bug 修复记录
 
 | # | 文件 | 说明 | 大小 |
 |---|------|------|------|
 | 1 | [`docs/bugfix/2026-05-28-sql-error-console-output-fix.md`](./bugfix/2026-05-28-sql-error-console-output-fix.md) | **SQL 错误输出到控制台修复** — `std::cerr` 改为 `Logger::write()`，确保 GUI 模式下错误显示在日志窗口 | 2.5 KB |
 | 2 | [`docs/bugfix/2026-05-28-cancel-sub-update-proxyfinder-phase.md`](./bugfix/2026-05-28-cancel-sub-update-proxyfinder-phase.md) | **订阅更新 ProxyFinder 阶段取消无法立即终止修复** — SubitemUpdaterV2::getProxyPorts() 未传递取消标志给 ProxyFinder | 2.8 KB |
- | 3 | [`docs/bugfix/2026-05-20-ctrl-c-exit.md`](./bugfix/2026-05-20-ctrl-c-exit.md) | **Ctrl+C 信号无法正常退出修复** — AppController 析构函数添加 5 秒超时 + detach 机制 | 4.2 KB |
+| 3 | [`docs/bugfix/2026-05-20-ctrl-c-exit.md`](./bugfix/2026-05-20-ctrl-c-exit.md) | **Ctrl+C 信号无法正常退出修复** — AppController 析构函数添加 5 秒超时 + detach 机制 | 4.2 KB |
 | 4 | [`docs/bugfix/2026-06-01-batch-test-cmd-window-flicker.md`](./bugfix/2026-06-01-batch-test-cmd-window-flicker.md) | **批量测试 CMD 窗口闪烀修复** — `_popen()` 替换为 `CreateProcessA(CREATE_NO_WINDOW)` + Win32 管道 | 2.1 KB |
 | 5 | [`docs/bugfix/2026-06-01-cli-ctrl-c-interrupt-fix.md`](./bugfix/2026-06-01-cli-ctrl-c-interrupt-fix.md) | **CLI Ctrl+C 中断修复** — 添加取消标志、传递给 ProxyBatchTester、析构超时 + detach 机制 | 2.1 KB |
+| 6 | [`docs/bugfix/2026-06-03-subscription-update-timeout-and-updatetime-fix.md`](./bugfix/2026-06-03-subscription-update-timeout-and-updatetime-fix.md) | **订阅更新 curl timeout 和 UpdateTime 修复** — curl 连接超时配置、UpdateTime 仅在成功时更新 | 94 lines |
+| 7 | [`docs/bugfix/2026-06-03-config-dialog-improvements.md`](./bugfix/2026-06-03-config-dialog-improvements.md) | **配置编辑改进** — 禁止运行中切换数据库、日志级别保存应用 | 57 lines |
 
- ## 10. 测试报告
+---
+
+## 10. 测试报告
 
 | # | 文件 | 说明 | 大小 |
 |---|------|------|------|
@@ -290,16 +315,16 @@ updated: 2026-06-01
 需求脑暴 (superpowers/brainstorm/)
       │
       ▼
-架构设计 (architecture) + 方案设计 (superpower/specs/)
-      │
-      ▼
+架构设计 (architecture) + 方案设计 (superpower/specs/ + specs/)
+       │
+       ▼
 实施计划 (docs/plans/) × 54 份 ──→ 全局跟踪 (project-plans-tracker)
-      │
-      ▼
+       │
+       ▼
 代码修改 (src/*.cpp) ←── 流程规范 (DEV-PROCESS.md)
-      │
-      ▼
-分析报告 (reports/) + 测试报告 (test/) + 代码审查 (code-reviews/)
+       │
+       ▼
+分析报告 (reports/) + 测试报告 (test/) + 代码审查 (code-reviews/) + 规范化设计 (specs/)
       │
       ▼
 功能状态 (feature-status) + 实施清单 (impl-items-6-7-10)
@@ -307,4 +332,4 @@ updated: 2026-06-01
 
 ---
 
-*最后更新: 2026-06-01 | 维护者: Kilo AI*
+*最后更新: 2026-06-04 | 维护者: Kilo AI*
