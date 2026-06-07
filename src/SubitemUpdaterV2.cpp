@@ -1210,7 +1210,7 @@ bool SubitemUpdaterV2::updateProfileItems(const std::string& subid, const std::v
 std::pair<int, int> SubitemUpdaterV2::getProxyPorts(const std::string& targetUrl) {
     Logger::write("INFO: Getting proxy ports via ProxyFinder...", LogLevel::INFO);
 
-    std::string configDir = baseDir_.empty() ? "bin/config" : baseDir_ + "/config";
+    std::string configDir = baseDir_.empty() ? utils::getExecutableDir() + "/config" : baseDir_ + "/config";
     xrayMgr_ = XrayManager::getInstance(xrayPath_, configDir, config_.xray_workers);
 
     int started = xrayMgr_->start(1, config_.xray_start_port, config_.xray_api_port);
