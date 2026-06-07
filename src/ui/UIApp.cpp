@@ -61,6 +61,9 @@ bool UIApp::OnInit()
     }
 
     // Create the main application frame
+    // (SetMenuBar is deferred inside MainFrame constructor — after AUI init
+    //  — to avoid a hang on wxMSW 3.2.5/MinGW and to ensure AUI computes
+    //  pane sizes against the correct client area with the menu bar present.)
     frame_ = new MainFrame(cfg_, db_);
     SetTopWindow(frame_);
     frame_->Maximize(true);  // Start maximized

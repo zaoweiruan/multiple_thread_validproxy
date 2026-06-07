@@ -14,8 +14,8 @@
 #include <iostream>
 
 int main(int argc, char* argv[]) {
-    std::string configPath = "config.json";
     std::string exeDir = utils::getExecutableDir();
+    std::string configPath = (std::filesystem::path(exeDir) / "config.json").string();
 
     for (int i = 1; i < argc; ++i) {
         std::string arg(argv[i]);
@@ -36,25 +36,31 @@ int main(int argc, char* argv[]) {
         std::filesystem::create_directory(logDir);
     }
 
+    // Initialize Logger FIRST (before load / DB open), so ConfigReader::load()
+    // can log diagnostics and any early failure is visible in the log file.
+    Logger::init(logDir.string(), "ui");
+    Logger::write("gui entry: Logger::init completed", LogLevel::INFO);
+    Logger::setConsoleEnabled(false);
+
     // Load configuration
     std::optional<config::AppConfig> appConfig = config::ConfigReader::load(configPath);
     if (!appConfig) {
         std::cerr << "Failed to load config from: " << configPath << std::endl;
+        Logger::close();
         return 1;
     }
+
+    // Apply config-specified log levels
+    Logger::setFileEnabled(appConfig->log_enabled);
+    Logger::setFileLevel(Logger::stringToLevel(appConfig->log_file_level));
 
     // Open database
     sqlite3* db = nullptr;
     if (sqlite3_open(appConfig->database_path.c_str(), &db) != SQLITE_OK) {
         std::cerr << "Failed to open database: " << sqlite3_errmsg(db) << std::endl;
+        Logger::close();
         return 1;
     }
-
-    // Initialize Logger for UI mode
-    Logger::init(logDir.string(), "ui");
-    Logger::setFileEnabled(appConfig->log_enabled);
-    Logger::setFileLevel(Logger::stringToLevel(appConfig->log_file_level));
-    Logger::setConsoleEnabled(false);
 
     // Strip non-wxWidgets flags from argv before passing to wxEntry
     // (-ui, --ui, --gui are CLI-legacy flags from the old hybrid binary)
