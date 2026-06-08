@@ -1,17 +1,29 @@
 # Current Context
 
-##  **一、基于xray、v2rayn开源项目**
-- **v2rayn源码目录**: `E:\eclipse_workspace\v2rayn`
--- **关键文件**:
-  - `v2rayN\ServiceLib\Handler\ConfigHandler.cs` - DedupServerList() 方法
-  - `v2rayN\ServiceLib\Models\ProfileItem.cs` - 数据模型
-  - `v2rayN\ServiceLib\Manager\AppManager.cs` - ProfileItems() 获取代理列表
-  
-- **xray源码目录**: E:\eclipse_workspace\Xray-core
+> **角色**: 提供跨会话的上下文锚点。每轮会话开始时，Agent 应检查并更新 §三。
+> **维护规则**: §三 在每轮会话结束时更新：移除已完成的旧条目，添加本会话的 Bug 修复引用。
+> **边界**: 只记录"在哪里"和"最近做了什么"的上下文锚点，不记录深度知识（归档至 `docs/project-knowledge.md`）。
 
-## **二、项目配置文件**
-- E:\eclipse_workspace\multiple_thread_validproxy\bin\confgi.json
+---
 
-## **三、近期修复 (2026-06-01)**
-- **CMD 窗口闪烁**: `XrayApi.cpp` 使用 `_popen("cmd /c ...")` 在 GUI 无控制台模式下创建临时 CMD 窗口，导致批量测试时闪烁。修复：替换为 `CreateProcessA(CREATE_NO_WINDOW)` + Win32 管道。详见 `docs/bugfix/2026-06-01-batch-test-cmd-window-flicker.md`
-- **诊断日志级别**: 10 处 `[DIAG]` 日志从 `INFO`/`DEBUG` 降为 `TRACE`。详见 `docs/reports/2026-06-01-diag-log-level-adjustment.md`
+## 一、基于 xray、v2rayn 开源项目
+
+- **v2rayn 源码目录**: `E:\eclipse_workspace\v2rayn`
+  - 关键文件:
+    - `v2rayN\ServiceLib\Handler\ConfigHandler.cs` — DedupServerList() 方法
+    - `v2rayN\ServiceLib\Models\ProfileItem.cs` — 数据模型
+    - `v2rayN\ServiceLib\Manager\AppManager.cs` — ProfileItems() 获取代理列表
+- **xray 源码目录**: `E:\eclipse_workspace\Xray-core`
+
+## 二、项目配置文件
+
+- `E:\eclipse_workspace\multiple_thread_validproxy\bin\config.json`
+
+## 三、本会话引用
+
+> 每轮会话开始时，将前一轮的已关闭条目移至 `docs/project-knowledge.md §7` 或 `docs/bugfix/`。
+> 格式: 条目简述 → `docs/bugfix/YYYY-MM-DD-xxx.md`
+
+| 日期 | 条目 | 文档 |
+|------|------|------|
+| 2026-06-04 | SubitemUpdaterV2 硬编码 `"bin/config"` 路径修复 | `docs/bugfix/2026-06-04-subitemupdater-hardcoded-binconfig-path.md` |

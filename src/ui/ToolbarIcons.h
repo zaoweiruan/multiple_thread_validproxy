@@ -171,17 +171,17 @@ inline wxBitmapBundle load(const wxString& name) {
         }
     }
 
-    // Fallback map: each custom icon name → stock wxArtID
+// Fallback map: each custom icon name → stock wxArtID
     struct Fallback { const char* name; wxArtID artId; };
     static const Fallback fbs[] = {
         { "tool_update", wxART_EXECUTABLE_FILE },
         { "tool_test",   wxART_TICK_MARK },
         { "tool_find",   wxART_FIND },
-{ "tool_dedup",  wxART_LIST_VIEW },
-         { "tool_import", wxART_FILE_OPEN },
-         { "tool_config", wxART_LIST_VIEW },
-         { "tool_dockarrow", wxART_HELP }, // for toggle detail pane button
-     };
+        { "tool_dedup",  wxART_LIST_VIEW },
+        { "tool_import", wxART_FILE_OPEN },
+        { "tool_config", wxART_LIST_VIEW },
+        { "tool_dockarrow", wxART_HELP }, // for toggle detail pane button
+    };
     for (const auto& fb : fbs) {
         if (name == fb.name) {
             return wxArtProvider::GetBitmapBundle(fb.artId);

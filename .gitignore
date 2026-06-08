@@ -1,9 +1,12 @@
 !bin/config.json
 bin/*
 bin/**/*
-
+std*.txt
+out*.txt
+test/*
+test/**/*
 # Build output
-
+e2e/
 build/
 nul
 null
@@ -28,25 +31,7 @@ model*.md
 bin/docs/design/ui/configuretion_dialog.b64
 docs/reports/Free_AI_Models_List_2026.md
 docs/reports/Tools_List.md
-# Bin directory 
 
-bin/log/
-bin/config/xray_config_*.json
-bin/config/*_priority*.json
-bin/config/*_temp*.json
-bin/config/worker_config_*.json
-bin/config/*.json
-bin/*.log
-bin/*.txt
-bin/*.bat
-bin/worker/
-bin/.agents/
-bin/.windsurf/
-bin/.claude/
-bin/.other/
-bin/bin/
-bin/nul
-bin/proxies/
 
 # Temp directory for debug files (tracked but contents ignored)
 temp/
@@ -117,3 +102,10 @@ json_diff*.json
 1.json
 1.md
 
+# Playwright
+node_modules/
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+/playwright/.auth/

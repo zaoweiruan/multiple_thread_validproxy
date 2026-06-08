@@ -249,9 +249,13 @@ Bind(wxEVT_SUB_LIST_LOADED, [this](SubListLoadedEvent& evt) {
 }
 
 MainFrame::~MainFrame() {
-    // Step 1: AUI must be torn down before any panel/frame member is destroyed
-    // (AUI holds references to managed panes — pointers must be valid here)
-    auiManager_.UnInit();
+     // Step 1: AUI must be torn down before any panel/frame member is destroyed
+     // (AUI holds references to managed panes — pointers must be valid here)
+     if (auiManager_) {
+         auiManager_->UnInit();
+         delete auiManager_;
+         auiManager_ = nullptr;
+     }
 
     // Step 2: Controller — worker thread join + XrayManager release
     if (controller_) {
@@ -430,8 +434,9 @@ void MainFrame::initStatusBar() {
 }
 
 void MainFrame::initAuiManager() {
-    auiManager_.SetManagedWindow(this);
-}
+     auiManager_ = new wxAuiManager;
+     auiManager_->SetManagedWindow(this);
+ }
 
 void MainFrame::initPanels() {
     // ── Add toolbar to AUI manager for proper resize handling ──

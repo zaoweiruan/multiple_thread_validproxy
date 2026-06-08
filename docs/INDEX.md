@@ -2,7 +2,7 @@
 title: "docs: project document index"
 type: meta
 status: maintained
-updated: 2026-06-03
+updated: 2026-06-04
 ---
 
 # Project Document Index
@@ -18,12 +18,12 @@ updated: 2026-06-03
 | 类别 | 文件数 | 入口 |
 |------|--------|------|
 | [术语表](#1-术语表) | 1 | `docs/glossary.md` |
- | [项目上下文](#2-项目上下文) | 4 | `docs/context.md` |
- | [模型配置](#25-模型配置) | 1 | `docs/model-config.md` |
- | [开发流程规范](#3-开发流程规范) | 1 | `docs/plans/DEV-PROCESS.md` |
- | [提示模式规范](#35-提示模式规范) | 1 | `docs/prompt-patterns.md` |
- | [可用技能参考](#36-可用技能参考) | 1 | `docs/available-skills-reference.md` |
- | [整体架构](#4-整体架构) | 3 | `docs/architecture.md` |
+| [项目上下文](#2-项目上下文) | 4 | `docs/context.md` |
+| [模型配置](#25-模型配置) | 1 | `docs/model-config.md` |
+| [开发流程规范](#3-开发流程规范) | 1 | `docs/plans/DEV-PROCESS.md` |
+| [提示模式规范](#35-提示模式规范) | 1 | `docs/prompt-patterns.md` |
+| [可用技能参考](#36-可用技能参考) | 1 | `docs/available-skills-reference.md` |
+| [整体架构](#4-整体架构) | 3 | `docs/architecture.md` |
 | [设计规范](#5-设计规范) | 9 | `docs/design/` |
 | [需求与脑暴](#6-需求与脑暴) | 4 | `docs/superpowers/brainstorm/` |
 | [技术方案](#7-技术方案) | 6 | `docs/superpowers/specs/` |
@@ -32,6 +32,7 @@ updated: 2026-06-03
 | [分析报告](#9-分析报告) | 6 | `docs/reports/` |
 | [Bug 修复记录](#91-bug-修复记录) | 6 | `docs/bugfix/` |
 | [测试报告](#10-测试报告) | 1 | `docs/test/` |
+| [长期记忆](#13-长期记忆) | 1 | `docs/project-knowledge.md` |
 
 ---
 
@@ -329,6 +330,18 @@ updated: 2026-06-03
       ▼
 功能状态 (feature-status) + 实施清单 (impl-items-6-7-10)
 ```
+
+---
+
+---
+
+## 13. 长期记忆
+
+| # | 文件 | 说明 | 大小 |
+|---|------|------|------|
+| 1 | [`docs/project-knowledge.md`](./project-knowledge.md) | **项目长期记忆** — 测试规范、错误级别分类、Google Test 规范、错误分析、三文档协同模型、工具模式、架构决策记录。内容与 AGENTS.md 和 `docs/` 文档不重复。 | 4.9 KB |
+
+**维护规则**: 会话结束时如有新的架构决策或跨模块知识，追加至 `docs/project-knowledge.md` §7 关键决策记录。
 
 ---
 
