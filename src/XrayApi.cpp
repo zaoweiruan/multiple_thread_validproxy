@@ -183,8 +183,12 @@ bool XrayApi::removeOutbound(const std::string& tag) {
     si.dwFlags = STARTF_USESTDHANDLES;
     PROCESS_INFORMATION pi = {0};
 
-    BOOL success = CreateProcessA(NULL, (LPSTR)cmd.c_str(), NULL, NULL, FALSE, 
-                                  CREATE_NO_WINDOW, NULL, NULL, &si, &pi);
+    // CreateProcessA modifies the command line buffer
+    std::vector<char> cmdBuf(cmd.begin(), cmd.end());
+    cmdBuf.push_back('\0');
+
+    BOOL success = CreateProcessA(nullptr, cmdBuf.data(), nullptr, nullptr, FALSE,
+                                  CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi);
     
     if (!success) {
         lastError_ = "Failed to create process: " + std::to_string(GetLastError());

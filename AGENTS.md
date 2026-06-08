@@ -5,9 +5,11 @@
 - **语言**: C++ 20/17 (标准: C++17)
 - **类型**: 代理验证工具
 - **目标平台**: Windows (MinGW/GCC)
+- **默认终端**: PowerShell (**重要**: 所有模型、MCP tools、skills 必须使用 PowerShell 命令语法)
 - **构建系统**: CMake + Ninja
+- **UI框架**: wxWidgets 3.2+ (wxMSW) — GUI 模式
 - **版本**: 1.0.3
-- **入口文件**: `src/main.cpp`
+- **入口文件**: `src/main_gui.cpp`
 
 ---
 
@@ -75,13 +77,13 @@ temp/            调试临时文件 (脚本、输出、临时配置)
 
 ## 构建与测试
 
-```bash
+```powershell
 # Debug 构建
 cmake -B build -G "Ninja" -DCMAKE_BUILD_TYPE=Debug
 cmake --build build --parallel 8
 
 # 运行
-./build/validproxy.exe
+.\build\validproxy.exe
 
 # 运行所有测试
 ctest -V
@@ -182,10 +184,22 @@ ctest -R DedupTest -V
 2. **Bug 修复**: 对功能进行修复、bugfix，均使用 systematic-debugging skill 进行系统性调试和修复，使用 Superpowers 文档化能力记录完整过程
 3. **文档先行**: 任何代码修改前必须先创建/更新设计文档，制定计划文档，审批后纳入计划跟踪器 (`docs/plans/DEV-PROCESS.md`)
 4. **禁止 `auto`**: 代码中禁止 `auto` 类型推导 (项目 convention)
-5. **框架**: wxWidgets 3.2+ (wxMSW) — GUI 模式
-6. **构建**: CMake + Ninja — Debug 模式 `cmake -B build -G "Ninja" -DCMAKE_BUILD_TYPE=Debug`
-7. **日志**: Logger 类 — 级别: TRACE < DEBUG < INFO < REPORT < WARN < ERR
-8. **测试**: Google Test — `ctest -V` 全量测试，`ctest -R <TestName> -V` 单测
+5. **构建**: CMake + Ninja — Debug 模式 `cmake -B build -G "Ninja" -DCMAKE_BUILD_TYPE=Debug`
+6. **日志**: Logger 类 — 级别: TRACE < DEBUG < INFO < REPORT < WARN < ERR
+7. **测试**: Google Test — `ctest -V` 全量测试，`ctest -R <TestName> -V` 单测
+
+### 技能路由表（关键词 → Skill 映射）
+
+LLM 必须根据用户输入匹配以下关键词，自动调用对应 skill：
+
+| 用户意图 | 触发关键词 | 必须加载的 Skill |
+|---------|-----------|-----------------|
+| **调整/开发功能** | `调整功能` `开发功能` `新增功能` `重构` `架构调整` `修改行为` `功能变更` | `using-superpowers` |
+| **修复异常** | `bug` `修复` `fix` `异常` `崩溃` `错误` `测试失败` `unexpected behavior` `故障` | `systematic-debugging` |
+| **制定计划/方案** | `计划` `方案` `制定计划` `设计文档` `design doc` `spec` `需求文档` `技术方案` | `writing-plans` |
+| **编码实现** | `实现` `编码` `写代码` `implement` `编码实现` `开发` | `test-driven-development` |
+
+> **路由规则**: 当用户输入包含某列的任一触发关键词，LLM **必须** 加载对应的 skill（通过 `skill(name="...")` 工具），然后再开始任何响应或操作。关键词匹配不区分大小写。
 
 ---
 

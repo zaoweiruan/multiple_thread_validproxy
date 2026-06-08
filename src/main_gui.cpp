@@ -8,6 +8,7 @@
 #include "XrayManager.h"
 
 #include <sqlite3.h>
+#include <windows.h>
 #include <string>
 #include <vector>
 #include <filesystem>
@@ -45,7 +46,9 @@ int main(int argc, char* argv[]) {
     // Load configuration
     std::optional<config::AppConfig> appConfig = config::ConfigReader::load(configPath);
     if (!appConfig) {
-        std::cerr << "Failed to load config from: " << configPath << std::endl;
+        std::string errMsg = "Failed to load configuration file.\n\n";
+        errMsg += "Config path:\n" + configPath;
+        MessageBoxA(NULL, errMsg.c_str(), "Configuration Error", MB_ICONERROR | MB_OK);
         Logger::close();
         return 1;
     }
@@ -56,8 +59,18 @@ int main(int argc, char* argv[]) {
 
     // Open database
     sqlite3* db = nullptr;
+    if (appConfig->database_path.empty()) {
+        MessageBoxA(NULL,
+                    "Database path is empty in configuration file.\nPlease check the database.path setting and restart.",
+                    "Configuration Error",
+                    MB_ICONERROR | MB_OK);
+        return 1;
+    }
     if (sqlite3_open(appConfig->database_path.c_str(), &db) != SQLITE_OK) {
-        std::cerr << "Failed to open database: " << sqlite3_errmsg(db) << std::endl;
+        std::string errMsg = "Failed to open database.\n\n";
+        errMsg += "Error: " + std::string(sqlite3_errmsg(db)) + "\n\n";
+        errMsg += "Database path from config:\n" + appConfig->database_path;
+        MessageBoxA(NULL, errMsg.c_str(), "Database Error", MB_ICONERROR | MB_OK);
         Logger::close();
         return 1;
     }

@@ -90,11 +90,12 @@ private:
     void onSearchClear(wxCommandEvent& event);
     void onToggleDetailPane(wxCommandEvent& event);
     void onTestSubscription(SubscriptionTestEvent& event);
+    void onToggleDetailPane(wxCommandEvent& event);
 
-    // Members
-    wxAuiManager auiManager_;
-    AppController* controller_;
-    wxMenuBar* menuBar_{nullptr};
+// Members
+     wxAuiManager* auiManager_{nullptr};  // Use pointer to delay construction until after menu setup
+     AppController* controller_;
+     wxMenuBar* menuBar_{nullptr};
     SubscriptionPanel* subPanel_{nullptr};
     ProxyListPanel* proxyPanel_{nullptr};
     ProxyDetailPanel* detailPanel_{nullptr};

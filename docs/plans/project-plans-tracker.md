@@ -10,6 +10,7 @@ origin: "Continuation of project memory consolidation task"
 
 ## Status: In Progress
 
+> 📝 **2026-06-04** — #27 SubitemUpdaterV2 hardcoded `"bin/config"` path fix → ✅ completed. See `docs/bugfix/2026-06-04-subitemupdater-hardcoded-binconfig-path.md`.
 > 📝 **2026-05-19** — 批量状态更新: P4→❌ cancelled; 003→✅ completed; DLL fix→✅ completed; libpng16d/libtiffd fix→✅ completed; consolidated-ui-fixes→✅ completed; 007 frontmatter repaired.
 
 ## Completed Items
@@ -49,7 +50,7 @@ origin: "Continuation of project memory consolidation task"
 
 ### Documentation
 - [x] AGENTS.md — "核心开发规则" section added
-- [x] memory/project_knowledge.md — "开发流程规则" section added
+- [x] `docs/project-knowledge.md` — "开发流程规则" section added (moved from `memory/project_knowledge.md`)
 - [x] DEV-PROCESS.md — created with workflow + template + status definitions
 
 ## Execution History (post-tracker-creation)
@@ -96,6 +97,7 @@ origin: "Continuation of project memory consolidation task"
 | 24 | 2026-06-03 | UI improvements - dialog centering + copyable text | ✅ completed |
 | 25 | 2026-06-03 | Proxy context menu disabled during operations | ✅ completed |
 | 26 | 2026-06-03 | Config dialog improvements - block DB switch during ops | ✅ completed |
+| 27 | 2026-06-04 | SubitemUpdaterV2 hardcoded `"bin/config"` path fallback fix | ✅ completed |
 
 ---
 

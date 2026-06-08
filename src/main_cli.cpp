@@ -60,6 +60,9 @@ void logError(const std::string& msg, LogLevel level = LogLevel::ERR) {
 static bool openDatabase(const config::AppConfig& config, sqlite3*& db, const std::string& context) {
     if (sqlite3_open(config.database_path.c_str(), &db) != SQLITE_OK) {
         Logger::write(context + " - Failed to open database: " + std::string(sqlite3_errmsg(db)), LogLevel::ERR);
+        Logger::write(context + " - Database path from config: " + config.database_path, LogLevel::ERR);
+        std::cerr << context << " - Failed to open database: " << sqlite3_errmsg(db) << std::endl;
+        std::cerr << context << " - Database path from config: " << config.database_path << std::endl;
         return false;
     }
     return true;

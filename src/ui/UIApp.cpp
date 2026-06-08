@@ -6,7 +6,7 @@
 #include <wx/stdpaths.h>
 #include <filesystem>
 #include <exception>
-#include <iostream>
+#include <string>
 
 // -------------------------------------------------------------------
 // wxIMPLEMENT_APP_NO_MAIN — provides wxAppConsole-derived class
@@ -35,12 +35,12 @@ bool UIApp::OnInit()
         if (pos != std::string::npos) {
             exeDir = exeDir.substr(0, pos);
         }
-        
+
         std::filesystem::path configPath = std::filesystem::path(exeDir) / "config.json";
         if (!std::filesystem::exists(configPath)) {
             configPath = std::filesystem::path(exeDir) / ".." / "config.json";
         }
-        
+
         auto loadedConfig = config::ConfigReader::load(configPath.string());
         if (loadedConfig) {
             cfg_ = *loadedConfig;
@@ -49,13 +49,36 @@ bool UIApp::OnInit()
             loadedConfig = config::ConfigReader::load(config::ConfigReader::getDefaultConfigPath());
             if (loadedConfig) {
                 cfg_ = *loadedConfig;
+            } else {
+                // Both config loads failed - show error and exit
+                wxMessageBox("Failed to load configuration file.\n\nTried:\n- " + configPath.string() + "\n- " + config::ConfigReader::getDefaultConfigPath() + "\n\nThe application cannot start.",
+                             "Configuration Error", wxOK | wxICON_ERROR);
+                return false;
             }
         }
-        
-        // Open database
-        if (sqlite3_open(cfg_.database_path.c_str(), &db_) != SQLITE_OK) {
-            wxMessageBox("Failed to open database.\nThe application cannot start.",
+
+        // Validate database path is not empty
+        if (cfg_.database_path.empty()) {
+            wxMessageBox("Database path is empty in configuration file.\nPlease check the database.path setting and restart.",
+                         "Configuration Error", wxOK | wxICON_ERROR);
+            return false;
+        }
+
+        // Validate database file exists before opening
+        std::filesystem::path dbPath(cfg_.database_path);
+        if (!std::filesystem::exists(dbPath)) {
+            wxMessageBox("Database file does not exist.\n\nPath:\n" + cfg_.database_path + "\n\nThe application cannot start.",
                          "Database Error", wxOK | wxICON_ERROR);
+            return false;
+        }
+
+        // Open database
+        int rc = sqlite3_open(cfg_.database_path.c_str(), &db_);
+        if (rc != SQLITE_OK) {
+            wxMessageBox("Failed to open database.\n\nError: " + std::string(sqlite3_errmsg(db_)) + "\n\nDatabase path:\n" + cfg_.database_path,
+                         "Database Error", wxOK | wxICON_ERROR);
+            sqlite3_close(db_);
+            db_ = nullptr;
             return false;
         }
     }
@@ -64,10 +87,20 @@ bool UIApp::OnInit()
     // (SetMenuBar is deferred inside MainFrame constructor — after AUI init
     //  — to avoid a hang on wxMSW 3.2.5/MinGW and to ensure AUI computes
     //  pane sizes against the correct client area with the menu bar present.)
-    frame_ = new MainFrame(cfg_, db_);
-    SetTopWindow(frame_);
-    frame_->Maximize(true);  // Start maximized
-    frame_->Show(true);
+    try {
+        frame_ = new MainFrame(cfg_, db_);
+        SetTopWindow(frame_);
+        frame_->Maximize(true);  // Start maximized
+        frame_->Show(true);
+    } catch (const std::exception& e) {
+        wxMessageBox("Application initialization failed:\n" + wxString(e.what()),
+                     "Startup Error", wxOK | wxICON_ERROR);
+        return false;
+    } catch (...) {
+        wxMessageBox("Unknown error during application startup.",
+                     "Startup Error", wxOK | wxICON_ERROR);
+        return false;
+    }
 
     return true;
 }
