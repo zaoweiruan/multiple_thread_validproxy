@@ -139,10 +139,12 @@ void SubscriptionPanel::onSelectionChanged(wxDataViewEvent& event) {
     std::string subId = getSelectedSubId();
     if (!subId.empty()) {
         // Notify parent frame to load proxies for this subscription
-        wxWindow* parent = GetParent();
-        if (parent) {
+        // Use wxGetTopLevelParent instead of GetParent() because this panel
+        // is now parented to centerPanel (wxAui wrapper), not MainFrame directly
+        wxWindow* topLevel = wxGetTopLevelParent(this);
+        if (topLevel) {
             SubscriptionSelectedEvent evt(subId);
-            wxPostEvent(parent, evt);
+            wxPostEvent(topLevel, evt);
         }
     }
     (void)event; // Suppress unused parameter warning
@@ -216,7 +218,8 @@ void SubscriptionPanel::onUpdateSubscription(wxCommandEvent&) {
     }
     std::string subId = getSelectedSubId();
     if (!subId.empty()) {
-        controller_->updateSubscriptionAsync(subId, GetParent());
+        // Pass top-level frame as event sink (parent is now centerPanel, not MainFrame)
+        controller_->updateSubscriptionAsync(subId, wxGetTopLevelParent(this));
     }
 }
 
@@ -227,8 +230,9 @@ void SubscriptionPanel::onTestSubscription(wxCommandEvent&) {
     }
     std::string subId = getSelectedSubId();
     if (!subId.empty()) {
-        if (GetParent()) {
-            wxQueueEvent(GetParent(), new SubscriptionTestEvent(subId));
+        wxWindow* topLevel = wxGetTopLevelParent(this);
+        if (topLevel) {
+            wxQueueEvent(topLevel, new SubscriptionTestEvent(subId));
         }
     }
 }

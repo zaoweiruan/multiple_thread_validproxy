@@ -14,6 +14,7 @@
 
 #include <wx/sizer.h>
 #include <wx/aui/auibook.h>
+#include <wx/aui/auibar.h>
 #include <wx/treectrl.h>
 #include <wx/menu.h>
 #include <wx/msgdlg.h>
@@ -22,6 +23,7 @@
 #include <wx/srchctrl.h>
 #include <wx/file.h>
 #include <thread>
+#include <fstream>
 
 // -------------------------------------------------------------------
 //  Menu / Tool identifiers
@@ -50,6 +52,7 @@ enum {
     ID_TOOL_CLEAR         = wxID_HIGHEST + 207,
     ID_SEARCH_BOX         = wxID_HIGHEST + 206,
     ID_TOOLBAR_DBPATH     = wxID_HIGHEST + 301,
+    ID_TOOL_DETAIL_TOGGLE = wxID_HIGHEST + 302,
 };
 
 // -------------------------------------------------------------------
@@ -82,6 +85,7 @@ wxBEGIN_EVENT_TABLE(MainFrame, wxFrame)
     EVT_TEXT_ENTER(ID_SEARCH_BOX,  MainFrame::onSearchBoxEnter)
     EVT_TEXT(ID_SEARCH_BOX,        MainFrame::onSearchTextChanged)
     EVT_SEARCH_CANCEL(ID_SEARCH_BOX, MainFrame::onSearchClear)
+    EVT_MENU(ID_TOOL_DETAIL_TOGGLE, MainFrame::onToggleDetailPane)
 wxEND_EVENT_TABLE()
 
 // -------------------------------------------------------------------
@@ -94,6 +98,9 @@ MainFrame::MainFrame(const config::AppConfig& cfg, sqlite3* db)
       config_(cfg)
 {
     controller_ = new AppController(db, cfg);
+    Logger::write("[MainFrame] Constructor begin", LogLevel::DEBUG);
+
+    Logger::write("[MainFrame] After controller creation, initializing icon", LogLevel::DEBUG);
 
     // Set application icon from embedded resource (icon.ico → resource "icon_ico")
     #ifdef __WXMSW__
@@ -113,8 +120,8 @@ MainFrame::MainFrame(const config::AppConfig& cfg, sqlite3* db)
         }
     }
 
-     // Prevent too-narrow window that breaks toolbar right-side control layout
-     SetMinSize(wxSize(900, 600));
+    // Prevent too-narrow window that breaks toolbar right-side control layout
+    SetMinSize(wxSize(900, 600));
 
     // ── Find-proxy completion ──────────────────────────────────────
     // Payload: "FOUND:<indexId>:<address>" | "NOTFOUND" | "ERR:..."
@@ -165,11 +172,29 @@ MainFrame::MainFrame(const config::AppConfig& cfg, sqlite3* db)
     // ── Subscription right-click Test ────────────────────────────
     Bind(wxEVT_SUBSCRIPTION_TEST, &MainFrame::onTestSubscription, this);
 
-initMenuBar();
-     initToolBar();
-     initStatusBar();
-     initAuiManager();
-     initPanels();
+    Logger::write("[MainFrame] initMenuBar...", LogLevel::DEBUG);
+    initMenuBar();
+    Logger::write("[MainFrame] initToolBar...", LogLevel::DEBUG);
+    initToolBar();
+    Logger::write("[MainFrame] initStatusBar...", LogLevel::DEBUG);
+    initStatusBar();
+    Logger::write("[MainFrame] initAuiManager...", LogLevel::DEBUG);
+    initAuiManager();
+    Logger::write("[MainFrame] initPanels...", LogLevel::DEBUG);
+    initPanels();
+
+    // ── SetMenuBar AFTER AUI layout ────────────────────────────────
+    // Direct SetMenuBar at initMenuBar time hangs on wxMSW 3.2.5/MinGW.
+    // Calling it here (after AUI panes are registered and Update() called)
+    // avoids the hang and ensures AUI computes sizes against the correct
+    // client area (menu bar changes client geometry).
+    Logger::write("[MainFrame] calling delayed SetMenuBar", LogLevel::DEBUG);
+    if (menuBar_) {
+        SetMenuBar(menuBar_);
+        Logger::write("[MainFrame] SetMenuBar done, updating AUI", LogLevel::DEBUG);
+        auiManager_.Update();
+        Logger::write("[MainFrame] AUI re-layout after SetMenuBar done", LogLevel::DEBUG);
+    }
      
 // Bind subscription selection to filter proxy list
       Bind(wxEVT_SUBSCRIPTION_SELECTED, [this](SubscriptionSelectedEvent& evt) {
@@ -208,8 +233,19 @@ Bind(wxEVT_SUB_LIST_LOADED, [this](SubListLoadedEvent& evt) {
            }
        });
      
-     initTrayIcon();
-     loadSettings();
+    initTrayIcon();
+
+    // Track detail pane close event for visibility state
+    auiManager_.Bind(wxEVT_AUI_PANE_CLOSE, [this](wxAuiManagerEvent& evt) {
+        wxAuiPaneInfo* pane = evt.GetPane();
+        if (pane && pane->name == "detailPane") {
+            detailPaneVisible_ = false;
+        }
+        evt.Skip();
+    });
+
+    loadSettings();
+    Logger::write("[MainFrame] Constructor end", LogLevel::DEBUG);
 }
 
 MainFrame::~MainFrame() {
@@ -258,8 +294,8 @@ std::string MainFrame::getDbPath() const {
 }
 
 void MainFrame::setOperationState(OperationType op) {
-    wxToolBar* tb = GetToolBar();
-    if (!tb) return;
+    if (!m_toolbar) return;
+    wxAuiToolBar* tb = m_toolbar;
     
     if (op == OperationType::NONE) {
         tb->EnableTool(ID_TOOL_CANCEL, false);
@@ -288,15 +324,19 @@ void MainFrame::setOperationState(OperationType op) {
 //  Initialization steps
 // -------------------------------------------------------------------
 void MainFrame::initMenuBar() {
+    Logger::write("[MainFrame] initMenuBar step 1: creating wxMenuBar", LogLevel::DEBUG);
     wxMenuBar* bar = new wxMenuBar;
+    Logger::write("[MainFrame] initMenuBar step 2: wxMenuBar created", LogLevel::DEBUG);
 
     wxMenu* fileMenu = new wxMenu;
+    Logger::write("[MainFrame] initMenuBar step 3: fileMenu created", LogLevel::DEBUG);
     fileMenu->Append(ID_MENU_IMPORT_SUB,  "Import Subscription URL…\tCtrl+I");
     fileMenu->Append(ID_MENU_UPDATE_ALL,  "Update All Subscriptions\tCtrl+U");
     fileMenu->Append(ID_MENU_SYNC_DB,     "Sync Database…");
     fileMenu->AppendSeparator();
     fileMenu->Append(ID_MENU_EXIT,        "Exit\tAlt+X");
     bar->Append(fileMenu, "&File");
+    Logger::write("[MainFrame] initMenuBar step 4: fileMenu appended", LogLevel::DEBUG);
 
     wxMenu* proxyMenu = new wxMenu;
     proxyMenu->Append(ID_MENU_FIND_PROXY, "Find First Working Proxy\tCtrl+F");
@@ -314,54 +354,79 @@ void MainFrame::initMenuBar() {
     wxMenu* helpMenu = new wxMenu;
     helpMenu->Append(ID_MENU_ABOUT, "About");
     bar->Append(helpMenu, "&Help");
+    Logger::write("[MainFrame] initMenuBar step 5: helpMenu appended", LogLevel::DEBUG);
 
-    SetMenuBar(bar);
+    Logger::write("[MainFrame] initMenuBar step 6: storing menuBar", LogLevel::DEBUG);
+    // Keep menuBar_ for later SetMenuBar call (after AUI init + Update()).
+    // Direct SetMenuBar inside initMenuBar causes intermittent hang on wxMSW 3.2.5/MinGW.
+    menuBar_ = bar;
+    Logger::write("[MainFrame] initMenuBar step 7: menuBar stored", LogLevel::DEBUG);
 }
 
 void MainFrame::initToolBar() {
-    wxToolBar* tb = CreateToolBar(wxTB_HORIZONTAL | wxTB_NODIVIDER);
-    tb->SetToolBitmapSize(wxSize(32, 32));
+    Logger::write("[MainFrame] initToolBar step 1: creating wxAuiToolBar", LogLevel::DEBUG);
+    // Use wxAuiToolBar for better resize handling
+    // wxAuiToolBar automatically handles control layout on window resize
+    m_toolbar = new wxAuiToolBar(this, wxID_ANY, wxDefaultPosition, wxDefaultSize,
+                                 wxAUI_TB_HORIZONTAL | wxAUI_TB_TEXT);
+    Logger::write("[MainFrame] initToolBar step 2: wxAuiToolBar created", LogLevel::DEBUG);
+    m_toolbar->SetToolBitmapSize(wxSize(24, 24));
 
-    // Note: 2nd arg = label (visible text when wxTB_TEXT style is set).
-    //       4th arg = shortHelp (hover tooltip on all platforms, per wxToolBarToolBase).
-    //       We use icon-only toolbar (no wxTB_TEXT), so label="", tooltip in shortHelp.
-    tb->AddTool(ID_TOOL_UPDATE_ALL, wxEmptyString, ToolbarIcons::load("tool_update1"), "更新");
-    tb->AddTool(ID_TOOL_TEST,       wxEmptyString, ToolbarIcons::load("tool_test"),   "测试全部代理");
-    auto cancelBmp = ToolbarIcons::load("tool_cancel");
-    auto cancelDisabled = ToolbarIcons::loadDisabled("tool_cancel");
-    tb->AddTool(ID_TOOL_CANCEL, wxEmptyString, cancelBmp, cancelDisabled, wxITEM_NORMAL, "取消测试");
-    tb->EnableTool(ID_TOOL_CANCEL, false);  // disabled until operation starts
-    tb->AddTool(ID_TOOL_SYNC,       wxEmptyString, ToolbarIcons::load("tool_synchronize"), "同步");
-    tb->AddTool(ID_TOOL_FIND,       wxEmptyString, ToolbarIcons::load("tool_find"),   "查找最佳代理");
-    tb->AddTool(ID_TOOL_DEDUP,      wxEmptyString, ToolbarIcons::load("tool_dedup"),  "去重");
-    tb->AddTool(ID_TOOL_IMPORT,     wxEmptyString, ToolbarIcons::load("tool_import"), "增加新订阅");
-    tb->AddTool(ID_TOOL_CONFIG,     wxEmptyString, ToolbarIcons::load("tool_config"), "配置");
+    // Note: wxAuiToolBar::AddTool uses different signature than wxToolBar
+    // format: AddTool(id, label, bitmap, shortHelp)
+    Logger::write("[MainFrame] initToolBar step 3: adding tools", LogLevel::DEBUG);
+    m_toolbar->AddTool(ID_TOOL_UPDATE_ALL, "更新", ToolbarIcons::load("tool_update1"), "更新");
+    Logger::write("[MainFrame] initToolBar step 3a: tool_update1 added", LogLevel::DEBUG);
+    m_toolbar->AddTool(ID_TOOL_TEST, "测试", ToolbarIcons::load("tool_test"), "测试全部代理");
+    m_toolbar->AddTool(ID_TOOL_CANCEL, "取消", ToolbarIcons::load("tool_cancel"), "取消测试");
+    m_toolbar->EnableTool(ID_TOOL_CANCEL, false);  // disabled until operation starts
+    m_toolbar->AddTool(ID_TOOL_SYNC, "同步", ToolbarIcons::load("tool_synchronize"), "同步");
+    m_toolbar->AddTool(ID_TOOL_FIND, "查找", ToolbarIcons::load("tool_find"), "查找最佳代理");
+    m_toolbar->AddTool(ID_TOOL_DEDUP, "去重", ToolbarIcons::load("tool_dedup"), "去重");
+    m_toolbar->AddTool(ID_TOOL_IMPORT, "导入", ToolbarIcons::load("tool_import"), "增加新订阅");
+    m_toolbar->AddTool(ID_TOOL_CONFIG, "配置", ToolbarIcons::load("tool_config"), "配置");
 
-    // Search box — on left side, above Host column
-    tb->AddControl(new wxStaticText(tb, wxID_ANY, "", wxDefaultPosition, wxSize(240, -1)));  // 240px spacer
-    tb->AddControl(new wxStaticText(tb, wxID_ANY, " Search:"));
-    m_searchBox = new wxSearchCtrl(tb, ID_SEARCH_BOX, wxEmptyString,
-                                   wxDefaultPosition, wxSize(150, -1),
+    // ── Search box: left-shifted by 150px from center ──
+    m_toolbar->AddSpacer(20);  // small gap after tools, then search (shifted ~150px left)
+    m_searchBox = new wxSearchCtrl(m_toolbar, ID_SEARCH_BOX, wxEmptyString,
+                                   wxDefaultPosition, wxSize(200, 25),
                                    wxTE_PROCESS_ENTER);
     m_searchBox->ShowSearchButton(true);
     m_searchBox->ShowCancelButton(true);
-    tb->AddControl(m_searchBox);
-    tb->AddStretchableSpace();  // Push dbPathLabel to right
+    m_toolbar->AddControl(m_searchBox);
+    m_toolbar->AddStretchSpacer(1);  // Push dbPath + toggle detail to right edge
 
-    // Database path — dynamically resized in onResize()
-    m_dbPathLabel = new wxStaticText(tb, wxID_ANY, wxString(getDbPath()),
-                                     wxDefaultPosition, wxSize(500, -1),
-                                     wxALIGN_RIGHT | wxST_ELLIPSIZE_START);
-    tb->AddControl(m_dbPathLabel);
+    // ── dbPath label: auto-width from font metrics + tooltip ──
+    wxString dbPath = wxString(getDbPath());
+    m_dbPathLabel = new wxStaticText(m_toolbar, ID_TOOLBAR_DBPATH,
+                                     dbPath,
+                                     wxDefaultPosition, wxDefaultSize,
+                                     wxALIGN_RIGHT | wxST_ELLIPSIZE_END);
+    // Match toolbar background so label blends in (no dark box)
+    m_dbPathLabel->SetBackgroundColour(m_toolbar->GetBackgroundColour());
+    m_dbPathLabel->SetForegroundColour(m_toolbar->GetForegroundColour());
+    // Measure actual text width from current font, add 16px padding
+    {
+        wxClientDC dc(m_dbPathLabel);
+        wxSize sz = dc.GetTextExtent(dbPath);
+        m_dbPathLabel->SetMinSize(wxSize(sz.GetWidth() + 16, -1));
+    }
+    m_dbPathLabel->SetToolTip(dbPath);  // full path on hover
+    m_toolbar->AddControl(m_dbPathLabel);
 
-    tb->Realize();
+    // Toggle detail panel button (rightmost)
+    m_toggleDetailItem = m_toolbar->AddTool(ID_TOOL_DETAIL_TOGGLE, "详情",
+                                             ToolbarIcons::load("tool_dockarrow"),
+                                             "Toggle Detail Panel");
+
+    m_toolbar->Realize();
 }
 
 void MainFrame::initStatusBar() {
     statusBar_ = CreateStatusBar(3);
     statusBar_->SetStatusText("Ready", 0);
     statusBar_->SetStatusText("", 1);
-    statusBar_->SetStatusText("", 2);
+    statusBar_->SetStatusText(wxString(getDbPath()), 2);
 }
 
 void MainFrame::initAuiManager() {
@@ -369,41 +434,75 @@ void MainFrame::initAuiManager() {
 }
 
 void MainFrame::initPanels() {
-    wxBoxSizer* sizer = new wxBoxSizer(wxVERTICAL);
+    // ── Add toolbar to AUI manager for proper resize handling ──
+    // Must be done after initAuiManager() sets the managed window
+    if (m_toolbar) {
+        auiManager_.AddPane(m_toolbar, wxAuiPaneInfo().Name("toolbar").ToolbarPane().Top().Row(0).Resizable(true));
+    }
 
-    // Top row: subscription | proxy list | detail
-    wxBoxSizer* topSizer = new wxBoxSizer(wxHORIZONTAL);
-    subPanel_ = new SubscriptionPanel(this, controller_);
-    proxyPanel_ = new ProxyListPanel(this, controller_, db_);
-    detailPanel_ = new ProxyDetailPanel(this);
-    logPanel_ = new LogPanel(this);
+    // ── Center panel first (parent for sub/proxy/log panels) ──
+    wxPanel* centerPanel = new wxPanel(this);
+    wxBoxSizer* centerSizer = new wxBoxSizer(wxVERTICAL);
 
-    // Size hints for column widths
+    // ── Create individual panels ──
+    subPanel_ = new SubscriptionPanel(centerPanel, controller_);
+    proxyPanel_ = new ProxyListPanel(centerPanel, controller_, db_);
+    detailPanel_ = new ProxyDetailPanel(this);  // AUI-managed, parent stays as MainFrame
+    logPanel_ = new LogPanel(centerPanel);
+
     subPanel_->SetMinSize(wxSize(380, -1));
     proxyPanel_->SetMinSize(wxSize(620, -1));
-    detailPanel_->SetMinSize(wxSize(320, -1));
+    // detailPanel_ is NO LONGER added to the wxBoxSizer
 
+    // Top row: subscription | proxy list (no detail panel)
+    wxBoxSizer* topSizer = new wxBoxSizer(wxHORIZONTAL);
     topSizer->Add(subPanel_, 0, wxEXPAND | wxRIGHT, 2);
-    topSizer->Add(proxyPanel_, 1, wxEXPAND | wxRIGHT, 2);
-    topSizer->Add(detailPanel_, 0, wxEXPAND);
-    sizer->Add(topSizer, 1, wxEXPAND | wxALL, 2);
+    topSizer->Add(proxyPanel_, 1, wxEXPAND);
+    centerSizer->Add(topSizer, 1, wxEXPAND);
 
-    // Bottom row: log panel under proxy list area
-    sizer->Add(logPanel_, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, 2);
+    // Bottom row: log panel
+    centerSizer->Add(logPanel_, 0, wxEXPAND | wxTOP, 2);
     logPanel_->SetMinSize(wxSize(620, 260));
 
-    SetSizer(sizer);
+    centerPanel->SetSizer(centerSizer);
 
-    // Load initial data
+    // ── AUI Pane Management ──
+    // Center: main content area (sub/proxy/log panels)
+    auiManager_.AddPane(centerPanel, wxAuiPaneInfo()
+        .Name("centerPane")
+        .CenterPane()
+        .PaneBorder(false)
+    );
+
+    // Right: proxy detail panel
+    auiManager_.AddPane(detailPanel_, wxAuiPaneInfo()
+        .Name("detailPane")
+        .Caption("Proxy Details")
+        .Right()
+        .Layer(0).Position(0)
+        .BestSize(320, -1)
+        .MinSize(250, 400)
+        .CloseButton(true)
+        .PinButton(true)
+        .Resizable(true)
+        .Floatable(true)
+    );
+
+    Logger::write("[MainFrame] AUI panes registered, calling Update()", LogLevel::DEBUG);
+    auiManager_.Update();
+    Logger::write("[MainFrame] auiManager_.Update() returned", LogLevel::DEBUG);
+
+    // Load initial data (unchanged) — done before AUI Update() to ensure
+    // data is ready when the layout triggers first paint
     subPanel_->loadSubscriptions();
 
-    // Auto-load first subscription
     if (!subPanel_->getSubscriptions().empty()) {
         std::string firstSubId = subPanel_->getSubscriptions()[0].id;
         proxyPanel_->loadProxies(firstSubId);
     } else {
         proxyPanel_->loadProxies("");
     }
+    Logger::write("[MainFrame] initPanels done", LogLevel::DEBUG);
 }
 
 void MainFrame::initTrayIcon() {
@@ -563,9 +662,15 @@ void MainFrame::onMenuConfig(wxCommandEvent&) {
                     uiApp->setDb(newDb);
                 }
 
-                // Update toolbar label
+                // Update config path and toolbar dbPath label
                 config_.database_path = cfg.database_path;
-                m_dbPathLabel->SetLabel(wxString(cfg.database_path));
+                if (m_dbPathLabel) {
+                    m_dbPathLabel->SetLabel(wxString(cfg.database_path));
+                    m_dbPathLabel->SetToolTip(wxString(cfg.database_path));
+                }
+                if (statusBar_) {
+                    statusBar_->SetStatusText(wxString(cfg.database_path), 2);
+                }
 
                 // Refresh all panels with the new database
                 if (subPanel_) {
@@ -653,40 +758,15 @@ void MainFrame::onToolSync(wxCommandEvent&) {
 }
 
 // -------------------------------------------------------------------
-//  Event handler — dynamic toolbar control sizing on frame resize
+//  Event handler — frame resize
 // -------------------------------------------------------------------
 void MainFrame::onResize(wxSizeEvent& event) {
-    // Let the default handler process the resize first (repositions children)
+    // Let the default handler process the resize first
     event.Skip();
 
-    wxToolBar* tb = GetToolBar();
-    if (!tb || !m_searchBox || !m_dbPathLabel) return;
-
-    // Query control positions AFTER toolbar has recalculated its layout
-    int tbWidth   = tb->GetClientSize().GetWidth();
-    wxPoint searchPos = m_searchBox->GetPosition();
-    wxPoint dbPos     = m_dbPathLabel->GetPosition();
-
-    // Defensive: if toolbar is too narrow and controls overlap, fall back to minima
-    if (dbPos.x <= searchPos.x) {
-        m_searchBox->SetSize(80, -1);
-        m_dbPathLabel->SetSize(200, -1);
-    } else {
-        // Search box: everything from its x-position up to the db-path label
-        int searchWidth = dbPos.x - searchPos.x;
-        searchWidth = std::max(80, std::min(200, searchWidth));
-        m_searchBox->SetSize(searchWidth, -1);
-
-        // DB path label: from its x-position to toolbar right edge (minus margin)
-        int dbWidth = tbWidth - dbPos.x - 8;
-        dbWidth = std::max(200, dbWidth);
-        m_dbPathLabel->SetSize(dbWidth, -1);
-    }
-
-    // Force toolbar to repaint — clears visual remnants left by the native
-    // wxSearchCtrl window at its old position after SetSize narrows it.
-    tb->Refresh();
-    tb->Update();
+    // Force AUI manager to update layout on resize
+    // wxAuiToolBar automatically re-layouts controls when managed by AUI
+    auiManager_.Update();
 }
 
 void MainFrame::onSearchBoxEnter(wxCommandEvent& event) {
@@ -711,6 +791,19 @@ void MainFrame::onSearchClear(wxCommandEvent& event) {
         proxyPanel_->filterBySearch("");
     }
     (void)event;
+}
+
+void MainFrame::onToggleDetailPane(wxCommandEvent&) {
+    wxAuiPaneInfo& pane = auiManager_.GetPane("detailPane");
+    if (pane.IsOk()) {
+        bool newVisible = !pane.IsShown();
+        pane.Show(newVisible);
+        detailPaneVisible_ = newVisible;
+        if (newVisible) {
+            pane.BestSize(320, -1);
+        }
+        auiManager_.Update();
+    }
 }
 
 // -------------------------------------------------------------------
