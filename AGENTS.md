@@ -187,6 +187,7 @@ ctest -R DedupTest -V
 5. **构建**: CMake + Ninja — Debug 模式 `cmake -B build -G "Ninja" -DCMAKE_BUILD_TYPE=Debug`
 6. **日志**: Logger 类 — 级别: TRACE < DEBUG < INFO < REPORT < WARN < ERR
 7. **测试**: Google Test — `ctest -V` 全量测试，`ctest -R <TestName> -V` 单测
+8. **测试文件目录**: 所有测试相关文件（测试源码 `.cpp`/`.h`、测试可执行文件、测试辅助工具）必须置于 `tests/` 目录下；`test/` 目录仅存放测试数据（数据库、配置文件、脚本），不得包含可编译的测试源码或可执行文件
 
 ### 技能路由表（关键词 → Skill 映射）
 
