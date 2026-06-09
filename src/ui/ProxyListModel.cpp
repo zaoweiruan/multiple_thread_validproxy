@@ -69,7 +69,7 @@ void ProxyListModel::detectIdOffset() {
             Logger::write("[DIAG] ProxyListModel::detectIdOffset: idOffset_="
                           + std::to_string(static_cast<int>(idOffset_))
                           + " (GetItem(0).GetID()=" + std::to_string(id) + ")",
-                          LogLevel::DEBUG);
+                          LogLevel::TRACE);
         }
     }
 }
@@ -89,7 +89,7 @@ unsigned int ProxyListModel::GetCount() const {
     unsigned int c = proxies_ ? static_cast<unsigned int>(proxies_->size()) : 0;
     // Log only when returning > 0 to reduce noise
     if (c > 0) {
-        Logger::write("[DIAG] ProxyListModel::GetCount() = " + std::to_string(c), LogLevel::DEBUG);
+        Logger::write("[DIAG] ProxyListModel::GetCount() = " + std::to_string(c), LogLevel::TRACE);
     }
     return c;
 }
@@ -215,8 +215,8 @@ int ProxyListModel::Compare(const wxDataViewItem& item1,
     int cmp = 0;
     switch (col) {
         case COL_ROWNUM:
-            // Natural order by indexId (stable original order)
-            cmp = a.indexid.compare(b.indexid);
+            // Sort by row number (1, 2, 3...) numerically
+            cmp = static_cast<int>(idx1 - idx2);
             break;
         case COL_TYPE:
             cmp = a.configtype.compare(b.configtype);

@@ -1,6 +1,6 @@
 ---
 name: writing-plans
-description: Use when you have a spec or requirements for a multi-step task, before touching code
+description: Use when you have a spec or requirements for a multi-step task, before touching code. Triggers: '计划', '方案', '制定计划', '设计文档', 'design doc', 'spec', '需求文档', '技术方案'
 ---
 
 # Writing Plans

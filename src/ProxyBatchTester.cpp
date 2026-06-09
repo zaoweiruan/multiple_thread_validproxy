@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <algorithm>
 #include <windows.h>
+#include <future>
 
 ProxyBatchTester::ProxyBatchTester(sqlite3* db, const config::AppConfig& config, const std::string& baseDir,
                                    std::atomic<bool>* externalCancel)
@@ -26,6 +27,22 @@ ProxyBatchTester::~ProxyBatchTester() {
     cancelRequested_ = true;  // Signal workers to stop
     delete proxyTester_;
     // Note: xrayManager_ is a singleton managed by XrayManager::release(), not deleted here
+    
+    // Wait for worker threads with timeout (same pattern as AppController)
+    if (!workerThreads_.empty()) {
+        for (auto& t : workerThreads_) {
+            if (t.joinable()) {
+                std::future<void> fut = std::async(std::launch::async, [&t]() {
+                    if (t.joinable()) t.join();
+                });
+                if (fut.wait_for(std::chrono::seconds(5)) != std::future_status::ready) {
+                    t.detach();
+                    Logger::write("[ProxyBatchTester] Destructor: detach due to timeout", LogLevel::WARN);
+                }
+            }
+        }
+        workerThreads_.clear();
+    }
 }
 
 std::vector<db::models::Profileitem> ProxyBatchTester::loadProxies(const std::string& subId) {
@@ -239,8 +256,11 @@ void ProxyBatchTester::testProxiesMultiThreaded() {
         threads.emplace_back(&ProxyBatchTester::workerThreadFunc, this, i, socksPort, apiPort);
     }
     
+    // Store threads for destructor to join with timeout
+    workerThreads_ = std::move(threads);
+    
     // Wait for all threads, detaching if cancelled to prevent shutdown hang
-    for (auto& t : threads) {
+    for (auto& t : workerThreads_) {
         if (t.joinable()) {
             if (isCancelled()) {
                 t.detach();  // Detach to avoid deadlock on shutdown
@@ -249,6 +269,7 @@ void ProxyBatchTester::testProxiesMultiThreaded() {
             }
         }
     }
+    workerThreads_.clear();
 }
 
 void ProxyBatchTester::printSummary() {

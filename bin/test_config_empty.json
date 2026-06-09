@@ -20,7 +20,9 @@
     },
     "subscription": {
         "priority_mode": "proxy_first",
-        "check_auto_update_interval": true
+        "check_auto_update_interval": true,
+        "connect_timeout_ms": 10000,
+        "timeout_ms": 30000
     },
     "dedup": {
         "enabled": true,

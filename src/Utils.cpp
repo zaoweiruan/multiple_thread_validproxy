@@ -58,39 +58,39 @@ namespace utils {
         return "Unknown(" + configType + ")";
     }
     
-    void sendNotification(const std::string& title, const std::string& message) {
-        static bool initialized = false;
-        static UINT uid = 1;
-        
-        NOTIFYICONDATA nid = {0};
-        nid.cbSize = sizeof(NOTIFYICONDATA);
-        nid.uID = uid;
-        nid.hWnd = GetConsoleWindow();
-        
-        if (!initialized) {
-            nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
-            nid.hIcon = LoadIcon(NULL, IDI_APPLICATION);
-            nid.uCallbackMessage = WM_USER;
-            MultiByteToWideChar(CP_UTF8, 0, "validproxy", -1, nid.szTip, 128);
-            Shell_NotifyIcon(NIM_ADD, &nid);
-            
-            atexit([]() {
-                NOTIFYICONDATA nid = {0};
-                nid.cbSize = sizeof(NOTIFYICONDATA);
-                nid.uID = 1;
-                nid.hWnd = GetConsoleWindow();
-                nid.uFlags = 0;
-                Shell_NotifyIcon(NIM_DELETE, &nid);
-            });
-            
-            initialized = true;
-        }
-        
-        nid.uFlags = NIF_INFO;
-        nid.dwInfoFlags = NIIF_INFO;
-        MultiByteToWideChar(CP_UTF8, 0, title.c_str(), -1, nid.szInfoTitle, 64);
-        MultiByteToWideChar(CP_UTF8, 0, message.c_str(), -1, nid.szInfo, 256);
-        
-        Shell_NotifyIcon(NIM_MODIFY, &nid);
-    }
+void sendNotification(const std::string& title, const std::string& message) {
+         static bool initialized = false;
+         static UINT uid = 1;
+
+         NOTIFYICONDATAW nid = {0};
+         nid.cbSize = sizeof(NOTIFYICONDATAW);
+         nid.uID = uid;
+         nid.hWnd = GetConsoleWindow();
+
+         if (!initialized) {
+             nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
+             nid.hIcon = (HICON)(LONG_PTR)LoadIconW(NULL, MAKEINTRESOURCEW(32512));
+             nid.uCallbackMessage = WM_USER;
+             MultiByteToWideChar(CP_UTF8, 0, "validproxy", -1, nid.szTip, 128);
+             Shell_NotifyIconW(NIM_ADD, &nid);
+
+             atexit([]() {
+                 NOTIFYICONDATAW nid = {0};
+                 nid.cbSize = sizeof(NOTIFYICONDATAW);
+                 nid.uID = 1;
+                 nid.hWnd = GetConsoleWindow();
+                 nid.uFlags = 0;
+                 Shell_NotifyIconW(NIM_DELETE, &nid);
+             });
+
+             initialized = true;
+         }
+
+         nid.uFlags = NIF_INFO;
+         nid.dwInfoFlags = NIIF_INFO;
+         MultiByteToWideChar(CP_UTF8, 0, title.c_str(), -1, nid.szInfoTitle, 64);
+         MultiByteToWideChar(CP_UTF8, 0, message.c_str(), -1, nid.szInfo, 256);
+
+         Shell_NotifyIconW(NIM_MODIFY, &nid);
+     }
 }

@@ -10,6 +10,9 @@ origin: "Continuation of project memory consolidation task"
 
 ## Status: In Progress
 
+> 📝 **2026-06-09** — Config validation improvements plan created. See `docs/plans/2026-06-09-config-validation-improvements-plan.md`.
+> 📝 **2026-06-09** — ConfigReader::load() 弹窗修复 (double-popup bug). See `docs/bugfix/2026-06-09-configreader-load-error-popup-fix.md`.
+> 📝 **2026-06-04** — #27 SubitemUpdaterV2 hardcoded `"bin/config"` path fix → ✅ completed. See `docs/bugfix/2026-06-04-subitemupdater-hardcoded-binconfig-path.md`.
 > 📝 **2026-05-19** — 批量状态更新: P4→❌ cancelled; 003→✅ completed; DLL fix→✅ completed; libpng16d/libtiffd fix→✅ completed; consolidated-ui-fixes→✅ completed; 007 frontmatter repaired.
 
 ## Completed Items
@@ -49,7 +52,7 @@ origin: "Continuation of project memory consolidation task"
 
 ### Documentation
 - [x] AGENTS.md — "核心开发规则" section added
-- [x] memory/project_knowledge.md — "开发流程规则" section added
+- [x] `docs/project-knowledge.md` — "开发流程规则" section added (moved from `memory/project_knowledge.md`)
 - [x] DEV-PROCESS.md — created with workflow + template + status definitions
 
 ## Execution History (post-tracker-creation)
@@ -81,6 +84,22 @@ origin: "Continuation of project memory consolidation task"
 | # | Plan | Description | Status |
 |---|------|-------------|--------|
 | 1 | 14-002 | UI 图形界面实现 — 基于 wxWidgets (见下方 UI Implementation 详表) | 📝 draft |
+
+### Recently Completed Plans
+
+| # | Plan | Description | Status |
+|---|------|-------------|--------|
+| 17 | 2026-06-02 | Subscription panel right-click delete functionality | ✅ completed |
+| 18 | 2026-06-02 | Subscription panel column sorting (Name, Proxies, Update) | ✅ completed |
+| 19 | 2026-06-02 | ProxyListPanel Row# column sorts by IndexId instead of row number | ✅ completed |
+| 20 | 2026-06-02 | SubscriptionPanel missing detectIdOffset after sort clear | ✅ completed |
+| 21 | 2026-06-02 | PortManager clearPorts() for port leak fix | ✅ completed |
+| 22 | 2026-06-03 | Subscription timeout config - curl CONNECTTIMEOUT + config.json | ✅ completed |
+| 23 | 2026-06-03 | Network field improvements - splithttp→xhttp mapping | ✅ completed |
+| 24 | 2026-06-03 | UI improvements - dialog centering + copyable text | ✅ completed |
+| 25 | 2026-06-03 | Proxy context menu disabled during operations | ✅ completed |
+| 26 | 2026-06-03 | Config dialog improvements - block DB switch during ops | ✅ completed |
+| 27 | 2026-06-04 | SubitemUpdaterV2 hardcoded `"bin/config"` path fallback fix | ✅ completed |
 
 ---
 

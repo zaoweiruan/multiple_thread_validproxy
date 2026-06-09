@@ -71,10 +71,20 @@
 
 ## CLI Modes
 
-- generator
-- show-sub
-- find-proxy
-- test-sub
-- update
-- dedup
-- tourl
+### CLI Commands (when arguments provided):
+- generator - Generate outbound JSON for a profile
+- show-sub - Show all subscriptions  
+- find-proxy - Find first working proxy
+- findminproxy - Find working proxy sorted by delay
+- test-sub - Test proxies from subscription
+- update - Update subscription(s)
+- dedup - Remove duplicate proxies
+- tourl - Export proxies to share links
+- sync - Sync valid proxies between databases
+- import-sub - Batch import subscriptions
+
+### GUI Mode (default):
+- No arguments → launches desktop GUI automatically
+- `-ui`/`--ui` explicit flag also launches GUI (backward compatible)
+
+---

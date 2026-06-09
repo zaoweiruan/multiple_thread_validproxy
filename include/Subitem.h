@@ -215,6 +215,25 @@ public:
     }
     return true;
   }
+
+  static std::string escape(const std::string& s) {
+    std::string out;
+    out.reserve(s.size());
+    for (char c : s) { if (c == '\'') out += "''"; else out += c; }
+    return out;
+  }
+
+  bool deleteById(const std::string& id) {
+    std::string sql = "DELETE FROM SubItem WHERE Id = '" + escape(id) + "';";
+    char* errMsg = nullptr;
+    int rc = sqlite3_exec(db_, sql.c_str(), nullptr, nullptr, &errMsg);
+    if (rc != SQLITE_OK) {
+      Logger::write("Delete subscription error: " + std::string(errMsg ? errMsg : "unknown"), LogLevel::ERR);
+      sqlite3_free(errMsg);
+      return false;
+    }
+    return sqlite3_changes(db_) > 0;
+  }
 };
 
 } // namespace models

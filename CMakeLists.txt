@@ -27,29 +27,42 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/bin)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/bin)
 
-add_executable(validproxy
-    src/main.cpp
+# Shared core sources (compiled into both CLI and GUI targets)
+set(CORE_SOURCES
     src/ConfigGenerator.cpp
     src/ConfigReader.cpp
-    src/XrayApi.cpp
-    src/SubitemUpdaterV2.cpp
-    src/PortManager.cpp
     src/Logger.cpp
-    src/XrayInstance.cpp
-    src/XrayManager.cpp
-    src/ProxyTester.cpp
-    src/UrlFetcher.cpp
+    src/PortManager.cpp
     src/ProxyBatchTester.cpp
     src/ProxyFinder.cpp
-    src/Utils.cpp
+    src/ProxyTester.cpp
     src/ShareLink.cpp
+    src/SubitemUpdaterV2.cpp
+    src/UrlFetcher.cpp
+    src/Utils.cpp
+    src/XrayApi.cpp
+    src/XrayInstance.cpp
+    src/XrayManager.cpp
 )
 
-target_link_libraries(validproxy PRIVATE
+# ===== CLI target (CONSOLE subsystem) =====
+add_executable(validproxy-cli
+    src/main_cli.cpp
+    ${CORE_SOURCES}
+)
+
+target_link_libraries(validproxy-cli PRIVATE
     Threads::Threads
     CURL::libcurl
     E:/vcpkg/installed/x64-mingw-static/lib/libsqlite3.a
     D:/boost_1_88_0/lib/libboost_json-mgw14-mt-x64-1_88.a
+)
+
+# Force CLI output to bin (override global setting for tests)
+set_target_properties(validproxy-cli PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/bin
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/bin
 )
 
 # -- wxWidgets (GUI mode) --
@@ -70,7 +83,7 @@ find_package(wxWidgets CONFIG QUIET
 
 if(wxWidgets_FOUND)
     message(STATUS "wxWidgets found: ${wxWidgets_VERSION}")
-    
+
     # Create UI source file list
     set(UI_SOURCES
         src/ui/Events.h
@@ -79,6 +92,8 @@ if(wxWidgets_FOUND)
         src/ui/AppController.cpp
         src/ui/MainFrame.h
         src/ui/MainFrame.cpp
+        src/ui/SubscriptionListModel.h
+        src/ui/SubscriptionListModel.cpp
         src/ui/SubscriptionPanel.h
         src/ui/SubscriptionPanel.cpp
         src/ui/ProxyListModel.h
@@ -96,16 +111,28 @@ if(wxWidgets_FOUND)
         src/ui/TrayIcon.h
         src/ui/TrayIcon.cpp
         src/ui/UIApp.h
-src/ui/UIApp.cpp
+        src/ui/UIApp.cpp
         src/ui/TestLogMediator.cpp
         src/ui/icons.rc
-        )
-    
+    )
+
     # RC flags: let windres find data files relative to CMAKE_SOURCE_DIR
     set(CMAKE_RC_FLAGS "${CMAKE_RC_FLAGS} -I${CMAKE_SOURCE_DIR}")
-    
-    target_sources(validproxy PRIVATE ${UI_SOURCES})
-    
+
+    # ===== GUI target (WIN32 subsystem) =====
+    add_executable(validproxy
+        src/main_gui.cpp
+        ${CORE_SOURCES}
+        ${UI_SOURCES}
+    )
+
+    target_link_libraries(validproxy PRIVATE
+        Threads::Threads
+        CURL::libcurl
+        E:/vcpkg/installed/x64-mingw-static/lib/libsqlite3.a
+        D:/boost_1_88_0/lib/libboost_json-mgw14-mt-x64-1_88.a
+    )
+
     # Link wxWidgets imported targets
     target_link_libraries(validproxy PRIVATE
         wx::wxbase
@@ -116,39 +143,39 @@ src/ui/UIApp.cpp
         wx::wxpropgrid
         wx::wxnet
     )
-    
+
     # Add include directory for wx headers (dynamic variant headers)
     target_include_directories(validproxy PRIVATE "E:/vcpkg/installed/x64-mingw-dynamic/include")
-    
-    # Add include directory for UI source headers (so main.cpp can #include "UIApp.h" etc.)
+
+    # Add include directory for UI source headers
     target_include_directories(validproxy PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/ui)
-    
+
     # Copy wx DLLs to output directory
     function(copy_wx_dlls TARGET_NAME)
         get_target_property(_bin_dir ${TARGET_NAME} RUNTIME_OUTPUT_DIRECTORY)
         if(NOT _bin_dir)
             set(_bin_dir "${CMAKE_SOURCE_DIR}/bin")
         endif()
-        
+
         # Determine if we're building Debug or Release to choose correct DLL directory
-if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-             set(wx_bin_dir "E:/vcpkg/installed/x64-mingw-dynamic/debug/bin")
-             # Debug DLLs have 'd' suffix: wxbase32ud_gcc_custom.dll, libpcre2-16d.dll, libzlibd1.dll
-             set(WX_DLLS
-                 wxbase32ud_gcc_custom.dll
-                 wxbase32ud_net_gcc_custom.dll
-                 wxmsw32ud_adv_gcc_custom.dll
-                 wxmsw32ud_aui_gcc_custom.dll
-                 wxmsw32ud_core_gcc_custom.dll
-                 wxmsw32ud_html_gcc_custom.dll
-                 wxmsw32ud_propgrid_gcc_custom.dll
-                 libpcre2-16d.dll
-                 libzlibd1.dll
-                 libjpeg-62.dll
-                 libpng16d.dll
-                 libtiffd.dll
-                 liblzma.dll
-             )
+        if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+            set(wx_bin_dir "E:/vcpkg/installed/x64-mingw-dynamic/debug/bin")
+            # Debug DLLs have 'd' suffix
+            set(WX_DLLS
+                wxbase32ud_gcc_custom.dll
+                wxbase32ud_net_gcc_custom.dll
+                wxmsw32ud_adv_gcc_custom.dll
+                wxmsw32ud_aui_gcc_custom.dll
+                wxmsw32ud_core_gcc_custom.dll
+                wxmsw32ud_html_gcc_custom.dll
+                wxmsw32ud_propgrid_gcc_custom.dll
+                libpcre2-16d.dll
+                libzlibd1.dll
+                libjpeg-62.dll
+                libpng16d.dll
+                libtiffd.dll
+                liblzma.dll
+            )
         else()
             set(wx_bin_dir "E:/vcpkg/installed/x64-mingw-dynamic/bin")
             # Release DLLs
@@ -168,7 +195,7 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug")
                 liblzma.dll
             )
         endif()
-        
+
         foreach(dll ${WX_DLLS})
             set(src_dll "${wx_bin_dir}/${dll}")
             if(EXISTS "${src_dll}")
@@ -181,14 +208,16 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug")
             endif()
         endforeach()
     endfunction()
-    
-copy_wx_dlls(validproxy)
-    
-    # Icons are now embedded into the executable via src/ui/icons.rc
-    # (see ToolbarIcons.h for the resource-based loading path)
-    # The old POST_BUILD copy-to-bin/icons/ step has been removed.
 
-    # Compile definition for GUI mode
+    copy_wx_dlls(validproxy)
+
+    # WIN32_EXECUTABLE creates GUI subsystem executable (no console window)
+    set_target_properties(validproxy PROPERTIES
+        WIN32_EXECUTABLE TRUE
+        RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin
+        RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/bin
+        RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/bin
+    )
     target_compile_definitions(validproxy PRIVATE HAS_WXWIDGETS=1)
 else()
     message(STATUS "wxWidgets not found - GUI mode (-ui) will not be available")
@@ -202,6 +231,11 @@ add_subdirectory(E:/eclipse_workspace/googletest ${CMAKE_BINARY_DIR}/googletest)
 add_executable(test_curl_easy_handle tests/test_curl_easy_handle.cpp)
 target_include_directories(test_curl_easy_handle PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(test_curl_easy_handle PRIVATE CURL::libcurl)
+set_target_properties(test_curl_easy_handle PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+)
 add_test(NAME CurlEasyHandleTest COMMAND test_curl_easy_handle)
 
 add_executable(test_dedup tests/test_dedup.cpp)
@@ -211,35 +245,56 @@ target_link_libraries(test_dedup PRIVATE
     gtest
     E:/vcpkg/installed/x64-mingw-static/lib/libsqlite3.a
 )
+set_target_properties(test_dedup PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+)
 add_test(NAME DedupTest COMMAND test_dedup)
 
-add_executable(test_model tests/test_model.cpp)
-target_include_directories(test_model PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_link_libraries(test_model PRIVATE
-    gtest_main
-    gtest
-    E:/vcpkg/installed/x64-mingw-static/lib/libspdlog.a
-    E:/vcpkg/installed/x64-mingw-static/lib/libfmt.a
-)
-add_test(NAME ProfileitemTest COMMAND test_model)
+# -- Profileitem model tests - DISABLED until test_model.cpp is created
+# add_executable(test_model tests/test_model.cpp)
+# target_include_directories(test_model PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+# target_link_libraries(test_model PRIVATE
+#     gtest_main
+#     gtest
+#     E:/vcpkg/installed/x64-mingw-static/lib/libspdlog.a
+#     E:/vcpkg/installed/x64-mingw-static/lib/libfmt.a
+# )
+# add_test(NAME ProfileitemTest COMMAND test_model)
 
 # -- Logger unit tests (zero external deps beyond gtest) --
 add_executable(test_logger tests/test_logger.cpp src/Logger.cpp)
 target_include_directories(test_logger PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(test_logger PRIVATE gtest_main gtest)
+set_target_properties(test_logger PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+)
 add_test(NAME LoggerTest COMMAND test_logger)
 
 # -- ShareLink unit tests (pure functions, no external deps beyond gtest) --
 add_executable(test_sharelink tests/test_sharelink.cpp src/ShareLink.cpp)
 target_include_directories(test_sharelink PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(test_sharelink PRIVATE gtest_main gtest)
+set_target_properties(test_sharelink PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+)
 add_test(NAME ShareLinkTest COMMAND test_sharelink)
 
-# -- ConfigReader unit tests - skip due to Windows API dependency
-# add_executable(test_config_reader tests/test_config_reader.cpp src/ConfigReader.cpp src/Logger.cpp)
-# target_include_directories(test_config_reader PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-# target_link_libraries(test_config_reader PRIVATE gtest_main gtest D:/boost_1_88_0/lib/libboost_json-mgw14-mt-x64-1_88.a)
-# add_test(NAME ConfigReaderTest COMMAND test_config_reader)
+# -- ConfigReader unit tests (includes load() tests with error reporter override) --
+add_executable(test_config_reader tests/test_config_reader.cpp tests/test_config_reader_load.cpp src/ConfigReader.cpp src/Utils.cpp src/Logger.cpp)
+target_include_directories(test_config_reader PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(test_config_reader PRIVATE gtest_main gtest D:/boost_1_88_0/lib/libboost_json-mgw14-mt-x64-1_88.a)
+set_target_properties(test_config_reader PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+)
+add_test(NAME ConfigReaderTest COMMAND test_config_reader)
 
 # -- ConfigGenerator unit tests (SQLite + boost_json) --
 add_executable(test_config_generator tests/test_config_generator.cpp src/ConfigGenerator.cpp src/Logger.cpp)
@@ -248,6 +303,24 @@ target_link_libraries(test_config_generator PRIVATE gtest_main gtest
     E:/vcpkg/installed/x64-mingw-static/lib/libsqlite3.a
     D:/boost_1_88_0/lib/libboost_json-mgw14-mt-x64-1_88.a
 )
+set_target_properties(test_config_generator PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+)
 add_test(NAME ConfigGeneratorTest COMMAND test_config_generator)
 
-install(TARGETS validproxy DESTINATION bin)
+# -- Delete Subscription tests --
+add_executable(test_delete_subscription tests/test_delete_subscription.cpp src/Logger.cpp)
+target_include_directories(test_delete_subscription PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(test_delete_subscription PRIVATE gtest_main gtest
+    E:/vcpkg/installed/x64-mingw-static/lib/libsqlite3.a
+)
+set_target_properties(test_delete_subscription PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+)
+add_test(NAME DeleteSubscriptionTest COMMAND test_delete_subscription)
+
+install(TARGETS validproxy validproxy-cli DESTINATION bin)

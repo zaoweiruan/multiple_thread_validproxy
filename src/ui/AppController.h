@@ -7,6 +7,7 @@
 #include <tuple>
 #include <atomic>
 #include <thread>
+#include <memory>
 #include <sqlite3.h>
 #include <wx/event.h>
 
@@ -23,24 +24,29 @@ public:
   AppController(sqlite3* db, const config::AppConfig& cfg);
   ~AppController();
 
-  // Config
-  config::AppConfig getConfig() const { return config_; }
-  bool saveConfig(const config::AppConfig& cfg);
+// Config
+   config::AppConfig getConfig() const { return config_; }
+   bool saveConfig(const config::AppConfig& cfg);
+   bool isRunning() const { return isRunning_.load(); }
 
   // Database switching (close old + open new)
   sqlite3* switchDatabase(const std::string& newPath);
 
 // Subscriptions
    std::vector<db::models::Subitem> loadSubscriptions();
+   void loadSubscriptionsAsync(wxEvtHandler* handler);
    bool updateSubscriptionEnabled(const std::string& id, bool enabled);
-   bool updateSubitem(const db::models::Subitem& sub);
-   void updateSubscriptionAsync(const std::string& subId, wxEvtHandler* wxHandler);
+bool updateSubitem(const db::models::Subitem& sub);
+    bool deleteSubscription(const std::string& subId);
+    void updateSubscriptionAsync(const std::string& subId, wxEvtHandler* wxHandler);
   void updateAllSubscriptionsAsync(wxEvtHandler* wxHandler);
   bool importSubscription(const std::string& url);
 
 // Proxies
 std::vector<db::models::Profileitem> loadProxies(const std::string& subId = "");
+void loadProxiesAsync(const std::string& subId, wxEvtHandler* handler);
 std::unordered_map<std::string, int> countProxiesBySubId();
+std::unordered_map<std::string, int> countValidProxiesBySubId();
 std::optional<db::models::Profileitem> getProxyByIndexId(const std::string& indexId);
 std::vector<db::models::ProfileExItem> loadProxyResults();
 

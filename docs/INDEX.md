@@ -2,7 +2,7 @@
 title: "docs: project document index"
 type: meta
 status: maintained
-updated: 2026-05-25
+updated: 2026-06-04
 ---
 
 # Project Document Index
@@ -16,20 +16,23 @@ updated: 2026-05-25
 ## 0. 快速总览
 
 | 类别 | 文件数 | 入口 |
- |------|--------|------|
- | [术语表](#1-术语表) | 1 | `docs/glossary.md` |
-  | [项目上下文](#2-项目上下文) | 4 | `docs/context.md` |
-  | [模型配置](#25-模型配置) | 1 | `docs/model-config.md` |
- | [开发流程规范](#3-开发流程规范) | 1 | `docs/plans/DEV-PROCESS.md` |
- | [提示模式规范](#35-提示模式规范) | 1 | `docs/prompt-patterns.md` |
- | [整体架构](#4-整体架构) | 3 | `docs/architecture.md` |
- | [设计规范](#5-设计规范) | 9 | `docs/design/` |
- | [需求与脑暴](#6-需求与脑暴) | 4 | `docs/superpowers/brainstorm/` |
- | [技术方案](#7-技术方案) | 6 | `docs/superpowers/specs/` |
- | [实施计划](#8-实施计划) | 44 | `docs/plans/` |
- | [分析报告](#9-分析报告) | 5 | `docs/reports/` |
- | [Bug 修复记录](#91-bug-修复记录) | 1 | `docs/bugfix/` |
- | [测试报告](#10-测试报告) | 1 | `docs/test/` |
+|------|--------|------|
+| [术语表](#1-术语表) | 1 | `docs/glossary.md` |
+| [项目上下文](#2-项目上下文) | 4 | `docs/context.md` |
+| [模型配置](#25-模型配置) | 1 | `docs/model-config.md` |
+| [开发流程规范](#3-开发流程规范) | 1 | `docs/plans/DEV-PROCESS.md` |
+| [提示模式规范](#35-提示模式规范) | 1 | `docs/prompt-patterns.md` |
+| [可用技能参考](#36-可用技能参考) | 1 | `docs/available-skills-reference.md` |
+| [整体架构](#4-整体架构) | 3 | `docs/architecture.md` |
+| [设计规范](#5-设计规范) | 9 | `docs/design/` |
+| [需求与脑暴](#6-需求与脑暴) | 4 | `docs/superpowers/brainstorm/` |
+| [技术方案](#7-技术方案) | 6 | `docs/superpowers/specs/` |
+| [规范化设计](#75-规范化设计) | 4 | `docs/specs/` |
+| [实施计划](#8-实施计划) | 54 | `docs/plans/` |
+| [分析报告](#9-分析报告) | 6 | `docs/reports/` |
+| [Bug 修复记录](#91-bug-修复记录) | 6 | `docs/bugfix/` |
+| [测试报告](#10-测试报告) | 1 | `docs/test/` |
+| [长期记忆](#13-长期记忆) | 1 | `docs/project-knowledge.md` |
 
 ---
 
@@ -76,11 +79,17 @@ updated: 2026-05-25
 
 ## 3.5 提示模式规范
 
-| # | 文件 | 说明 | 大小 |
-|---|------|------|------|
-| 1 | [`docs/prompt-patterns.md`](./prompt-patterns.md) | **提示词模式指南** — 针对本项目各工作类型（功能开发/Bug 修复/代码审查/调研等）的最优提示结构模板和反模式 | 8.5 KB |
-
-> **用途**: 作为与 AI agent 协作的接口规范，确保每次交互信息完备。新贡献者或首次使用 agent 前先读本章。
+ | # | 文件 | 说明 | 大小 |
+ |---|------|------|------|
+ | 1 | [`docs/prompt-patterns.md`](./prompt-patterns.md) | **提示词模式指南** — 针对本项目各工作类型（功能开发/Bug 修复/代码审查/调研等）的最优提示结构模板和反模式 | 8.5 KB |
+ 
+ ## 3.6 可用技能参考
+ 
+ | # | 文件 | 说明 |
+ |---|------|------|
+ | 1 | [`docs/available-skills-reference.md`](./available-skills-reference.md) | **可用技能参考** — 代码审查、重构、代码质量评估技能清单及安装方法 |
+ 
+ > **用途**: 作为与 AI agent 协作的接口规范，确保每次交互信息完备。新贡献者或首次使用 agent 前先读本章。
 
 ---
 
@@ -98,7 +107,8 @@ updated: 2026-05-25
 
 | # | 文件 | 说明 | 大小 |
 |---|------|------|------|
-| 1 | [`docs/design/ui-design-plan.md`](./design/ui-design-plan.md) | **UI 图形界面设计** — 架构分层、数据模型映射、组件选型矩阵(MainFrame/SubscriptionPanel/ProxyListPanel/TestPanel/LogPanel/ConfigDialog/TrayIcon) | 24.7 KB |
+| 1 | [`docs/design/cli-gui-binary-split-design.md`](./design/cli-gui-binary-split-design.md) | **CLI/GUI 二进制拆分设计** — 解决 WIN32_EXECUTABLE 导致 CLI 非阻塞问题的设计方案 | 6.8 KB |
+| 2 | [`docs/design/ui-design-plan.md`](./design/ui-design-plan.md) | **UI 图形界面设计** — 架构分层、数据模型映射、组件选型矩阵(MainFrame/SubscriptionPanel/ProxyListPanel/TestPanel/LogPanel/ConfigDialog/TrayIcon) | 24.7 KB |
 | 2 | [`docs/design/dedup-blacklist-design.md`](./design/dedup-blacklist-design.md) | **去重黑名单设计** — 无效代理过滤(REALITY/racetxt/内部性检测) 的完整设计与实现规范 | 14.6 KB |
 | 3 | [`docs/design/invalid-proxy-filter-map.md`](./design/invalid-proxy-filter-map.md) | **无效代理过滤策略映射** — 条件索引、SQL 缺失/脏字段关系图、去重行为参考 | 16.4 KB |
 | 4 | [`docs/plans/feature-status.md`](./plans/feature-status.md) | **功能状态矩阵** — 订阅管理/代理列表/批量测试/日志面板/主框架的逐项状态(✅⚠️❌)及缺失功能汇总 | 5.3 KB |
@@ -133,9 +143,20 @@ updated: 2026-05-25
 
 ---
 
+## 7.5 规范化设计 (docs/specs/)
+
+| # | 文件 | 说明 | 大小 |
+|---|------|------|------|
+| 1 | [`docs/specs/2026-06-03-subscription-timeout-config.md`](./specs/2026-06-03-subscription-timeout-config.md) | **订阅超时配置化** — 将连接超时和请求超时纳入 config.json 配置管理 | 78 lines |
+| 2 | [`docs/specs/2026-06-03-network-field-improvements.md`](./specs/2026-06-03-network-field-improvements.md) | **network 字段处理改进** — splithttp→xhttp 映射，无效值默认 tcp | 69 lines |
+| 3 | [`docs/specs/2026-06-03-ui-improvements.md`](./specs/2026-06-03-ui-improvements.md) | **UI 体验改进** — 弹窗居中 + ProxyDetail 可选择拷贝 | 54 lines |
+| 4 | [`docs/specs/2026-06-03-proxy-context-menu-disabled.md`](./specs/2026-06-03-proxy-context-menu-disabled.md) | **批量操作时禁止右键菜单** — 防止干预进行中的操作 | 43 lines |
+
+---
+
 ## 8. 实施计划 (docs/plans/)
 
-> 共 44 个计划文件，按日期倒序排列。
+> 共 54 个计划文件，按日期倒序排列。
 > 状态标记: ✅ completed ｜ 🔄 in_progress ｜ 📝 draft｜ ❌ blocked
 > 全局跟踪: [`docs/plans/project-plans-tracker.md`](./plans/project-plans-tracker.md)
 
@@ -158,6 +179,16 @@ updated: 2026-05-25
 | 2026-05-18 |  | [`2026-05-18-004-impl-find-proxy-async.md`](./plans/2026-05-18-004-impl-find-proxy-async.md) | plan draft | **异步 Find Proxy + Delay 列刷新** P1/P2/P3 |
 | 2026-05-19 |  | [`2026-05-19-ui-enhancements-sort-find-link.md`](./plans/2026-05-19-ui-enhancements-sort-find-link.md) | feat draft | 列排序 + 查找单个代理 + 订阅联动 |
 | 2026-05-14 |  | [`2026-05-14-004-gh-mcp-list-top-repos.md`](./plans/2026-05-14-004-gh-mcp-list-top-repos.md) | plan draft | GitHub MCP 查询 Top 5 仓库 (read-only) |
+| 2026-05-20 | | [`2026-05-20-proxy-ui-enhancement-plan.md`](./plans/2026-05-20-proxy-ui-enhancement-plan.md) | plan draft | Add consecutive_failures/message columns, ProxyDetailPanel, search box |
+| 2026-05-20 | | [`2026-05-20-ui-layout-redesign.md`](./plans/2026-05-20-ui-layout-redesign.md) | plan draft | Redesign main layout to 3-column + bottom log panel |
+| 2026-05-21 | | [`2026-05-21-search-dbpath-implementation.md`](./plans/2026-05-21-search-dbpath-implementation.md) | plan draft | Real-time search, clear button, auto-load first subscription, DB path label |
+| 2026-05-22 | | [`2026-05-22-custom-toolbar-icons.md`](./plans/2026-05-22-custom-toolbar-icons.md) | plan draft | Replace stock wxArtProvider icons with custom 48px PNG toolbar icons |
+| 2026-05-27 | | [`2026-05-27-disable-conflict-ui-during-ops.md`](./plans/2026-05-27-disable-conflict-ui-during-ops.md) | plan draft | Disable conflicting toolbar/menu buttons during long-running ops |
+| 2026-05-27 | | [`2026-05-27-reject-reentry.md`](./plans/2026-05-27-reject-reentry.md) | plan draft | Prevent reentry of long-running operations with reject message |
+| 2026-05-27 | | [`2026-05-27-sync-toolbar-button.md`](./plans/2026-05-27-sync-toolbar-button.md) | plan draft | Add Sync toolbar button for database sync |
+| 2026-05-28 | | [`2026-05-28-non-reentrant-update-cancel.md`](./plans/2026-05-28-non-reentrant-update-cancel.md) | plan draft | Add cancel support for subscription update + dynamic cancel button |
+| 2026-05-29 | | [`2026-05-29-proxylist-virtual-model-implementation.md`](./plans/2026-05-29-proxylist-virtual-model-implementation.md) | plan draft | Replace wxDataViewListStore with wxDataViewIndexListModel |
+| 2026-05-29 | | [`2026-05-29-subscription-panel-ui-chinese-i18n.md`](./plans/2026-05-29-subscription-panel-ui-chinese-i18n.md) | plan draft | Localize subscription panel to Chinese, remove buttons, widen DB path |
 | 2026-05-13 | P4 | [`2026-05-13-P4-extract-sqlite-helper-and-transaction-plan.md`](./plans/2026-05-13-P4-extract-sqlite-helper-and-transaction-plan.md) | refactor draft | SQLite Helper + Transaction RAII 萃取 |
 
 ### 8.3 已完成计划 (Completed)
@@ -185,6 +216,7 @@ updated: 2026-05-25
 | 2026-04-24 |  | [`2026-04-24-proxy-sync.md`](./plans/2026-04-24-proxy-sync.md) | feat ✅ | 代理同步 (主副本 DB) |
 | 2026-04-17 |  | [`2026-04-17-subscription-url-proxy-fallback-plan.md`](./plans/2026-04-17-subscription-url-proxy-fallback-plan.md) | feat ✅ | 订阅 URL proxy fallback |
 | 2026-04-13 |  | [`2026-04-13-module-refactoring-plan.md`](./plans/2026-04-13-module-refactoring-plan.md) | refactor ✅ | 模块重构计划 |
+| 2026-06-01 |  | [`2026-06-01-cli-gui-binary-split.md`](./plans/2026-06-01-cli-gui-binary-split.md) | refactor ✅ | CLI/GUI 二进制拆分 — 解决 WIN32_EXECUTABLE 导致 cmd.exe 非阻塞问题 |
 
 ### 8.4 `.kilo/plans/` 已迁移归档
 
@@ -202,6 +234,24 @@ updated: 2026-05-25
 | `1776914861549-gentle-panda.md` | `2026-05-14-003-proxy-validation-tool-architecture.md` | `docs/plans/` | 📝 参考文档 |
 | `1776215451920-nimble-wolf.md` | `2026-05-14-004-gh-mcp-list-top-repos.md` | `docs/plans/` | 📝 draft |
 
+### 8.5 `docs/superpowers/plans/` 已迁移归档
+
+> 以下计划原存于 `docs/superpowers/plans/`，已于 2026-06-01 按统一命名规范迁移至 `docs/plans/`。
+> `docs/superpowers/plans/` 目录已删除。
+
+| 文件 | Type | 说明 | 状态 |
+|------|------|------|------|
+| [2026-05-20-proxy-ui-enhancement-plan.md](./plans/2026-05-20-proxy-ui-enhancement-plan.md) | plan draft | Add columns, detail panel, search | 📝 draft |
+| [2026-05-20-ui-layout-redesign.md](./plans/2026-05-20-ui-layout-redesign.md) | plan draft | 3-column layout redesign | 📝 draft |
+| [2026-05-21-search-dbpath-implementation.md](./plans/2026-05-21-search-dbpath-implementation.md) | plan draft | Search + DB path panel | 📝 draft |
+| [2026-05-22-custom-toolbar-icons.md](./plans/2026-05-22-custom-toolbar-icons.md) | plan draft | Custom toolbar icons | 📝 draft |
+| [2026-05-27-disable-conflict-ui-during-ops.md](./plans/2026-05-27-disable-conflict-ui-during-ops.md) | plan draft | Disable UI during ops | 📝 draft |
+| [2026-05-27-reject-reentry.md](./plans/2026-05-27-reject-reentry.md) | plan draft | Reentry protection | 📝 draft |
+| [2026-05-27-sync-toolbar-button.md](./plans/2026-05-27-sync-toolbar-button.md) | plan draft | Sync toolbar button | 📝 draft |
+| [2026-05-28-non-reentrant-update-cancel.md](./plans/2026-05-28-non-reentrant-update-cancel.md) | plan draft | Non-reentrant update cancel | 📝 draft |
+| [2026-05-29-proxylist-virtual-model-implementation.md](./plans/2026-05-29-proxylist-virtual-model-implementation.md) | plan draft | ProxyList virtual model | 📝 draft |
+| [2026-05-29-subscription-panel-ui-chinese-i18n.md](./plans/2026-05-29-subscription-panel-ui-chinese-i18n.md) | plan draft | Chinese i18n + cleanup | 📝 draft |
+
 ---
 
 ## 9. 分析报告
@@ -213,6 +263,9 @@ updated: 2026-05-25
  | 3 | [`docs/reports/error-report_20260514.md`](./reports/error-report_20260514.md) | **错误报告** — 2026-05-14 运行时错误汇总与分析 | 4.5 KB |
  | 4 | [`docs/reports/2026-05-19-single-proxy-test-fix-report.md`](./reports/2026-05-19-single-proxy-test-fix-report.md) | **单代理测试修复报告** — runWithIndexId, Delay 刷新, 事件流程修复技术细节 | 5.6 KB |
  | 5 | [`docs/reports/2026-05-19-ui-close-hang-fix-report.md`](./reports/2026-05-19-ui-close-hang-fix-report.md) | **UI 关闭挂起修复报告** — AppController/XrayInstance 析构竞态条件 + 进程句柄 BUG | 3.2 KB |
+| 6 | [`docs/reports/2026-06-01-diag-log-level-adjustment.md`](./reports/2026-06-01-diag-log-level-adjustment.md) | **诊断日志级别调整报告** — 10 处 `[DIAG]` 日志从 `INFO`/`DEBUG` 降为 `TRACE` | 0.7 KB |
+
+---
 
 ## 9.1 Bug 修复记录
 
@@ -221,8 +274,14 @@ updated: 2026-05-25
 | 1 | [`docs/bugfix/2026-05-28-sql-error-console-output-fix.md`](./bugfix/2026-05-28-sql-error-console-output-fix.md) | **SQL 错误输出到控制台修复** — `std::cerr` 改为 `Logger::write()`，确保 GUI 模式下错误显示在日志窗口 | 2.5 KB |
 | 2 | [`docs/bugfix/2026-05-28-cancel-sub-update-proxyfinder-phase.md`](./bugfix/2026-05-28-cancel-sub-update-proxyfinder-phase.md) | **订阅更新 ProxyFinder 阶段取消无法立即终止修复** — SubitemUpdaterV2::getProxyPorts() 未传递取消标志给 ProxyFinder | 2.8 KB |
 | 3 | [`docs/bugfix/2026-05-20-ctrl-c-exit.md`](./bugfix/2026-05-20-ctrl-c-exit.md) | **Ctrl+C 信号无法正常退出修复** — AppController 析构函数添加 5 秒超时 + detach 机制 | 4.2 KB |
+| 4 | [`docs/bugfix/2026-06-01-batch-test-cmd-window-flicker.md`](./bugfix/2026-06-01-batch-test-cmd-window-flicker.md) | **批量测试 CMD 窗口闪烀修复** — `_popen()` 替换为 `CreateProcessA(CREATE_NO_WINDOW)` + Win32 管道 | 2.1 KB |
+| 5 | [`docs/bugfix/2026-06-01-cli-ctrl-c-interrupt-fix.md`](./bugfix/2026-06-01-cli-ctrl-c-interrupt-fix.md) | **CLI Ctrl+C 中断修复** — 添加取消标志、传递给 ProxyBatchTester、析构超时 + detach 机制 | 2.1 KB |
+| 6 | [`docs/bugfix/2026-06-03-subscription-update-timeout-and-updatetime-fix.md`](./bugfix/2026-06-03-subscription-update-timeout-and-updatetime-fix.md) | **订阅更新 curl timeout 和 UpdateTime 修复** — curl 连接超时配置、UpdateTime 仅在成功时更新 | 94 lines |
+| 7 | [`docs/bugfix/2026-06-03-config-dialog-improvements.md`](./bugfix/2026-06-03-config-dialog-improvements.md) | **配置编辑改进** — 禁止运行中切换数据库、日志级别保存应用 | 57 lines |
 
- ## 10. 测试报告
+---
+
+## 10. 测试报告
 
 | # | 文件 | 说明 | 大小 |
 |---|------|------|------|
@@ -257,16 +316,16 @@ updated: 2026-05-25
 需求脑暴 (superpowers/brainstorm/)
       │
       ▼
-架构设计 (architecture) + 方案设计 (superpower/specs/)
-      │
-      ▼
-实施计划 (docs/plans/) × 44 份 ──→ 全局跟踪 (project-plans-tracker)
-      │
-      ▼
+架构设计 (architecture) + 方案设计 (superpower/specs/ + specs/)
+       │
+       ▼
+实施计划 (docs/plans/) × 54 份 ──→ 全局跟踪 (project-plans-tracker)
+       │
+       ▼
 代码修改 (src/*.cpp) ←── 流程规范 (DEV-PROCESS.md)
-      │
-      ▼
-分析报告 (reports/) + 测试报告 (test/) + 代码审查 (code-reviews/)
+       │
+       ▼
+分析报告 (reports/) + 测试报告 (test/) + 代码审查 (code-reviews/) + 规范化设计 (specs/)
       │
       ▼
 功能状态 (feature-status) + 实施清单 (impl-items-6-7-10)
@@ -274,4 +333,16 @@ updated: 2026-05-25
 
 ---
 
-*最后更新: 2026-05-28 | 维护者: Kilo AI*
+---
+
+## 13. 长期记忆
+
+| # | 文件 | 说明 | 大小 |
+|---|------|------|------|
+| 1 | [`docs/project-knowledge.md`](./project-knowledge.md) | **项目长期记忆** — 测试规范、错误级别分类、Google Test 规范、错误分析、三文档协同模型、工具模式、架构决策记录。内容与 AGENTS.md 和 `docs/` 文档不重复。 | 4.9 KB |
+
+**维护规则**: 会话结束时如有新的架构决策或跨模块知识，追加至 `docs/project-knowledge.md` §7 关键决策记录。
+
+---
+
+*最后更新: 2026-06-04 | 维护者: Kilo AI*

@@ -22,6 +22,9 @@ public:
     // Database handle access (may be updated during runtime if db is switched)
     sqlite3* getDb() const { return db_; }
     void setDb(sqlite3* db) { db_ = db; }
+    
+    // Deferred initialization (for detached launch)
+    void setConfig(const config::AppConfig& cfg) { cfg_ = cfg; }
 
 private:
     config::AppConfig cfg_;

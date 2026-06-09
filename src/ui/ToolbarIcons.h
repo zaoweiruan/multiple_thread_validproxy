@@ -124,6 +124,19 @@ inline wxBitmap prepareForToolbar(wxImage& img) {
 }
 
 // -------------------------------------------------------------------
+//  Resize image to target toolbar size.
+//  Called BEFORE makeBgTransparent and prepareForToolbar so that
+//  anti-aliasing and transparency work at the final pixel size.
+// -------------------------------------------------------------------
+inline void resizeForToolbar(wxImage& img, int targetSize) {
+    if (!img.IsOk()) return;
+    int w = img.GetWidth();
+    int h = img.GetHeight();
+    if (w == targetSize && h == targetSize) return;  // already correct
+    img.Rescale(targetSize, targetSize, wxIMAGE_QUALITY_HIGH);
+}
+
+// -------------------------------------------------------------------
 //  load — runtime load, primary path: embedded resource,
 //          fallback: .ico / .png files on disk, then stock wxArtID.
 // -------------------------------------------------------------------
@@ -131,6 +144,7 @@ inline wxBitmapBundle load(const wxString& name) {
     // --- 1st: embedded resource (compiled into .exe via icons.rc) ---
     wxImage resImg;
     if (loadPngFromResource(name, resImg)) {
+        resizeForToolbar(resImg, 24);
         makeBgTransparent(resImg);
         return wxBitmapBundle::FromBitmap(prepareForToolbar(resImg));
     }
@@ -141,6 +155,7 @@ inline wxBitmapBundle load(const wxString& name) {
     if (wxFile::Exists(pngPath)) {
         wxImage img(pngPath);
         if (img.IsOk()) {
+            resizeForToolbar(img, 24);
             makeBgTransparent(img);
             return wxBitmapBundle::FromBitmap(prepareForToolbar(img));
         }
@@ -156,7 +171,7 @@ inline wxBitmapBundle load(const wxString& name) {
         }
     }
 
-    // Fallback map: each custom icon name → stock wxArtID
+// Fallback map: each custom icon name → stock wxArtID
     struct Fallback { const char* name; wxArtID artId; };
     static const Fallback fbs[] = {
         { "tool_update", wxART_EXECUTABLE_FILE },
@@ -165,6 +180,7 @@ inline wxBitmapBundle load(const wxString& name) {
         { "tool_dedup",  wxART_LIST_VIEW },
         { "tool_import", wxART_FILE_OPEN },
         { "tool_config", wxART_LIST_VIEW },
+        { "tool_dockarrow", wxART_HELP }, // for toggle detail pane button
     };
     for (const auto& fb : fbs) {
         if (name == fb.name) {
@@ -201,6 +217,7 @@ inline wxBitmapBundle loadDisabled(const wxString& name) {
     }
 
     if (img.IsOk()) {
+        resizeForToolbar(img, 24);
         makeBgTransparent(img);
 
         if (img.HasAlpha()) {

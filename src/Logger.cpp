@@ -49,8 +49,6 @@ void Logger::write(const std::string& msg) {
 }
 
 void Logger::write(const std::string& msg, LogLevel level) {
-    if (!enabled_ || !outFile_) return;
-    
     std::lock_guard<std::mutex> lock(mutex_);
     
     auto now = std::chrono::system_clock::now();
@@ -61,11 +59,13 @@ void Logger::write(const std::string& msg, LogLevel level) {
     std::string levelStr = levelToString(level);
     std::string fullMsg = "[" + std::string(timestamp) + "] [" + levelStr + "] " + msg;
     
+    // Console output is independent of file logging — always attempt if enabled
     if (consoleEnabled_ && static_cast<int>(level) >= static_cast<int>(consoleLevel_)) {
         std::cout << fullMsg << std::endl;
     }
     
-    if (fileEnabled_ && static_cast<int>(level) >= static_cast<int>(fileLevel_)) {
+    // File output requires an open log file
+    if (fileEnabled_ && outFile_ && outFile_->is_open() && static_cast<int>(level) >= static_cast<int>(fileLevel_)) {
         *outFile_ << fullMsg << std::endl;
         outFile_->flush();
     }
@@ -118,7 +118,6 @@ void Logger::writeTimestamp(const std::string& msg) {
 }
 
 void Logger::writeTimestamp(const std::string& msg, LogLevel level) {
-    if (!enabled_ || !outFile_) return;
     std::lock_guard<std::mutex> lock(mutex_);
     
     auto now = std::chrono::system_clock::now();
@@ -129,13 +128,15 @@ void Logger::writeTimestamp(const std::string& msg, LogLevel level) {
     std::string levelStr = levelToString(level);
     std::string fullMsg = "[" + std::string(timestamp) + "] [" + levelStr + "] " + msg;
     
+    // Console output is independent of file logging — always attempt if enabled
     if (consoleEnabled_ && static_cast<int>(level) >= static_cast<int>(consoleLevel_)) {
         std::cout << fullMsg << std::endl;
     }
     
-    if (fileEnabled_ && static_cast<int>(level) >= static_cast<int>(fileLevel_)) {
+    // File output requires an open log file
+    if (fileEnabled_ && outFile_ && outFile_->is_open() && static_cast<int>(level) >= static_cast<int>(fileLevel_)) {
         *outFile_ << fullMsg << std::endl;
-         outFile_->flush();
+        outFile_->flush();
     }
     
     // UI callback (same as write())
