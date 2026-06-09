@@ -1,6 +1,6 @@
 ---
 name: test-driven-development
-description: Use when implementing any feature or bugfix, before writing implementation code
+description: Use when implementing any feature or bugfix, before writing implementation code. Triggers: '实现', '编码', '写代码', 'implement', '编码实现', '开发'
 ---
 
 # Test-Driven Development (TDD)

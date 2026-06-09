@@ -2,7 +2,6 @@
 #include "XrayManager.h"
 #include "CurlEasyHandle.h"
 #include <chrono>
-#include "TestLogMediator.h"
 
 ProxyTester::ProxyTester(XrayManager* manager, const std::string& testUrl, int timeoutMs)
     : manager_(manager), testUrl_(testUrl), timeoutMs_(timeoutMs) {}
@@ -22,6 +21,7 @@ TestResult ProxyTester::test(int socksPort) {
         curl.setProxy(proxyUrl)
             .setUrl(testUrl_)
             .setNoBody(true)
+            .setConnectTimeoutMs(timeoutMs_)  // 连接超时
             .setTimeoutMs(timeoutMs_)
             .setFollowLocation(true)
             .perform();

@@ -117,4 +117,4 @@ supersedes: (可选) ["被替代的文档名"]
 ## 引用
 
 - [计划文档目录](./plans/)
-- [长期记忆](../memory/project_knowledge.md)
+- [长期记忆](../project-knowledge.md)

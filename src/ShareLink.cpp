@@ -376,7 +376,10 @@ std::string ShareLink::ssToUri(const std::string& address,
         }
         query += "%3Bmux%3D0";
     } else if (!network.empty() && network != "tcp") {
-        query = "obfs=" + network;
+        // Map splithttp to xhttp for share link output
+        std::string netOut = network;
+        if (netOut == "splithttp") netOut = "xhttp";
+        query = "obfs=" + netOut;
         if (!path.empty()) {
             query += "&obfs-path=" + urlEncode(path);
         }

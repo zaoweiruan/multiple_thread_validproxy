@@ -3,6 +3,7 @@
 
 #include <wx/wx.h>
 #include <wx/aui/aui.h>
+#include <wx/splitter.h>
 #include <wx/statusbr.h>
 
 #include <string>
@@ -43,7 +44,6 @@ public:
     LogPanel* getLogPanel() const { return logPanel_; }
     AppController* getController() const { return controller_; }
     std::string getDbPath() const;
-
     // Status bar helpers
     void setStatusText(int field, const wxString& text);
     void showBalloon(const wxString& title, const wxString& msg);
@@ -86,21 +86,26 @@ private:
     void onSearchBoxEnter(wxCommandEvent& event);
     void onSearchTextChanged(wxCommandEvent& event);
     void onSearchClear(wxCommandEvent& event);
+    void onToggleDetailPane(wxCommandEvent& event);
     void onTestSubscription(SubscriptionTestEvent& event);
 
-    // Members
-    wxAuiManager auiManager_;
-    AppController* controller_;
+// Members
+     wxAuiManager* auiManager_{nullptr};
+     wxSplitterWindow* splitter_{nullptr};  // Resizable splitter for subscription/proxy panels
+     AppController* controller_;
+     wxMenuBar* menuBar_{nullptr};
     SubscriptionPanel* subPanel_{nullptr};
     ProxyListPanel* proxyPanel_{nullptr};
     ProxyDetailPanel* detailPanel_{nullptr};
     LogPanel* logPanel_{nullptr};
     ConfigDialog* configDialog_{nullptr};
+    wxAuiToolBar* m_toolbar{nullptr};  // Toolbar pointer for AUI management
     TrayIcon* trayIcon_{nullptr};
     sqlite3* db_;
     wxStatusBar* statusBar_{nullptr};
     wxSearchCtrl* m_searchBox{nullptr};
-    wxStaticText* m_dbPathLabel{nullptr};
+    wxAuiToolBarItem* m_toggleDetailItem{nullptr};  // Toggle detail panel button
+    bool detailPaneVisible_{false};
     config::AppConfig config_;
 
     wxDECLARE_EVENT_TABLE();

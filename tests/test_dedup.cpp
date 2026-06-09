@@ -252,3 +252,63 @@ TEST_F(DedupTest, MultipleProtectedSubIds) {
     std::string remaining = getRemainingIndexIds()[0];
     EXPECT_TRUE(remaining == "1" || remaining == "2");
 }
+
+// Blacklist phase tests
+TEST_F(DedupTest, BlacklistPhaseMovesProxiesAboveThreshold) {
+    // Insert proxies with different consecutive_failures counts
+    insertProfile("1", "5", "1.1.1.1", "443", "uuid-a", "tcp", "sub-normal");
+    insertProfile("2", "5", "2.2.2.2", "443", "uuid-b", "tcp", "sub-normal");
+    insertProfile("3", "5", "3.3.3.3", "443", "uuid-c", "tcp", "sub-normal");
+    
+    // Insert ProfileExItem with consecutive_failures
+    exec("INSERT INTO ProfileExItem (IndexId, consecutive_failures) VALUES ('1', 2)");
+    exec("INSERT INTO ProfileExItem (IndexId, consecutive_failures) VALUES ('2', 5)");
+    exec("INSERT INTO ProfileExItem (IndexId, consecutive_failures) VALUES ('3', 10)");
+
+    // Simulate blacklist phase: move proxies with consecutive_failures >= 5 to blacklist subid
+    int threshold = 5;
+    std::string blacklistSubid = "blacklist-subid";
+    std::string sql = "UPDATE ProfileItem SET Subid = '" + blacklistSubid + "' "
+                      "WHERE IndexId IN (SELECT IndexId FROM ProfileExItem WHERE consecutive_failures >= " + std::to_string(threshold) + ")";
+    exec(sql);
+    
+    // Verify proxy "2" and "3" were moved to blacklist
+    sqlite3_stmt* stmt = nullptr;
+    sqlite3_prepare_v2(db_, "SELECT Subid FROM ProfileItem WHERE IndexId = '2'", -1, &stmt, nullptr);
+    sqlite3_step(stmt);
+    std::string subid2 = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+    sqlite3_finalize(stmt);
+    EXPECT_EQ(subid2, blacklistSubid);
+    
+    sqlite3_prepare_v2(db_, "SELECT Subid FROM ProfileItem WHERE IndexId = '3'", -1, &stmt, nullptr);
+    sqlite3_step(stmt);
+    std::string subid3 = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+    sqlite3_finalize(stmt);
+    EXPECT_EQ(subid3, blacklistSubid);
+    
+    // Verify proxy "1" kept original subid
+    sqlite3_prepare_v2(db_, "SELECT Subid FROM ProfileItem WHERE IndexId = '1'", -1, &stmt, nullptr);
+    sqlite3_step(stmt);
+    std::string subid1 = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+    sqlite3_finalize(stmt);
+    EXPECT_EQ(subid1, "sub-normal");
+}
+
+TEST_F(DedupTest, BlacklistPhaseSkipsWhenThresholdNotMet) {
+    insertProfile("1", "5", "1.1.1.1", "443", "uuid-a", "tcp", "sub-normal");
+    exec("INSERT INTO ProfileExItem (IndexId, consecutive_failures) VALUES ('1', 3)");
+
+    int threshold = 5;
+    std::string blacklistSubid = "blacklist-subid";
+    std::string sql = "UPDATE ProfileItem SET Subid = '" + blacklistSubid + "' "
+                      "WHERE IndexId IN (SELECT IndexId FROM ProfileExItem WHERE consecutive_failures >= " + std::to_string(threshold) + ")";
+    exec(sql);
+
+    // Verify proxy was NOT moved
+    sqlite3_stmt* stmt = nullptr;
+    sqlite3_prepare_v2(db_, "SELECT Subid FROM ProfileItem WHERE IndexId = '1'", -1, &stmt, nullptr);
+    sqlite3_step(stmt);
+    std::string subid = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+    sqlite3_finalize(stmt);
+    EXPECT_EQ(subid, "sub-normal");
+}

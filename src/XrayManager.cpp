@@ -86,6 +86,7 @@ void XrayManager::stopAll() {
         inst->stop();
     }
     instances_.clear();
+    PortManager::clearPorts();  // Release ports for reuse on next start
     Logger::write("[XrayManager][stopAll] cleared " + std::to_string(prevSize) + " instance(s)", LogLevel::INFO);
 }
 

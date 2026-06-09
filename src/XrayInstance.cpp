@@ -5,6 +5,7 @@
 #include <thread>
 #include <chrono>
 #include <filesystem>
+#include <vector>
 
 XrayInstance::XrayInstance(const std::string& xrayPath, int socksPort, int apiPort, const std::string& configDir)
     : xrayPath_(xrayPath), socksPort_(socksPort), apiPort_(apiPort), running_(false) {
@@ -50,7 +51,11 @@ bool XrayInstance::start() {
     si.cb = sizeof(si);
     PROCESS_INFORMATION pi = {};
     
-    BOOL created = CreateProcessA(NULL, (LPSTR)cmd.c_str(), NULL, NULL, FALSE, CREATE_SUSPENDED | CREATE_NO_WINDOW, NULL, NULL, &si, &pi);
+    // CreateProcessA modifies the command line buffer
+    std::vector<char> cmdBuf(cmd.begin(), cmd.end());
+    cmdBuf.push_back('\0');
+
+    BOOL created = CreateProcessA(nullptr, cmdBuf.data(), nullptr, nullptr, FALSE, CREATE_SUSPENDED | CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi);
     if (!created) {
         DWORD err = GetLastError();
         Logger::write("[XrayInstance] Failed to create process: " + std::to_string(err), LogLevel::ERR);

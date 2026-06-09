@@ -42,20 +42,21 @@ SubscriptionPanel::SubscriptionPanel(wxWindow* parent, AppController* controller
 
     // Data view control
     listCtrl_ = new wxDataViewCtrl(this, wxID_ANY,
-                                    wxDefaultPosition, wxDefaultSize,
-                                    wxDV_ROW_LINES | wxDV_SINGLE);
+                                     wxDefaultPosition, wxDefaultSize,
+                                     wxDV_ROW_LINES | wxDV_SINGLE);
 
-    // Store
-    store_ = new wxDataViewListStore();
-    listCtrl_->AssociateModel(store_);
-    store_->DecRef(); // AssociateModel took ownership
+    // Model
+    model_ = new SubscriptionListModel();
+    listCtrl_->AssociateModel(model_);
+    model_->DecRef(); // AssociateModel took ownership
 
     // Columns — Append[Toggle|Text]Column(label, model_column, mode, width, ...)
-    listCtrl_->AppendTextColumn("#", 0, wxDATAVIEW_CELL_INERT, 30);  // Counter for row number
-    listCtrl_->AppendToggleColumn("启用", 1, wxDATAVIEW_CELL_ACTIVATABLE, 30);  // Changed "On" to "启用"
-    listCtrl_->AppendTextColumn("Name", 2, wxDATAVIEW_CELL_EDITABLE, 200);
-    listCtrl_->AppendTextColumn("Proxies", 3, wxDATAVIEW_CELL_INERT, 70, wxALIGN_RIGHT);
-    listCtrl_->AppendTextColumn("Update", 4, wxDATAVIEW_CELL_INERT, 130);
+    listCtrl_->AppendTextColumn("#", 0, wxDATAVIEW_CELL_INERT, 30);
+    listCtrl_->AppendToggleColumn("启用", 1, wxDATAVIEW_CELL_ACTIVATABLE, 30);
+    listCtrl_->AppendTextColumn("名称 ↕", 2, wxDATAVIEW_CELL_INERT, 200);  // Changed to INERT to prevent editing
+    listCtrl_->AppendTextColumn("有效 ↕", 3, wxDATAVIEW_CELL_INERT, 60, wxALIGN_RIGHT);
+    listCtrl_->AppendTextColumn("代理数 ↕", 4, wxDATAVIEW_CELL_INERT, 70, wxALIGN_RIGHT);
+    listCtrl_->AppendTextColumn("更新 ↕", 5, wxDATAVIEW_CELL_INERT, 130);
 
     sizer->Add(listCtrl_, 1, wxEXPAND | wxALL, 2);
 
@@ -67,43 +68,45 @@ SubscriptionPanel::SubscriptionPanel(wxWindow* parent, AppController* controller
     listCtrl_->Bind(wxEVT_DATAVIEW_ITEM_VALUE_CHANGED, [this](wxDataViewEvent& event) {
         int row = wxPtrToUInt(event.GetItem().GetID()) - 1;
         if (row >= 0 && row < (int)subs_.size()) {
-            wxVariant val;
-            event.GetModel()->GetValue(val, event.GetItem(), 1);
-            bool enabled = val.GetBool();
-            subs_[row].enabled = enabled ? "1" : "0";
-            // Persist to database
+            // Model already updated by SetValueByRow, just persist to database
             if (controller_) {
+                wxVariant val;
+                event.GetModel()->GetValue(val, event.GetItem(), 1);
+                bool enabled = val.GetBool();
                 controller_->updateSubscriptionEnabled(subs_[row].id, enabled);
             }
         }
     });
+
+    // Bind column header click for sorting
+    listCtrl_->Bind(wxEVT_DATAVIEW_COLUMN_HEADER_CLICK, &SubscriptionPanel::onColumnHeaderClick, this);
+}
+
+void SubscriptionPanel::updateSubscriptionList(const std::vector<db::models::Subitem>& subs,
+                                                 const std::unordered_map<std::string, int>& proxyCounts) {
+    subs_ = subs;
+    proxyCounts_ = proxyCounts;
+    model_->setData(&subs_, &proxyCounts_, &validProxyCounts_);
+    model_->Reset(0);
+    model_->Reset(static_cast<unsigned int>(subs_.size()));
+    model_->detectIdOffset();
 }
 
 void SubscriptionPanel::loadSubscriptions() {
-    subs_ = controller_->loadSubscriptions();
+    auto subs = controller_->loadSubscriptions();
 
     // Single efficient GROUP BY query for all proxy counts instead of N+1 full-table scans
     auto proxyCounts = controller_->countProxiesBySubId();
+    validProxyCounts_ = controller_->countValidProxiesBySubId();
 
-    store_->DeleteAllItems();
+    updateSubscriptionList(subs, proxyCounts);
+ }
 
-    int rowNum = 1;  // Counter for row number
-    for (const auto& sub : subs_) {
-        wxVector<wxVariant> row;
-        row.push_back(wxVariant(wxString::Format("%d", rowNum++)));  // Counter for numbering
-        row.push_back(wxVariant(sub.enabled == "1"));
-        row.push_back(wxVariant(sub.remarks));
-
-        // Look up proxy count from preloaded map (O(1) per subscription)
-        auto it = proxyCounts.find(sub.id);
-        int count = (it != proxyCounts.end()) ? it->second : 0;
-        row.push_back(wxVariant(wxString::Format("%d", count)));
-        
-        // Format updatetime from unix timestamp to readable datetime
-        wxString updateTimeStr = formatUpdateTime(sub.updatetime);
-        row.push_back(wxVariant(updateTimeStr));
-        store_->AppendItem(row);
-    }
+void SubscriptionPanel::loadSubscriptions(const std::vector<db::models::Subitem>& subs,
+                                           const std::unordered_map<std::string, int>& proxyCounts) {
+    // Load valid proxy counts in the async path (quick GROUP BY JOIN query)
+    validProxyCounts_ = controller_->countValidProxiesBySubId();
+    updateSubscriptionList(subs, proxyCounts);
  }
 
  std::string SubscriptionPanel::formatUpdateTime(const std::string& updatetime) {
@@ -140,10 +143,12 @@ void SubscriptionPanel::onSelectionChanged(wxDataViewEvent& event) {
     std::string subId = getSelectedSubId();
     if (!subId.empty()) {
         // Notify parent frame to load proxies for this subscription
-        wxWindow* parent = GetParent();
-        if (parent) {
+        // Use wxGetTopLevelParent instead of GetParent() because this panel
+        // is now parented to centerPanel (wxAui wrapper), not MainFrame directly
+        wxWindow* topLevel = wxGetTopLevelParent(this);
+        if (topLevel) {
             SubscriptionSelectedEvent evt(subId);
-            wxPostEvent(parent, evt);
+            wxPostEvent(topLevel, evt);
         }
     }
     (void)event; // Suppress unused parameter warning
@@ -177,6 +182,10 @@ void SubscriptionPanel::onRefreshSubscription(wxCommandEvent&) {
 }
 
 void SubscriptionPanel::onEditSubscription(wxCommandEvent&) {
+    if (controller_ && controller_->isRunning()) {
+        wxMessageBox(L"操作进行中，请等待完成后再试", L"操作进行中", wxOK | wxICON_WARNING);
+        return;
+    }
     std::string subId = getSelectedSubId();
     if (subId.empty()) return;
     for (const auto& sub : subs_) {
@@ -188,6 +197,10 @@ void SubscriptionPanel::onEditSubscription(wxCommandEvent&) {
 }
 
 void SubscriptionPanel::onDeleteSubscription(wxCommandEvent&) {
+    if (controller_ && controller_->isRunning()) {
+        wxMessageBox(L"操作进行中，请等待完成后再试", L"操作进行中", wxOK | wxICON_WARNING);
+        return;
+    }
     std::string subId = getSelectedSubId();
     if (subId.empty()) return;
     std::string remarks;
@@ -195,24 +208,35 @@ void SubscriptionPanel::onDeleteSubscription(wxCommandEvent&) {
         if (sub.id == subId) { remarks = sub.remarks; break; }
     }
     if (confirmDelete(subId, remarks)) {
-        // Delete via DAO
-        // TODO: implement DAO delete method
+        if (controller_) {
+            controller_->deleteSubscription(subId);
+        }
         loadSubscriptions();
     }
 }
 
 void SubscriptionPanel::onUpdateSubscription(wxCommandEvent&) {
+    if (controller_ && controller_->isRunning()) {
+        wxMessageBox(L"操作进行中，请等待完成后再试", L"操作进行中", wxOK | wxICON_WARNING);
+        return;
+    }
     std::string subId = getSelectedSubId();
     if (!subId.empty()) {
-        controller_->updateSubscriptionAsync(subId, GetParent());
+        // Pass top-level frame as event sink (parent is now centerPanel, not MainFrame)
+        controller_->updateSubscriptionAsync(subId, wxGetTopLevelParent(this));
     }
 }
 
 void SubscriptionPanel::onTestSubscription(wxCommandEvent&) {
+    if (controller_ && controller_->isRunning()) {
+        wxMessageBox(L"操作进行中，请等待完成后再试", L"操作进行中", wxOK | wxICON_WARNING);
+        return;
+    }
     std::string subId = getSelectedSubId();
     if (!subId.empty()) {
-        if (GetParent()) {
-            wxQueueEvent(GetParent(), new SubscriptionTestEvent(subId));
+        wxWindow* topLevel = wxGetTopLevelParent(this);
+        if (topLevel) {
+            wxQueueEvent(topLevel, new SubscriptionTestEvent(subId));
         }
     }
 }
@@ -226,6 +250,55 @@ void SubscriptionPanel::onImportSubscription(wxCommandEvent&) {
             loadSubscriptions();
         }
     }
+}
+
+// -------------------------------------------------------------------
+// Column header click handler for Name/Proxies/Update sorting
+// -------------------------------------------------------------------
+void SubscriptionPanel::onColumnHeaderClick(wxDataViewEvent& event) {
+    int col = event.GetColumn();
+    Logger::write("[SubscriptionPanel] Column header click: column=" + std::to_string(col), LogLevel::DEBUG);
+
+    // Only Name (SUB_COL_NAME=2), Valid (SUB_COL_VALID=3), Proxies (SUB_COL_PROXIES=4), and Update (SUB_COL_UPDATE=5) are sortable
+    if (col == SUB_COL_NAME || col == SUB_COL_VALID || col == SUB_COL_PROXIES || col == SUB_COL_UPDATE) {
+        // Cycle direction: None -> Asc -> Desc -> None
+        if (sortState_.column == col) {
+            switch (sortState_.direction) {
+                case SortDirection::Asc:
+                    sortState_.direction = SortDirection::Desc;
+                    break;
+                case SortDirection::Desc:
+                    sortState_.direction = SortDirection::None;
+                    sortState_.column = -1;
+                    break;
+                default:
+                    sortState_.direction = SortDirection::Asc;
+                    break;
+            }
+        } else {
+            sortState_.column = col;
+            sortState_.direction = SortDirection::Asc;
+        }
+
+        if (sortState_.direction != SortDirection::None) {
+            // Set the sort indicator on the column and trigger re-sort.
+            wxDataViewColumn* dvCol = listCtrl_->GetColumn(col);
+            if (dvCol) {
+                dvCol->SetSortOrder(sortState_.direction == SortDirection::Asc);
+            }
+            listCtrl_->GetModel()->Resort();
+        } else {
+            // Clear sort — remove indicator and restore identity order
+            wxDataViewColumn* currentSort = listCtrl_->GetSortingColumn();
+            if (currentSort) {
+                currentSort->UnsetAsSortKey();
+            }
+            model_->Reset(0);
+            model_->Reset(static_cast<unsigned int>(subs_.size()));
+            model_->detectIdOffset();  // Required to restore correct ID mapping after Reset
+        }
+    }
+    event.Skip();
 }
 
 void SubscriptionPanel::showEditDialog(const db::models::Subitem& sub) {

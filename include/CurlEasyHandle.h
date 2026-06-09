@@ -66,6 +66,12 @@ public:
         return *this;
     }
 
+    // Fluent API: set connect timeout in milliseconds
+    CurlEasyHandle& setConnectTimeoutMs(long ms) {
+        checkCurlCode(curl_easy_setopt(curl_, CURLOPT_CONNECTTIMEOUT_MS, ms), "setConnectTimeoutMs");
+        return *this;
+    }
+
     // Fluent API: set timeout in seconds
     CurlEasyHandle& setTimeoutSec(long sec) {
         checkCurlCode(curl_easy_setopt(curl_, CURLOPT_TIMEOUT, sec), "setTimeoutSec");

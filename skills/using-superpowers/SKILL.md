@@ -1,6 +1,6 @@
 ---
 name: using-superpowers
-description: Use when starting any conversation - establishes how to find and use skills, requiring Skill tool invocation before ANY response including clarifying questions
+description: Use when starting any conversation - establishes how to find and use skills, requiring Skill tool invocation before ANY response including clarifying questions. Triggers: '调整功能', '开发功能', '新增功能', '重构', '架构调整', '修改行为', '功能变更'
 ---
 
 <SUBAGENT-STOP>

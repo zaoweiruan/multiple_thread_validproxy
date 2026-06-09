@@ -1,6 +1,6 @@
 ---
 name: systematic-debugging
-description: Use when encountering any bug, test failure, or unexpected behavior, before proposing fixes
+description: Use when encountering any bug, test failure, or unexpected behavior, before proposing fixes. Triggers: 'bug', '修复', 'fix', '异常', '崩溃', '错误', '测试失败', 'unexpected behavior', '故障'
 ---
 
 # Systematic Debugging
