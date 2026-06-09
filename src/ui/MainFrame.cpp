@@ -51,7 +51,6 @@ enum {
     ID_TOOL_SYNC          = wxID_HIGHEST + 209,
     ID_TOOL_CLEAR         = wxID_HIGHEST + 207,
     ID_SEARCH_BOX         = wxID_HIGHEST + 206,
-    ID_TOOLBAR_DBPATH     = wxID_HIGHEST + 301,
     ID_TOOL_DETAIL_TOGGLE = wxID_HIGHEST + 302,
 };
 
@@ -391,32 +390,14 @@ void MainFrame::initToolBar() {
     m_toolbar->AddTool(ID_TOOL_CONFIG, "配置", ToolbarIcons::load("tool_config"), "配置");
 
     // ── Search box: left-shifted by 150px from center ──
-    m_toolbar->AddSpacer(20);  // small gap after tools, then search (shifted ~150px left)
+    m_toolbar->AddSpacer(70);  // small gap after tools, then search (shifted ~150px left)
     m_searchBox = new wxSearchCtrl(m_toolbar, ID_SEARCH_BOX, wxEmptyString,
                                    wxDefaultPosition, wxSize(200, 25),
                                    wxTE_PROCESS_ENTER);
     m_searchBox->ShowSearchButton(true);
     m_searchBox->ShowCancelButton(true);
     m_toolbar->AddControl(m_searchBox);
-    m_toolbar->AddStretchSpacer(1);  // Push dbPath + toggle detail to right edge
-
-    // ── dbPath label: auto-width from font metrics + tooltip ──
-    wxString dbPath = wxString(getDbPath());
-    m_dbPathLabel = new wxStaticText(m_toolbar, ID_TOOLBAR_DBPATH,
-                                     dbPath,
-                                     wxDefaultPosition, wxDefaultSize,
-                                     wxALIGN_RIGHT | wxST_ELLIPSIZE_END);
-    // Match toolbar background so label blends in (no dark box)
-    m_dbPathLabel->SetBackgroundColour(m_toolbar->GetBackgroundColour());
-    m_dbPathLabel->SetForegroundColour(m_toolbar->GetForegroundColour());
-    // Measure actual text width from current font, add 16px padding
-    {
-        wxClientDC dc(m_dbPathLabel);
-        wxSize sz = dc.GetTextExtent(dbPath);
-        m_dbPathLabel->SetMinSize(wxSize(sz.GetWidth() + 16, -1));
-    }
-    m_dbPathLabel->SetToolTip(dbPath);  // full path on hover
-    m_toolbar->AddControl(m_dbPathLabel);
+    m_toolbar->AddStretchSpacer(1);  // Push toggle detail to right edge
 
     // Toggle detail panel button (rightmost)
     m_toggleDetailItem = m_toolbar->AddTool(ID_TOOL_DETAIL_TOGGLE, "详情",
@@ -479,7 +460,7 @@ void MainFrame::initPanels() {
         .PaneBorder(false)
     );
 
-    // Right: proxy detail panel
+    // Right: proxy detail panel (hidden by default)
     auiManager_->AddPane(detailPanel_, wxAuiPaneInfo()
         .Name("detailPane")
         .Caption("Proxy Details")
@@ -491,6 +472,7 @@ void MainFrame::initPanels() {
         .PinButton(true)
         .Resizable(true)
         .Floatable(true)
+        .Hide()
     );
 
     Logger::write("[MainFrame] AUI panes registered, calling Update()", LogLevel::DEBUG);
@@ -672,12 +654,8 @@ void MainFrame::onMenuConfig(wxCommandEvent&) {
                     uiApp->setDb(newDb);
                 }
 
-                // Update config path and toolbar dbPath label
+                // Update config path
                 config_.database_path = cfg.database_path;
-                if (m_dbPathLabel) {
-                    m_dbPathLabel->SetLabel(wxString(cfg.database_path));
-                    m_dbPathLabel->SetToolTip(wxString(cfg.database_path));
-                }
                 if (statusBar_) {
                     statusBar_->SetStatusText(wxString(cfg.database_path), 2);
                 }

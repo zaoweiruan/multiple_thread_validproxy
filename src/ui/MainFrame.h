@@ -43,9 +43,6 @@ public:
     LogPanel* getLogPanel() const { return logPanel_; }
     AppController* getController() const { return controller_; }
     std::string getDbPath() const;
-
-
-
     // Status bar helpers
     void setStatusText(int field, const wxString& text);
     void showBalloon(const wxString& title, const wxString& msg);
@@ -105,9 +102,8 @@ private:
     sqlite3* db_;
     wxStatusBar* statusBar_{nullptr};
     wxSearchCtrl* m_searchBox{nullptr};
-    wxStaticText* m_dbPathLabel{nullptr};
     wxAuiToolBarItem* m_toggleDetailItem{nullptr};  // Toggle detail panel button
-    bool detailPaneVisible_{true};
+    bool detailPaneVisible_{false};
     config::AppConfig config_;
 
     wxDECLARE_EVENT_TABLE();

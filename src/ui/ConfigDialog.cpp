@@ -6,6 +6,7 @@
 #include <wx/propgrid/advprops.h>
 #include <wx/msgdlg.h>
 
+#include <filesystem>
 #include <fstream>
 #include <sstream>
 
@@ -204,6 +205,20 @@ bool ConfigDialog::validateConfig() {
     if (editedConfig_.xray_executable.empty()) {
         wxMessageBox("Xray executable path cannot be empty", "Validation Error", wxOK | wxICON_ERROR);
         return false;
+    }
+    if (!std::filesystem::exists(editedConfig_.xray_executable)) {
+        wxMessageBox("Xray executable file not found.\n\nPath:\n" + editedConfig_.xray_executable,
+                     "Validation Error", wxOK | wxICON_ERROR);
+        return false;
+    }
+    {
+        std::filesystem::path xrayPath(editedConfig_.xray_executable);
+        std::string ext = xrayPath.extension().string();
+        if (!ext.empty() && ext != ".exe") {
+            wxMessageBox("Xray executable should have .exe extension.\n\nCurrent:\n" + editedConfig_.xray_executable,
+                         "Validation Warning", wxOK | wxICON_WARNING);
+            // Continue — allow non-standard extensions
+        }
     }
     if (editedConfig_.xray_workers < 1 || editedConfig_.xray_workers > 64) {
         wxMessageBox("Workers must be between 1 and 64", "Validation Error", wxOK | wxICON_ERROR);
