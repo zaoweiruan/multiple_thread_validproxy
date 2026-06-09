@@ -31,4 +31,5 @@
 | 2026-06-09 | Config validation improvements plan — 5 tasks: in-class initializers, type-warn logs, xray existence check, save failure notification, load() unit tests | `docs/plans/2026-06-09-config-validation-improvements-plan.md` |
 | 2026-06-09 | UI 布局调整 — 工具栏去除 dbpath 显示 / searchbox 右移 50px / ProxyDetail 默认隐藏 | `docs/superpowers/specs/2026-06-09-Spec-Validproxy-ui-layout-tweaks-v1.0.md` |
 | 2026-06-09 | 订阅列表面板 — 新增"有效"列 (delay>0) + 列名中文化（名称/有效/代理数/更新） | `docs/superpowers/specs/2026-06-09-Spec-Validproxy-subscription-column-i18n-and-valid-count-v1.0.md` |
+| 2026-06-09 | Resizable splitter for subscription/proxy panels — wxSplitterWindow implementation with parent fix | `docs/plans/2026-06-09-feat-ui-resizable-splitter-v1.0.md` |
 | 2026-06-04 | SubitemUpdaterV2 硬编码 `"bin/config"` 路径修复 | `docs/bugfix/2026-06-04-subitemupdater-hardcoded-binconfig-path.md` |

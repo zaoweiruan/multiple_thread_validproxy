@@ -20,7 +20,7 @@ updated: 2026-06-04
 | [术语表](#1-术语表) | 1 | `docs/glossary.md` |
 | [项目上下文](#2-项目上下文) | 4 | `docs/context.md` |
 | [模型配置](#25-模型配置) | 1 | `docs/model-config.md` |
-| [开发流程规范](#3-开发流程规范) | 1 | `docs/plans/DEV-PROCESS.md` |
+| [开发流程规范](#3-开发流程规范) | 1 | `docs/DEV-PROCESS.md` |
 | [提示模式规范](#35-提示模式规范) | 1 | `docs/prompt-patterns.md` |
 | [可用技能参考](#36-可用技能参考) | 1 | `docs/available-skills-reference.md` |
 | [整体架构](#4-整体架构) | 3 | `docs/architecture.md` |
