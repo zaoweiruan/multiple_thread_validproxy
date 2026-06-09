@@ -71,6 +71,10 @@ std::optional<AppConfig> ConfigReader::load(const std::string& configPath) {
     
     AppConfig config;
     
+    auto warnWrongType = [&](const std::string& section, const std::string& field, const std::string& expected) {
+        Logger::write("WARNING: config." + section + "." + field + " has wrong type (expected " + expected + "), using default", LogLevel::WARN);
+    };
+    
     auto& obj = jv.as_object();
     Logger::write("DEBUG: JSON object has " + std::to_string(obj.size()) + " keys", LogLevel::DEBUG);
     
@@ -81,13 +85,21 @@ std::optional<AppConfig> ConfigReader::load(const std::string& configPath) {
             auto& db = obj["database"].as_object();
             if (db.contains("path") && db["path"].is_string()) {
                 config.database_path = resolvePath(db["path"].as_string().c_str(), exeDir);
+            } else if (db.contains("path")) {
+                warnWrongType("database", "path", "string");
             }
             if (db.contains("sql") && db["sql"].is_string()) {
                 config.sql_query = db["sql"].as_string().c_str();
+            } else if (db.contains("sql")) {
+                warnWrongType("database", "sql", "string");
             }
             if (db.contains("sql_by_subid") && db["sql_by_subid"].is_string()) {
                 config.sql_by_subid = db["sql_by_subid"].as_string().c_str();
+            } else if (db.contains("sql_by_subid")) {
+                warnWrongType("database", "sql_by_subid", "string");
             }
+        } else {
+            warnWrongType("", "database", "string|object");
         }
     }
     
@@ -95,59 +107,92 @@ std::optional<AppConfig> ConfigReader::load(const std::string& configPath) {
         auto& xray = obj["xray"].as_object();
         if (xray.contains("executable") && xray["executable"].is_string()) {
             config.xray_executable = resolvePath(xray["executable"].as_string().c_str(), exeDir);
+        } else if (xray.contains("executable")) {
+            warnWrongType("xray", "executable", "string");
         }
         if (xray.contains("workers") && xray["workers"].is_int64()) {
             config.xray_workers = static_cast<int>(xray["workers"].as_int64());
             if (config.xray_workers <= 0) config.xray_workers = 1;
+        } else if (xray.contains("workers")) {
+            warnWrongType("xray", "workers", "int64");
+            config.xray_workers = 1;
         } else {
             config.xray_workers = 1;
         }
         if (xray.contains("start_port") && xray["start_port"].is_int64()) {
             config.xray_start_port = static_cast<int>(xray["start_port"].as_int64());
             if (config.xray_start_port <= 0) config.xray_start_port = 1083;
+        } else if (xray.contains("start_port")) {
+            warnWrongType("xray", "start_port", "int64");
+            config.xray_start_port = 1083;
         } else {
             config.xray_start_port = 1083;
         }
         if (xray.contains("api_port") && xray["api_port"].is_int64()) {
             config.xray_api_port = static_cast<int>(xray["api_port"].as_int64());
+        } else if (xray.contains("api_port")) {
+            warnWrongType("xray", "api_port", "int64");
         }
+    } else if (obj.contains("xray")) {
+        warnWrongType("", "xray", "object");
     }
     
     if (obj.contains("test") && obj["test"].is_object()) {
         auto& test = obj["test"].as_object();
         if (test.contains("url") && test["url"].is_string()) {
             config.test_url = test["url"].as_string().c_str();
+        } else if (test.contains("url")) {
+            warnWrongType("test", "url", "string");
         }
         if (test.contains("timeout_ms") && test["timeout_ms"].is_int64()) {
             config.test_timeout_ms = static_cast<int>(test["timeout_ms"].as_int64());
             if (config.test_timeout_ms <= 0) config.test_timeout_ms = 5000;
+        } else if (test.contains("timeout_ms")) {
+            warnWrongType("test", "timeout_ms", "int64");
+            config.test_timeout_ms = 5000;
         } else {
             config.test_timeout_ms = 5000;
         }
+    } else if (obj.contains("test")) {
+        warnWrongType("", "test", "object");
     }
     
     if (obj.contains("log") && obj["log"].is_object()) {
         auto& log = obj["log"].as_object();
         if (log.contains("enabled") && log["enabled"].is_bool()) {
             config.log_enabled = log["enabled"].as_bool();
+        } else if (log.contains("enabled")) {
+            warnWrongType("log", "enabled", "bool");
+            config.log_enabled = true;
         } else {
             config.log_enabled = true;
         }
         if (log.contains("network_failures") && log["network_failures"].is_bool()) {
             config.log_network_failures = log["network_failures"].as_bool();
+        } else if (log.contains("network_failures")) {
+            warnWrongType("log", "network_failures", "bool");
+            config.log_network_failures = false;
         } else {
             config.log_network_failures = false;
         }
         if (log.contains("console_level") && log["console_level"].is_string()) {
             config.log_console_level = log["console_level"].as_string().c_str();
+        } else if (log.contains("console_level")) {
+            warnWrongType("log", "console_level", "string");
+            config.log_console_level = "INFO";
         } else {
             config.log_console_level = "INFO";
         }
         if (log.contains("file_level") && log["file_level"].is_string()) {
             config.log_file_level = log["file_level"].as_string().c_str();
+        } else if (log.contains("file_level")) {
+            warnWrongType("log", "file_level", "string");
+            config.log_file_level = "DEBUG";
         } else {
             config.log_file_level = "DEBUG";
         }
+    } else if (obj.contains("log")) {
+        warnWrongType("", "log", "object");
     } else {
         config.log_enabled = true;
         config.log_network_failures = false;
@@ -159,26 +204,40 @@ std::optional<AppConfig> ConfigReader::load(const std::string& configPath) {
         auto& sub = obj["subscription"].as_object();
         if (sub.contains("priority_mode") && sub["priority_mode"].is_string()) {
             config.priority_mode = sub["priority_mode"].as_string().c_str();
+        } else if (sub.contains("priority_mode")) {
+            warnWrongType("subscription", "priority_mode", "string");
+            config.priority_mode = "direct_first";
         } else {
             config.priority_mode = "direct_first";
         }
         if (sub.contains("check_auto_update_interval") && sub["check_auto_update_interval"].is_bool()) {
             config.check_auto_update_interval = sub["check_auto_update_interval"].as_bool();
+        } else if (sub.contains("check_auto_update_interval")) {
+            warnWrongType("subscription", "check_auto_update_interval", "bool");
+            config.check_auto_update_interval = false;
         } else {
             config.check_auto_update_interval = false;
         }
         if (sub.contains("connect_timeout_ms") && sub["connect_timeout_ms"].is_int64()) {
             config.subscription_connect_timeout_ms = static_cast<int>(sub["connect_timeout_ms"].as_int64());
             if (config.subscription_connect_timeout_ms <= 0) config.subscription_connect_timeout_ms = 10000;
+        } else if (sub.contains("connect_timeout_ms")) {
+            warnWrongType("subscription", "connect_timeout_ms", "int64");
+            config.subscription_connect_timeout_ms = 10000;
         } else {
             config.subscription_connect_timeout_ms = 10000;
         }
         if (sub.contains("timeout_ms") && sub["timeout_ms"].is_int64()) {
             config.subscription_timeout_ms = static_cast<int>(sub["timeout_ms"].as_int64());
             if (config.subscription_timeout_ms <= 0) config.subscription_timeout_ms = 30000;
+        } else if (sub.contains("timeout_ms")) {
+            warnWrongType("subscription", "timeout_ms", "int64");
+            config.subscription_timeout_ms = 30000;
         } else {
             config.subscription_timeout_ms = 30000;
         }
+    } else if (obj.contains("subscription")) {
+        warnWrongType("", "subscription", "object");
     } else {
         config.priority_mode = "direct_first";
         config.check_auto_update_interval = false;
@@ -190,35 +249,53 @@ std::optional<AppConfig> ConfigReader::load(const std::string& configPath) {
         auto& dedup = obj["dedup"].as_object();
         if (dedup.contains("enabled") && dedup["enabled"].is_bool()) {
             config.dedup_enabled = dedup["enabled"].as_bool();
+        } else if (dedup.contains("enabled")) {
+            warnWrongType("dedup", "enabled", "bool");
+            config.dedup_enabled = false;
         } else {
             config.dedup_enabled = false;
         }
         if (dedup.contains("dedup_after_update") && dedup["dedup_after_update"].is_bool()) {
             config.dedup_after_update = dedup["dedup_after_update"].as_bool();
+        } else if (dedup.contains("dedup_after_update")) {
+            warnWrongType("dedup", "dedup_after_update", "bool");
+            config.dedup_after_update = false;
         } else {
             config.dedup_after_update = false;
         }
         if (dedup.contains("blacklist_threshold") && dedup["blacklist_threshold"].is_int64()) {
             config.blacklist_threshold = static_cast<int>(dedup["blacklist_threshold"].as_int64());
             if (config.blacklist_threshold < 0) config.blacklist_threshold = 5;
+        } else if (dedup.contains("blacklist_threshold")) {
+            warnWrongType("dedup", "blacklist_threshold", "int64");
+            config.blacklist_threshold = 5;
         } else {
             config.blacklist_threshold = 5;
         }
         if (dedup.contains("blacklist_enabled") && dedup["blacklist_enabled"].is_bool()) {
             config.blacklist_enabled = dedup["blacklist_enabled"].as_bool();
+        } else if (dedup.contains("blacklist_enabled")) {
+            warnWrongType("dedup", "blacklist_enabled", "bool");
+            config.blacklist_enabled = true;
         } else {
             config.blacklist_enabled = true;
         }
         if (dedup.contains("blacklist_subid") && dedup["blacklist_subid"].is_string()) {
             config.blacklist_subid = dedup["blacklist_subid"].as_string().c_str();
+        } else if (dedup.contains("blacklist_subid")) {
+            warnWrongType("dedup", "blacklist_subid", "string");
         }
         if (dedup.contains("subids") && dedup["subids"].is_array()) {
             for (const auto& sid : dedup["subids"].as_array()) {
                 if (sid.is_string()) {
                     config.dedup_subids.push_back(sid.as_string().c_str());
+                } else {
+                    Logger::write("WARNING: config.dedup.subids element is not a string, skipping", LogLevel::WARN);
                 }
             }
         }
+    } else if (obj.contains("dedup")) {
+        warnWrongType("", "dedup", "object");
     } else {
         config.dedup_enabled = true;
         config.dedup_after_update = false;
@@ -231,19 +308,30 @@ std::optional<AppConfig> ConfigReader::load(const std::string& configPath) {
         auto& notification = obj["notification"].as_object();
         if (notification.contains("enabled") && notification["enabled"].is_bool()) {
             config.notification_enabled = notification["enabled"].as_bool();
+        } else if (notification.contains("enabled")) {
+            warnWrongType("notification", "enabled", "bool");
+            config.notification_enabled = false;
         } else {
             config.notification_enabled = false;
         }
         if (notification.contains("on_update") && notification["on_update"].is_bool()) {
             config.notification_on_update = notification["on_update"].as_bool();
+        } else if (notification.contains("on_update")) {
+            warnWrongType("notification", "on_update", "bool");
+            config.notification_on_update = false;
         } else {
             config.notification_on_update = false;
         }
         if (notification.contains("on_test") && notification["on_test"].is_bool()) {
             config.notification_on_test = notification["on_test"].as_bool();
+        } else if (notification.contains("on_test")) {
+            warnWrongType("notification", "on_test", "bool");
+            config.notification_on_test = false;
         } else {
             config.notification_on_test = false;
         }
+    } else if (obj.contains("notification")) {
+        warnWrongType("", "notification", "object");
     } else {
         config.notification_enabled = false;
         config.notification_on_update = false;
@@ -254,13 +342,21 @@ std::optional<AppConfig> ConfigReader::load(const std::string& configPath) {
         auto& sync = obj["sync"].as_object();
         if (sync.contains("source_db") && sync["source_db"].is_string()) {
             config.sync.source_db = resolvePath(sync["source_db"].as_string().c_str(), exeDir);
+        } else if (sync.contains("source_db")) {
+            warnWrongType("sync", "source_db", "string");
         }
         if (sync.contains("target_db") && sync["target_db"].is_string()) {
             config.sync.target_db = resolvePath(sync["target_db"].as_string().c_str(), exeDir);
+        } else if (sync.contains("target_db")) {
+            warnWrongType("sync", "target_db", "string");
         }
         if (sync.contains("sync_skip_subids") && sync["sync_skip_subids"].is_bool()) {
             config.sync.sync_skip_subids = sync["sync_skip_subids"].as_bool();
+        } else if (sync.contains("sync_skip_subids")) {
+            warnWrongType("sync", "sync_skip_subids", "bool");
         }
+    } else if (obj.contains("sync")) {
+        warnWrongType("", "sync", "object");
     }
     
     // Warn about any remaining curly-brace placeholders that were not substituted.
