@@ -44,6 +44,10 @@ struct AppConfig {
 
 class ConfigReader {
 public:
+    // Error reporting hook — defaults to MessageBoxA. Tests can replace to suppress popups.
+    using ErrorReporter = void(*)(const std::string& title, const std::string& message);
+    static ErrorReporter errorReporter_;
+
     static std::optional<AppConfig> load(const std::string& configPath);
     static bool save(const std::string& configPath, const AppConfig& config);
     static std::string getDefaultConfigPath();

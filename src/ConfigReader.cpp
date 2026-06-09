@@ -22,6 +22,10 @@ static std::string resolvePath(const std::string& path, const std::string& exeDi
     return (std::filesystem::path(exeDir) / p).string();
 }
 
+ConfigReader::ErrorReporter ConfigReader::errorReporter_ = [](const std::string& title, const std::string& message) {
+    MessageBoxA(NULL, message.c_str(), title.c_str(), MB_ICONERROR | MB_OK);
+};
+
 std::string ConfigReader::getDefaultConfigPath() {
     std::string exeDir = utils::getExecutableDir();
     return exeDir + "\\config.json";
@@ -35,7 +39,7 @@ std::optional<AppConfig> ConfigReader::load(const std::string& configPath) {
         std::string errMsg = "Failed to open configuration file.\n\n";
         errMsg += "Path:\n" + configPath + "\n\n";
         errMsg += "Check that the file exists and is accessible.";
-        MessageBoxA(NULL, errMsg.c_str(), "Configuration Error", MB_ICONERROR | MB_OK);
+        errorReporter_("Configuration Error", errMsg);
         return std::nullopt;
     }
 
@@ -54,7 +58,7 @@ std::optional<AppConfig> ConfigReader::load(const std::string& configPath) {
         std::string errMsg = "Failed to parse configuration file.\n\n";
         errMsg += "Path:\n" + configPath + "\n\n";
         errMsg += "Error:\n" + std::string(e.what());
-        MessageBoxA(NULL, errMsg.c_str(), "Configuration Error", MB_ICONERROR | MB_OK);
+        errorReporter_("Configuration Error", errMsg);
         return std::nullopt;
     }
 
@@ -63,7 +67,7 @@ std::optional<AppConfig> ConfigReader::load(const std::string& configPath) {
         std::string errMsg = "Invalid configuration file.\n\n";
         errMsg += "Path:\n" + configPath + "\n\n";
         errMsg += "The root element must be a JSON object.";
-        MessageBoxA(NULL, errMsg.c_str(), "Configuration Error", MB_ICONERROR | MB_OK);
+        errorReporter_("Configuration Error", errMsg);
         return std::nullopt;
     }
 
@@ -406,7 +410,7 @@ std::optional<AppConfig> ConfigReader::load(const std::string& configPath) {
             errMsg += "Config path:\n" + configPath + "\n\n";
             errMsg += "Database path:\n" + config.database_path + "\n\n";
             errMsg += "The application cannot start.";
-            MessageBoxA(NULL, errMsg.c_str(), "Database Error", MB_ICONERROR | MB_OK);
+            errorReporter_("Database Error", errMsg);
             return std::nullopt;
         }
     }
