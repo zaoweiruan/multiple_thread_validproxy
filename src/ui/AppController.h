@@ -46,6 +46,7 @@ bool updateSubitem(const db::models::Subitem& sub);
 std::vector<db::models::Profileitem> loadProxies(const std::string& subId = "");
 void loadProxiesAsync(const std::string& subId, wxEvtHandler* handler);
 std::unordered_map<std::string, int> countProxiesBySubId();
+std::unordered_map<std::string, int> countValidProxiesBySubId();
 std::optional<db::models::Profileitem> getProxyByIndexId(const std::string& indexId);
 std::vector<db::models::ProfileExItem> loadProxyResults();
 

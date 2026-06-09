@@ -8,15 +8,18 @@ SubscriptionListModel::SubscriptionListModel() = default;
 
 // -------------------------------------------------------------------
 void SubscriptionListModel::setData(std::vector<db::models::Subitem>* subs,
-                                   std::unordered_map<std::string, int>* proxyCounts) {
+                                    std::unordered_map<std::string, int>* proxyCounts,
+                                    std::unordered_map<std::string, int>* validProxyCounts) {
     subscriptions_ = subs;
     proxyCounts_ = proxyCounts;
+    validProxyCounts_ = validProxyCounts;
 }
 
 // -------------------------------------------------------------------
 void SubscriptionListModel::clear() {
     subscriptions_ = nullptr;
     proxyCounts_ = nullptr;
+    validProxyCounts_ = nullptr;
 }
 
 // -------------------------------------------------------------------
@@ -65,6 +68,15 @@ void SubscriptionListModel::GetValueByRow(wxVariant& variant, unsigned int row, 
         case SUB_COL_NAME:
             variant = wxVariant(sub.remarks);
             break;
+        case SUB_COL_VALID: {
+            int count = 0;
+            if (validProxyCounts_) {
+                auto it = validProxyCounts_->find(sub.id);
+                if (it != validProxyCounts_->end()) count = it->second;
+            }
+            variant = wxVariant(wxString::Format("%d", count));
+            break;
+        }
         case SUB_COL_PROXIES: {
             int count = 0;
             if (proxyCounts_) {
@@ -143,6 +155,17 @@ int SubscriptionListModel::Compare(const wxDataViewItem& item1,
         case SUB_COL_NAME:
             cmp = a.remarks.compare(b.remarks);
             break;
+        case SUB_COL_VALID: {
+            int countA = 0, countB = 0;
+            if (validProxyCounts_) {
+                auto itA = validProxyCounts_->find(a.id);
+                auto itB = validProxyCounts_->find(b.id);
+                if (itA != validProxyCounts_->end()) countA = itA->second;
+                if (itB != validProxyCounts_->end()) countB = itB->second;
+            }
+            cmp = (countA > countB) - (countA < countB);
+            break;
+        }
         case SUB_COL_PROXIES: {
             int countA = 0, countB = 0;
             if (proxyCounts_) {

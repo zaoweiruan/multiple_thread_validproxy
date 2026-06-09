@@ -215,6 +215,11 @@ std::unordered_map<std::string, int> AppController::countProxiesBySubId() {
     return dao.countBySubId();
 }
 
+std::unordered_map<std::string, int> AppController::countValidProxiesBySubId() {
+    db::models::ProfileitemDAO dao(db_);
+    return dao.countValidBySubId();
+}
+
 std::vector<db::models::Profileitem> AppController::loadProxies(const std::string& subId) {
     db::models::ProfileitemDAO dao(db_);
     if (subId.empty()) {
