@@ -411,6 +411,13 @@ std::optional<AppConfig> ConfigReader::load(const std::string& configPath) {
         }
     }
     
+    if (!config.xray_executable.empty()) {
+        std::filesystem::path xrayPath(config.xray_executable);
+        if (!std::filesystem::exists(xrayPath)) {
+            Logger::write("WARNING: xray executable not found: " + config.xray_executable, LogLevel::WARN);
+        }
+    }
+    
     Logger::write("DEBUG: Config loaded successfully", LogLevel::DEBUG);
     return config;
 }
