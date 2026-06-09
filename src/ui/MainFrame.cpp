@@ -649,7 +649,12 @@ void MainFrame::onMenuConfig(wxCommandEvent&) {
     if (configDialog_->ShowModal() == wxID_OK) {
         config::AppConfig cfg = configDialog_->getConfig();
         std::string oldDbPath = config_.database_path;
-        controller_->saveConfig(cfg);
+        bool saveOk = controller_->saveConfig(cfg);
+        if (!saveOk) {
+            wxMessageBox("Failed to save configuration to file.\n"
+                         "Your changes may not persist after restart.",
+                         "Save Error", wxOK | wxICON_WARNING);
+        }
 
         // Apply log level changes
         Logger::setFileLevel(Logger::stringToLevel(cfg.log_file_level));
@@ -693,7 +698,12 @@ void MainFrame::onMenuConfig(wxCommandEvent&) {
             } else {
                 // Failed to open new database — restore old path in config
                 cfg.database_path = oldDbPath;
-                controller_->saveConfig(cfg);
+                bool restoreOk = controller_->saveConfig(cfg);
+                if (!restoreOk) {
+                    wxMessageBox("Failed to restore previous database path in config file.\n"
+                                 "You may need to manually edit config.json.",
+                                 "Save Error", wxOK | wxICON_WARNING);
+                }
                 wxMessageBox("Failed to open the selected database file.\n"
                              "The previous database path has been restored.",
                              "Database Error", wxOK | wxICON_ERROR);
