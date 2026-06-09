@@ -285,11 +285,11 @@ set_target_properties(test_sharelink PROPERTIES
 )
 add_test(NAME ShareLinkTest COMMAND test_sharelink)
 
-# -- ConfigReader unit tests - skip due to Windows API dependency
-# add_executable(test_config_reader tests/test_config_reader.cpp src/ConfigReader.cpp src/Logger.cpp)
-# target_include_directories(test_config_reader PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-# target_link_libraries(test_config_reader PRIVATE gtest_main gtest D:/boost_1_88_0/lib/libboost_json-mgw14-mt-x64-1_88.a)
-# add_test(NAME ConfigReaderTest COMMAND test_config_reader)
+# -- ConfigReader unit tests (includes load() tests with error reporter override) --
+add_executable(test_config_reader tests/test_config_reader.cpp tests/test_config_reader_load.cpp src/ConfigReader.cpp src/Utils.cpp src/Logger.cpp)
+target_include_directories(test_config_reader PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(test_config_reader PRIVATE gtest_main gtest D:/boost_1_88_0/lib/libboost_json-mgw14-mt-x64-1_88.a)
+add_test(NAME ConfigReaderTest COMMAND test_config_reader)
 
 # -- ConfigGenerator unit tests (SQLite + boost_json) --
 add_executable(test_config_generator tests/test_config_generator.cpp src/ConfigGenerator.cpp src/Logger.cpp)
