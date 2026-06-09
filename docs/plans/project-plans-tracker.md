@@ -12,6 +12,7 @@ origin: "Continuation of project memory consolidation task"
 
 > 📝 **2026-06-09** — Config validation improvements plan created. See `docs/plans/2026-06-09-config-validation-improvements-plan.md`.
 > 📝 **2026-06-09** — ConfigReader::load() 弹窗修复 (double-popup bug). See `docs/bugfix/2026-06-09-configreader-load-error-popup-fix.md`.
+> 📝 **2026-06-09** — Resizable splitter implemented for subscription/proxy panels. See `docs/plans/2026-06-09-feat-ui-resizable-splitter-v1.0.md`.
 > 📝 **2026-06-04** — #27 SubitemUpdaterV2 hardcoded `"bin/config"` path fix → ✅ completed. See `docs/bugfix/2026-06-04-subitemupdater-hardcoded-binconfig-path.md`.
 > 📝 **2026-05-19** — 批量状态更新: P4→❌ cancelled; 003→✅ completed; DLL fix→✅ completed; libpng16d/libtiffd fix→✅ completed; consolidated-ui-fixes→✅ completed; 007 frontmatter repaired.
 
@@ -74,7 +75,8 @@ origin: "Continuation of project memory consolidation task"
 | 10 | DLL-fix **DLL Issue** | Fix wxmsw32ud_aui_gcc_custom.dll missing (Build type mismatch) | ✅ completed |
 | 11 | DLL-fix **libpng16d/libtiffd** | Fix libpng16d.dll and libtiffd.dll missing for Debug build | ✅ completed |
 | 12 | **Single proxy test report** | Technical report: TestSubId→IndexId, Delay refresh, event flow | ✅ completed |
-| 13 | **UI enhancements plan** | Column sorting + Find individual proxy + Subscription linkage | 📝 draft |
+| 13 | **UI enhancements plan** | Column sorting + Find individual proxy + Subscription linkage | ✅ completed |
+| 28 | **Resizable splitter** | wxSplitterWindow for subscription/proxy panel resize | ✅ completed |
 | 14 | **UI close hang fix** | Fix AppController/XrayInstance destructor race + process handle bugs | ✅ completed |
 | 15 | **Cancel support for update** | Add runtime cancel support for subscription update (SubitemUpdaterV2 + MainFrame dynamic cancel button) | ✅ completed |
 | 16 | **ProxyFinder cancel propagation** | Wire externalCancel_ to ProxyFinder in SubitemUpdaterV2::getProxyPorts() | ✅ completed |
@@ -100,6 +102,7 @@ origin: "Continuation of project memory consolidation task"
 | 25 | 2026-06-03 | Proxy context menu disabled during operations | ✅ completed |
 | 26 | 2026-06-03 | Config dialog improvements - block DB switch during ops | ✅ completed |
 | 27 | 2026-06-04 | SubitemUpdaterV2 hardcoded `"bin/config"` path fallback fix | ✅ completed |
+| 28 | 2026-06-09 | Resizable horizontal splitter for subscription/proxy panels | ✅ completed |
 
 ---
 
