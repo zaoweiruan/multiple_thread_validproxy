@@ -3,6 +3,7 @@
 
 #include <wx/wx.h>
 #include <wx/aui/aui.h>
+#include <wx/splitter.h>
 #include <wx/statusbr.h>
 
 #include <string>
@@ -89,7 +90,8 @@ private:
     void onTestSubscription(SubscriptionTestEvent& event);
 
 // Members
-     wxAuiManager* auiManager_{nullptr};  // Use pointer to delay construction until after menu setup
+     wxAuiManager* auiManager_{nullptr};
+     wxSplitterWindow* splitter_{nullptr};  // Resizable splitter for subscription/proxy panels
      AppController* controller_;
      wxMenuBar* menuBar_{nullptr};
     SubscriptionPanel* subPanel_{nullptr};
