@@ -26,4 +26,5 @@
 
 | 日期 | 条目 | 文档 |
 |------|------|------|
+| 2026-06-09 | ConfigReader::load() 加载失败弹窗修复 — 四种硬性失败输出精确弹窗，调用方不再重复弹窗 | `docs/bugfix/2026-06-09-configreader-load-error-popup-fix.md` |
 | 2026-06-04 | SubitemUpdaterV2 硬编码 `"bin/config"` 路径修复 | `docs/bugfix/2026-06-04-subitemupdater-hardcoded-binconfig-path.md` |

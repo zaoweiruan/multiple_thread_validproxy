@@ -192,7 +192,7 @@ MainFrame::MainFrame(const config::AppConfig& cfg, sqlite3* db)
     if (menuBar_) {
         SetMenuBar(menuBar_);
         Logger::write("[MainFrame] SetMenuBar done, updating AUI", LogLevel::DEBUG);
-        auiManager_.Update();
+        auiManager_->Update();
         Logger::write("[MainFrame] AUI re-layout after SetMenuBar done", LogLevel::DEBUG);
     }
      
@@ -236,7 +236,7 @@ Bind(wxEVT_SUB_LIST_LOADED, [this](SubListLoadedEvent& evt) {
     initTrayIcon();
 
     // Track detail pane close event for visibility state
-    auiManager_.Bind(wxEVT_AUI_PANE_CLOSE, [this](wxAuiManagerEvent& evt) {
+    auiManager_->Bind(wxEVT_AUI_PANE_CLOSE, [this](wxAuiManagerEvent& evt) {
         wxAuiPaneInfo* pane = evt.GetPane();
         if (pane && pane->name == "detailPane") {
             detailPaneVisible_ = false;
@@ -442,7 +442,7 @@ void MainFrame::initPanels() {
     // ── Add toolbar to AUI manager for proper resize handling ──
     // Must be done after initAuiManager() sets the managed window
     if (m_toolbar) {
-        auiManager_.AddPane(m_toolbar, wxAuiPaneInfo().Name("toolbar").ToolbarPane().Top().Row(0).Resizable(true));
+        auiManager_->AddPane(m_toolbar, wxAuiPaneInfo().Name("toolbar").ToolbarPane().Top().Row(0).Resizable(true));
     }
 
     // ── Center panel first (parent for sub/proxy/log panels) ──
@@ -473,14 +473,14 @@ void MainFrame::initPanels() {
 
     // ── AUI Pane Management ──
     // Center: main content area (sub/proxy/log panels)
-    auiManager_.AddPane(centerPanel, wxAuiPaneInfo()
+    auiManager_->AddPane(centerPanel, wxAuiPaneInfo()
         .Name("centerPane")
         .CenterPane()
         .PaneBorder(false)
     );
 
     // Right: proxy detail panel
-    auiManager_.AddPane(detailPanel_, wxAuiPaneInfo()
+    auiManager_->AddPane(detailPanel_, wxAuiPaneInfo()
         .Name("detailPane")
         .Caption("Proxy Details")
         .Right()
@@ -494,8 +494,8 @@ void MainFrame::initPanels() {
     );
 
     Logger::write("[MainFrame] AUI panes registered, calling Update()", LogLevel::DEBUG);
-    auiManager_.Update();
-    Logger::write("[MainFrame] auiManager_.Update() returned", LogLevel::DEBUG);
+    auiManager_->Update();
+    Logger::write("[MainFrame] auiManager_->Update() returned", LogLevel::DEBUG);
 
     // Load initial data (unchanged) — done before AUI Update() to ensure
     // data is ready when the layout triggers first paint
@@ -771,7 +771,7 @@ void MainFrame::onResize(wxSizeEvent& event) {
 
     // Force AUI manager to update layout on resize
     // wxAuiToolBar automatically re-layouts controls when managed by AUI
-    auiManager_.Update();
+    auiManager_->Update();
 }
 
 void MainFrame::onSearchBoxEnter(wxCommandEvent& event) {
@@ -799,7 +799,7 @@ void MainFrame::onSearchClear(wxCommandEvent& event) {
 }
 
 void MainFrame::onToggleDetailPane(wxCommandEvent&) {
-    wxAuiPaneInfo& pane = auiManager_.GetPane("detailPane");
+    wxAuiPaneInfo& pane = auiManager_->GetPane("detailPane");
     if (pane.IsOk()) {
         bool newVisible = !pane.IsShown();
         pane.Show(newVisible);
@@ -807,7 +807,7 @@ void MainFrame::onToggleDetailPane(wxCommandEvent&) {
         if (newVisible) {
             pane.BestSize(320, -1);
         }
-        auiManager_.Update();
+        auiManager_->Update();
     }
 }
 
