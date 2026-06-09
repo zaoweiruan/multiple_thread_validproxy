@@ -10,6 +10,8 @@ origin: "Continuation of project memory consolidation task"
 
 ## Status: In Progress
 
+> 📝 **2026-06-09** — Config validation improvements plan created. See `docs/plans/2026-06-09-config-validation-improvements-plan.md`.
+> 📝 **2026-06-09** — ConfigReader::load() 弹窗修复 (double-popup bug). See `docs/bugfix/2026-06-09-configreader-load-error-popup-fix.md`.
 > 📝 **2026-06-04** — #27 SubitemUpdaterV2 hardcoded `"bin/config"` path fix → ✅ completed. See `docs/bugfix/2026-06-04-subitemupdater-hardcoded-binconfig-path.md`.
 > 📝 **2026-05-19** — 批量状态更新: P4→❌ cancelled; 003→✅ completed; DLL fix→✅ completed; libpng16d/libtiffd fix→✅ completed; consolidated-ui-fixes→✅ completed; 007 frontmatter repaired.
 

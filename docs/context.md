@@ -26,5 +26,7 @@
 
 | 日期 | 条目 | 文档 |
 |------|------|------|
+| 2026-06-09 | test_config_reader.exe 输出目录从 bin/ 移至 tests/ — 遵循测试文件目录规范 (AGENTS.md #8) | `CMakeLists.txt` |
+| 2026-06-09 | Config validation improvements plan — 5 tasks: in-class initializers, type-warn logs, xray existence check, save failure notification, load() unit tests | `docs/plans/2026-06-09-config-validation-improvements-plan.md` |
 | 2026-06-09 | ConfigReader::load() 加载失败弹窗修复 — 四种硬性失败输出精确弹窗，调用方不再重复弹窗 | `docs/bugfix/2026-06-09-configreader-load-error-popup-fix.md` |
 | 2026-06-04 | SubitemUpdaterV2 硬编码 `"bin/config"` 路径修复 | `docs/bugfix/2026-06-04-subitemupdater-hardcoded-binconfig-path.md` |
