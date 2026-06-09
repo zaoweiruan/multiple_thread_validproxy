@@ -53,9 +53,10 @@ SubscriptionPanel::SubscriptionPanel(wxWindow* parent, AppController* controller
     // Columns — Append[Toggle|Text]Column(label, model_column, mode, width, ...)
     listCtrl_->AppendTextColumn("#", 0, wxDATAVIEW_CELL_INERT, 30);
     listCtrl_->AppendToggleColumn("启用", 1, wxDATAVIEW_CELL_ACTIVATABLE, 30);
-    listCtrl_->AppendTextColumn("Name ↕", 2, wxDATAVIEW_CELL_INERT, 200);  // Changed to INERT to prevent editing
-    listCtrl_->AppendTextColumn("Proxies ↕", 3, wxDATAVIEW_CELL_INERT, 70, wxALIGN_RIGHT);
-    listCtrl_->AppendTextColumn("Update ↕", 4, wxDATAVIEW_CELL_INERT, 130);
+    listCtrl_->AppendTextColumn("名称 ↕", 2, wxDATAVIEW_CELL_INERT, 200);  // Changed to INERT to prevent editing
+    listCtrl_->AppendTextColumn("有效 ↕", 3, wxDATAVIEW_CELL_INERT, 60, wxALIGN_RIGHT);
+    listCtrl_->AppendTextColumn("代理数 ↕", 4, wxDATAVIEW_CELL_INERT, 70, wxALIGN_RIGHT);
+    listCtrl_->AppendTextColumn("更新 ↕", 5, wxDATAVIEW_CELL_INERT, 130);
 
     sizer->Add(listCtrl_, 1, wxEXPAND | wxALL, 2);
 
@@ -85,7 +86,7 @@ void SubscriptionPanel::updateSubscriptionList(const std::vector<db::models::Sub
                                                  const std::unordered_map<std::string, int>& proxyCounts) {
     subs_ = subs;
     proxyCounts_ = proxyCounts;
-    model_->setData(&subs_, &proxyCounts_);
+    model_->setData(&subs_, &proxyCounts_, &validProxyCounts_);
     model_->Reset(0);
     model_->Reset(static_cast<unsigned int>(subs_.size()));
     model_->detectIdOffset();
@@ -96,12 +97,15 @@ void SubscriptionPanel::loadSubscriptions() {
 
     // Single efficient GROUP BY query for all proxy counts instead of N+1 full-table scans
     auto proxyCounts = controller_->countProxiesBySubId();
+    validProxyCounts_ = controller_->countValidProxiesBySubId();
 
     updateSubscriptionList(subs, proxyCounts);
  }
 
 void SubscriptionPanel::loadSubscriptions(const std::vector<db::models::Subitem>& subs,
                                            const std::unordered_map<std::string, int>& proxyCounts) {
+    // Load valid proxy counts in the async path (quick GROUP BY JOIN query)
+    validProxyCounts_ = controller_->countValidProxiesBySubId();
     updateSubscriptionList(subs, proxyCounts);
  }
 
@@ -255,8 +259,8 @@ void SubscriptionPanel::onColumnHeaderClick(wxDataViewEvent& event) {
     int col = event.GetColumn();
     Logger::write("[SubscriptionPanel] Column header click: column=" + std::to_string(col), LogLevel::DEBUG);
 
-    // Only Name (SUB_COL_NAME=2), Proxies (SUB_COL_PROXIES=3), and Update (SUB_COL_UPDATE=4) are sortable
-    if (col == SUB_COL_NAME || col == SUB_COL_PROXIES || col == SUB_COL_UPDATE) {
+    // Only Name (SUB_COL_NAME=2), Valid (SUB_COL_VALID=3), Proxies (SUB_COL_PROXIES=4), and Update (SUB_COL_UPDATE=5) are sortable
+    if (col == SUB_COL_NAME || col == SUB_COL_VALID || col == SUB_COL_PROXIES || col == SUB_COL_UPDATE) {
         // Cycle direction: None -> Asc -> Desc -> None
         if (sortState_.column == col) {
             switch (sortState_.direction) {

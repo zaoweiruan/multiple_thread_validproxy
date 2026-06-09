@@ -436,14 +436,15 @@ void MainFrame::initPanels() {
     detailPanel_ = new ProxyDetailPanel(this);  // AUI-managed, parent stays as MainFrame
     logPanel_ = new LogPanel(centerPanel);
 
-    subPanel_->SetMinSize(wxSize(380, -1));
-    proxyPanel_->SetMinSize(wxSize(620, -1));
+    subPanel_->SetMinSize(wxSize(300, -1));
+    proxyPanel_->SetMinSize(wxSize(400, -1));
     // detailPanel_ is NO LONGER added to the wxBoxSizer
 
     // Top row: subscription | proxy list (no detail panel)
+    // Proportions 1:2 = sub gets 1/3 width, proxy gets 2/3 width
     wxBoxSizer* topSizer = new wxBoxSizer(wxHORIZONTAL);
-    topSizer->Add(subPanel_, 0, wxEXPAND | wxRIGHT, 2);
-    topSizer->Add(proxyPanel_, 1, wxEXPAND);
+    topSizer->Add(subPanel_, 1, wxEXPAND | wxRIGHT, 2);
+    topSizer->Add(proxyPanel_, 2, wxEXPAND);
     centerSizer->Add(topSizer, 1, wxEXPAND);
 
     // Bottom row: log panel

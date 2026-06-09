@@ -50,6 +50,7 @@ private:
     SubscriptionListModel* model_;
     std::vector<db::models::Subitem> subs_;
     std::unordered_map<std::string, int> proxyCounts_;
+    std::unordered_map<std::string, int> validProxyCounts_;
     SortState sortState_;
 
     wxDECLARE_EVENT_TABLE();

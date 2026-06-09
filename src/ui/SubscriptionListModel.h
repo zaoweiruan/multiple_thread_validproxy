@@ -18,8 +18,9 @@ enum {
     SUB_COL_ROWNUM = 0,
     SUB_COL_ENABLED = 1,
     SUB_COL_NAME = 2,
-    SUB_COL_PROXIES = 3,
-    SUB_COL_UPDATE = 4
+    SUB_COL_VALID = 3,
+    SUB_COL_PROXIES = 4,
+    SUB_COL_UPDATE = 5
 };
 
 enum class SortDirection { None, Asc, Desc };
@@ -43,7 +44,8 @@ public:
 
     // Set data pointers — call before Reset() or on data change
     void setData(std::vector<db::models::Subitem>* subs,
-                 std::unordered_map<std::string, int>* proxyCounts);
+                 std::unordered_map<std::string, int>* proxyCounts,
+                 std::unordered_map<std::string, int>* validProxyCounts = nullptr);
 
     // Clear all data
     void clear();
@@ -65,6 +67,7 @@ private:
     // Non-owning pointers to the data owned by SubscriptionPanel
     std::vector<db::models::Subitem>* subscriptions_ = nullptr;
     std::unordered_map<std::string, int>* proxyCounts_ = nullptr;
+    std::unordered_map<std::string, int>* validProxyCounts_ = nullptr;
 
     // Internal ID offset compensation
     unsigned int idOffset_ = 0;

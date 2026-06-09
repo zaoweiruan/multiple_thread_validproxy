@@ -358,6 +358,33 @@ std::vector<Profileitem> getAll(const std::string& sql = "SELECT * FROM ProfileI
     return result;
   }
 
+  /// Count valid (delay > 0) proxies per subscription via JOIN with ProfileExItem.
+  /// Returns a map of subid → valid proxy count.
+  std::unordered_map<std::string, int> countValidBySubId() {
+    std::unordered_map<std::string, int> result;
+    const char* sql = "SELECT p.SubId, COUNT(DISTINCT p.IndexId) "
+                      "FROM ProfileItem p "
+                      "INNER JOIN ProfileExItem e ON p.IndexId = e.IndexId "
+                      "WHERE CAST(e.delay AS INTEGER) > 0 "
+                      "GROUP BY p.SubId;";
+
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+      Logger::write("SQL错误: " + std::string(sqlite3_errmsg(db_)), LogLevel::ERR);
+      return result;
+    }
+
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+      const char* subId = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+      int count = sqlite3_column_int(stmt, 1);
+      if (subId) {
+        result[subId] = count;
+      }
+    }
+    sqlite3_finalize(stmt);
+    return result;
+  }
+
   std::optional<Profileitem> getByIndexId(const std::string& indexId) {
     std::string sql = "SELECT * FROM ProfileItem WHERE IndexId = '" + indexId + "';";
     sqlite3_stmt* stmt = nullptr;
