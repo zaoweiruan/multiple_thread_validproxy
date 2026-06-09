@@ -1,7 +1,7 @@
 # 功能实现状态清单
 
-> 状态日期: 2026-06-04
-> 最后更新: 代码审计 — 5 项功能 ⚠️→✅（代理搜索、编辑订阅保存、订阅右键测试、订阅删除、订阅刷新），类型筛选 UI 选择器已移除
+> 状态日期: 2026-06-09
+> 最后更新: 工具栏 dbpath 显示去除 / searchbox 右移 50px / ProxyDetail 默认隐藏 / xray.executable 配置值校验双层级实现
 
 ## 约定
 
@@ -74,8 +74,20 @@
 | 关于对话框 | ✅ | `onMenuAbout` → `wxAboutBox` |
 | **操作中禁止冲突 UI** | ✅ | `setOperationState()` → 禁用冲突工具栏/菜单按钮，防止重入 |
 | 系统托盘 | ✅ | `TrayIcon`：Show/Hide/Exit 菜单 + balloon 通知 |
+| 工具栏去除 dbpath 显示 | ✅ | 删除 `m_dbPathLabel`（`wxStaticText`），dbpath 仅保留状态栏 field 2 显示 |
+| Searchbox 右移 50px | ✅ | `AddSpacer(20)` → `AddSpacer(70)`，视觉位置更居中 |
+| ProxyDetail 面板默认隐藏 | ✅ | `.Hide()` + `detailPaneVisible_ = false`，用户按需通过"详情"按钮打开 |
 | AUI 布局持久化 | ⚠️ | `loadSettings()` 空函数 — 面板布局关闭后不恢复 |
 | 程序退出清理 | ✅ | 窗口关闭时删除 `TrayIcon` + 释放 `XrayManager` |
+
+## 4. 配置校验
+
+| 功能 | 状态 | 说明 |
+|------|------|------|
+| xray.executable 文件存在性校验（加载时） | ✅ | ERROR 日志 + 弹窗（不中断加载） |
+| xray.executable 文件存在性校验（GUI 编辑器） | ✅ | 错误弹窗 + 阻止保存 |
+| xray.executable .exe 扩展名警告（加载时） | ✅ | WARN 日志 |
+| xray.executable .exe 扩展名警告（GUI 编辑器） | ✅ | 警告弹窗（允许继续） |
 
 ## 6. 缺失功能汇总
 

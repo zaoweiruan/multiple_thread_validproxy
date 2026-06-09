@@ -26,7 +26,8 @@
 
 | 日期 | 条目 | 文档 |
 |------|------|------|
+| 2026-06-09 | xray.executable 配置值校验 — 加载时 ERROR+弹窗、GUI 文件存在性+扩展名检查 | `docs/superpowers/specs/2026-06-09-Spec-Validproxy-xray-executable-validation-v1.0.md` |
 | 2026-06-09 | test_config_reader.exe 输出目录从 bin/ 移至 tests/ — 遵循测试文件目录规范 (AGENTS.md #8) | `CMakeLists.txt` |
 | 2026-06-09 | Config validation improvements plan — 5 tasks: in-class initializers, type-warn logs, xray existence check, save failure notification, load() unit tests | `docs/plans/2026-06-09-config-validation-improvements-plan.md` |
-| 2026-06-09 | ConfigReader::load() 加载失败弹窗修复 — 四种硬性失败输出精确弹窗，调用方不再重复弹窗 | `docs/bugfix/2026-06-09-configreader-load-error-popup-fix.md` |
+| 2026-06-09 | UI 布局调整 — 工具栏去除 dbpath 显示 / searchbox 右移 50px / ProxyDetail 默认隐藏 | `docs/superpowers/specs/2026-06-09-Spec-Validproxy-ui-layout-tweaks-v1.0.md` |
 | 2026-06-04 | SubitemUpdaterV2 硬编码 `"bin/config"` 路径修复 | `docs/bugfix/2026-06-04-subitemupdater-hardcoded-binconfig-path.md` |

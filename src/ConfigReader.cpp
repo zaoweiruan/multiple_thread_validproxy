@@ -418,7 +418,17 @@ std::optional<AppConfig> ConfigReader::load(const std::string& configPath) {
     if (!config.xray_executable.empty()) {
         std::filesystem::path xrayPath(config.xray_executable);
         if (!std::filesystem::exists(xrayPath)) {
-            Logger::write("WARNING: xray executable not found: " + config.xray_executable, LogLevel::WARN);
+            Logger::write("ERROR: xray executable not found: " + config.xray_executable, LogLevel::ERR);
+            std::string errMsg = "Xray executable not found.\n\n";
+            errMsg += "Config path:\n" + configPath + "\n\n";
+            errMsg += "Xray path:\n" + config.xray_executable + "\n\n";
+            errMsg += "Please check the path in the configuration file.";
+            errorReporter_("Configuration Error", errMsg);
+        }
+        // Check file extension on Windows — .exe is expected for xray executable
+        std::string ext = xrayPath.extension().string();
+        if (!ext.empty() && ext != ".exe") {
+            Logger::write("WARNING: xray executable should have .exe extension: " + config.xray_executable, LogLevel::WARN);
         }
     }
     
