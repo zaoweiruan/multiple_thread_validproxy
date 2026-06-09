@@ -84,7 +84,8 @@ docs/superpowers/specs/*.bak
 .vibe/
 .windsurf/
 .zencoder/
-
+package*
+playwright*
 # Temp files
 kilo.json
 opencode.json

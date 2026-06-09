@@ -32,6 +32,10 @@ std::optional<AppConfig> ConfigReader::load(const std::string& configPath) {
     std::ifstream file(configPath);
     if (!file.is_open()) {
         Logger::write("DEBUG: Failed to open file", LogLevel::DEBUG);
+        std::string errMsg = "Failed to open configuration file.\n\n";
+        errMsg += "Path:\n" + configPath + "\n\n";
+        errMsg += "Check that the file exists and is accessible.";
+        MessageBoxA(NULL, errMsg.c_str(), "Configuration Error", MB_ICONERROR | MB_OK);
         return std::nullopt;
     }
 
@@ -47,11 +51,19 @@ std::optional<AppConfig> ConfigReader::load(const std::string& configPath) {
         Logger::write("DEBUG: JSON parsed successfully, is_object: " + std::to_string(jv.is_object()), LogLevel::DEBUG);
     } catch (const std::exception& e) {
         Logger::write("DEBUG: JSON exception: " + std::string(e.what()), LogLevel::DEBUG);
+        std::string errMsg = "Failed to parse configuration file.\n\n";
+        errMsg += "Path:\n" + configPath + "\n\n";
+        errMsg += "Error:\n" + std::string(e.what());
+        MessageBoxA(NULL, errMsg.c_str(), "Configuration Error", MB_ICONERROR | MB_OK);
         return std::nullopt;
     }
 
     if (!jv.is_object()) {
         Logger::write("DEBUG: JSON is not an object", LogLevel::DEBUG);
+        std::string errMsg = "Invalid configuration file.\n\n";
+        errMsg += "Path:\n" + configPath + "\n\n";
+        errMsg += "The root element must be a JSON object.";
+        MessageBoxA(NULL, errMsg.c_str(), "Configuration Error", MB_ICONERROR | MB_OK);
         return std::nullopt;
     }
 
@@ -294,6 +306,11 @@ std::optional<AppConfig> ConfigReader::load(const std::string& configPath) {
         std::filesystem::path dbPath(config.database_path);
         if (!std::filesystem::exists(dbPath)) {
             Logger::write("ERROR: Database file not found: " + config.database_path, LogLevel::ERR);
+            std::string errMsg = "Database file not found.\n\n";
+            errMsg += "Config path:\n" + configPath + "\n\n";
+            errMsg += "Database path:\n" + config.database_path + "\n\n";
+            errMsg += "The application cannot start.";
+            MessageBoxA(NULL, errMsg.c_str(), "Database Error", MB_ICONERROR | MB_OK);
             return std::nullopt;
         }
     }

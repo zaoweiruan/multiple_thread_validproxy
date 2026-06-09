@@ -90,7 +90,6 @@ private:
     void onSearchClear(wxCommandEvent& event);
     void onToggleDetailPane(wxCommandEvent& event);
     void onTestSubscription(SubscriptionTestEvent& event);
-    void onToggleDetailPane(wxCommandEvent& event);
 
 // Members
      wxAuiManager* auiManager_{nullptr};  // Use pointer to delay construction until after menu setup

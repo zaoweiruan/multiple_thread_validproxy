@@ -46,9 +46,7 @@ int main(int argc, char* argv[]) {
     // Load configuration
     std::optional<config::AppConfig> appConfig = config::ConfigReader::load(configPath);
     if (!appConfig) {
-        std::string errMsg = "Failed to load configuration file.\n\n";
-        errMsg += "Config path:\n" + configPath;
-        MessageBoxA(NULL, errMsg.c_str(), "Configuration Error", MB_ICONERROR | MB_OK);
+        Logger::write("Failed to load configuration file: " + configPath, LogLevel::ERR);
         Logger::close();
         return 1;
     }

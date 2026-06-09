@@ -42,17 +42,17 @@ bool UIApp::OnInit()
         }
 
         auto loadedConfig = config::ConfigReader::load(configPath.string());
+        std::string effectiveConfigPath = configPath.string();
         if (loadedConfig) {
             cfg_ = *loadedConfig;
         } else {
             // Try default config path
-            loadedConfig = config::ConfigReader::load(config::ConfigReader::getDefaultConfigPath());
+            effectiveConfigPath = config::ConfigReader::getDefaultConfigPath();
+            loadedConfig = config::ConfigReader::load(effectiveConfigPath);
             if (loadedConfig) {
                 cfg_ = *loadedConfig;
             } else {
-                // Both config loads failed - show error and exit
-                wxMessageBox("Failed to load configuration file.\n\nTried:\n- " + configPath.string() + "\n- " + config::ConfigReader::getDefaultConfigPath() + "\n\nThe application cannot start.",
-                             "Configuration Error", wxOK | wxICON_ERROR);
+                // Both config loads failed - specific error already shown by ConfigReader::load()
                 return false;
             }
         }
@@ -67,7 +67,7 @@ bool UIApp::OnInit()
         // Validate database file exists before opening
         std::filesystem::path dbPath(cfg_.database_path);
         if (!std::filesystem::exists(dbPath)) {
-            wxMessageBox("Database file does not exist.\n\nPath:\n" + cfg_.database_path + "\n\nThe application cannot start.",
+            wxMessageBox("Database file does not exist.\n\nConfig path:\n" + effectiveConfigPath + "\nDatabase path:\n" + cfg_.database_path + "\n\nThe application cannot start.",
                          "Database Error", wxOK | wxICON_ERROR);
             return false;
         }
@@ -75,7 +75,7 @@ bool UIApp::OnInit()
         // Open database
         int rc = sqlite3_open(cfg_.database_path.c_str(), &db_);
         if (rc != SQLITE_OK) {
-            wxMessageBox("Failed to open database.\n\nError: " + std::string(sqlite3_errmsg(db_)) + "\n\nDatabase path:\n" + cfg_.database_path,
+            wxMessageBox("Failed to open database.\n\nConfig path:\n" + effectiveConfigPath + "\nDatabase path:\n" + cfg_.database_path + "\nError: " + std::string(sqlite3_errmsg(db_)),
                          "Database Error", wxOK | wxICON_ERROR);
             sqlite3_close(db_);
             db_ = nullptr;
