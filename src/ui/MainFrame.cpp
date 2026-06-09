@@ -13,6 +13,7 @@
 #include "ToolbarIcons.h"
 
 #include <wx/sizer.h>
+#include <wx/splitter.h>
 #include <wx/aui/auibook.h>
 #include <wx/aui/auibar.h>
 #include <wx/treectrl.h>
@@ -426,26 +427,26 @@ void MainFrame::initPanels() {
         auiManager_->AddPane(m_toolbar, wxAuiPaneInfo().Name("toolbar").ToolbarPane().Top().Row(0).Resizable(true));
     }
 
-    // ── Center panel first (parent for sub/proxy/log panels) ──
+// ── Center panel first (parent for splitter) ──
     wxPanel* centerPanel = new wxPanel(this);
     wxBoxSizer* centerSizer = new wxBoxSizer(wxVERTICAL);
 
-    // ── Create individual panels ──
-    subPanel_ = new SubscriptionPanel(centerPanel, controller_);
-    proxyPanel_ = new ProxyListPanel(centerPanel, controller_, db_);
+    // ── Create splitter FIRST, then panels — splitter MUST be parent of windows it manages ──
+    // Top row: subscription | proxy list (resizable via wxSplitterWindow)
+    splitter_ = new wxSplitterWindow(centerPanel, wxID_ANY,
+                                       wxDefaultPosition, wxDefaultSize,
+                                       wxSP_3DSASH);
+    splitter_->SetMinimumPaneSize(250);
+
+    // Create panels with splitter as parent (required for SplitVertically)
+    subPanel_ = new SubscriptionPanel(splitter_, controller_);
+    proxyPanel_ = new ProxyListPanel(splitter_, controller_, db_);
+    splitter_->SplitVertically(subPanel_, proxyPanel_, 360);
+
     detailPanel_ = new ProxyDetailPanel(this);  // AUI-managed, parent stays as MainFrame
     logPanel_ = new LogPanel(centerPanel);
 
-    subPanel_->SetMinSize(wxSize(300, -1));
-    proxyPanel_->SetMinSize(wxSize(400, -1));
-    // detailPanel_ is NO LONGER added to the wxBoxSizer
-
-    // Top row: subscription | proxy list (no detail panel)
-    // Proportions 1:2 = sub gets 1/3 width, proxy gets 2/3 width
-    wxBoxSizer* topSizer = new wxBoxSizer(wxHORIZONTAL);
-    topSizer->Add(subPanel_, 1, wxEXPAND | wxRIGHT, 2);
-    topSizer->Add(proxyPanel_, 2, wxEXPAND);
-    centerSizer->Add(topSizer, 1, wxEXPAND);
+    centerSizer->Add(splitter_, 1, wxEXPAND);
 
     // Bottom row: log panel
     centerSizer->Add(logPanel_, 0, wxEXPAND | wxTOP, 2);
