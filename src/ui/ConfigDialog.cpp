@@ -179,8 +179,8 @@ bool ConfigDialog::saveConfig() {
     {
         std::string accelUrl = propGrid_->GetPropertyValueAsString("accelerator_url").ToStdString();
         if (!accelUrl.empty() && !utils::isValidUrlFormat(accelUrl)) {
-            wxMessageBox("Accelerator URL format is invalid.\nMust start with http:// or https:// and have a valid domain.",
-                         "URL Format Error", wxOK | wxICON_WARNING);
+            wxMessageBox("加速器 URL 格式无效，请确认包含 http:// 或 https:// 开头且域名有效",
+                         "URL 格式错误", wxOK | wxICON_WARNING);
             accelUrl.clear();
             propGrid_->SetPropertyValue("accelerator_url", "");
         }
