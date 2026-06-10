@@ -64,9 +64,12 @@ ConfigDialog::ConfigDialog(wxWindow* parent, const config::AppConfig& cfg)
 
     // --- 订阅 配置 ---
     propGrid_->Append(new wxPropertyCategory(L"订阅"));
-    wxArrayString modeChoices;
-    modeChoices.Add("proxy_first"); modeChoices.Add("direct_first"); modeChoices.Add("direct_only");
-    propGrid_->Append(new wxEnumProperty(L"优先级模式", "priority_mode", modeChoices));
+    propGrid_->Append(new wxStringProperty(L"加速器URL", "accelerator_url", cfg.accelerator_url));
+    propGrid_->Append(new wxBoolProperty(L"加速器", "update_method_accelerator", false));
+    propGrid_->Append(new wxBoolProperty(L"代理", "update_method_proxy", false));
+    propGrid_->Append(new wxBoolProperty(L"直连", "update_method_direct", false));
+    propGrid_->Append(new wxStringProperty(L"更新方式", "update_method_display", L""));
+    propGrid_->SetPropertyReadOnly("update_method_display");
     propGrid_->Append(new wxBoolProperty(L"检查自动更新", "check_auto_update_interval",
                                          cfg.check_auto_update_interval));
     propGrid_->Append(new wxIntProperty(L"连接超时(毫秒)", "subscription_connect_timeout_ms",
@@ -131,10 +134,21 @@ ConfigDialog::ConfigDialog(wxWindow* parent, const config::AppConfig& cfg)
 // -------------------------------------------------------------------
 void ConfigDialog::loadConfig(const config::AppConfig& cfg) {
     editedConfig_ = cfg;
-    // Set the property grid values to match the config (needed for wxEnumProperty)
     propGrid_->SetPropertyValue("log_console_level", wxString(cfg.log_console_level));
     propGrid_->SetPropertyValue("log_file_level", wxString(cfg.log_file_level));
-    propGrid_->SetPropertyValue("priority_mode", wxString(cfg.priority_mode));
+    // Set accelerator_url
+    propGrid_->SetPropertyValue("accelerator_url", wxString(cfg.accelerator_url));
+    // Set update_methods checkboxes
+    bool hasAccel = false, hasProxy = false, hasDirect = false;
+    for (const auto& m : cfg.update_methods) {
+        if (m == "accelerator") hasAccel = true;
+        else if (m == "proxy") hasProxy = true;
+        else if (m == "direct") hasDirect = true;
+    }
+    propGrid_->SetPropertyValue("update_method_accelerator", hasAccel);
+    propGrid_->SetPropertyValue("update_method_proxy", hasProxy);
+    propGrid_->SetPropertyValue("update_method_direct", hasDirect);
+    refreshUpdateMethodDisplay();
 }
 
 bool ConfigDialog::saveConfig() {
@@ -160,7 +174,16 @@ bool ConfigDialog::saveConfig() {
     editedConfig_.log_file_level = propGrid_->GetPropertyValueAsString("log_file_level").ToStdString();
 
     // Subscription fields
-    editedConfig_.priority_mode = propGrid_->GetPropertyValueAsString("priority_mode").ToStdString();
+    editedConfig_.accelerator_url = propGrid_->GetPropertyValueAsString("accelerator_url").ToStdString();
+    editedConfig_.update_methods.clear();
+    if (propGrid_->GetPropertyValueAsBool("update_method_accelerator"))
+        editedConfig_.update_methods.push_back("accelerator");
+    if (propGrid_->GetPropertyValueAsBool("update_method_proxy"))
+        editedConfig_.update_methods.push_back("proxy");
+    if (propGrid_->GetPropertyValueAsBool("update_method_direct"))
+        editedConfig_.update_methods.push_back("direct");
+    if (editedConfig_.update_methods.empty())
+        editedConfig_.update_methods.push_back("accelerator");
     editedConfig_.check_auto_update_interval = propGrid_->GetPropertyValueAsBool("check_auto_update_interval");
     editedConfig_.subscription_connect_timeout_ms = propGrid_->GetPropertyValueAsInt("subscription_connect_timeout_ms");
     editedConfig_.subscription_timeout_ms = propGrid_->GetPropertyValueAsInt("subscription_timeout_ms");
@@ -195,6 +218,26 @@ bool ConfigDialog::saveConfig() {
     editedConfig_.notification_on_test = propGrid_->GetPropertyValueAsBool("notification_on_test");
 
     return validateConfig();
+}
+
+void ConfigDialog::refreshUpdateMethodDisplay() {
+    wxString display;
+    if (propGrid_->GetPropertyValueAsBool("update_method_accelerator")) {
+        if (!display.empty()) display += " → ";
+        display += L"加速器";
+    }
+    if (propGrid_->GetPropertyValueAsBool("update_method_proxy")) {
+        if (!display.empty()) display += " → ";
+        display += L"代理";
+    }
+    if (propGrid_->GetPropertyValueAsBool("update_method_direct")) {
+        if (!display.empty()) display += " → ";
+        display += L"直连";
+    }
+    if (display.empty()) {
+        display = L"(无)";
+    }
+    propGrid_->SetPropertyValue("update_method_display", display);
 }
 
 bool ConfigDialog::validateConfig() {
@@ -255,6 +298,12 @@ void ConfigDialog::onCancel(wxCommandEvent&) {
     EndModal(wxID_CANCEL);
 }
 
-void ConfigDialog::onPropertyChanged(wxPropertyGridEvent&) {
+void ConfigDialog::onPropertyChanged(wxPropertyGridEvent& event) {
     modified_ = true;
+    wxString propName = event.GetPropertyName();
+    if (propName == "update_method_accelerator" ||
+        propName == "update_method_proxy" ||
+        propName == "update_method_direct") {
+        refreshUpdateMethodDisplay();
+    }
 }

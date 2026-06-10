@@ -20,7 +20,8 @@ enum {
     SUB_COL_NAME = 2,
     SUB_COL_VALID = 3,
     SUB_COL_PROXIES = 4,
-    SUB_COL_UPDATE = 5
+    SUB_COL_UPDATE = 5,
+    SUB_COL_ID = 6
 };
 
 enum class SortDirection { None, Asc, Desc };

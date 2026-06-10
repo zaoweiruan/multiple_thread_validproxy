@@ -619,18 +619,16 @@ void MainFrame::onMenuGenerateConfig(wxCommandEvent&) {
 }
 
 void MainFrame::onMenuConfig(wxCommandEvent&) {
-    // Prevent config editing during active operations
-    if (controller_->isRunning()) {
-        wxMessageBox(L"请等待当前操作完成后再编辑配置", L"操作进行中", wxOK | wxICON_WARNING);
-        return;
-    }
-
     if (configDialog_) {
         delete configDialog_;
         configDialog_ = nullptr;
     }
     configDialog_ = new ConfigDialog(this, controller_->getConfig());
     if (configDialog_->ShowModal() == wxID_OK) {
+        if (controller_->isRunning()) {
+            wxMessageBox(L"操作进行中，无法保存配置", L"操作进行中", wxOK | wxICON_WARNING);
+            return;
+        }
         config::AppConfig cfg = configDialog_->getConfig();
         std::string oldDbPath = config_.database_path;
         bool saveOk = controller_->saveConfig(cfg);
