@@ -1,112 +1,21 @@
+# 1. 忽略根目录下的所有内容
+/*
+
+# 2. 允许追踪 CMakeLists.txt 和 README.md
+!/CMakeLists.txt
+!/README.md
 !bin/config.json
-bin/*
-bin/**/*
-std*.txt
-out*.txt
-test/*
-test/**/*
-# Build output
-e2e/
-build/
-nul
-null
-*.tmp
+# 3. 允许追踪目录本身
+!/src/
+!/include/
+!/docs/
 
-*.pyc
-__pycache/
-tests/
-.opencode/
+# 4. 允许追踪目录下的所有文件和子目录
+!/src/**
+!/include/**
+!/docs/**
 
-*.o
-*.obj
-*.exe
-*.dll
-!/.gitignore
-!docs/**/*.md
-!docs/*.md
-*.png
-kilo*.*
-skill*.json
-model*.md
-bin/docs/design/ui/configuretion_dialog.b64
-docs/reports/Free_AI_Models_List_2026.md
-docs/reports/Tools_List.md
-
-
-# Temp directory for debug files (tracked but contents ignored)
-temp/
-
-# Root log files
-log/
-*.log
-
-# Docs (except .md files)
-docs/superpowers/specs/*.html
-docs/superpowers/specs/*.bak
-
-# Python scripts
-*.py
-
-# Database
-*.db
-
-# IDE
-.kilo/
-.kilocode/
-.adal/
-.agents/
-.augment/
-.bob/
-.claude/
-.codebuddy/
-.continue/
-.cortex/
-.crush/
-.factory/
-.goose/
-.iflow/
-.junie/
-.kilo/
-.kilocode/
-.kiro/
-.kode/
-.mcpjam/
-.mux/
-.neovate/
-.opencode/
-.openhands/
-.pi/
-.pochi/
-.qoder/
-.qwen/
-.roo/
-.trae/
-.vibe/
-.windsurf/
-.zencoder/
-package*
-playwright*
-# Temp files
-kilo.json
-opencode.json
-
-# Planning system outputs
-findings.md
-progress.md
-session-ses_*.md
-
-# Temporary test files
-.*
-*.exe
+# 5. 去除特定文件
 *.bak
-json_diff*.json
-1.json
-1.md
-
-# Playwright
-node_modules/
-/test-results/
-/playwright-report/
-/blob-report/
-/playwright/.cache/
-/playwright/.auth/
+*.tmp
+*.temp
