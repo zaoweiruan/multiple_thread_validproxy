@@ -10,6 +10,8 @@
 #include <fstream>
 #include <sstream>
 
+#include "Utils.h"
+
 // -------------------------------------------------------------------
 wxBEGIN_EVENT_TABLE(ConfigDialog, wxDialog)
     EVT_BUTTON(wxID_OK, ConfigDialog::onOk)
@@ -174,7 +176,15 @@ bool ConfigDialog::saveConfig() {
     editedConfig_.log_file_level = propGrid_->GetPropertyValueAsString("log_file_level").ToStdString();
 
     // Subscription fields
-    editedConfig_.accelerator_url = propGrid_->GetPropertyValueAsString("accelerator_url").ToStdString();
+    {
+        std::string accelUrl = propGrid_->GetPropertyValueAsString("accelerator_url").ToStdString();
+        if (!accelUrl.empty() && !utils::isValidUrlFormat(accelUrl)) {
+            wxMessageBox(L"加速器 URL 格式无效，请确认包含 http:// 或 https:// 开头且域名有效。\n该设置将被忽略。",
+                         L"URL 格式错误", wxOK | wxICON_WARNING);
+            accelUrl.clear();
+        }
+        editedConfig_.accelerator_url = accelUrl;
+    }
     editedConfig_.update_methods.clear();
     if (propGrid_->GetPropertyValueAsBool("update_method_accelerator"))
         editedConfig_.update_methods.push_back("accelerator");
