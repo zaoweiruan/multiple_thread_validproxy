@@ -11,6 +11,7 @@
 #include <ctime>
 #include <iomanip>
 #include <sstream>
+#include "Utils.h"
 
 enum {
     ID_SUB_EDIT = wxID_HIGHEST + 400,
@@ -57,6 +58,7 @@ SubscriptionPanel::SubscriptionPanel(wxWindow* parent, AppController* controller
     listCtrl_->AppendTextColumn("有效 ↕", 3, wxDATAVIEW_CELL_INERT, 60, wxALIGN_RIGHT);
     listCtrl_->AppendTextColumn("代理数 ↕", 4, wxDATAVIEW_CELL_INERT, 70, wxALIGN_RIGHT);
     listCtrl_->AppendTextColumn("更新 ↕", 5, wxDATAVIEW_CELL_INERT, 130);
+    listCtrl_->AppendTextColumn("ID ↕", 6, wxDATAVIEW_CELL_INERT, 60);
 
     sizer->Add(listCtrl_, 1, wxEXPAND | wxALL, 2);
 
@@ -259,8 +261,8 @@ void SubscriptionPanel::onColumnHeaderClick(wxDataViewEvent& event) {
     int col = event.GetColumn();
     Logger::write("[SubscriptionPanel] Column header click: column=" + std::to_string(col), LogLevel::DEBUG);
 
-    // Only Name (SUB_COL_NAME=2), Valid (SUB_COL_VALID=3), Proxies (SUB_COL_PROXIES=4), and Update (SUB_COL_UPDATE=5) are sortable
-    if (col == SUB_COL_NAME || col == SUB_COL_VALID || col == SUB_COL_PROXIES || col == SUB_COL_UPDATE) {
+    // Only Name (SUB_COL_NAME=2), Valid (SUB_COL_VALID=3), Proxies (SUB_COL_PROXIES=4), Update (SUB_COL_UPDATE=5), and ID (SUB_COL_ID=6) are sortable
+    if (col == SUB_COL_NAME || col == SUB_COL_VALID || col == SUB_COL_PROXIES || col == SUB_COL_UPDATE || col == SUB_COL_ID) {
         // Cycle direction: None -> Asc -> Desc -> None
         if (sortState_.column == col) {
             switch (sortState_.direction) {
@@ -347,11 +349,17 @@ void SubscriptionPanel::showEditDialog(const db::models::Subitem& sub) {
     dlg.SetMinSize(wxSize(900, 250));
 
     if (dlg.ShowModal() == wxID_OK) {
+        wxString newUrl = urlCtrl->GetValue().Trim();
+        if (!newUrl.empty() && !utils::isValidUrlFormat(newUrl.ToStdString())) {
+            wxMessageBox(L"订阅 URL 格式无效，请确认包含 http:// 或 https:// 开头且域名有效",
+                         L"URL 格式错误", wxOK | wxICON_WARNING);
+            return;
+        }
         db::models::Subitem updated = sub;
         updated.remarks = nameCtrl->GetValue().ToStdString();
-        updated.url = urlCtrl->GetValue().ToStdString();
+        updated.url = newUrl.ToStdString();
         updated.enabled = enabledCtrl->GetValue() ? "1" : "0";
-        updated.useragent = sub.useragent;  // preserve existing
+        updated.useragent = sub.useragent;
         updated.autoupdateinterval = intervalCtrl->GetValue().ToStdString();
 
         controller_->updateSubitem(updated);

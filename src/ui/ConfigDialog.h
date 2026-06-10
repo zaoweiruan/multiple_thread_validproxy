@@ -25,6 +25,7 @@ private:
     void onCancel(wxCommandEvent& event);
     void onPropertyChanged(wxPropertyGridEvent& event);
     bool validateConfig();
+    void refreshUpdateMethodDisplay();
 
     config::AppConfig editedConfig_;
     bool modified_{false};

@@ -108,6 +108,9 @@ void SubscriptionListModel::GetValueByRow(wxVariant& variant, unsigned int row, 
             }
             break;
         }
+        case SUB_COL_ID:
+            variant = wxVariant(sub.id);
+            break;
         default:
             variant = wxVariant("");
     }
@@ -185,6 +188,15 @@ int SubscriptionListModel::Compare(const wxDataViewItem& item1,
             long long tA = getTimestamp(a.updatetime);
             long long tB = getTimestamp(b.updatetime);
             cmp = (tA > tB) - (tA < tB);
+            break;
+        }
+        case SUB_COL_ID: {
+            auto toNum = [](const std::string& s) -> long long {
+                try { return std::stoll(s); } catch (...) { return -1; }
+            };
+            long long nA = toNum(a.id);
+            long long nB = toNum(b.id);
+            cmp = (nA > nB) - (nA < nB);
             break;
         }
         default:

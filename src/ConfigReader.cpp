@@ -206,13 +206,41 @@ std::optional<AppConfig> ConfigReader::load(const std::string& configPath) {
     
     if (obj.contains("subscription") && obj["subscription"].is_object()) {
         auto& sub = obj["subscription"].as_object();
-        if (sub.contains("priority_mode") && sub["priority_mode"].is_string()) {
-            config.priority_mode = sub["priority_mode"].as_string().c_str();
-        } else if (sub.contains("priority_mode")) {
-            warnWrongType("subscription", "priority_mode", "string");
-            config.priority_mode = "direct_first";
-        } else {
-            config.priority_mode = "direct_first";
+        if (sub.contains("accelerator_url") && sub["accelerator_url"].is_string()) {
+            config.accelerator_url = sub["accelerator_url"].as_string().c_str();
+        } else if (sub.contains("accelerator_url")) {
+            warnWrongType("subscription", "accelerator_url", "string");
+        }
+
+        if (sub.contains("update_methods") && sub["update_methods"].is_array()) {
+            for (const auto& m : sub["update_methods"].as_array()) {
+                if (m.is_string()) {
+                    std::string val = m.as_string().c_str();
+                    if (val == "accelerator" || val == "proxy" || val == "direct") {
+                        config.update_methods.push_back(val);
+                    }
+                }
+            }
+        } else if (sub.contains("update_methods")) {
+            warnWrongType("subscription", "update_methods", "array");
+        }
+
+        // Backward compatibility: priority_mode → update_methods
+        if (sub.contains("priority_mode") && sub["priority_mode"].is_string()
+            && !sub.contains("update_methods")) {
+            std::string pm = sub["priority_mode"].as_string().c_str();
+            if (pm == "direct_first") {
+                config.update_methods = {"direct", "proxy"};
+            } else if (pm == "proxy_first") {
+                config.update_methods = {"proxy"};
+            } else if (pm == "direct_only") {
+                config.update_methods = {"direct"};
+            }
+        }
+
+        // Default: if update_methods is empty after all parsing
+        if (config.update_methods.empty()) {
+            config.update_methods = {"accelerator"};
         }
         if (sub.contains("check_auto_update_interval") && sub["check_auto_update_interval"].is_bool()) {
             config.check_auto_update_interval = sub["check_auto_update_interval"].as_bool();
@@ -243,10 +271,10 @@ std::optional<AppConfig> ConfigReader::load(const std::string& configPath) {
     } else if (obj.contains("subscription")) {
         warnWrongType("", "subscription", "object");
     } else {
-        config.priority_mode = "direct_first";
         config.check_auto_update_interval = false;
         config.subscription_connect_timeout_ms = 10000;
         config.subscription_timeout_ms = 30000;
+        config.update_methods = {"accelerator"};
     }
     
     if (obj.contains("dedup") && obj["dedup"].is_object()) {
@@ -470,7 +498,16 @@ bool ConfigReader::save(const std::string& configPath, const AppConfig& config) 
 
     // subscription
     boost::json::object subObj;
-    subObj["priority_mode"] = config.priority_mode;
+    if (!config.accelerator_url.empty()) {
+        subObj["accelerator_url"] = config.accelerator_url;
+    }
+    {
+        boost::json::array methodsArr;
+        for (const auto& m : config.update_methods) {
+            methodsArr.emplace_back(m);
+        }
+        subObj["update_methods"] = methodsArr;
+    }
     subObj["check_auto_update_interval"] = config.check_auto_update_interval;
     subObj["connect_timeout_ms"] = config.subscription_connect_timeout_ms;
     subObj["timeout_ms"] = config.subscription_timeout_ms;

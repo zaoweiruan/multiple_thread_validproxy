@@ -20,7 +20,8 @@ struct AppConfig {
     bool log_network_failures = false;
     std::string log_console_level;
     std::string log_file_level;
-    std::string priority_mode;
+    std::string accelerator_url;
+    std::vector<std::string> update_methods;
     bool check_auto_update_interval = false;
     int subscription_connect_timeout_ms = 10000;  // Default: 10s connect timeout
     int subscription_timeout_ms = 30000;          // Default: 30s total timeout

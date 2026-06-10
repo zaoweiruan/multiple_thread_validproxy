@@ -102,8 +102,6 @@ if(wxWidgets_FOUND)
         src/ui/ProxyListPanel.cpp
         src/ui/ProxyDetailPanel.h
         src/ui/ProxyDetailPanel.cpp
-        src/ui/TestPanel.h
-        src/ui/TestPanel.cpp
         src/ui/LogPanel.h
         src/ui/LogPanel.cpp
         src/ui/ConfigDialog.h
@@ -112,7 +110,6 @@ if(wxWidgets_FOUND)
         src/ui/TrayIcon.cpp
         src/ui/UIApp.h
         src/ui/UIApp.cpp
-        src/ui/TestLogMediator.cpp
         src/ui/icons.rc
     )
 
@@ -284,6 +281,17 @@ set_target_properties(test_sharelink PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
 )
 add_test(NAME ShareLinkTest COMMAND test_sharelink)
+
+# -- Utils unit tests (pure functions, no external deps beyond gtest) --
+add_executable(test_utils tests/test_utils.cpp src/Utils.cpp)
+target_include_directories(test_utils PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(test_utils PRIVATE gtest_main gtest)
+set_target_properties(test_utils PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+)
+add_test(NAME UtilsTest COMMAND test_utils)
 
 # -- ConfigReader unit tests (includes load() tests with error reporter override) --
 add_executable(test_config_reader tests/test_config_reader.cpp tests/test_config_reader_load.cpp src/ConfigReader.cpp src/Utils.cpp src/Logger.cpp)
