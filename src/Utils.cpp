@@ -40,6 +40,26 @@ namespace utils {
         return oss.str();
     }
 
+    std::string joinUrl(const std::string& base, const std::string& suffix) {
+        if (base.empty()) return suffix;
+        if (suffix.empty()) return base;
+
+        std::string b = base;
+        std::string s = suffix;
+
+        while (!b.empty() && b.back() == '/') {
+            b.pop_back();
+        }
+        while (!s.empty() && s.front() == '/') {
+            s.erase(s.begin());
+        }
+
+        if (b.empty()) return s;
+        if (s.empty()) return b;
+
+        return b + "/" + s;
+    }
+
     std::string getProtocolName(const std::string& configType) {
         if (configType == "1") return "VMess";
         if (configType == "2") return "Custom";
@@ -93,4 +113,18 @@ void sendNotification(const std::string& title, const std::string& message) {
 
          Shell_NotifyIconW(NIM_MODIFY, &nid);
      }
+
+    bool isValidUrlFormat(const std::string& url) {
+        if (url.find("http://") != 0 && url.find("https://") != 0) {
+            return false;
+        }
+        size_t schemeEnd = url.find("://");
+        if (schemeEnd == std::string::npos) return false;
+        std::string hostPart = url.substr(schemeEnd + 3);
+        size_t pathStart = hostPart.find('/');
+        std::string domain = (pathStart != std::string::npos)
+                            ? hostPart.substr(0, pathStart)
+                            : hostPart;
+        return domain.find('.') != std::string::npos;
+    }
 }

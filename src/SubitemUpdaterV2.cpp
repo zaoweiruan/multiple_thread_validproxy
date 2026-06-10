@@ -165,8 +165,19 @@ SubitemUpdaterV2::SubitemUpdaterV2(sqlite3* db,
 bool SubitemUpdaterV2::run() {
     Logger::write("========================================", LogLevel::INFO);
     Logger::write("INFO: Starting SubitemUpdaterV2", LogLevel::INFO);
-    Logger::write("INFO: Priority mode: " + config_.priority_mode, LogLevel::INFO);
     Logger::write("========================================", LogLevel::INFO);
+
+    std::vector<UpdateMethod> methods = parseUpdateMethods(config_.update_methods);
+    std::string methodsLog;
+    for (const auto& m : methods) {
+        if (!methodsLog.empty()) methodsLog += ", ";
+        switch (m) {
+            case UpdateMethod::Accelerator: methodsLog += "accelerator"; break;
+            case UpdateMethod::Proxy: methodsLog += "proxy"; break;
+            case UpdateMethod::Direct: methodsLog += "direct"; break;
+        }
+    }
+    Logger::write("INFO: Update methods: " + methodsLog, LogLevel::INFO);
 
     db::models::SubitemDAO subDao(db_);
     auto enabledSubs = subDao.getEnabledSubscriptions();
@@ -178,21 +189,22 @@ bool SubitemUpdaterV2::run() {
 
     Logger::write("INFO: Found " + std::to_string(enabledSubs.size()) + " enabled subscriptions", LogLevel::INFO);
 
-    Strategy strategy = parseStrategy(config_.priority_mode);
-    
+    bool needProxy = false;
+    for (const auto& m : methods) {
+        if (m == UpdateMethod::Proxy) {
+            needProxy = true;
+            break;
+        }
+    }
+
     int proxySocksPort = -1;
     int proxyApiPort = -1;
     (void)proxyApiPort;
     int totalSubs = enabledSubs.size();
-    
-    if (strategy != Strategy::DirectOnly && !enabledSubs.empty()) {
-        std::string testUrl = enabledSubs[0].url;
-        if (strategy == Strategy::DirectFirst) {
-            Logger::write("INFO: Pre-finding fallback proxy (direct_first mode)...", LogLevel::INFO);
-        } else {
-            Logger::write("INFO: Pre-finding proxy (proxy_first mode)...", LogLevel::INFO);
-        }
-        auto result = getProxyPorts(testUrl);
+
+    if (needProxy && !enabledSubs.empty()) {
+        Logger::write("INFO: Pre-finding proxy...", LogLevel::INFO);
+        auto result = getProxyPorts(enabledSubs[0].url);
         proxySocksPort = result.first;
         proxyApiPort = result.second;
         if (proxySocksPort > 0) {
@@ -203,120 +215,115 @@ bool SubitemUpdaterV2::run() {
     }
 
     int successCount = 0;
-    int directSuccessCount = 0;
-    int directFailCount = 0;
-    int proxySuccessCount = 0;
-    int proxyFailCount = 0;
-
     std::vector<std::tuple<std::string, std::string, std::string>> failedSubs;
+    int phaseIndex = 0;
+    int phaseCount = static_cast<int>(methods.size());
 
-    bool runDirectPhase = (strategy == Strategy::DirectFirst || strategy == Strategy::DirectOnly);
-    bool runProxyPhase = (strategy != Strategy::DirectOnly && proxySocksPort > 0);
+    for (const auto& method : methods) {
+        phaseIndex++;
+        std::string methodName;
+        switch (method) {
+            case UpdateMethod::Accelerator: methodName = "accelerator"; break;
+            case UpdateMethod::Proxy: methodName = "proxy"; break;
+            case UpdateMethod::Direct: methodName = "direct"; break;
+        }
 
-    if (runDirectPhase) {
+        // First phase: process all enabled subs. Later phases: only failed subs.
+        if (phaseIndex == 1 && enabledSubs.empty()) continue;
+        if (phaseIndex > 1 && failedSubs.empty()) continue;
+
+        size_t subsCount = (phaseIndex == 1) ? enabledSubs.size() : failedSubs.size();
+
         Logger::write("========================================", LogLevel::INFO);
-        Logger::write("INFO: Phase 1/2 - Direct connection", LogLevel::INFO);
+        Logger::write("INFO: Phase " + std::to_string(phaseIndex) + "/" + std::to_string(phaseCount)
+                       + " - " + methodName + " connection (" + std::to_string(subsCount) + " subs)", LogLevel::INFO);
         Logger::write("========================================", LogLevel::INFO);
-        
-        for (size_t i = 0; i < enabledSubs.size(); ++i) {
-            if (isCancelled()) {
-                Logger::write("INFO: Update cancelled by user during direct phase", LogLevel::REPORT);
-                break;
+
+        std::vector<std::tuple<std::string, std::string, std::string>> stillFailed;
+        int phaseSuccess = 0;
+        int phaseFail = 0;
+
+        auto processSub = [&](const std::string& subId, const std::string& subRemarks,
+                               const std::string& subUrl) {
+            if (isCancelled()) return false;
+
+            Logger::write("INFO: " + methodName + ": " + subUrl, LogLevel::REPORT);
+
+            std::string content;
+            switch (method) {
+                case UpdateMethod::Accelerator:
+                    content = fetchUrlViaAccelerator(subUrl);
+                    break;
+                case UpdateMethod::Proxy:
+                    if (proxySocksPort > 0) {
+                        content = fetchUrlViaProxy(subUrl, proxySocksPort);
+                    }
+                    break;
+                case UpdateMethod::Direct:
+                    content = fetchUrl(subUrl);
+                    break;
             }
-            const auto& sub = enabledSubs[i];
-            
-            if (shouldSkipUpdate(sub)) {
-                Logger::write("INFO: Skipping sub " + sub.id + " (within update interval)", LogLevel::INFO);
-                continue;
-            }
-            
-            Logger::write("[" + std::to_string(i + 1) + "/" + std::to_string(totalSubs) + "] Processing: " + sub.url, LogLevel::REPORT);
-            
-            std::string content = fetchUrl(sub.url);
-            if (isCancelled()) {
-                Logger::write("INFO: Update cancelled after fetch", LogLevel::REPORT);
-                break;
-            }
+
+            if (isCancelled()) return false;
+
             if (!content.empty()) {
-                Logger::write("INFO: Direct connection successful", LogLevel::INFO);
-                auto profiles = parseSubscription(content, sub.id);
+                Logger::write("INFO: " + methodName + " connection successful", LogLevel::INFO);
+                auto profiles = parseSubscription(content, subId);
                 if (!profiles.empty()) {
-                    updateProfileItems(sub.id, profiles);
+                    updateProfileItems(subId, profiles);
                     successCount++;
-                    directSuccessCount++;
-                    Logger::write("INFO: Updated successfully: " + sub.id, LogLevel::INFO);
-                    // Only update UpdateTime on successful update
+                    phaseSuccess++;
+                    Logger::write("INFO: Updated successfully: " + subId, LogLevel::INFO);
                     std::string newTime = getCurrentTimestamp();
-                    std::string updateSql = "UPDATE SubItem SET UpdateTime = '" + newTime + "' WHERE Id = '" + sub.id + "'";
+                    std::string updateSql = "UPDATE SubItem SET UpdateTime = '" + newTime + "' WHERE Id = '" + subId + "'";
                     execSql(updateSql, "[SubitemUpdaterV2] SQL exec failed");
                 } else {
-                    directFailCount++;
-                    failedSubs.push_back({sub.id, sub.remarks, sub.url});
-                    Logger::write("ERROR: Parse failed: " + sub.id, LogLevel::ERR);
+                    phaseFail++;
+                    stillFailed.push_back({subId, subRemarks, subUrl});
+                    Logger::write("ERROR: Parse failed: " + subId, LogLevel::ERR);
                 }
             } else {
-                Logger::write("WARN: Direct connection failed", LogLevel::WARN);
-                directFailCount++;
-                failedSubs.push_back({sub.id, sub.remarks, sub.url});
-                Logger::write("ERROR: Failed to update: " + sub.id, LogLevel::ERR);
+                Logger::write("WARN: " + methodName + " connection failed", LogLevel::WARN);
+                phaseFail++;
+                stillFailed.push_back({subId, subRemarks, subUrl});
+                Logger::write("ERROR: Failed to update: " + subId, LogLevel::ERR);
             }
-        }
-    } else if (runProxyPhase) {
-        for (const auto& sub : enabledSubs) {
-            if (shouldSkipUpdate(sub)) {
-                Logger::write("INFO: Skipping sub " + sub.id + " (within update interval)", LogLevel::INFO);
-                continue;
-            }
-            failedSubs.push_back({sub.id, sub.remarks, sub.url});
-        }
-        Logger::write("INFO: Phase 1/1 - Proxy only mode, queuing " + std::to_string(failedSubs.size()) + " subscriptions", LogLevel::INFO);
-    }
-    
-    if (runProxyPhase && !failedSubs.empty()) {
-        Logger::write("========================================", LogLevel::INFO);
-        Logger::write("INFO: Phase 2/2 - Proxy connection (" + std::to_string(failedSubs.size()) + " failed subscriptions)", LogLevel::INFO);
-        Logger::write("========================================", LogLevel::INFO);
-        
-        std::vector<std::tuple<std::string, std::string, std::string>> stillFailedSubs;
-        
-        for (size_t i = 0; i < failedSubs.size(); ++i) {
-            if (isCancelled()) {
-                Logger::write("INFO: Update cancelled by user during proxy phase", LogLevel::REPORT);
-                break;
-            }
-            const auto& sub = failedSubs[i];
-            Logger::write("[" + std::to_string(i + 1) + "/" + std::to_string(failedSubs.size()) + "] Trying via proxy: " + std::get<2>(sub), LogLevel::REPORT);
-            
-std::string content = fetchUrlViaProxy(std::get<2>(sub), proxySocksPort);
-            if (isCancelled()) {
-                Logger::write("INFO: Update cancelled after proxy fetch", LogLevel::REPORT);
-                break;
-            }
-            if (!content.empty()) {
-                Logger::write("INFO: Proxy connection successful", LogLevel::INFO);
-                auto profiles = parseSubscription(content, std::get<0>(sub));
-                if (!profiles.empty()) {
-                    updateProfileItems(std::get<0>(sub), profiles);
-                    successCount++;
-                    proxySuccessCount++;
-                    Logger::write("INFO: Updated successfully: " + std::get<0>(sub), LogLevel::INFO);
-                    // Only update UpdateTime on successful update
-                    std::string newTime = getCurrentTimestamp();
-                    std::string updateSql = "UPDATE SubItem SET UpdateTime = '" + newTime + "' WHERE Id = '" + std::get<0>(sub) + "'";
-                    execSql(updateSql, "[SubitemUpdaterV2] SQL exec failed");
-                } else {
-                    proxyFailCount++;
-                    stillFailedSubs.push_back(sub);
-                    Logger::write("ERROR: Parse failed: " + std::get<0>(sub), LogLevel::ERR);
+            return true;
+        };
+
+        if (phaseIndex == 1) {
+            for (size_t i = 0; i < enabledSubs.size(); ++i) {
+                if (isCancelled()) {
+                    Logger::write("INFO: Update cancelled by user during " + methodName + " phase", LogLevel::REPORT);
+                    break;
                 }
-            } else {
-                Logger::write("WARN: Proxy connection failed", LogLevel::WARN);
-                proxyFailCount++;
-                stillFailedSubs.push_back(sub);
-                Logger::write("ERROR: Failed to update: " + std::get<0>(sub), LogLevel::ERR);
+                const auto& sub = enabledSubs[i];
+                if (shouldSkipUpdate(sub)) {
+                    Logger::write("INFO: Skipping sub " + sub.id + " (within update interval)", LogLevel::INFO);
+                    continue;
+                }
+                Logger::write("[" + std::to_string(i + 1) + "/" + std::to_string(enabledSubs.size()) + "] " + methodName + ": " + sub.url, LogLevel::REPORT);
+                if (!processSub(sub.id, sub.remarks, sub.url)) break;
+            }
+        } else {
+            for (size_t i = 0; i < failedSubs.size(); ++i) {
+                if (isCancelled()) {
+                    Logger::write("INFO: Update cancelled by user during " + methodName + " phase", LogLevel::REPORT);
+                    break;
+                }
+                Logger::write("[" + std::to_string(i + 1) + "/" + std::to_string(failedSubs.size()) + "] " + methodName + ": " + std::get<2>(failedSubs[i]), LogLevel::REPORT);
+                if (!processSub(std::get<0>(failedSubs[i]), std::get<1>(failedSubs[i]), std::get<2>(failedSubs[i]))) break;
             }
         }
-        failedSubs = stillFailedSubs;
+
+        Logger::write("INFO: Phase " + std::to_string(phaseIndex) + " (" + methodName + "): "
+                       + std::to_string(phaseSuccess) + " success, " + std::to_string(phaseFail) + " failed", LogLevel::INFO);
+
+        if (phaseIndex == 1) {
+            failedSubs = std::move(stillFailed);
+        } else {
+            failedSubs = std::move(stillFailed);
+        }
     }
 
     releaseProxyPorts();
@@ -324,12 +331,9 @@ std::string content = fetchUrlViaProxy(std::get<2>(sub), proxySocksPort);
     Logger::write("========================================", LogLevel::REPORT);
     Logger::write("Update Summary", LogLevel::REPORT);
     Logger::write("Total subscriptions: " + std::to_string(totalSubs), LogLevel::REPORT);
-    Logger::write("Phase 1 (Direct) - Success: " + std::to_string(directSuccessCount) + ", Failed: " + std::to_string(directFailCount), LogLevel::REPORT);
-    if (runProxyPhase) {
-        Logger::write("Phase 2 (Proxy) - Success: " + std::to_string(proxySuccessCount) + ", Failed: " + std::to_string(proxyFailCount), LogLevel::REPORT);
-    }
+    Logger::write("Update methods: " + methodsLog, LogLevel::REPORT);
     Logger::write("Total - Success: " + std::to_string(successCount) + ", Failed: " + std::to_string(totalSubs - successCount), LogLevel::REPORT);
-    
+
     if (!failedSubs.empty()) {
         Logger::write("========================================", LogLevel::REPORT);
         Logger::write("Failed subscriptions:", LogLevel::REPORT);
@@ -367,14 +371,13 @@ bool SubitemUpdaterV2::runSingle(const std::string& subId) {
         return true;
     }
 
-    Strategy strategy = parseStrategy(config_.priority_mode);
+    std::vector<UpdateMethod> methods = parseUpdateMethods(config_.update_methods);
     if (isCancelled()) {
         Logger::write("INFO: Single update cancelled by user: " + subId, LogLevel::REPORT);
         return false;
     }
-    bool result = updateWithStrategy(sub.url, sub.id, strategy);
+    bool result = updateWithMethods(sub.url, sub.id, methods);
 
-    // Only update UpdateTime on successful update
     if (result) {
         std::string newTime = getCurrentTimestamp();
         std::string updateSql = "UPDATE SubItem SET UpdateTime = '" + newTime + "' WHERE Id = '" + sub.id + "'";
@@ -458,49 +461,58 @@ std::optional<db::models::Subitem> SubitemUpdaterV2::getSubscription(const std::
     return sub;
 }
 
-bool SubitemUpdaterV2::updateWithStrategy(const std::string& subUrl, const std::string& subId, Strategy strategy) {
-    bool tryDirect = (strategy != Strategy::ProxyFirst);
-    bool tryProxy = (strategy != Strategy::DirectOnly);
+bool SubitemUpdaterV2::updateWithMethods(const std::string& subUrl, const std::string& subId,
+                                          const std::vector<UpdateMethod>& methods) {
+    for (const auto& method : methods) {
+        std::string methodName;
+        switch (method) {
+            case UpdateMethod::Accelerator: methodName = "accelerator"; break;
+            case UpdateMethod::Proxy: methodName = "proxy"; break;
+            case UpdateMethod::Direct: methodName = "direct"; break;
+        }
 
-    // Try direct first (for direct_first mode)
-    if (tryDirect) {
-        Logger::write("INFO: Trying direct connection...", LogLevel::INFO);
-        std::string content = fetchUrl(subUrl);
+        Logger::write("INFO: Trying " + methodName + " connection...", LogLevel::INFO);
+
+        std::string content;
+        switch (method) {
+            case UpdateMethod::Accelerator:
+                content = fetchUrlViaAccelerator(subUrl);
+                break;
+            case UpdateMethod::Proxy: {
+                auto [socks, api] = getProxyPorts(subUrl);
+                (void)api;
+                if (socks > 0) {
+                    content = fetchUrlViaProxy(subUrl, socks);
+                } else {
+                    Logger::write("WARN: No proxy available for " + methodName, LogLevel::WARN);
+                }
+                break;
+            }
+            case UpdateMethod::Direct:
+                content = fetchUrl(subUrl);
+                break;
+        }
+
         if (!content.empty()) {
-            Logger::write("INFO: Direct connection successful", LogLevel::INFO);
+            Logger::write("INFO: " + methodName + " connection successful", LogLevel::INFO);
             auto profiles = parseSubscription(content, subId);
             if (!profiles.empty()) {
                 return updateProfileItems(subId, profiles);
             }
         }
-        Logger::write("WARN: Direct connection failed", LogLevel::WARN);
-    }
-
-    // Fallback to proxy (for direct_first mode) or primary (for proxy_first mode)
-    if (tryProxy) {
-        Logger::write("INFO: Trying proxy connection...", LogLevel::INFO);
-        int socksPort = -1;
-        // Get proxy port for this subscription URL
-        auto [socks, api] = getProxyPorts(subUrl);
-        socksPort = socks;
-        (void)api;  // unused
-
-        if (socksPort > 0) {
-            Logger::write("INFO: Using proxy at socks port: " + std::to_string(socksPort), LogLevel::INFO);
-            std::string content = fetchUrlViaProxy(subUrl, socksPort);
-            if (!content.empty()) {
-                Logger::write("INFO: Proxy connection successful", LogLevel::INFO);
-                auto profiles = parseSubscription(content, subId);
-                if (!profiles.empty()) {
-                    return updateProfileItems(subId, profiles);
-                }
-            }
-        } else {
-            Logger::write("WARN: No proxy available", LogLevel::WARN);
-        }
     }
 
     return false;
+}
+
+std::string SubitemUpdaterV2::fetchUrlViaAccelerator(const std::string& url) {
+    if (config_.accelerator_url.empty()) {
+        Logger::write("INFO: accelerator_url empty, falling back to direct fetch", LogLevel::INFO);
+        return fetchUrl(url);
+    }
+    std::string joinedUrl = utils::joinUrl(config_.accelerator_url, url);
+    Logger::write("INFO: Fetching via accelerator: " + joinedUrl, LogLevel::INFO);
+    return fetchUrl(joinedUrl);
 }
 
 std::string SubitemUpdaterV2::fetchUrl(const std::string& url) {
@@ -1290,10 +1302,23 @@ bool SubitemUpdaterV2::shouldSkipUpdate(const db::models::Subitem& sub) const
     }
 }
 
-SubitemUpdaterV2::Strategy SubitemUpdaterV2::parseStrategy(const std::string& mode) {
-    if (mode == "proxy_first") return Strategy::ProxyFirst;
-    if (mode == "direct_only") return Strategy::DirectOnly;
-    return Strategy::DirectFirst;
+std::vector<SubitemUpdaterV2::UpdateMethod> SubitemUpdaterV2::parseUpdateMethods(
+    const std::vector<std::string>& methods)
+{
+    std::vector<UpdateMethod> result;
+    for (const auto& m : methods) {
+        if (m == "accelerator" && std::find(result.begin(), result.end(), UpdateMethod::Accelerator) == result.end()) {
+            result.push_back(UpdateMethod::Accelerator);
+        } else if (m == "proxy" && std::find(result.begin(), result.end(), UpdateMethod::Proxy) == result.end()) {
+            result.push_back(UpdateMethod::Proxy);
+        } else if (m == "direct" && std::find(result.begin(), result.end(), UpdateMethod::Direct) == result.end()) {
+            result.push_back(UpdateMethod::Direct);
+        }
+    }
+    if (result.empty()) {
+        result.push_back(UpdateMethod::Accelerator);
+    }
+    return result;
 }
 
 std::string SubitemUpdaterV2::getCurrentTimestamp() {
@@ -2161,27 +2186,6 @@ bool SubitemUpdaterV2::isUrlExists(const std::string& url) {
     return exists;
 }
 
-// Helper function: validate URL format
-bool SubitemUpdaterV2::isValidUrlFormat(const std::string& url) {
-    // Must start with http:// or https://
-    if (url.find("http://") != 0 && url.find("https://") != 0) {
-        return false;
-    }
-    
-    // Must have domain with at least one dot
-    size_t schemeEnd = url.find("://");
-    if (schemeEnd == std::string::npos) return false;
-    
-    std::string hostPart = url.substr(schemeEnd + 3);
-    size_t pathStart = hostPart.find('/');
-    std::string domain = (pathStart != std::string::npos) 
-                        ? hostPart.substr(0, pathStart) 
-                        : hostPart;
-    
-    // Domain must contain at least one dot
-    return domain.find('.') != std::string::npos;
-}
-
 // Helper function: check if URL has valid path
 bool SubitemUpdaterV2::hasValidPath(const std::string& url) {
     size_t schemeEnd = url.find("://");
@@ -2245,7 +2249,7 @@ bool SubitemUpdaterV2::importSubitemsFromFile(const std::string& filePath,
         }
         
         // Validate URL format
-        if (!isValidUrlFormat(url)) {
+        if (!utils::isValidUrlFormat(url)) {
             failedCount++;
             failedList.push_back(url + " (invalid format - no valid domain)");
             Logger::write("ERROR: Invalid URL format: " + url, LogLevel::ERR);
@@ -2338,7 +2342,7 @@ bool SubitemUpdaterV2::importSingleUrl(const std::string& url) {
     Logger::write("========================================", LogLevel::REPORT);
     
     // 1. Validate URL format
-    if (!isValidUrlFormat(url)) {
+    if (!utils::isValidUrlFormat(url)) {
         Logger::write("ERROR: Invalid URL format: " + url, LogLevel::ERR);
         Logger::write("========================================", LogLevel::REPORT);
         Logger::write("Import Summary: Success=0, Skipped=0, Failed=1", LogLevel::REPORT);
