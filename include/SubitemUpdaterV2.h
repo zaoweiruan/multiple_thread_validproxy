@@ -48,13 +48,16 @@ public:
     bool importSingleUrl(const std::string& url);
 
 private:
-    enum class Strategy {
-        DirectFirst,
-        ProxyFirst,
-        DirectOnly
+    enum class UpdateMethod {
+        Accelerator,
+        Proxy,
+        Direct
     };
     
-    bool updateWithStrategy(const std::string& subUrl, const std::string& subId, Strategy strategy);
+    std::vector<UpdateMethod> parseUpdateMethods(const std::vector<std::string>& methods);
+    std::string fetchUrlViaAccelerator(const std::string& url);
+    bool updateWithMethods(const std::string& subUrl, const std::string& subId,
+                           const std::vector<UpdateMethod>& methods);
     std::string fetchUrl(const std::string& url);
     
     std::optional<db::models::Subitem> getSubscription(const std::string& subId);
@@ -76,7 +79,6 @@ private:
     void cleanupProfileExItem();
     
     bool shouldSkipUpdate(const db::models::Subitem& sub) const;
-    Strategy parseStrategy(const std::string& mode);
     std::string getCurrentTimestamp();
     
     // Helper methods for sync
@@ -100,7 +102,6 @@ private:
     std::string extractRemarksFromUrl(const std::string& url);
     int getNextSortValue();
     bool isUrlExists(const std::string& url);
-    bool isValidUrlFormat(const std::string& url);
     bool hasValidPath(const std::string& url);
 
     sqlite3* db_;
