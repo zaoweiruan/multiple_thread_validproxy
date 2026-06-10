@@ -125,6 +125,6 @@ void sendNotification(const std::string& title, const std::string& message) {
         std::string domain = (pathStart != std::string::npos)
                             ? hostPart.substr(0, pathStart)
                             : hostPart;
-        return domain.find('.') != std::string::npos;
+        return domain.find('.') != std::string::npos && domain != ".";
     }
 }

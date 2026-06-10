@@ -348,13 +348,22 @@ void SubscriptionPanel::showEditDialog(const db::models::Subitem& sub) {
     dlg.Layout();
     dlg.SetMinSize(wxSize(900, 250));
 
-    if (dlg.ShowModal() == wxID_OK) {
-        wxString newUrl = urlCtrl->GetValue().Trim();
-        if (!newUrl.empty() && !utils::isValidUrlFormat(newUrl.ToStdString())) {
-            wxMessageBox(L"订阅 URL 格式无效，请确认包含 http:// 或 https:// 开头且域名有效",
-                         L"URL 格式错误", wxOK | wxICON_WARNING);
-            return;
+    bool urlValid = true;
+    dlg.Bind(wxEVT_BUTTON, [&](wxCommandEvent& evt) {
+        if (evt.GetId() == wxID_OK) {
+            wxString newUrl = urlCtrl->GetValue().Trim();
+            if (!newUrl.empty() && !utils::isValidUrlFormat(newUrl.ToStdString())) {
+                wxMessageBox(L"订阅 URL 格式无效，请确认包含 http:// 或 https:// 开头且域名有效",
+                             L"URL 格式错误", wxOK | wxICON_WARNING);
+                urlValid = false;
+                return;
+            }
         }
+        evt.Skip();
+    });
+
+    if (dlg.ShowModal() == wxID_OK && urlValid) {
+        wxString newUrl = urlCtrl->GetValue().Trim();
         db::models::Subitem updated = sub;
         updated.remarks = nameCtrl->GetValue().ToStdString();
         updated.url = newUrl.ToStdString();
