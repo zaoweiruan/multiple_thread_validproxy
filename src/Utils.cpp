@@ -8,8 +8,8 @@
 
 namespace utils {
     std::string getCurrentTimestamp() {
-        auto now = std::chrono::system_clock::now();
-        auto timestamp = std::chrono::duration_cast<std::chrono::seconds>(
+        std::chrono::system_clock::time_point now = std::chrono::system_clock::now();
+        long long timestamp = std::chrono::duration_cast<std::chrono::seconds>(
             now.time_since_epoch()).count();
         return std::to_string(timestamp);
     }

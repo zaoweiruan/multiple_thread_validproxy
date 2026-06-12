@@ -111,9 +111,8 @@ public:
     }
 
     // Static write callback for collecting response data into std::string
-    // Signature matches curl_write_callback: size_t(*)(char*, size_t, size_t, void*)
     static size_t writeCallback(char* contents, size_t size, size_t nmemb, void* userp) {
-        auto* str = static_cast<std::string*>(userp);
+        std::string* str = static_cast<std::string*>(userp);
         str->append(contents, size * nmemb);
         return size * nmemb;
     }
@@ -138,13 +137,6 @@ public:
         long responseCode = 0;
         curl_easy_getinfo(curl_, CURLINFO_RESPONSE_CODE, &responseCode);
         return responseCode;
-    }
-
-    // Static write callback for collecting response data into std::string
-    static size_t writeCallback(void* contents, size_t size, size_t nmemb, void* userp) {
-        auto* str = static_cast<std::string*>(userp);
-        str->append(static_cast<char*>(contents), size * nmemb);
-        return size * nmemb;
     }
 
 private:

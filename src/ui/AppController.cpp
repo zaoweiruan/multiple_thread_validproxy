@@ -30,7 +30,7 @@ AppController::AppController(sqlite3* db, const config::AppConfig& cfg)
 AppController::~AppController() {
     // Signal cancellation first so any in-flight async work can observe the flag
     cancelRequested_ = true;
-    auto ts = std::chrono::duration_cast<std::chrono::milliseconds>(
+    long long ts = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::steady_clock::now().time_since_epoch()).count();
     Logger::write("[AppController] Destructor: cancelRequested_ set to true @ " + std::to_string(ts) + " ms (steady)", LogLevel::DEBUG);
 
@@ -42,7 +42,7 @@ AppController::~AppController() {
         // DIAGNOSTIC INSTRUMENTATION (Phase 3/4 test per systematic-debugging skill)
         // Measures real elapsed time from destructor entry to join completion or 5s timeout.
         // REMOVE after hypothesis verification.
-        auto joinWaitStart = std::chrono::steady_clock::now();
+        std::chrono::steady_clock::time_point joinWaitStart = std::chrono::steady_clock::now();
         Logger::write("[AppController] Destructor: starting 5s join wait for workerThread_", LogLevel::DEBUG);
 
         // Wait up to 5 seconds for thread to finish gracefully
@@ -53,12 +53,12 @@ AppController::~AppController() {
             }
         });
         if (fut.wait_for(std::chrono::seconds(5)) != std::future_status::ready) {
-            auto elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+            long long elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::steady_clock::now() - joinWaitStart).count();
             Logger::write("[AppController] Destructor: 5s timeout fired after " + std::to_string(elapsedMs) + " ms — detaching", LogLevel::WARN);
             workerThread_.detach();
         } else {
-            auto elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+            long long elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::steady_clock::now() - joinWaitStart).count();
             Logger::write("[AppController] Destructor: worker thread joined successfully after " + std::to_string(elapsedMs) + " ms", LogLevel::DEBUG);
         }
@@ -134,10 +134,10 @@ void AppController::loadSubscriptionsAsync(wxEvtHandler* handler) {
         sqlite3_busy_timeout(readerDb, 5000);
 
         db::models::SubitemDAO subDao(readerDb);
-        auto subs = subDao.getAll();
+        std::vector<db::models::Subitem> subs = subDao.getAll();
 
         db::models::ProfileitemDAO proxyDao(readerDb);
-        auto proxyCounts = proxyDao.countBySubId();
+        std::unordered_map<std::string, int> proxyCounts = proxyDao.countBySubId();
 
         sqlite3_close(readerDb);
 
@@ -223,7 +223,7 @@ std::unordered_map<std::string, int> AppController::countValidProxiesBySubId() {
 std::vector<db::models::Profileitem> AppController::loadProxies(const std::string& subId) {
     db::models::ProfileitemDAO dao(db_);
     if (subId.empty()) {
-        auto result = dao.getAll();
+        std::vector<db::models::Profileitem> result = dao.getAll();
         Logger::write("[DIAG] AppController::loadProxies(subId=empty) -> " + std::to_string(result.size()) + " items", LogLevel::TRACE);
         return result;
     }
@@ -343,7 +343,7 @@ void AppController::testAllProxiesAsync(wxEvtHandler* wxHandler) {
 
 void AppController::cancelTest() {
     cancelRequested_ = true;
-    auto ts = std::chrono::duration_cast<std::chrono::milliseconds>(
+    long long ts = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::steady_clock::now().time_since_epoch()).count();
     Logger::write("[AppController] cancelTest() called @ " + std::to_string(ts) + " ms (steady), cancelRequested_ set to true", LogLevel::DEBUG);
 }
@@ -355,7 +355,7 @@ bool AppController::isTestCancelled() const {
 // ---------------------------------------------------------------
 // Find operations  (sync — kept for CLI path in main.cpp)
 // ---------------------------------------------------------------
-ProxyFinder::TestResult AppController::findFirstProxy() {
+TestResult AppController::findFirstProxy() {
     std::string xrayPath = config_.xray_executable;
     std::string configDir = utils::getExecutableDir() + "/config";
     XrayManager* manager = XrayManager::getInstance(xrayPath, configDir, config_.xray_workers);
@@ -364,7 +364,7 @@ ProxyFinder::TestResult AppController::findFirstProxy() {
     return finder.getLastResult();
 }
 
-ProxyFinder::TestResult AppController::findBestProxy() {
+TestResult AppController::findBestProxy() {
     std::string xrayPath = config_.xray_executable;
     std::string configDir = utils::getExecutableDir() + "/config";
     XrayManager* manager = XrayManager::getInstance(xrayPath, configDir, config_.xray_workers);
@@ -422,12 +422,12 @@ std::tuple<bool, int, std::string> AppController::exportShareLinks() {
         ORDER BY CAST(pe.Delay AS INTEGER) ASC
     )";
 
-    auto profiles = dao.getAll(sql);
+    std::vector<db::models::Profileitem> profiles = dao.getAll(sql);
 
     std::string output;
     int exportCount = 0;
-    for (const auto& profile : profiles) {
-        auto link = share::ShareLink::toShareUri(
+    for (const db::models::Profileitem& profile : profiles) {
+        std::string link = share::ShareLink::toShareUri(
             profile.configtype,
             profile.address,
             profile.port,
@@ -488,10 +488,10 @@ bool AppController::syncDatabases(const std::string& src, const std::string& dst
 bool AppController::generateConfig(const std::string& indexId) {
     try {
         config::ConfigGenerator gen(db_);
-        auto profiles = gen.loadProfiles("SELECT * FROM ProfileItem;");
-        for (const auto& p : profiles) {
+        std::vector<db::models::Profileitem> profiles = gen.loadProfiles("SELECT * FROM ProfileItem;");
+        for (const db::models::Profileitem& p : profiles) {
             if (p.indexid == indexId) {
-                auto result = gen.generateConfig(p);
+                config::XrayConfig result = gen.generateConfig(p);
                 return !result.outbound_json.empty();
             }
         }
@@ -604,7 +604,7 @@ void AppController::doTestSingleProxy(const std::string& indexId, wxEvtHandler* 
         bool ok = tester.runWithIndexId(indexId);
 
         // Get actual test result (delay + message) from the tester
-        auto result = tester.getLastResult();
+        TestResult result = tester.getLastResult();
         std::string delayStr = (result.latencyMs > 0) ? std::to_string(result.latencyMs) : std::string("");
         std::string message   = result.success
                                     ? std::to_string(result.latencyMs) + "ms"
@@ -717,7 +717,7 @@ void AppController::doFindFirstProxy(wxEvtHandler* wxHandler) {
             return;
         }
 
-        auto res = finder.getLastResult();
+        TestResult res = finder.getLastResult();
 
         if (res.success && ports.first > 0) {
             std::string payload = "FOUND:" + res.indexId + ":" + res.address;
@@ -782,7 +782,7 @@ void AppController::doFindBestProxy(wxEvtHandler* wxHandler) {
             return;
         }
 
-        auto res = finder.getLastResult();
+        TestResult res = finder.getLastResult();
 
         if (res.success && ports.first > 0) {
             std::string payload = "FOUND:" + res.indexId + ":" + res.address;
@@ -840,15 +840,15 @@ void AppController::findProxyByIndexIdAsync(const std::string& indexId, wxEvtHan
     isRunning_ = true;
     workerThread_ = std::thread([this, indexId, wxHandler]() {
         try {
-            auto proxies = loadProxies();
+            std::vector<db::models::Profileitem> proxies = loadProxies();
             // Try exact indexId match first
-            auto it = std::find_if(proxies.begin(), proxies.end(),
-                [&indexId](const auto& p) { return p.indexid == indexId; });
+            std::vector<db::models::Profileitem>::iterator it = std::find_if(proxies.begin(), proxies.end(),
+                [&indexId](const db::models::Profileitem& p) { return p.indexid == indexId; });
             
             // If not found, try address prefix match
             if (it == proxies.end()) {
                 it = std::find_if(proxies.begin(), proxies.end(),
-                    [&indexId](const auto& p) { 
+                    [&indexId](const db::models::Profileitem& p) { 
                         return p.address.find(indexId) == 0; 
                     });
             }
@@ -864,7 +864,7 @@ void AppController::findProxyByIndexIdAsync(const std::string& indexId, wxEvtHan
             bool ok = tester.runWithIndexId(it->indexid);
 
             if (wxHandler) {
-                auto result = tester.getLastResult();
+                TestResult result = tester.getLastResult();
                 std::string delayStr = (result.latencyMs > 0) ? std::to_string(result.latencyMs) : std::string("");
                 std::string message = result.success ? std::to_string(result.latencyMs) + "ms"
                                                      : result.errorMsg.empty() ? "FAIL" : result.errorMsg;

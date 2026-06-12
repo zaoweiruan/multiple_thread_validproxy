@@ -318,106 +318,13 @@ private:
 public:
   explicit ProfileitemDAO(sqlite3* db) : db_(db) {}
 
-std::vector<Profileitem> getAll(const std::string& sql = "SELECT * FROM ProfileItem;") {
-    std::vector<Profileitem> result;
-
-    sqlite3_stmt* stmt = nullptr;
-    if (sqlite3_prepare_v2(db_, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
-      Logger::write("SQL错误: " + std::string(sqlite3_errmsg(db_)), LogLevel::ERR);
-      return result;
-    }
-
-    while (sqlite3_step(stmt) == SQLITE_ROW) {
-      result.push_back(Profileitem::fromStmt(stmt));
-    }
-
-    sqlite3_finalize(stmt);
-    return result;
-  }
-   
-  /// Efficiently count profiles per subscription using a single GROUP BY query.
-  /// Returns a map of subid → profile count, avoiding N+1 full-table scans.
-  std::unordered_map<std::string, int> countBySubId() {
-    std::unordered_map<std::string, int> result;
-    const char* sql = "SELECT SubId, COUNT(*) FROM ProfileItem GROUP BY SubId;";
-
-    sqlite3_stmt* stmt = nullptr;
-    if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
-      Logger::write("SQL错误: " + std::string(sqlite3_errmsg(db_)), LogLevel::ERR);
-      return result;
-    }
-
-    while (sqlite3_step(stmt) == SQLITE_ROW) {
-      const char* subId = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
-      int count = sqlite3_column_int(stmt, 1);
-      if (subId) {
-        result[subId] = count;
-      }
-    }
-    sqlite3_finalize(stmt);
-    return result;
-  }
-
-  /// Count valid (delay > 0) proxies per subscription via JOIN with ProfileExItem.
-  /// Returns a map of subid → valid proxy count.
-  std::unordered_map<std::string, int> countValidBySubId() {
-    std::unordered_map<std::string, int> result;
-    const char* sql = "SELECT p.SubId, COUNT(DISTINCT p.IndexId) "
-                      "FROM ProfileItem p "
-                      "INNER JOIN ProfileExItem e ON p.IndexId = e.IndexId "
-                      "WHERE CAST(e.delay AS INTEGER) > 0 "
-                      "GROUP BY p.SubId;";
-
-    sqlite3_stmt* stmt = nullptr;
-    if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
-      Logger::write("SQL错误: " + std::string(sqlite3_errmsg(db_)), LogLevel::ERR);
-      return result;
-    }
-
-    while (sqlite3_step(stmt) == SQLITE_ROW) {
-      const char* subId = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
-      int count = sqlite3_column_int(stmt, 1);
-      if (subId) {
-        result[subId] = count;
-      }
-    }
-    sqlite3_finalize(stmt);
-    return result;
-  }
-
-  std::optional<Profileitem> getByIndexId(const std::string& indexId) {
-    std::string sql = "SELECT * FROM ProfileItem WHERE IndexId = '" + indexId + "';";
-    sqlite3_stmt* stmt = nullptr;
-    if (sqlite3_prepare_v2(db_, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
-      return std::nullopt;
-    }
-    if (sqlite3_step(stmt) == SQLITE_ROW) {
-      Profileitem item = Profileitem::fromStmt(stmt);
-      sqlite3_finalize(stmt);
-      return item;
-    }
-    sqlite3_finalize(stmt);
-    return std::nullopt;
-  }
-
-  static std::string escape(const std::string& s) {
-    std::string out;
-    out.reserve(s.size());
-    for (char c : s) { if (c == '\'') out += "''"; else out += c; }
-    return out;
-  }
-
-  bool deleteBySubId(const std::string& subId) {
-    std::string sql = "DELETE FROM ProfileItem WHERE Subid = '" + escape(subId) + "';";
-    char* errMsg = nullptr;
-    int rc = sqlite3_exec(db_, sql.c_str(), nullptr, nullptr, &errMsg);
-    if (rc != SQLITE_OK) {
-      Logger::write("Delete proxies by subId error: " + std::string(errMsg ? errMsg : "unknown"), LogLevel::ERR);
-      sqlite3_free(errMsg);
-      return false;
-    }
-    return sqlite3_changes(db_) > 0;
-  }
+  std::vector<Profileitem> getAll(const std::string& sql = "SELECT * FROM ProfileItem;");
+  std::unordered_map<std::string, int> countBySubId();
+  std::unordered_map<std::string, int> countValidBySubId();
+  std::optional<Profileitem> getByIndexId(const std::string& indexId);
+  static std::string escape(const std::string& s);
+  bool deleteBySubId(const std::string& subId);
+  bool deleteByIndexId(const std::string& indexId);
 };
 
 } // namespace models

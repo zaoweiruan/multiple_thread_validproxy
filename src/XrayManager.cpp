@@ -67,7 +67,7 @@ int XrayManager::start(int count, int startPort, int apiPort) {
             break;
         }
         
-        auto instance = std::make_unique<XrayInstance>(xrayPath_, socksPort, apiPortAddr, configDir_);
+        std::unique_ptr<XrayInstance> instance = std::make_unique<XrayInstance>(xrayPath_, socksPort, apiPortAddr, configDir_);
         if (instance->start()) {
             instances_.push_back(std::move(instance));
             actualCount++;
@@ -82,7 +82,7 @@ int XrayManager::start(int count, int startPort, int apiPort) {
 
 void XrayManager::stopAll() {
     int prevSize = static_cast<int>(instances_.size());
-    for (auto& inst : instances_) {
+    for (std::unique_ptr<XrayInstance>& inst : instances_) {
         inst->stop();
     }
     instances_.clear();
@@ -103,7 +103,7 @@ int XrayManager::getInstanceCount() const {
 
 std::vector<std::pair<int, int>> XrayManager::getPortPairs() {
     std::vector<std::pair<int, int>> pairs;
-    for (auto& inst : instances_) {
+    for (std::unique_ptr<XrayInstance>& inst : instances_) {
         pairs.push_back({inst->getSocksPort(), inst->getApiPort()});
     }
     return pairs;

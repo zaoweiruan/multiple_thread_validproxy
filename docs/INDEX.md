@@ -2,13 +2,14 @@
 title: "docs: project document index"
 type: meta
 status: maintained
-updated: 2026-06-04
+updated: 2026-06-11
 ---
 
 # Project Document Index
 
 > 项目: `validproxy` — C++ 多线程代理验证工具 (v2rayN / Xray-core)
 > 本文档为所有 `docs/` 目录文件的分类索引，按最佳实践组织，可作为长期记忆入口点。
+> **本文档只记录文档引用，不记录修改、修复、操作等具体操作条目。**
 > 维护规则: 每新增一类文档时更新对应分类行，并追加 `updated` 日期。
 
 ---
@@ -29,8 +30,8 @@ updated: 2026-06-04
 | [技术方案](#7-技术方案) | 6 | `docs/superpowers/specs/` |
 | [规范化设计](#75-规范化设计) | 4 | `docs/specs/` |
 | [实施计划](#8-实施计划) | 54 | `docs/plans/` |
-| [分析报告](#9-分析报告) | 6 | `docs/reports/` |
-| [Bug 修复记录](#91-bug-修复记录) | 6 | `docs/bugfix/` |
+| [分析报告](#9-分析报告) | 7 | `docs/reports/` |
+| [Bug 修复记录](#91-bug-修复记录) | 9 | `docs/bugfix/` |
 | [测试报告](#10-测试报告) | 1 | `docs/test/` |
 | [长期记忆](#13-长期记忆) | 1 | `docs/project-knowledge.md` |
 
@@ -151,6 +152,8 @@ updated: 2026-06-04
 | 2 | [`docs/specs/2026-06-03-network-field-improvements.md`](./specs/2026-06-03-network-field-improvements.md) | **network 字段处理改进** — splithttp→xhttp 映射，无效值默认 tcp | 69 lines |
 | 3 | [`docs/specs/2026-06-03-ui-improvements.md`](./specs/2026-06-03-ui-improvements.md) | **UI 体验改进** — 弹窗居中 + ProxyDetail 可选择拷贝 | 54 lines |
 | 4 | [`docs/specs/2026-06-03-proxy-context-menu-disabled.md`](./specs/2026-06-03-proxy-context-menu-disabled.md) | **批量操作时禁止右键菜单** — 防止干预进行中的操作 | 43 lines |
+| 5 | [`docs/specs/2026-06-11-Spec-ProxyFinder-findWorkingProxy-bug.md`](./specs/2026-06-11-Spec-ProxyFinder-findWorkingProxy-bug.md) | **ProxyFinder::findWorkingProxy Bug Fix** — 返回端口时未重新注入代理导致代理不可用 | draft |
+| 6 | [`docs/plans/2026-06-11-Spec-Refactoring-Phase1-v1.0.md`](./plans/2026-06-11-Spec-Refactoring-Phase1-v1.0.md) | **重构方案 Phase 1** — auto 修复 / SQL 注入 / Logger 全局状态 / DAO 拆分 / SubitemUpdaterV2 拆分 / 构建参数化 | draft |
 
 ---
 
@@ -264,6 +267,7 @@ updated: 2026-06-04
  | 4 | [`docs/reports/2026-05-19-single-proxy-test-fix-report.md`](./reports/2026-05-19-single-proxy-test-fix-report.md) | **单代理测试修复报告** — runWithIndexId, Delay 刷新, 事件流程修复技术细节 | 5.6 KB |
  | 5 | [`docs/reports/2026-05-19-ui-close-hang-fix-report.md`](./reports/2026-05-19-ui-close-hang-fix-report.md) | **UI 关闭挂起修复报告** — AppController/XrayInstance 析构竞态条件 + 进程句柄 BUG | 3.2 KB |
 | 6 | [`docs/reports/2026-06-01-diag-log-level-adjustment.md`](./reports/2026-06-01-diag-log-level-adjustment.md) | **诊断日志级别调整报告** — 10 处 `[DIAG]` 日志从 `INFO`/`DEBUG` 降为 `TRACE` | 0.7 KB |
+| 7 | [`docs/reports/2026-06-11-Debug-Tools-Assessment.md`](./reports/2026-06-11-Debug-Tools-Assessment.md) | **C++ 调试工具评估报告** — 日志系统、单元测试现状分析，AddressSanitizer/静态分析缺失评估 | 2.1 KB |
 
 ---
 
@@ -278,6 +282,9 @@ updated: 2026-06-04
 | 5 | [`docs/bugfix/2026-06-01-cli-ctrl-c-interrupt-fix.md`](./bugfix/2026-06-01-cli-ctrl-c-interrupt-fix.md) | **CLI Ctrl+C 中断修复** — 添加取消标志、传递给 ProxyBatchTester、析构超时 + detach 机制 | 2.1 KB |
 | 6 | [`docs/bugfix/2026-06-03-subscription-update-timeout-and-updatetime-fix.md`](./bugfix/2026-06-03-subscription-update-timeout-and-updatetime-fix.md) | **订阅更新 curl timeout 和 UpdateTime 修复** — curl 连接超时配置、UpdateTime 仅在成功时更新 | 94 lines |
 | 7 | [`docs/bugfix/2026-06-03-config-dialog-improvements.md`](./bugfix/2026-06-03-config-dialog-improvements.md) | **配置编辑改进** — 禁止运行中切换数据库、日志级别保存应用 | 57 lines |
+| 8 | [`docs/bugfix/2026-06-11-Bugfix-ConfigGenerator-NetworkFallback-v1.0.md`](./bugfix/2026-06-11-Bugfix-ConfigGenerator-NetworkFallback-v1.0.md) | **无效网络兜底与 splithttp→xhttp 回退** — ConfigGenerator invalid network 改为回退 tcp，并补充 splithttp 遗留值映射 | — |
+| 9 | [`docs/bugfix/2026-06-11-Bugfix-ProxyListPanel-RefreshFreeze-v1.0.md`](./bugfix/2026-06-11-Bugfix-ProxyListPanel-RefreshFreeze-v1.0.md) | **大代理集批量测试后 UI 冻结修复** — 逐行 ValueChanged 风暴改为单次 listCtrl_->Refresh() | — |
+| 10 | [`docs/bugfix/2026-06-11-Bugfix-ProxyBatchTester-ZeroProxyEarlyReturn-v1.0.md`](./bugfix/2026-06-11-Bugfix-ProxyBatchTester-ZeroProxyEarlyReturn-v1.0.md) | **零代理批量测试 printSummary/stopAll 缺失修复** — run()/runWithSubId() 空代理分支补齐汇总与 Xray 清理 | — |
 
 ---
 

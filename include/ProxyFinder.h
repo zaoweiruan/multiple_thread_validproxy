@@ -8,6 +8,8 @@
 #include <sqlite3.h>
 #include <curl/curl.h>
 
+#include "TestResult.h"
+
 class XrayManager;
 class ConfigGenerator;
 
@@ -27,16 +29,6 @@ public:
     std::pair<int, int> findFirstWorkingProxy(const std::string& targetUrl = "");
     std::pair<int, int> findWorkingProxy(const std::string& targetUrl = "");
     void release();
-    
-    struct TestResult {
-        bool success;
-        long latencyMs;
-        std::string errorMsg;
-        std::string indexId;
-        std::string address;
-        int port;
-        int delay;
-    };
     
     TestResult getLastResult() const { return lastResult_; }
     

@@ -60,8 +60,8 @@ void cancelTest();
 bool isTestCancelled() const;
 
 // Find (async)
-   ProxyFinder::TestResult findFirstProxy();
-   ProxyFinder::TestResult findBestProxy();
+   TestResult findFirstProxy();
+   TestResult findBestProxy();
    void findFirstProxyAsync(wxEvtHandler* wxHandler);
    void findBestProxyAsync(wxEvtHandler* wxHandler);
    void findProxyByIndexIdAsync(const std::string& indexId, wxEvtHandler* wxHandler);
@@ -90,7 +90,7 @@ private:
   std::atomic<bool> isRunning_{false};
   // Worker thread (single at a time)
   std::thread workerThread_;
-  ProxyFinder::TestResult lastFindResult_;
+  TestResult lastFindResult_;
 };
 
 #endif // UI_APP_CONTROLLER_H

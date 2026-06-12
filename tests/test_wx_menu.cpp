@@ -13,7 +13,9 @@ public:
         
         frame->SetMenuBar(bar);
         frame->Show();
-        return true;
+        // Immediately close frame to allow test exit
+        frame->Close(true);
+        return false; // Prevent entering main loop
     }
 };
 

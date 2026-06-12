@@ -45,8 +45,8 @@ std::pair<int, int> ProxyFinder::findFirstWorkingProxy(const std::string& target
         return result;
     }
     
-    auto proxies = loadFallbackProxies();
-    auto validProxies = proxies;
+    std::vector<FallbackProxy> proxies = loadFallbackProxies();
+    std::vector<FallbackProxy> validProxies = proxies;
     validProxies.erase(
         std::remove_if(validProxies.begin(), validProxies.end(),
             [](const FallbackProxy& p) { return p.delay <= 0; }),
@@ -61,10 +61,10 @@ std::pair<int, int> ProxyFinder::findFirstWorkingProxy(const std::string& target
             Logger::write("[ProxyFinder] Cancelled during first proxy search", LogLevel::INFO);
             return result;
         }
-        const auto& proxy = validProxies[i];
+        const FallbackProxy& proxy = validProxies[i];
         
         int workerIndex = i % manager_->getInstanceCount();
-        auto instance = manager_->getInstance(workerIndex);
+        XrayInstance* instance = manager_->getInstance(workerIndex);
         if (!instance) continue;
         
         currentSocksPort_ = instance->getSocksPort();
@@ -84,7 +84,7 @@ std::pair<int, int> ProxyFinder::findFirstWorkingProxy(const std::string& target
         
         std::this_thread::sleep_for(std::chrono::milliseconds(500));
         
-        auto testRes = testProxyConnectivity(currentSocksPort_, testUrl);
+        TestResult testRes = testProxyConnectivity(currentSocksPort_, testUrl);
         
         db::models::ProfileExItemDAO exDao(db_);
         exDao.updateTestResult(proxy.indexId, testRes.latencyMs, testRes.success, testRes.errorMsg);
@@ -120,8 +120,8 @@ std::pair<int, int> ProxyFinder::findWorkingProxy(const std::string& targetUrl) 
         return result;
     }
     
-    auto proxies = loadFallbackProxies();
-    auto validProxies = proxies;
+    std::vector<FallbackProxy> proxies = loadFallbackProxies();
+    std::vector<FallbackProxy> validProxies = proxies;
     validProxies.erase(
         std::remove_if(validProxies.begin(), validProxies.end(),
             [](const FallbackProxy& p) { return p.delay <= 0; }),
@@ -139,10 +139,10 @@ std::pair<int, int> ProxyFinder::findWorkingProxy(const std::string& targetUrl) 
             Logger::write("[ProxyFinder] Cancelled during best proxy search", LogLevel::INFO);
             return result;
         }
-        const auto& proxy = validProxies[i];
+        const FallbackProxy& proxy = validProxies[i];
         
         int workerIndex = i % manager_->getInstanceCount();
-        auto instance = manager_->getInstance(workerIndex);
+        XrayInstance* instance = manager_->getInstance(workerIndex);
         if (!instance) continue;
         
         currentSocksPort_ = instance->getSocksPort();
@@ -163,7 +163,7 @@ std::pair<int, int> ProxyFinder::findWorkingProxy(const std::string& targetUrl) 
         
         std::this_thread::sleep_for(std::chrono::milliseconds(500));
         
-        auto testRes = testProxyConnectivity(currentSocksPort_, testUrl);
+        TestResult testRes = testProxyConnectivity(currentSocksPort_, testUrl);
         
         db::models::ProfileExItemDAO exDao(db_);
         exDao.updateTestResult(proxy.indexId, testRes.latencyMs, testRes.success, testRes.errorMsg);
@@ -197,21 +197,27 @@ std::pair<int, int> ProxyFinder::findWorkingProxy(const std::string& targetUrl) 
     std::sort(allResults.begin(), allResults.end(), 
         [](const TestResult& a, const TestResult& b) { return a.latencyMs < b.latencyMs; });
     
-    const auto& best = allResults[0];
+    const TestResult& best = allResults[0];
     lastResult_ = best;
     
-    // 找到对应的端口
+    // 找到对应的端口并重新注入最佳代理
     for (size_t i = 0; i < validProxies.size(); ++i) {
         if (validProxies[i].indexId == best.indexId) {
             int workerIndex = i % manager_->getInstanceCount();
-            auto instance = manager_->getInstance(workerIndex);
+            XrayInstance* instance = manager_->getInstance(workerIndex);
             if (instance) {
-                result = {instance->getSocksPort(), instance->getApiPort()};
-                Logger::write("[ProxyFinder] Best proxy: " + best.address + ":" + std::to_string(best.port)
-                            + " (" + configTypeToProtocol(validProxies[i].configType) + ")"
-                            + " delay=" + std::to_string(best.latencyMs) + "ms"
-                            + " socks=" + std::to_string(result.first),
-                            LogLevel::INFO);
+                currentSocksPort_ = instance->getSocksPort();
+                currentApiPort_ = instance->getApiPort();
+                if (injectProxyToXray(best.indexId)) {
+                    result = {currentSocksPort_, currentApiPort_};
+                    Logger::write("[ProxyFinder] Best proxy re-injected: " + best.address + ":" + std::to_string(best.port)
+                                + " (" + configTypeToProtocol(validProxies[i].configType) + ")"
+                                + " delay=" + std::to_string(best.latencyMs) + "ms"
+                                + " socks=" + std::to_string(result.first),
+                                LogLevel::INFO);
+                } else {
+                    Logger::write("[ProxyFinder] Failed to re-inject best proxy: " + best.indexId, LogLevel::ERR);
+                }
             }
             break;
         }
@@ -226,7 +232,7 @@ void ProxyFinder::release() {
     currentApiPort_ = -1;
 }
 
-ProxyFinder::TestResult ProxyFinder::testProxyConnectivity(int socksPort, const std::string& targetUrl) {
+TestResult ProxyFinder::testProxyConnectivity(int socksPort, const std::string& targetUrl) {
     TestResult result = {};
     
     std::string urlToTest = targetUrl.empty() ? testUrl_ : targetUrl;
@@ -319,14 +325,14 @@ bool ProxyFinder::injectProxyToXray(const std::string& indexId) {
     
     db::models::ProfileitemDAO profileDao(db_);
     std::string sql = "SELECT * FROM ProfileItem WHERE IndexId = '" + indexId + "';";
-    auto profiles = profileDao.getAll(sql);
+    std::vector<db::models::Profileitem> profiles = profileDao.getAll(sql);
     
     if (profiles.empty()) {
         Logger::write("[ProxyFinder] Profile not found: " + indexId, LogLevel::ERR);
         return false;
     }
     
-    auto profile = profiles[0];
+    db::models::Profileitem profile = profiles[0];
     profile.presocksport = std::to_string(currentSocksPort_);
     
     try {
@@ -337,7 +343,7 @@ bool ProxyFinder::injectProxyToXray(const std::string& indexId) {
     }
     
     config::ConfigGenerator configGen(db_);
-    auto config = configGen.generateConfig(profile);
+    config::XrayConfig config = configGen.generateConfig(profile);
     
     std::string xrayApiAddr = "127.0.0.1:" + std::to_string(currentApiPort_);
     

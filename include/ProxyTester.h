@@ -4,13 +4,9 @@
 #include <string>
 #include <curl/curl.h>
 
-class XrayManager;
+#include "TestResult.h"
 
-struct TestResult {
-    bool success;
-    long latencyMs;
-    std::string errorMsg;
-};
+class XrayManager;
 
 class ProxyTester {
 public:

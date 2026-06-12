@@ -127,11 +127,9 @@ void ProxyListPanel::loadProxies(std::vector<db::models::Profileitem> proxies,
 void ProxyListPanel::refreshResults() {
     exItems_ = controller_->loadProxyResults();
 
-    // Rebuild lookup maps inside the model (model has pointer to exItems_)
     model_->rebuildMaps();
 
-    // Notify the view that test-result cells changed
-    model_->notifyTestResultChanged();
+    listCtrl_->Refresh();
 }
 
 // -------------------------------------------------------------------
@@ -248,10 +246,12 @@ void ProxyListPanel::onExportShareLink(wxCommandEvent& event) {
         return;
     }
 
-    auto [ok, count, filename] = controller_->exportShareLinks();
+    std::tuple<bool, int, std::string> exportResult = controller_->exportShareLinks();
+    bool ok = std::get<0>(exportResult);
+    int count = std::get<1>(exportResult);
     wxString msg;
     if (ok && count > 0) {
-        msg = wxString::Format("导出%d个有效代理至文件%s", count, filename);
+        msg = wxString::Format("导出%d个有效代理至文件%s", count, std::get<2>(exportResult));
     } else if (ok) {
         msg = "没有有效代理可导出。";
     } else {
@@ -278,7 +278,7 @@ void ProxyListPanel::onSelectionChanged(wxDataViewEvent& event) {
     unsigned int viewRow = model_->GetRow(item);
     if (viewRow == static_cast<unsigned int>(-1)) return;
 
-    const auto* proxy = model_->getProfileAtRow(viewRow);
+    const db::models::Profileitem* proxy = model_->getProfileAtRow(viewRow);
     if (!proxy) return;
 
     const std::string& indexId = proxy->indexid;
@@ -306,7 +306,7 @@ void ProxyListPanel::filterBySearch(const wxString& query) {
     } else {
         std::string q = query.Lower().ToStdString();
         proxies_.clear();
-        for (const auto& p : allProxies_) {
+        for (const db::models::Profileitem& p : allProxies_) {
             if (p.address.find(q) != std::string::npos ||
                 p.remarks.find(q) != std::string::npos ||
                 p.indexid.find(q) != std::string::npos) {
@@ -345,7 +345,7 @@ void ProxyListPanel::selectFirstProxy() {
     wxDataViewItem firstItem = model_->GetItem(0);
     listCtrl_->Select(firstItem);
 
-    const auto* proxy = model_->getProfileAtRow(0);
+    const db::models::Profileitem* proxy = model_->getProfileAtRow(0);
     if (!proxy) return;
 
     const std::string& indexId = proxy->indexid;

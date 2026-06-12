@@ -19,18 +19,17 @@ ProxyBatchTester::ProxyBatchTester(sqlite3* db, const config::AppConfig& config,
     xrayManager_ = XrayManager::getInstance(config_.xray_executable, configDir, config_.xray_workers);
     proxyTester_ = new ProxyTester(xrayManager_, config_.test_url, config_.test_timeout_ms);
     
-    lastResult_ = TestResult{false, -1, ""};
+    lastResult_ = TestResult{};
     lastIndexId_.clear();
 }
 
 ProxyBatchTester::~ProxyBatchTester() {
     cancelRequested_ = true;  // Signal workers to stop
-    delete proxyTester_;
     // Note: xrayManager_ is a singleton managed by XrayManager::release(), not deleted here
     
-    // Wait for worker threads with timeout (same pattern as AppController)
+    // Wait for worker threads with timeout FIRST (before deleting proxyTester_ they're using)
     if (!workerThreads_.empty()) {
-        for (auto& t : workerThreads_) {
+        for (std::thread& t : workerThreads_) {
             if (t.joinable()) {
                 std::future<void> fut = std::async(std::launch::async, [&t]() {
                     if (t.joinable()) t.join();
@@ -43,6 +42,9 @@ ProxyBatchTester::~ProxyBatchTester() {
         }
         workerThreads_.clear();
     }
+    
+    // Now safe to delete proxyTester_ after threads are done/detached
+    delete proxyTester_;
 }
 
 std::vector<db::models::Profileitem> ProxyBatchTester::loadProxies(const std::string& subId) {
@@ -95,7 +97,6 @@ std::string xrayApiAddr = "127.0.0.1:" + std::to_string(apiPort);
             // DIAGNOSTIC INSTRUMENTATION (systematic-debugging Phase 3/4)
             // Captures when inner worker actually observes the flag vs. when it was set.
             // REMOVE after verification.
-            auto now = std::chrono::steady_clock::now();
             Logger::write("[ProxyBatchTester] Worker " + std::to_string(workerId) + 
                           " observed cancelRequested_ (will exit after current proxy or immediately)", LogLevel::WARN);
             break;
@@ -114,9 +115,14 @@ std::string xrayApiAddr = "127.0.0.1:" + std::to_string(apiPort);
             processedCount_++;
             continue;
         }
-         
 
-        const auto& profile = proxies_[profileIdx];
+        // Track which proxy this worker is currently handling (best-effort)
+        if (workerId < static_cast<int>(workerCurrentProxyIndex_.size())) {
+            std::lock_guard<std::mutex> lock(workerStateMutex_);
+            workerCurrentProxyIndex_[workerId] = profileIdx;
+        }
+
+        const db::models::Profileitem& profile = proxies_[profileIdx];
  db::models::Profileitem configProfile = profile;
         
         try {
@@ -125,17 +131,21 @@ std::string xrayApiAddr = "127.0.0.1:" + std::to_string(apiPort);
             std::string errorDetail = profile.address + ":" + profile.port + " (" + profile.configtype + ") - " + e.what();
             Logger::write("CONFIG_ERROR: " + profile.indexid + " - " + errorDetail, LogLevel::ERR);
             {
+                db::models::ProfileitemDAO dao(db_);
+                dao.deleteByIndexId(profile.indexid);
+            }
+            {
                 std::lock_guard<std::mutex> lock(queueMutex_);
                 failedCount_++;
                 processedCount_++;
             }
-            exItemDao.updateTestResult(profile.indexid, -1, false, "CONFIG_ERROR");
-            lastResult_ = TestResult{false, -1, "CONFIG_ERROR"};
+            lastResult_ = TestResult{};
+            lastResult_.errorMsg = "CONFIG_ERROR";
             continue;
         }
         
         try {
-            auto config = configGen.generateConfig(profile);
+            config::XrayConfig config = configGen.generateConfig(profile);
             std::string tag = "proxy";
             
             xrayApi.removeOutbound(tag);
@@ -178,7 +188,8 @@ std::string xrayApiAddr = "127.0.0.1:" + std::to_string(apiPort);
                     processedCount_++;
                 }
                 exItemDao.updateTestResult(profile.indexid, -1, false, "XRAY_ERROR");
-                lastResult_ = TestResult{false, -1, "XRAY_ERROR"};
+                lastResult_ = TestResult{};
+                lastResult_.errorMsg = "XRAY_ERROR";
                 continue;
             }
             
@@ -196,11 +207,12 @@ std::string xrayApiAddr = "127.0.0.1:" + std::to_string(apiPort);
                     failedCount_++;
                     processedCount_++;
                 }
-                lastResult_ = TestResult{false, -1, "CANCELLED"};
+                lastResult_ = TestResult{};
+                lastResult_.errorMsg = "CANCELLED";
                 continue;
             }
             
-            auto result = proxyTester_->test(socksPort);
+            TestResult result = proxyTester_->test(socksPort);
             
             int currentNum;
             if (result.success) {
@@ -236,15 +248,20 @@ std::string xrayApiAddr = "127.0.0.1:" + std::to_string(apiPort);
                 processedCount_++;
             }
             exItemDao.updateTestResult(profile.indexid, -1, false, e.what());
-            lastResult_ = TestResult{false, -1, e.what()};
+            lastResult_ = TestResult{};
+            lastResult_.errorMsg = e.what();
         }
     }
 }
 
 void ProxyBatchTester::testProxiesMultiThreaded() {
-    auto portPairs = xrayManager_->getPortPairs();
+    std::vector<std::pair<int, int>> portPairs = xrayManager_->getPortPairs();
     int numWorkers = static_cast<int>(portPairs.size());
-    
+    {
+        std::lock_guard<std::mutex> lock(workerStateMutex_);
+        workerCurrentProxyIndex_.assign(numWorkers, -1);
+    }
+
     for (int i = 0; i < totalProxies_; ++i) {
         proxiesQueue_.push(i);
     }
@@ -259,13 +276,33 @@ void ProxyBatchTester::testProxiesMultiThreaded() {
     // Store threads for destructor to join with timeout
     workerThreads_ = std::move(threads);
     
-    // Wait for all threads, detaching if cancelled to prevent shutdown hang
-    for (auto& t : workerThreads_) {
+    // Wait for all threads with timeout to prevent hang on curl blocking
+    for (size_t idx = 0; idx < workerThreads_.size(); ++idx) {
+        std::thread& t = workerThreads_[idx];
         if (t.joinable()) {
             if (isCancelled()) {
                 t.detach();  // Detach to avoid deadlock on shutdown
             } else {
-                t.join();
+                // Use async with timeout to prevent indefinite blocking on join
+                std::future<void> fut = std::async(std::launch::async, [&t]() {
+                    if (t.joinable()) t.join();
+                });
+                if (fut.wait_for(std::chrono::milliseconds(5000)) != std::future_status::ready) {
+                    int proxyIdx = -1;
+                    {
+                        std::lock_guard<std::mutex> lock(workerStateMutex_);
+                        if (static_cast<size_t>(idx) < workerCurrentProxyIndex_.size()) {
+                            proxyIdx = workerCurrentProxyIndex_[idx];
+                        }
+                    }
+                    std::string proxyTag = "[unknown proxy]";
+                    if (proxyIdx >= 0 && proxyIdx < static_cast<int>(proxies_.size())) {
+                        const db::models::Profileitem& p = proxies_[proxyIdx];
+                        proxyTag = "indexid=" + p.indexid + " " + p.address + ":" + p.port;
+                    }
+                    Logger::write("[Worker-" + std::to_string(idx) + "][WARN] Wait timeout, detaching thread to prevent hang - " + proxyTag, LogLevel::WARN);
+                    t.detach();
+                }
             }
         }
     }
@@ -286,6 +323,7 @@ bool ProxyBatchTester::run() {
 
      if (totalProxies_ == 0) {
          Logger::write("No proxies to test", LogLevel::WARN);
+         printSummary();
          return false;
      }
      
@@ -314,6 +352,7 @@ bool ProxyBatchTester::runWithSubId(const std::string& subId) {
      
      if (totalProxies_ == 0) {
          Logger::write("No proxies to test for subscription: " + subId, LogLevel::WARN);
+         printSummary();
          return false;
      }
 
@@ -342,10 +381,10 @@ bool ProxyBatchTester::runWithSubId(const std::string& subId) {
 
 bool ProxyBatchTester::runWithIndexId(const std::string& indexId) {
     db::models::ProfileitemDAO dao(db_);
-    auto profiles = dao.getAll();
+    std::vector<db::models::Profileitem> profiles = dao.getAll();
     std::vector<db::models::Profileitem> filtered;
     std::copy_if(profiles.begin(), profiles.end(), std::back_inserter(filtered),
-        [&indexId](const auto& p) { return p.indexid == indexId; });
+        [&indexId](const db::models::Profileitem& p) { return p.indexid == indexId; });
     
     proxies_ = std::move(filtered);
     totalProxies_ = static_cast<int>(proxies_.size());
@@ -353,12 +392,13 @@ bool ProxyBatchTester::runWithIndexId(const std::string& indexId) {
     if (totalProxies_ == 0) {
         Logger::write("Proxy not found: " + indexId, LogLevel::WARN);
         lastIndexId_ = indexId;
-        lastResult_ = TestResult{false, -1, "NOTFOUND"};
+        lastResult_ = TestResult{};
+        lastResult_.errorMsg = "NOTFOUND";
         return false;
     }
     
     lastIndexId_ = proxies_[0].indexid;
-    lastResult_ = TestResult{false, -1, ""};
+    lastResult_ = TestResult{};
     
     Logger::write("Testing single proxy: " + indexId, LogLevel::REPORT);
     

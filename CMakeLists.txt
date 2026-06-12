@@ -33,6 +33,9 @@ set(CORE_SOURCES
     src/ConfigReader.cpp
     src/Logger.cpp
     src/PortManager.cpp
+    src/ProfileitemDAO.cpp
+    src/SubitemDAO.cpp
+    src/ProfileExItemDAO.cpp
     src/ProxyBatchTester.cpp
     src/ProxyFinder.cpp
     src/ProxyTester.cpp
@@ -305,7 +308,7 @@ set_target_properties(test_config_reader PROPERTIES
 add_test(NAME ConfigReaderTest COMMAND test_config_reader)
 
 # -- ConfigGenerator unit tests (SQLite + boost_json) --
-add_executable(test_config_generator tests/test_config_generator.cpp src/ConfigGenerator.cpp src/Logger.cpp)
+add_executable(test_config_generator tests/test_config_generator.cpp src/ConfigGenerator.cpp src/ProfileitemDAO.cpp src/ProfileExItemDAO.cpp src/Logger.cpp)
 target_include_directories(test_config_generator PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(test_config_generator PRIVATE gtest_main gtest
     E:/vcpkg/installed/x64-mingw-static/lib/libsqlite3.a
@@ -319,7 +322,7 @@ set_target_properties(test_config_generator PROPERTIES
 add_test(NAME ConfigGeneratorTest COMMAND test_config_generator)
 
 # -- Delete Subscription tests --
-add_executable(test_delete_subscription tests/test_delete_subscription.cpp src/Logger.cpp)
+add_executable(test_delete_subscription tests/test_delete_subscription.cpp src/ProfileitemDAO.cpp src/SubitemDAO.cpp src/Logger.cpp)
 target_include_directories(test_delete_subscription PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(test_delete_subscription PRIVATE gtest_main gtest
     E:/vcpkg/installed/x64-mingw-static/lib/libsqlite3.a

@@ -16,6 +16,7 @@
 #include <iomanip>
 #include <algorithm>
 #include <array>
+#include <functional>
 #include <set>
 #include <cstdint>
 #include <random>
@@ -24,15 +25,11 @@
 namespace update {
 
 namespace {
-    size_t WriteCallback(void* contents, size_t size, size_t nmemb, void* userp) {
-        ((std::string*)userp)->append((char*)contents, size * nmemb);
-        return size * nmemb;
-    }
 
     std::string getJsonValueString(const boost::json::object& obj, const char* key, const char* defaultVal = "") {
         if (!obj.contains(key)) return defaultVal;
         try {
-            auto& val = obj.at(key);
+            const boost::json::value& val = obj.at(key);
             if (val.is_string()) return val.as_string().c_str();
             if (val.is_int64()) return std::to_string(val.as_int64());
             if (val.is_double()) return std::to_string(static_cast<int>(val.as_double()));
@@ -66,46 +63,16 @@ namespace {
         return valid.count(lower) > 0;
     }
 
-    // Pre-filter invalid proxies before insert/dedup
-    // R1: REALITY requires PublicKey
-    // R2: REALITY requires Sni
-    // R3: Network must be valid if non-empty (empty is allowed, ConfigGenerator falls back to "tcp")
-    // R4: Address must not be empty
-    // R5: Port must be valid (1-65535)
+    // Pre-filter invalid proxies using checkRequired() + network validation
     bool isValidProxy(const db::models::Profileitem& p) {
-        // R1: REALITY requires PublicKey
-        if (p.streamsecurity == "reality" && p.publickey.empty()) {
-            Logger::write("SKIP: " + p.address + ":" + p.port + " - REALITY missing PublicKey", LogLevel::WARN);
+        try {
+            p.checkRequired();
+        } catch (const std::exception& e) {
+            Logger::write("SKIP: " + p.address + ":" + p.port + " - " + e.what(), LogLevel::WARN);
             return false;
         }
-        // R2: REALITY requires Sni
-        if (p.streamsecurity == "reality" && p.sni.empty()) {
-            Logger::write("SKIP: " + p.address + ":" + p.port + " - REALITY missing Sni", LogLevel::WARN);
-            return false;
-        }
-        // R3: Invalid network (non-empty only)
         if (!p.network.empty() && !isValidNetwork(p.network)) {
             Logger::write("SKIP: " + p.address + ":" + p.port + " - invalid network: '" + p.network + "'", LogLevel::WARN);
-            return false;
-        }
-        // R4: Empty address
-        if (p.address.empty()) {
-            Logger::write("SKIP: empty address (IndexId: " + p.indexid + ")", LogLevel::WARN);
-            return false;
-        }
-        // R5: Invalid port
-        if (p.port.empty()) {
-            Logger::write("SKIP: " + p.address + " - empty port", LogLevel::WARN);
-            return false;
-        }
-        try {
-            int portVal = std::stoi(p.port);
-            if (portVal <= 0 || portVal > 65535) {
-                Logger::write("SKIP: " + p.address + ":" + p.port + " - port out of range", LogLevel::WARN);
-                return false;
-            }
-        } catch (...) {
-            Logger::write("SKIP: " + p.address + ":" + p.port + " - non-numeric port", LogLevel::WARN);
             return false;
         }
         return true;
@@ -169,7 +136,7 @@ bool SubitemUpdaterV2::run() {
 
     std::vector<UpdateMethod> methods = parseUpdateMethods(config_.update_methods);
     std::string methodsLog;
-    for (const auto& m : methods) {
+    for (const UpdateMethod& m : methods) {
         if (!methodsLog.empty()) methodsLog += ", ";
         switch (m) {
             case UpdateMethod::Accelerator: methodsLog += "accelerator"; break;
@@ -180,7 +147,7 @@ bool SubitemUpdaterV2::run() {
     Logger::write("INFO: Update methods: " + methodsLog, LogLevel::INFO);
 
     db::models::SubitemDAO subDao(db_);
-    auto enabledSubs = subDao.getEnabledSubscriptions();
+    std::vector<db::models::Subitem> enabledSubs = subDao.getEnabledSubscriptions();
 
     if (enabledSubs.empty()) {
         Logger::write("INFO: No enabled subscriptions found", LogLevel::INFO);
@@ -190,7 +157,7 @@ bool SubitemUpdaterV2::run() {
     Logger::write("INFO: Found " + std::to_string(enabledSubs.size()) + " enabled subscriptions", LogLevel::INFO);
 
     bool needProxy = false;
-    for (const auto& m : methods) {
+    for (const UpdateMethod& m : methods) {
         if (m == UpdateMethod::Proxy) {
             needProxy = true;
             break;
@@ -204,7 +171,7 @@ bool SubitemUpdaterV2::run() {
 
     if (needProxy && !enabledSubs.empty()) {
         Logger::write("INFO: Pre-finding proxy...", LogLevel::INFO);
-        auto result = getProxyPorts(enabledSubs[0].url);
+        std::pair<int, int> result = getProxyPorts(enabledSubs[0].url);
         proxySocksPort = result.first;
         proxyApiPort = result.second;
         if (proxySocksPort > 0) {
@@ -219,7 +186,7 @@ bool SubitemUpdaterV2::run() {
     int phaseIndex = 0;
     int phaseCount = static_cast<int>(methods.size());
 
-    for (const auto& method : methods) {
+    for (const UpdateMethod& method : methods) {
         phaseIndex++;
         std::string methodName;
         switch (method) {
@@ -243,7 +210,7 @@ bool SubitemUpdaterV2::run() {
         int phaseSuccess = 0;
         int phaseFail = 0;
 
-        auto processSub = [&](const std::string& subId, const std::string& subRemarks,
+        std::function<bool(const std::string&, const std::string&, const std::string&)> processSub = [&](const std::string& subId, const std::string& subRemarks,
                                const std::string& subUrl) {
             if (isCancelled()) return false;
 
@@ -268,7 +235,7 @@ bool SubitemUpdaterV2::run() {
 
             if (!content.empty()) {
                 Logger::write("INFO: " + methodName + " connection successful", LogLevel::INFO);
-                auto profiles = parseSubscription(content, subId);
+                std::vector<db::models::Profileitem> profiles = parseSubscription(content, subId);
                 if (!profiles.empty()) {
                     updateProfileItems(subId, profiles);
                     successCount++;
@@ -297,7 +264,7 @@ bool SubitemUpdaterV2::run() {
                     Logger::write("INFO: Update cancelled by user during " + methodName + " phase", LogLevel::REPORT);
                     break;
                 }
-                const auto& sub = enabledSubs[i];
+                const db::models::Subitem& sub = enabledSubs[i];
                 if (shouldSkipUpdate(sub)) {
                     Logger::write("INFO: Skipping sub " + sub.id + " (within update interval)", LogLevel::INFO);
                     continue;
@@ -337,7 +304,7 @@ bool SubitemUpdaterV2::run() {
     if (!failedSubs.empty()) {
         Logger::write("========================================", LogLevel::REPORT);
         Logger::write("Failed subscriptions:", LogLevel::REPORT);
-        for (const auto& sub : failedSubs) {
+        for (const std::tuple<std::string, std::string, std::string>& sub : failedSubs) {
             Logger::write("  Id: " + std::get<0>(sub) + ", Remarks: " + std::get<1>(sub) + ", URL: " + std::get<2>(sub), LogLevel::REPORT);
         }
     }
@@ -354,12 +321,12 @@ bool SubitemUpdaterV2::run() {
 bool SubitemUpdaterV2::runSingle(const std::string& subId) {
     Logger::write("INFO: runSingle - subId: " + subId, LogLevel::INFO);
 
-    auto optSub = getSubscription(subId);
+    std::optional<db::models::Subitem> optSub = getSubscription(subId);
     if (!optSub) {
         Logger::write("ERROR: Subscription not found: " + subId, LogLevel::ERR);
         return false;
     }
-    const auto& sub = *optSub;
+    const db::models::Subitem& sub = *optSub;
 
     if (sub.enabled != "1") {
         Logger::write("ERROR: Subscription is disabled: " + subId, LogLevel::ERR);
@@ -397,12 +364,12 @@ bool SubitemUpdaterV2::runSingle(const std::string& subId) {
 bool SubitemUpdaterV2::runSingleWithProxy(const std::string& subId, int socksPort) {
     Logger::write("INFO: runSingleWithProxy - subId: " + subId + ", socksPort: " + std::to_string(socksPort), LogLevel::INFO);
 
-    auto optSub = getSubscription(subId);
+    std::optional<db::models::Subitem> optSub = getSubscription(subId);
     if (!optSub) {
         Logger::write("ERROR: Subscription not found: " + subId, LogLevel::ERR);
         return false;
     }
-    const auto& sub = *optSub;
+    const db::models::Subitem& sub = *optSub;
 
     if (sub.enabled != "1") {
         Logger::write("ERROR: Subscription is disabled: " + subId, LogLevel::ERR);
@@ -420,7 +387,7 @@ bool SubitemUpdaterV2::runSingleWithProxy(const std::string& subId, int socksPor
         return false;
     }
 
-    auto profiles = parseSubscription(content, sub.id);
+    std::vector<db::models::Profileitem> profiles = parseSubscription(content, sub.id);
     bool result = updateProfileItems(sub.id, profiles);
     // Only update UpdateTime when we actually fetched and parsed content successfully
     if (result) {
@@ -463,7 +430,7 @@ std::optional<db::models::Subitem> SubitemUpdaterV2::getSubscription(const std::
 
 bool SubitemUpdaterV2::updateWithMethods(const std::string& subUrl, const std::string& subId,
                                           const std::vector<UpdateMethod>& methods) {
-    for (const auto& method : methods) {
+    for (const UpdateMethod& method : methods) {
         std::string methodName;
         switch (method) {
             case UpdateMethod::Accelerator: methodName = "accelerator"; break;
@@ -479,8 +446,8 @@ bool SubitemUpdaterV2::updateWithMethods(const std::string& subUrl, const std::s
                 content = fetchUrlViaAccelerator(subUrl);
                 break;
             case UpdateMethod::Proxy: {
-                auto [socks, api] = getProxyPorts(subUrl);
-                (void)api;
+                std::pair<int, int> proxyResult = getProxyPorts(subUrl);
+                int socks = proxyResult.first;
                 if (socks > 0) {
                     content = fetchUrlViaProxy(subUrl, socks);
                 } else {
@@ -495,7 +462,7 @@ bool SubitemUpdaterV2::updateWithMethods(const std::string& subUrl, const std::s
 
         if (!content.empty()) {
             Logger::write("INFO: " + methodName + " connection successful", LogLevel::INFO);
-            auto profiles = parseSubscription(content, subId);
+            std::vector<db::models::Profileitem> profiles = parseSubscription(content, subId);
             if (!profiles.empty()) {
                 return updateProfileItems(subId, profiles);
             }
@@ -624,7 +591,7 @@ std::vector<db::models::Profileitem> SubitemUpdaterV2::parseSubscription(const s
                 profile.address = getJsonValueString(obj, "add", "");
                 
                 if (obj.contains("port")) {
-                    auto& portVal = obj.at("port");
+                    boost::json::value& portVal = obj.at("port");
                     if (portVal.is_int64()) {
                         profile.port = std::to_string(portVal.as_int64());
                     } else if (portVal.is_string()) {
@@ -633,11 +600,11 @@ std::vector<db::models::Profileitem> SubitemUpdaterV2::parseSubscription(const s
                         profile.port = std::to_string(static_cast<int>(portVal.as_double()));
                     }
                 }
-                
+
                 profile.id = getJsonValueString(obj, "id", "");
-                
+
                 if (obj.contains("aid")) {
-                    auto& aidVal = obj.at("aid");
+                    boost::json::value& aidVal = obj.at("aid");
                     if (aidVal.is_int64()) {
                         profile.alterid = std::to_string(aidVal.as_int64());
                     } else if (aidVal.is_string()) {
@@ -651,10 +618,11 @@ std::vector<db::models::Profileitem> SubitemUpdaterV2::parseSubscription(const s
                 
 profile.security = getJsonValueString(obj, "scy", "auto");
                  profile.network = getJsonValueString(obj, "net", "tcp");
-                 // Map splithttp to xhttp and validate network value
-                 if (profile.network == "splithttp") {
-                     profile.network = "xhttp";
-                 }
+                  // Map splithttp to xhttp and validate network value
+                  if (profile.network == "splithttp") {
+                      Logger::write("Mapping splithttp to xhttp for " + profile.indexid, LogLevel::DEBUG);
+                      profile.network = "xhttp";
+                  }
                  if (profile.network != "tcp" && profile.network != "ws" && profile.network != "h2" &&
                      profile.network != "xhttp" && profile.network != "grpc") {
                      profile.network = "tcp";
@@ -690,6 +658,7 @@ profile.security = getJsonValueString(obj, "scy", "auto");
                                 profile.configversion = "2";
                                 profile.alterid = "0";
                                 profile.network = "tcp";
+                      Logger::write("Using default network 'tcp' for " + profile.indexid + " (original: " + getJsonValueString(obj, "net", "") + ")", LogLevel::DEBUG);
                                 profile.coretype = "";
                                 profile.muxenabled = "0";
                                 profile.address = getJsonValueString(obj, "add", "");
@@ -727,19 +696,21 @@ parseSuccess = true;
             size_t qPos = hostPart.find('?');
             std::string addrPart = (qPos != std::string::npos) ? hostPart.substr(0, qPos) : hostPart;
             
-            auto [addr, port] = parseAddressPort(addrPart);
+            std::pair<std::string, std::string> addrPort = parseAddressPort(addrPart);
+            std::string addr = addrPort.first;
+            std::string port = addrPort.second;
             if (addr.empty()) continue;
             profile.address = addr;
             if (!profile.address.empty() && profile.address.back() == '/') {
                 profile.address.pop_back();
             }
             profile.port = port;
-            
+
             if (qPos != std::string::npos) {
                 std::string params = hostPart.substr(qPos + 1);
                 size_t hashPos = params.find('#');
                 std::string query = (hashPos != std::string::npos) ? params.substr(0, hashPos) : params;
-                
+
                 std::istringstream paramStream(query);
                 std::string param;
                 while (std::getline(paramStream, param, '&')) {
@@ -747,7 +718,7 @@ parseSuccess = true;
                     if (eqPos == std::string::npos) continue;
                     std::string key = param.substr(0, eqPos);
                     std::string val = urlDecode(param.substr(eqPos + 1));
-                    
+
                     if (key == "type") profile.network = val;
                     else if (key == "security") profile.streamsecurity = val;
                     else if (key == "sni") profile.sni = val;
@@ -765,19 +736,20 @@ else if (key == "e" || key == "ech") profile.echconfiglist = val;
                  }
                  
                  // Validate and map network value for vless
-                 if (profile.network == "splithttp") {
-                     profile.network = "xhttp";
-                 }
-                 if (profile.network != "tcp" && profile.network != "ws" && profile.network != "h2" &&
-                     profile.network != "xhttp" && profile.network != "grpc") {
-                     profile.network = "tcp";
-                 }
-                 
-                 if (hashPos != std::string::npos) {
-                     profile.remarks = urlDecode(params.substr(hashPos + 1));
-                 }
-             }
-        } else if (line.find("ss://") == 0) {
+                  if (profile.network == "splithttp") {
+                      profile.network = "xhttp";
+                  }
+                  if (profile.network != "tcp" && profile.network != "ws" && profile.network != "h2" &&
+                      profile.network != "xhttp" && profile.network != "grpc") {
+                      profile.network = "tcp";
+                      Logger::write("Using default network 'tcp' for " + profile.indexid + " (original: " + profile.network + ")", LogLevel::DEBUG);
+                  }
+                  
+                  if (hashPos != std::string::npos) {
+                      profile.remarks = urlDecode(params.substr(hashPos + 1));
+                  }
+              }
+         } else if (line.find("ss://") == 0) {
             std::string uri = line.substr(5);
             size_t hashPos = uri.find('#');
             if (hashPos != std::string::npos) {
@@ -798,7 +770,9 @@ else if (key == "e" || key == "ech") profile.echconfiglist = val;
             std::string userInfo = uri.substr(0, atPos);
             std::string hostInfo = uri.substr(atPos + 1);
             
-            auto [addr, portWithParams] = parseAddressPort(hostInfo);
+            std::pair<std::string, std::string> addrPort2 = parseAddressPort(hostInfo);
+            std::string addr = addrPort2.first;
+            std::string portWithParams = addrPort2.second;
             if (addr.empty()) continue;
             profile.address = addr;
             if (!profile.address.empty() && profile.address.back() == '/') {
@@ -851,7 +825,7 @@ else if (key == "e" || key == "ech") profile.echconfiglist = val;
                         }
                         if (!profile.sni.empty() && !hostFromPlugin.empty()) {
                             if (profile.sni.find('@') != std::string::npos || 
-                                profile.sni.find('\xE2\x80') != std::string::npos ||
+                                profile.sni.find("\xE2\x80") != std::string::npos ||
                                 profile.sni.find(' ') != std::string::npos) {
                                 profile.sni = hostFromPlugin;
                             }
@@ -878,7 +852,7 @@ else if (key == "e" || key == "ech") profile.echconfiglist = val;
                 if (!profile.sni.empty()) {
                     profile.streamsecurity = "tls";
                     if (profile.sni.find('@') != std::string::npos || 
-                        profile.sni.find('\xE2\x80') != std::string::npos ||
+                        profile.sni.find("\xE2\x80") != std::string::npos ||
                         profile.sni.find(' ') != std::string::npos) {
                         if (!profile.requesthost.empty()) {
                             profile.sni = profile.requesthost;
@@ -917,7 +891,9 @@ else if (key == "e" || key == "ech") profile.echconfiglist = val;
             size_t qPos = hostPart.find('?');
             std::string addrPart = (qPos != std::string::npos) ? hostPart.substr(0, qPos) : hostPart;
             
-auto [addr, port] = parseAddressPort(addrPart);
+std::pair<std::string, std::string> addrPort3 = parseAddressPort(addrPart);
+            std::string addr = addrPort3.first;
+            std::string port = addrPort3.second;
             if (addr.empty()) continue;
             profile.address = addr;
             if (!profile.address.empty() && profile.address.back() == '/') {
@@ -955,10 +931,11 @@ else if (key == "type") profile.network = val;
                  }
                  if (profile.network != "tcp" && profile.network != "ws" && profile.network != "h2" &&
                      profile.network != "xhttp" && profile.network != "grpc") {
-                     profile.network = "tcp";
-                 }
-                
-                if (hashPos != std::string::npos) {
+                      profile.network = "tcp";
+                      Logger::write("Using default network 'tcp' for " + profile.indexid + " (original: " + profile.network + ")", LogLevel::DEBUG);
+                  }
+                 
+                 if (hashPos != std::string::npos) {
                     profile.remarks = urlDecode(params.substr(hashPos + 1));
                 }
             }
@@ -1065,7 +1042,7 @@ bool SubitemUpdaterV2::updateProfileItems(const std::string& subid, const std::v
     // Phase 0: Pre-filter invalid proxies before insert
     std::vector<db::models::Profileitem> validProfiles;
     validProfiles.reserve(profiles.size());
-    for (const auto& p : profiles) {
+    for (const db::models::Profileitem& p : profiles) {
         if (isValidProxy(p)) {
             validProfiles.push_back(p);
         }
@@ -1127,7 +1104,7 @@ bool SubitemUpdaterV2::updateProfileItems(const std::string& subid, const std::v
     }
 
     size_t count = 0;
-    for (const auto& p : validProfiles) {
+    for (const db::models::Profileitem& p : validProfiles) {
         count++;
         if (count % 100 == 0) {
             Logger::write("Progress: " + std::to_string(count) + "/" + std::to_string(validProfiles.size()) + " profiles processed", LogLevel::REPORT);
@@ -1239,7 +1216,7 @@ proxyFinder_ = new ProxyFinder(db_, xrayMgr_, xrayPath_,
                                      config_.test_timeout_ms,
                                      externalCancel_ ? externalCancel_ : nullptr);
 
-    auto result = proxyFinder_->findFirstWorkingProxy(targetUrl);
+    std::pair<int, int> result = proxyFinder_->findFirstWorkingProxy(targetUrl);
     Logger::write("INFO: ProxyFinder returned socks=" + std::to_string(result.first) + ", api=" + std::to_string(result.second), LogLevel::INFO);
 
     return result;
@@ -1293,9 +1270,9 @@ bool SubitemUpdaterV2::shouldSkipUpdate(const db::models::Subitem& sub) const
         return false;
 
     try {
-        auto lastUpdate = std::chrono::system_clock::from_time_t(std::stoll(sub.updatetime));
-        auto now = std::chrono::system_clock::now();
-        auto elapsed = std::chrono::duration_cast<std::chrono::minutes>(now - lastUpdate).count();
+        std::chrono::system_clock::time_point lastUpdate = std::chrono::system_clock::from_time_t(std::stoll(sub.updatetime));
+        std::chrono::system_clock::time_point now = std::chrono::system_clock::now();
+        long long elapsed = std::chrono::duration_cast<std::chrono::minutes>(now - lastUpdate).count();
         return elapsed < intervalMinutes;
     } catch (...) {
         return false;
@@ -1306,7 +1283,7 @@ std::vector<SubitemUpdaterV2::UpdateMethod> SubitemUpdaterV2::parseUpdateMethods
     const std::vector<std::string>& methods)
 {
     std::vector<UpdateMethod> result;
-    for (const auto& m : methods) {
+    for (const std::string& m : methods) {
         if (m == "accelerator" && std::find(result.begin(), result.end(), UpdateMethod::Accelerator) == result.end()) {
             result.push_back(UpdateMethod::Accelerator);
         } else if (m == "proxy" && std::find(result.begin(), result.end(), UpdateMethod::Proxy) == result.end()) {
@@ -1322,14 +1299,14 @@ std::vector<SubitemUpdaterV2::UpdateMethod> SubitemUpdaterV2::parseUpdateMethods
 }
 
 std::string SubitemUpdaterV2::getCurrentTimestamp() {
-    auto now = std::chrono::system_clock::now();
-    auto timestamp = std::chrono::duration_cast<std::chrono::seconds>(
+    std::chrono::system_clock::time_point now = std::chrono::system_clock::now();
+    long long timestamp = std::chrono::duration_cast<std::chrono::seconds>(
         now.time_since_epoch()).count();
     return std::to_string(timestamp);
 }
 
 std::pair<std::string, std::string> SubitemUpdaterV2::parseAddressPort(const std::string& addrPart) {
-    auto trimTrailingSlash = [](std::string s) -> std::string {
+    std::function<std::string(std::string)> trimTrailingSlash = [](std::string s) -> std::string {
         if (!s.empty() && s.back() == '/') {
             s.pop_back();
         }
@@ -1659,6 +1636,23 @@ void SubitemUpdaterV2::cleanupProfileExItem() {
     Logger::write("INFO: ProfileExItem cleaned: " + std::to_string(deleted) + " orphaned records", LogLevel::INFO);
 }
 
+int SubitemUpdaterV2::deduplicateConfigErrorPhase() {
+    db::models::ProfileitemDAO dao(db_);
+    std::vector<db::models::Profileitem> all = dao.getAll("SELECT * FROM ProfileItem;");
+    int deleted = 0;
+    for (const db::models::Profileitem& p : all) {
+        try {
+            p.checkRequired();
+        } catch (const std::exception& e) {
+            Logger::write("CONFIG_ERROR: " + p.indexid + " - " + p.address + ":" + p.port + " - " + e.what(), LogLevel::WARN);
+            dao.deleteByIndexId(p.indexid);
+            deleted++;
+        }
+    }
+    Logger::write("INFO: Phase ConfigError deleted: " + std::to_string(deleted) + " (checkRequired failed)", LogLevel::INFO);
+    return deleted;
+}
+
 bool SubitemUpdaterV2::migrateSubscription(sqlite3* srcDb, sqlite3* dstDb,
                                              const std::string& subid) {
     if (subid.empty()) {
@@ -1966,18 +1960,18 @@ bool SubitemUpdaterV2::syncDatabases(const std::string& sourceDbPath,
         ORDER BY CAST(pe.Delay AS INTEGER) ASC
     )";
     
-    auto profiles = db::models::ProfileitemDAO(srcDb).getAll(sql);
+    std::vector<db::models::Profileitem> profiles = db::models::ProfileitemDAO(srcDb).getAll(sql);
     Logger::write("Found " + std::to_string(profiles.size()) + " valid proxies to migrate", LogLevel::INFO);
     
     int successCount = 0;
     int failCount = 0;
     
     // 4. Migrate each proxy
-    for (const auto& profile : profiles) {
+    for (const db::models::Profileitem& profile : profiles) {
         // Skip proxies whose Subid is in dedup_subids when sync_skip_subids is enabled
         if (config_.sync.sync_skip_subids && !profile.subid.empty()) {
             bool skip = false;
-            for (const auto& sid : config_.dedup_subids) {
+            for (const std::string& sid : config_.dedup_subids) {
                 if (profile.subid == sid) {
                     skip = true;
                     break;
@@ -2041,21 +2035,25 @@ bool SubitemUpdaterV2::deduplicate() {
         return false;
     }
     
-    Logger::write("Phase 1/4 - Marking working proxies with protected subid", LogLevel::REPORT);
+    Logger::write("Phase 1/5 - Marking working proxies with protected subid", LogLevel::REPORT);
     int p0 = deduplicatePhase0();
     Logger::write("Phase 1 completed: " + std::to_string(p0) + " proxies marked", LogLevel::REPORT);
     
-    Logger::write("Phase 2/4 - Moving blacklisted proxies to blacklist subid", LogLevel::REPORT);
+    Logger::write("Phase 2/5 - Moving blacklisted proxies to blacklist subid", LogLevel::REPORT);
     int pBlacklist = deduplicateBlacklistPhase();
     Logger::write("Phase 2 completed: moved " + std::to_string(pBlacklist) + " proxies to blacklist", LogLevel::REPORT);
     
-    Logger::write("Phase 3/4 - Removing invalid addresses (private IPs)", LogLevel::REPORT);
+    Logger::write("Phase 3/5 - Removing invalid addresses (private IPs)", LogLevel::REPORT);
     int p1 = deduplicatePhase1();
     Logger::write("Phase 3 completed: removed " + std::to_string(p1) + " proxies", LogLevel::REPORT);
     
-    Logger::write("Phase 4/4 - Removing duplicates (merged CTE)", LogLevel::REPORT);
+    Logger::write("Phase 4/5 - Removing config-invalid proxies (checkRequired)", LogLevel::REPORT);
+    int pConfig = deduplicateConfigErrorPhase();
+    Logger::write("Phase 4 completed: removed " + std::to_string(pConfig) + " proxies", LogLevel::REPORT);
+    
+    Logger::write("Phase 5/5 - Removing duplicates (merged CTE)", LogLevel::REPORT);
     int pMerged = deduplicateMergedPhase();
-    Logger::write("Phase 4 completed: removed " + std::to_string(pMerged) + " proxies", LogLevel::REPORT);
+    Logger::write("Phase 5 completed: removed " + std::to_string(pMerged) + " proxies", LogLevel::REPORT);
     
     Logger::write("Cleaning up ProfileExItem...", LogLevel::REPORT);
     cleanupProfileExItem();

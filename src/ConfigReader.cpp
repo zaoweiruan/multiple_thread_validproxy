@@ -3,6 +3,7 @@
 #include <iostream>
 #include <filesystem>
 #include <windows.h>
+#include <functional>
 #include <boost/json.hpp>
 
 #include "Logger.h"
@@ -75,18 +76,18 @@ std::optional<AppConfig> ConfigReader::load(const std::string& configPath) {
     
     AppConfig config;
     
-    auto warnWrongType = [&](const std::string& section, const std::string& field, const std::string& expected) {
+    std::function<void(const std::string&, const std::string&, const std::string&)> warnWrongType = [&](const std::string& section, const std::string& field, const std::string& expected) {
         Logger::write("WARNING: config." + section + "." + field + " has wrong type (expected " + expected + "), using default", LogLevel::WARN);
     };
     
-    auto& obj = jv.as_object();
+    boost::json::object& obj = jv.as_object();
     Logger::write("DEBUG: JSON object has " + std::to_string(obj.size()) + " keys", LogLevel::DEBUG);
     
     if (obj.contains("database")) {
         if (obj["database"].is_string()) {
             config.database_path = resolvePath(obj["database"].as_string().c_str(), exeDir);
         } else if (obj["database"].is_object()) {
-            auto& db = obj["database"].as_object();
+            boost::json::object& db = obj["database"].as_object();
             if (db.contains("path") && db["path"].is_string()) {
                 config.database_path = resolvePath(db["path"].as_string().c_str(), exeDir);
             } else if (db.contains("path")) {
@@ -108,7 +109,7 @@ std::optional<AppConfig> ConfigReader::load(const std::string& configPath) {
     }
     
     if (obj.contains("xray") && obj["xray"].is_object()) {
-        auto& xray = obj["xray"].as_object();
+        boost::json::object& xray = obj["xray"].as_object();
         if (xray.contains("executable") && xray["executable"].is_string()) {
             config.xray_executable = resolvePath(xray["executable"].as_string().c_str(), exeDir);
         } else if (xray.contains("executable")) {
@@ -142,7 +143,7 @@ std::optional<AppConfig> ConfigReader::load(const std::string& configPath) {
     }
     
     if (obj.contains("test") && obj["test"].is_object()) {
-        auto& test = obj["test"].as_object();
+        boost::json::object& test = obj["test"].as_object();
         if (test.contains("url") && test["url"].is_string()) {
             config.test_url = test["url"].as_string().c_str();
         } else if (test.contains("url")) {
@@ -162,7 +163,7 @@ std::optional<AppConfig> ConfigReader::load(const std::string& configPath) {
     }
     
     if (obj.contains("log") && obj["log"].is_object()) {
-        auto& log = obj["log"].as_object();
+        boost::json::object& log = obj["log"].as_object();
         if (log.contains("enabled") && log["enabled"].is_bool()) {
             config.log_enabled = log["enabled"].as_bool();
         } else if (log.contains("enabled")) {
@@ -205,7 +206,7 @@ std::optional<AppConfig> ConfigReader::load(const std::string& configPath) {
     }
     
     if (obj.contains("subscription") && obj["subscription"].is_object()) {
-        auto& sub = obj["subscription"].as_object();
+        boost::json::object& sub = obj["subscription"].as_object();
         if (sub.contains("accelerator_url") && sub["accelerator_url"].is_string()) {
             config.accelerator_url = sub["accelerator_url"].as_string().c_str();
         } else if (sub.contains("accelerator_url")) {
@@ -213,7 +214,7 @@ std::optional<AppConfig> ConfigReader::load(const std::string& configPath) {
         }
 
         if (sub.contains("update_methods") && sub["update_methods"].is_array()) {
-            for (const auto& m : sub["update_methods"].as_array()) {
+            for (const boost::json::value& m : sub["update_methods"].as_array()) {
                 if (m.is_string()) {
                     std::string val = m.as_string().c_str();
                     if (val == "accelerator" || val == "proxy" || val == "direct") {
@@ -278,7 +279,7 @@ std::optional<AppConfig> ConfigReader::load(const std::string& configPath) {
     }
     
     if (obj.contains("dedup") && obj["dedup"].is_object()) {
-        auto& dedup = obj["dedup"].as_object();
+        boost::json::object& dedup = obj["dedup"].as_object();
         if (dedup.contains("enabled") && dedup["enabled"].is_bool()) {
             config.dedup_enabled = dedup["enabled"].as_bool();
         } else if (dedup.contains("enabled")) {
@@ -318,7 +319,7 @@ std::optional<AppConfig> ConfigReader::load(const std::string& configPath) {
             warnWrongType("dedup", "blacklist_subid", "string");
         }
         if (dedup.contains("subids") && dedup["subids"].is_array()) {
-            for (const auto& sid : dedup["subids"].as_array()) {
+            for (const boost::json::value& sid : dedup["subids"].as_array()) {
                 if (sid.is_string()) {
                     config.dedup_subids.push_back(sid.as_string().c_str());
                 } else {
@@ -337,7 +338,7 @@ std::optional<AppConfig> ConfigReader::load(const std::string& configPath) {
     }
     
     if (obj.contains("notification") && obj["notification"].is_object()) {
-        auto& notification = obj["notification"].as_object();
+        boost::json::object& notification = obj["notification"].as_object();
         if (notification.contains("enabled") && notification["enabled"].is_bool()) {
             config.notification_enabled = notification["enabled"].as_bool();
         } else if (notification.contains("enabled")) {
@@ -371,7 +372,7 @@ std::optional<AppConfig> ConfigReader::load(const std::string& configPath) {
     }
     
     if (obj.contains("sync") && obj["sync"].is_object()) {
-        auto& sync = obj["sync"].as_object();
+        boost::json::object& sync = obj["sync"].as_object();
         if (sync.contains("source_db") && sync["source_db"].is_string()) {
             config.sync.source_db = resolvePath(sync["source_db"].as_string().c_str(), exeDir);
         } else if (sync.contains("source_db")) {
@@ -396,12 +397,12 @@ std::optional<AppConfig> ConfigReader::load(const std::string& configPath) {
     //   {subid}              - replaced per-subscription in ProxyBatchTester::loadProxies()
     //   {blacklist_threshold} - replaced before SQL execution in ProxyBatchTester::loadProxies()
     const std::vector<std::string> knownRuntimePlaceholders = {"{subid}", "{blacklist_threshold}"};
-    auto hasUnreplaced = [&knownRuntimePlaceholders](const std::string& sql) -> bool {
+    std::function<bool(const std::string&)> hasUnreplaced = [&knownRuntimePlaceholders](const std::string& sql) -> bool {
         for (size_t i = 0; i < sql.size(); ++i) {
             if (sql[i] == '{') {
                 // Check if this '{}' pattern is a known runtime placeholder
                 bool isKnown = false;
-                for (const auto& ph : knownRuntimePlaceholders) {
+                for (const std::string& ph : knownRuntimePlaceholders) {
                     if (sql.compare(i, ph.size(), ph) == 0) {
                         isKnown = true;
                         break;
@@ -409,7 +410,7 @@ std::optional<AppConfig> ConfigReader::load(const std::string& configPath) {
                 }
                 if (!isKnown) {
                     // Check for matched closing brace
-                    auto closingBrace = sql.find('}', i + 1);
+                    size_t closingBrace = sql.find('}', i + 1);
                     if (closingBrace != std::string::npos) {
                         // The SQL has '{...}' that is NOT a known runtime placeholder
                         // Extract the unknown placeholder for diagnostic message
@@ -503,7 +504,7 @@ bool ConfigReader::save(const std::string& configPath, const AppConfig& config) 
     }
     {
         boost::json::array methodsArr;
-        for (const auto& m : config.update_methods) {
+        for (const std::string& m : config.update_methods) {
             methodsArr.emplace_back(m);
         }
         subObj["update_methods"] = methodsArr;
@@ -521,7 +522,7 @@ bool ConfigReader::save(const std::string& configPath, const AppConfig& config) 
     dedupObj["blacklist_enabled"] = config.blacklist_enabled;
     dedupObj["blacklist_subid"] = config.blacklist_subid;
     boost::json::array subidsArr;
-    for (const auto& sid : config.dedup_subids) {
+    for (const std::string& sid : config.dedup_subids) {
         subidsArr.emplace_back(sid);
     }
     dedupObj["subids"] = subidsArr;
