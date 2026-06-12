@@ -114,8 +114,106 @@ std::string utils::generateUniqueId();  // 19 位数字, 4|5 开头
 
 | 日期 | 决策 | 影响 |
 |------|------|------|
+| 2026-06-11 | 稳定性加固：启用 ASAN/UBSan、MiniDump 崩溃兜底、cppcheck 静态分析、gcov 覆盖率 | 调试与构建基础设施增强 |
 | 2026-05-05 | 移除 `blacklisted` 冗余字段，改用 `consecutive_failures < threshold` 实时计算 | ProfileExItem 简化 |
 | 2026-05-05 | 去重统一为 5 字段键：`Address+Port+ConfigType+Id+Network` | 避免 VMess/VLESS 误判 |
 | 2026-04-16 | XrayManager 改为单例模式 | ProxyFinder/AppController 复用同一实例 |
 | 2026-04-28 | CoreType NULL 处理：空值时 `sqlite3_bind_null()` | v2rayN 兼容性 |
 | 2026-05-06 | 废弃 `update_subscription` 和 `check_auto_update_interval` 字段 | ConfigReader 清理 |
+
+---
+
+## 8. 调试与稳定性规则
+
+> 基于 `docs/reports/2026-06-11-Debug-Tools-Assessment.md` 和 `docs/plans/2026-06-11-Plan-Stability-Hardening-v1.0.md`。  
+> 快速命令速查见 **AGENTS.md §4.2 调试命令**。
+
+### 8.1 Sanitizer 构建（调试内存/UB 问题）
+
+```powershell
+cmake -B build -G "Ninja" -DCMAKE_BUILD_TYPE=Debug -DENABLE_SANITIZERS=ON
+cmake --build build --parallel 8
+# 运行单元测试，ASAN/UBSan 会拦截内存泄漏、越界、UB
+ctest -V
+```
+
+- `ENABLE_SANITIZERS=ON` 启用 `-fsanitize=address,undefined -fno-omit-frame-pointer`
+- 仅非 MSVC（MinGW）生效
+- 默认 OFF，只在 Debug 调试时按需开启
+
+### 8.2 Crash Dump（MiniDumpWriteDump）
+
+- `include/CrashHandler.h` + `src/CrashHandler.cpp`
+- 在 `main_gui.cpp` 入口处通过 `crash::installHandler()` 注册
+- 发生未处理异常时自动写入 `bin/temp/crash_<YYYYMMDD_HHMMSS>.dmp`
+- 使用 `MiniDumpWithDataSegs` 级别（含全局数据段用于诊断）
+- 依赖 `dbghelp.lib`（已通过 CMake `-ldbghelp` 链接）
+
+### 8.3 静态分析（cppcheck）
+
+```powershell
+.\scripts\run_static_analysis.ps1
+```
+
+- 扫描 `src/` 下全部 .cpp 文件
+- 启用 `warning,style,performance,portability` 检查集
+- C++17 标准、win64 平台
+- 需预先安装 cppcheck：`choco install cppcheck` 或 `scoop install cppcheck`
+
+### 8.4 覆盖率（gcov/gcovr）
+
+```powershell
+cmake -B build -G "Ninja" -DCMAKE_BUILD_TYPE=Debug -DENABLE_COVERAGE=ON
+cmake --build build --parallel 8
+.\scripts\run_coverage.ps1
+```
+
+- `ENABLE_COVERAGE=ON` 启用 `--coverage`（gcov 插桩）
+- 脚本先尝试 `gcovr`，回退至 `lcov + genhtml`
+- 报告输出至 `temp/coverage/coverage.html`
+- 需预先安装：`pip install gcovr`
+
+### 8.5 调试工具选择矩阵
+
+| 症状 | 工具 | 构建命令 |
+|------|------|---------|
+| 段错误 / 崩溃 | MiniDump → `bin/temp/crash_*.dmp`（自动） | 普通 Debug 即可 |
+| 内存泄漏 / 越界 | ASAN (`-fsanitize=address`) | `cmake -B build -DENABLE_SANITIZERS=ON` |
+| 未定义行为 | UBSan (`-fsanitize=undefined`) | 同上（与 ASAN 同时启用） |
+| 条件竞争 | Logger TRACE 级别 + 代码审查 | `config.json`: `log.file_level: "TRACE"` |
+| 逻辑错误 | 单元测试 + Logger DEBUG | `ctest -V` |
+| 代码质量 | cppcheck | `.\scripts\run_static_analysis.ps1` |
+| 测试盲区 | gcov/gcovr 覆盖率 | `cmake -B build -DENABLE_COVERAGE=ON` |
+
+### 8.6 ASAN 输出解读
+
+ASAN 捕获到错误时会打印调用栈并终止进程，典型输出模式：
+
+```
+==PID==ERROR: AddressSanitizer: heap-use-after-free on address ...
+    #0 0x... in Foo::bar() src/Foo.cpp:42
+    #1 0x... in main src/main.cpp:10
+0x... is located 0 bytes inside of 4-byte region [...]
+freed by thread T0 here:
+    #0 0x... in operator delete(void*, unsigned long long)
+    #1 0x... in Baz::~Baz() src/Baz.cpp:20
+previously allocated by thread T0 here:
+    #0 0x... in operator new(unsigned long long)
+    #1 0x... in Baz::Baz() src/Baz.cpp:10
+```
+
+**关键信息**: 错误类型（`heap-use-after-free` / `heap-buffer-overflow` / `stack-buffer-overflow` / `leak`）、调用栈、分配/释放位置。每个 `#N 0x... in Function() file:line` 指向源码位置。
+
+### 8.7 崩溃 Dump 分析流程
+
+1. 启动程序，复现崩溃
+2. 检查 `bin/temp/crash_*.dmp` 是否已生成
+3. 使用 WinDbg 或 Visual Studio 打开 dump 文件:
+   - **Visual Studio**: 双击 .dmp → 运行"仅限本机"调试 → 查看崩溃线程调用栈
+   - **WinDbg**: `.ecxr` → `kb` (查看调用栈) → `dv` (查看局部变量)
+
+### 8.8 Logger 深度调试
+
+- 将 `config.json` 中 `log.file_level` 设为 `"TRACE"` 获取最详细日志
+- `log.network_failures: true` 输出网络失败日志（默认 `true`）
+- 严重性能问题时切回 `"INFO"`，避免日志 I/O 干扰排查

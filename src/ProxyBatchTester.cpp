@@ -287,7 +287,8 @@ void ProxyBatchTester::testProxiesMultiThreaded() {
                 std::future<void> fut = std::async(std::launch::async, [&t]() {
                     if (t.joinable()) t.join();
                 });
-                if (fut.wait_for(std::chrono::milliseconds(5000)) != std::future_status::ready) {
+                int joinTimeoutMs = config_.test_timeout_ms + 5000;
+                if (fut.wait_for(std::chrono::milliseconds(joinTimeoutMs)) != std::future_status::ready) {
                     int proxyIdx = -1;
                     {
                         std::lock_guard<std::mutex> lock(workerStateMutex_);

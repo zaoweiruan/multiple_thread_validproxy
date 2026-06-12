@@ -20,6 +20,7 @@ updated: 2026-06-11
 | 2026-06-11 | bugfix | `docs/bugfix/2026-06-11-Bugfix-ProxyBatchTester-ZeroProxyEarlyReturn-v1.0.md` | 批量测试零代理时 printSummary/stopAll 缺失修复 |
 | 2026-06-11 | bugfix | `docs/bugfix/2026-06-11-Bugfix-ProxyListPanel-RefreshFreeze-v1.0.md` | 大代理集测试后 UI 冻结修复 |
 | 2026-06-11 | bugfix | `docs/plans/2026-06-11-Spec-ProxyFinder-findWorkingProxy-bug.md` | ProxyFinder::findWorkingProxy 返回端口时未重新注入代理 |
+| 2026-06-11 | plan | `docs/plans/2026-06-11-Plan-Stability-Hardening-v1.0.md` | 稳定性加固计划（ASAN/UBSan/MiniDump/静态分析/覆盖率） |
 | 2026-06-11 | bugfix | `docs/bugfix/2026-06-11-Bugfix-ConfigGenerator-NetworkFallback-v1.0.md` | 无效网络兜底与 splithttp→xhttp 回退 |
 | 2026-06-09 | plan | `docs/plans/2026-06-09-config-validation-improvements-plan.md` | Config validation improvements |
 | 2026-06-09 | bugfix | `docs/bugfix/2026-06-09-configreader-load-error-popup-fix.md` | ConfigReader load double-popup fix |
@@ -111,7 +112,7 @@ updated: 2026-06-11
 | 32 | 2026-06-11 | Zero-proxy run must call printSummary/stopAll on early return; cleared redundant guard in worker entry | ✅ completed |
 | 33 | 2026-06-11 | ProxyListPanel refreshResults freeze — drop per-row ValueChanged storm, use listCtrl_->Refresh() | ✅ completed |
 | 34 | 2026-06-11 | ConfigGenerator invalid-network fallback — defaults to tcp instead of skipping; added splithttp→xhttp mapping | ✅ completed |
-| 28 | 2026-06-11 | Zero-proxy run guard: run()/runWithSubId() early-return must call printSummary() before return; removed totalProxies_==0 early-return from testProxiesMultiThreaded() as redundant | ✅ completed |
+| 35 | 2026-06-11 | **Stability Hardening** | CMake ASAN/UBSan, MiniDump, cppcheck, gcov — 调试基础设施加固 | ✅ completed |
 | 29 | 2026-06-11 | ProxyListPanel refreshResults(): replace per-row ValueChanged storm with listCtrl_->Refresh() to prevent UI freeze on large proxy sets | ✅ completed |
 | 30 | 2026-06-11 | ConfigGenerator::loadProfiles(): invalid network defaults to tcp instead of skipping; added splithttp→xhttp mapping as fallback after frontend conversion | ✅ completed |
 | 31 | 2026-06-09 | Resizable horizontal splitter for subscription/proxy panels | ✅ completed |

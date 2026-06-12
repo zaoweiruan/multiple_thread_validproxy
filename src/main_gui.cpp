@@ -5,6 +5,7 @@
 #include "Utils.h"
 #include "Logger.h"
 #include "ConfigReader.h"
+#include "CrashHandler.h"
 #include "XrayManager.h"
 
 #include <sqlite3.h>
@@ -15,6 +16,7 @@
 #include <iostream>
 
 int main(int argc, char* argv[]) {
+    crash::installHandler();
     std::string exeDir = utils::getExecutableDir();
     std::string configPath = (std::filesystem::path(exeDir) / "config.json").string();
 

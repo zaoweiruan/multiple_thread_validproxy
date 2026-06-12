@@ -33,7 +33,7 @@ updated: 2026-06-11
 | [分析报告](#9-分析报告) | 7 | `docs/reports/` |
 | [Bug 修复记录](#91-bug-修复记录) | 9 | `docs/bugfix/` |
 | [测试报告](#10-测试报告) | 1 | `docs/test/` |
-| [长期记忆](#13-长期记忆) | 1 | `docs/project-knowledge.md` |
+| [长期记忆](#13-长期记忆) | 1 | `docs/project-knowledge.md` (6.2 KB) |
 
 ---
 
@@ -159,7 +159,7 @@ updated: 2026-06-11
 
 ## 8. 实施计划 (docs/plans/)
 
-> 共 54 个计划文件，按日期倒序排列。
+> 共 55 个计划文件，按日期倒序排列。
 > 状态标记: ✅ completed ｜ 🔄 in_progress ｜ 📝 draft｜ ❌ blocked
 > 全局跟踪: [`docs/plans/project-plans-tracker.md`](./plans/project-plans-tracker.md)
 
@@ -198,6 +198,7 @@ updated: 2026-06-11
 
 | 日期 | 编号 | 文件 | 类型 | 说明 |
 |------|------|------|------|------|
+| 2026-06-11 |  | [`2026-06-11-Plan-Stability-Hardening-v1.0.md`](./plans/2026-06-11-Plan-Stability-Hardening-v1.0.md) | feat ✅ | **稳定性加固** — CMake ASAN/UBSan, MiniDumpWriteDump, cppcheck, gcov |
 | 2026-05-18 |  | [`2026-05-18-002-fix-empty-test-results.md`](./plans/2026-05-18-002-fix-empty-test-results.md) | fix ✅ | TestPanel onProgress 提前返回 问题 (ProxyTestProgressEvent isCompleted 修复) |
 | 2026-05-14 | 14-001 | [`2026-05-14-001-dedup-filter-invalid-proxies-plan.md`](./plans/2026-05-14-001-dedup-filter-invalid-proxies-plan.md) | fix ✅ | 去重功能过滤无效代理 (REALITY 缺失 key/sni, 脏 Network 字段) |
 | 2026-05-13 | P0-P1 | [`2026-05-13-P0-fix-silent-sqlite3-exec-and-finalize-plan.md`](./plans/2026-05-13-P0-fix-silent-sqlite3-exec-and-finalize-plan.md) | fix ✅ | 修复静默 sqlite3_exec + finalize 工具断开 Bug |
@@ -285,6 +286,7 @@ updated: 2026-06-11
 | 8 | [`docs/bugfix/2026-06-11-Bugfix-ConfigGenerator-NetworkFallback-v1.0.md`](./bugfix/2026-06-11-Bugfix-ConfigGenerator-NetworkFallback-v1.0.md) | **无效网络兜底与 splithttp→xhttp 回退** — ConfigGenerator invalid network 改为回退 tcp，并补充 splithttp 遗留值映射 | — |
 | 9 | [`docs/bugfix/2026-06-11-Bugfix-ProxyListPanel-RefreshFreeze-v1.0.md`](./bugfix/2026-06-11-Bugfix-ProxyListPanel-RefreshFreeze-v1.0.md) | **大代理集批量测试后 UI 冻结修复** — 逐行 ValueChanged 风暴改为单次 listCtrl_->Refresh() | — |
 | 10 | [`docs/bugfix/2026-06-11-Bugfix-ProxyBatchTester-ZeroProxyEarlyReturn-v1.0.md`](./bugfix/2026-06-11-Bugfix-ProxyBatchTester-ZeroProxyEarlyReturn-v1.0.md) | **零代理批量测试 printSummary/stopAll 缺失修复** — run()/runWithSubId() 空代理分支补齐汇总与 Xray 清理 | — |
+| 11 | [`docs/bugfix/2026-06-12-Bugfix-ProxyBatchTester-Worker0-JoinTimeout-v1.0.md`](./bugfix/2026-06-12-Bugfix-ProxyBatchTester-Worker0-JoinTimeout-v1.0.md) | **首条代理 join 超时误告警修复** — 硬编码 5000ms 改为 `test_timeout_ms + 5000` 动态计算 | 38 lines |
 
 ---
 
@@ -346,10 +348,10 @@ updated: 2026-06-11
 
 | # | 文件 | 说明 | 大小 |
 |---|------|------|------|
-| 1 | [`docs/project-knowledge.md`](./project-knowledge.md) | **项目长期记忆** — 测试规范、错误级别分类、Google Test 规范、错误分析、三文档协同模型、工具模式、架构决策记录。内容与 AGENTS.md 和 `docs/` 文档不重复。 | 4.9 KB |
+| 1 | [`docs/project-knowledge.md`](./project-knowledge.md) | **项目长期记忆** — 测试规范、错误级别分类、Google Test 规范、错误分析、三文档协同模型、工具模式、架构决策记录、调试与稳定性规则（含 ASAN/UBSan/MiniDump/cppcheck/gcovr 用法、工具选择矩阵、Logger 深度调试）。内容与 AGENTS.md 和 `docs/` 文档不重复。 | 6.2 KB |
 
 **维护规则**: 会话结束时如有新的架构决策或跨模块知识，追加至 `docs/project-knowledge.md` §7 关键决策记录。
 
 ---
 
-*最后更新: 2026-06-04 | 维护者: Kilo AI*
+*最后更新: 2026-06-12 | 维护者: Kilo AI*
