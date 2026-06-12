@@ -102,7 +102,26 @@ ctest -R DedupTest -V
 
 ```
 
-### 4.2 CLI 工具参数速查表
+### 4.2 调试命令 (PowerShell 语法)
+
+```powershell
+# 1. Sanitizer 构建（拦截内存泄漏/越界/未定义行为）
+cmake -B build -G "Ninja" -DCMAKE_BUILD_TYPE=Debug -DENABLE_SANITIZERS=ON
+cmake --build build --parallel 8 && ctest -V
+
+# 2. 覆盖率构建
+cmake -B build -G "Ninja" -DCMAKE_BUILD_TYPE=Debug -DENABLE_COVERAGE=ON
+cmake --build build --parallel 8 && .\scripts\run_coverage.ps1
+
+# 3. 静态分析（cppcheck）
+.\scripts\run_static_analysis.ps1
+
+# 4. Logger 级别控制（在 bin/config.json 中设置）
+# log.file_level: "TRACE" | "DEBUG" | "INFO" | "REPORT" | "WARN" | "ERR"
+# log.network_failures: true  （网络失败日志从 INFO 降级为 TRACE）
+```
+
+### 4.3 CLI 工具参数速查表
 
 ```text
 -c, --config <path>         : 指定配置文件路径 (默认: bin/config.json)
@@ -159,6 +178,7 @@ ctest -R DedupTest -V
 | :--- | :--- | :--- |
 | `调整功能` / `开发功能` / `新增功能` / `重构` / `架构调整` / `修改行为` | **using-superpowers** |1. 严格检查是否**禁止了 `auto`**。<br>2. 优先通过读取 docs/INDEX.md 检索开发规范、历史技术规格设计文档（Spec）。<br>3. 在修改后将其更新至 `docs/plans/project-plans-tracker.md`。 |
 | `bug` / `修复` / `fix` / `异常` / `崩溃` / `错误` / `测试失败` / `故障` | **systematic-debugging** | 1. 启动根因分析（RCA）。 <br> 2. 明确指出受影响的模块文件（如 `XrayApi.cpp` ）。 <br> 3. 提供异常捕获加固方案，并输出修复日志到 `docs/bugfix/`。 |
+| `ASAN` / `sanitizer` / `调试` / `debug` / `dump` / `cppcheck` / `覆盖率` / `coverage` / `稳定性` / `MiniDump` | — | 1. 优先引用 **AGENTS.md §4.2** 获取调试命令速查。<br>2. 深度工作流（ASAN 输出解读 / dump 分析 / Logger 调优）参考 **project-knowledge.md §8**。 |
 | `计划` / `方案` / `制定计划` / `设计文档` / `design doc` / `spec` / `技术方案` | **writing-plans** | 1. 严格遵循产品/工程视角区分（PRD 与 Spec 隔离）。<br>2. 产出包含输入、输出、边界条件、前置条件的标准 Markdown。 |
 | `实现` / `编码` / `写代码` / `implement` | **test-driven-development** | 1. 强制要求在编写实现代码的同时，或之前，在 `tests/` 目录下提供 Google Test（`TEST_F`）测试用例。 |
 | `测试` / `test` / `单元测试` / `ctest` | **cmake-build** | 1. 执行 `cmake --build build` 编译。 <br> 2. 执行 `ctest -V` 运行全量测试。 |

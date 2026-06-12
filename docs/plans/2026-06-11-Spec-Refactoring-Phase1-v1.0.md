@@ -3,6 +3,9 @@ title: "重构方案 Phase 1 — 代码质量提升"
 type: spec
 status: draft
 date: 2026-06-11
+version: 1.1
+updated: 2026-06-12
+change: "Audit: 3 tasks already completed, 1 partial, 4 not started. Updated status table and task descriptions."
 ---
 
 # 重构方案 Phase 1 — 代码质量提升
@@ -23,18 +26,20 @@ date: 2026-06-11
 
 ---
 
-## Phase 1 范围
+## Phase 1 范围 — 实际状态审计 (2026-06-12)
 
-| 优先级 | 模块 | 问题 | 工作量 |
-|--------|------|------|--------|
-| P0 | 全局 | `auto` 违规修复 | 中 |
-| P0 | `Profileitem.h` | SQL 注入修复 (`getByIndexId`) | 小 |
-| P0 | `CurlEasyHandle.h` | 重复 `writeCallback` 删除 | 小 |
-| P1 | `ProxyFinder.h`/`ProxyTester.h` | 重复 `TestResult` 统一 | 小 |
-| P1 | `Profileitem.h`/`Subitem.h` | DAO 类移到 `.cpp` | 中 |
-| P1 | `Logger` | 全局状态重构为实例化接口 | 大 |
-| P2 | `SubitemUpdaterV2` | 拆分解耦 | 大 |
-| P2 | 构建系统 | 硬编码路径参数化 | 中 |
+> 经全量代码审查，以下为各任务的真实完成状态。
+
+| 优先级 | 模块 | 问题 | 工作量 | 实际状态 |
+|--------|------|------|--------|---------|
+| P0 | 全局 | `auto` 违规修复 | 中 | **❌ NOT_STARTED** — 13 处活跃违规 (src/SubitemDAO.cpp:65, tests/ 12处) |
+| P0 | `Profileitem.h` | SQL 注入修复 | 小 | **⚠️ PARTIAL** — `getByIndexId()` 已转参数化，仍有 3 处字符串拼接 (`deleteBySubId`, `updateSubitem`, `deleteById`) |
+| P0 | `CurlEasyHandle.h` | 重复 `writeCallback` 删除 | 小 | **✅ COMPLETED** — 仅存单一 `writeCallback(char*,...)` |
+| P1 | `ProxyFinder.h`/`ProxyTester.h` | 重复 `TestResult` 统一 | 小 | **✅ COMPLETED** — `include/TestResult.h` 已提取统一 |
+| P1 | `Profileitem.h`/`Subitem.h` | DAO 类移到 `.cpp` | 中 | **✅ COMPLETED** — `src/ProfileitemDAO.cpp` + `src/SubitemDAO.cpp` 已存在 |
+| P1 | `Logger` | 全局状态重构为实例化接口 | 大 | **❌ NOT_STARTED** — 全部 static；`enableConsoleOnly()` 仍为空实现 |
+| P2 | `SubitemUpdaterV2` | 拆分解耦 | 大 | **❌ NOT_STARTED** — 33 个方法，无拆分后类 |
+| P2 | 构建系统 | 硬编码路径参数化 | 中 | **❌ NOT_STARTED** — 21 处硬编码路径 (boost/vcpkg/gtest) |
 
 ---
 
@@ -42,7 +47,15 @@ date: 2026-06-11
 
 ### 1. `auto` 类型推导修复（P0）
 
-**问题**: 195 处 `auto` 违反 `AGENTS.md` 公约。分布在 21 个源文件中（`SubitemUpdaterV2.cpp` 36 处最严重）。
+**实际状态**: ❌ NOT_STARTED — 13 处活跃违规
+
+**问题**: `AGENTS.md` 禁止 `auto` 类型推导。当前剩余 13 处违规：
+- `src/SubitemDAO.cpp:65` — `auto esc = [](...)`
+- `tests/test_config_reader_load.cpp:248,261,273,286,299,308,320` — 7 处 `auto result = ConfigReader::load(...)`
+- `tests/test_logger.cpp:50,69,207,312` — 4 处 `auto entries = capture.entries()`
+- `tests/test_logger.cpp:175` — `auto testLevel = [](...)`
+
+不计入违规项（范围 for 的 `auto&`、字符串字面量 `"auto"`、注释）。
 
 **方案**: 用显式类型替代所有 `auto`。模式对照表：
 
@@ -56,7 +69,7 @@ date: 2026-06-11
 | `auto& obj = parsed.as_object()` | `boost::json::object& obj = parsed.as_object()` |
 | `auto [addr, port] = parseAddressPort(...)` | 拆分为两条语句 |
 
-**策略**: 按文件逐个修复，从依赖最少的文件开始（`Utils.cpp` → `ShareLink.cpp` → ... → `SubitemUpdaterV2.cpp`）。
+**策略**: 按文件逐个修复，从依赖最少的文件开始（`tests/` → `SubitemDAO.cpp`）。
 
 **风险**: 低。纯语法替换，不影响逻辑。
 

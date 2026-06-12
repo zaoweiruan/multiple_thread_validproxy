@@ -13,6 +13,27 @@ else()
     add_compile_options(-Wall -Wextra -pedantic -finput-charset=UTF-8 -fexec-charset=UTF-8)
 endif()
 
+# ===== Sanitizer options (Debug) =====
+option(ENABLE_SANITIZERS "Enable AddressSanitizer and UBSan" OFF)
+if(ENABLE_SANITIZERS AND NOT MSVC)
+    message(STATUS "Sanitizers enabled: AddressSanitizer, UndefinedBehaviorSanitizer")
+    add_compile_options(-fsanitize=address,undefined -fno-omit-frame-pointer)
+    add_link_options(-fsanitize=address,undefined)
+endif()
+
+set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -g3 -O0")
+
+# ===== Coverage options =====
+if(ENABLE_SANITIZERS AND ENABLE_COVERAGE)
+    message(FATAL_ERROR "ENABLE_SANITIZERS and ENABLE_COVERAGE conflict at link time. Enable only one.")
+endif()
+option(ENABLE_COVERAGE "Enable gcov coverage instrumentation" OFF)
+if(ENABLE_COVERAGE AND NOT MSVC)
+    message(STATUS "Coverage instrumentation enabled")
+    add_compile_options(--coverage)
+    add_link_options(--coverage)
+endif()
+
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
 include_directories(D:/boost_1_88_0/include)
 include_directories(E:/vcpkg/installed/x64-mingw-static/include)
@@ -29,6 +50,7 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/bin)
 
 # Shared core sources (compiled into both CLI and GUI targets)
 set(CORE_SOURCES
+    src/CrashHandler.cpp
     src/ConfigGenerator.cpp
     src/ConfigReader.cpp
     src/Logger.cpp
@@ -59,6 +81,7 @@ target_link_libraries(validproxy-cli PRIVATE
     CURL::libcurl
     E:/vcpkg/installed/x64-mingw-static/lib/libsqlite3.a
     D:/boost_1_88_0/lib/libboost_json-mgw14-mt-x64-1_88.a
+    -ldbghelp
 )
 
 # Force CLI output to bin (override global setting for tests)
@@ -131,6 +154,7 @@ if(wxWidgets_FOUND)
         CURL::libcurl
         E:/vcpkg/installed/x64-mingw-static/lib/libsqlite3.a
         D:/boost_1_88_0/lib/libboost_json-mgw14-mt-x64-1_88.a
+        -ldbghelp
     )
 
     # Link wxWidgets imported targets
