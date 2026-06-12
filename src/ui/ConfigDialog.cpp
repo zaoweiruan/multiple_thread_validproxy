@@ -142,7 +142,7 @@ void ConfigDialog::loadConfig(const config::AppConfig& cfg) {
     propGrid_->SetPropertyValue("accelerator_url", wxString(cfg.accelerator_url));
     // Set update_methods checkboxes
     bool hasAccel = false, hasProxy = false, hasDirect = false;
-    for (const auto& m : cfg.update_methods) {
+    for (const std::string& m : cfg.update_methods) {
         if (m == "accelerator") hasAccel = true;
         else if (m == "proxy") hasProxy = true;
         else if (m == "direct") hasDirect = true;

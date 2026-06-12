@@ -2,6 +2,7 @@
 #include "Logger.h"
 
 #include <ctime>
+#include <functional>
 
 // -------------------------------------------------------------------
 SubscriptionListModel::SubscriptionListModel() = default;
@@ -57,7 +58,7 @@ void SubscriptionListModel::GetValueByRow(wxVariant& variant, unsigned int row, 
         variant = wxVariant("");
         return;
     }
-    const auto& sub = (*subscriptions_)[row];
+    const db::models::Subitem& sub = (*subscriptions_)[row];
     switch (col) {
         case SUB_COL_ROWNUM:
             variant = wxVariant(wxString::Format("%u", row + 1));
@@ -71,7 +72,7 @@ void SubscriptionListModel::GetValueByRow(wxVariant& variant, unsigned int row, 
         case SUB_COL_VALID: {
             int count = 0;
             if (validProxyCounts_) {
-                auto it = validProxyCounts_->find(sub.id);
+                std::unordered_map<std::string, int>::const_iterator it = validProxyCounts_->find(sub.id);
                 if (it != validProxyCounts_->end()) count = it->second;
             }
             variant = wxVariant(wxString::Format("%d", count));
@@ -80,7 +81,7 @@ void SubscriptionListModel::GetValueByRow(wxVariant& variant, unsigned int row, 
         case SUB_COL_PROXIES: {
             int count = 0;
             if (proxyCounts_) {
-                auto it = proxyCounts_->find(sub.id);
+                std::unordered_map<std::string, int>::const_iterator it = proxyCounts_->find(sub.id);
                 if (it != proxyCounts_->end()) count = it->second;
             }
             variant = wxVariant(wxString::Format("%d", count));
@@ -150,8 +151,8 @@ int SubscriptionListModel::Compare(const wxDataViewItem& item1,
     if (idx1 >= subscriptions_->size() || idx2 >= subscriptions_->size())
         return 0;
 
-    const auto& a = (*subscriptions_)[idx1];
-    const auto& b = (*subscriptions_)[idx2];
+    const db::models::Subitem& a = (*subscriptions_)[idx1];
+    const db::models::Subitem& b = (*subscriptions_)[idx2];
 
     int cmp = 0;
     switch (col) {
@@ -161,8 +162,8 @@ int SubscriptionListModel::Compare(const wxDataViewItem& item1,
         case SUB_COL_VALID: {
             int countA = 0, countB = 0;
             if (validProxyCounts_) {
-                auto itA = validProxyCounts_->find(a.id);
-                auto itB = validProxyCounts_->find(b.id);
+                std::unordered_map<std::string, int>::const_iterator itA = validProxyCounts_->find(a.id);
+                std::unordered_map<std::string, int>::const_iterator itB = validProxyCounts_->find(b.id);
                 if (itA != validProxyCounts_->end()) countA = itA->second;
                 if (itB != validProxyCounts_->end()) countB = itB->second;
             }
@@ -172,8 +173,8 @@ int SubscriptionListModel::Compare(const wxDataViewItem& item1,
         case SUB_COL_PROXIES: {
             int countA = 0, countB = 0;
             if (proxyCounts_) {
-                auto itA = proxyCounts_->find(a.id);
-                auto itB = proxyCounts_->find(b.id);
+                std::unordered_map<std::string, int>::const_iterator itA = proxyCounts_->find(a.id);
+                std::unordered_map<std::string, int>::const_iterator itB = proxyCounts_->find(b.id);
                 if (itA != proxyCounts_->end()) countA = itA->second;
                 if (itB != proxyCounts_->end()) countB = itB->second;
             }
@@ -181,7 +182,7 @@ int SubscriptionListModel::Compare(const wxDataViewItem& item1,
             break;
         }
         case SUB_COL_UPDATE: {
-            auto getTimestamp = [](const std::string& ts) -> long long {
+            std::function<long long(const std::string&)> getTimestamp = [](const std::string& ts) -> long long {
                 if (ts.empty() || ts == "0") return -1;
                 try { return std::stoll(ts); } catch (...) { return -1; }
             };
@@ -191,7 +192,7 @@ int SubscriptionListModel::Compare(const wxDataViewItem& item1,
             break;
         }
         case SUB_COL_ID: {
-            auto toNum = [](const std::string& s) -> long long {
+            std::function<long long(const std::string&)> toNum = [](const std::string& s) -> long long {
                 try { return std::stoll(s); } catch (...) { return -1; }
             };
             long long nA = toNum(a.id);

@@ -163,6 +163,9 @@ MainFrame::MainFrame(const config::AppConfig& cfg, sqlite3* db)
         if (evt.isCompleted() && proxyPanel_) {
             proxyPanel_->refreshResults();
         }
+        if (evt.isCompleted() && subPanel_) {
+            subPanel_->loadSubscriptions();
+        }
         if (evt.isCompleted()) {
             setOperationState(OperationType::NONE);
             setStatusText(0, "Test completed");
@@ -224,7 +227,7 @@ Bind(wxEVT_SUB_LIST_LOADED, [this](SubListLoadedEvent& evt) {
        Bind(wxEVT_PROXY_SELECTION, [this](ProxySelectionEvent& evt) {
            if (detailPanel_ && controller_) {
                // Get full proxy data from controller for advanced fields
-               auto proxyOpt = controller_->getProxyByIndexId(evt.getIndexId());
+               std::optional<db::models::Profileitem> proxyOpt = controller_->getProxyByIndexId(evt.getIndexId());
                const db::models::Profileitem* proxy = proxyOpt.has_value() ? &*proxyOpt : nullptr;
                
                detailPanel_->UpdateDetail(
@@ -598,9 +601,11 @@ void MainFrame::onMenuDedup(wxCommandEvent&) {
 }
 
 void MainFrame::onMenuExportShareLink(wxCommandEvent&) {
-    auto [ok, count, filename] = controller_->exportShareLinks();
+    std::tuple<bool, int, std::string> exportResult = controller_->exportShareLinks();
+    bool ok = std::get<0>(exportResult);
+    int count = std::get<1>(exportResult);
     if (ok && count > 0) {
-        setStatusText(0, wxString::Format("导出%d个有效代理至文件%s", count, filename));
+        setStatusText(0, wxString::Format("导出%d个有效代理至文件%s", count, std::get<2>(exportResult)));
     } else if (ok) {
         setStatusText(0, "没有有效代理可导出。");
     } else {

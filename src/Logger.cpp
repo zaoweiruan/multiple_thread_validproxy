@@ -34,7 +34,7 @@ void Logger::init(const std::string& logDir, const std::string& prefix, LogLevel
         std::filesystem::create_directory(dir);
     }
     
-    auto now = std::chrono::system_clock::now();
+    std::chrono::system_clock::time_point now = std::chrono::system_clock::now();
     time_t t = std::chrono::system_clock::to_time_t(now);
     char timestamp[32];
     strftime(timestamp, sizeof(timestamp), "%Y%m%d_%H%M%S", localtime(&t));
@@ -51,7 +51,7 @@ void Logger::write(const std::string& msg) {
 void Logger::write(const std::string& msg, LogLevel level) {
     std::lock_guard<std::mutex> lock(mutex_);
     
-    auto now = std::chrono::system_clock::now();
+    std::chrono::system_clock::time_point now = std::chrono::system_clock::now();
     time_t t = std::chrono::system_clock::to_time_t(now);
     char timestamp[32];
     strftime(timestamp, sizeof(timestamp), "%Y-%m-%d %H:%M:%S", localtime(&t));
@@ -120,7 +120,7 @@ void Logger::writeTimestamp(const std::string& msg) {
 void Logger::writeTimestamp(const std::string& msg, LogLevel level) {
     std::lock_guard<std::mutex> lock(mutex_);
     
-    auto now = std::chrono::system_clock::now();
+    std::chrono::system_clock::time_point now = std::chrono::system_clock::now();
     time_t t = std::chrono::system_clock::to_time_t(now);
     char timestamp[32];
     strftime(timestamp, sizeof(timestamp), "%Y-%m-%d %H:%M:%S", localtime(&t));
@@ -237,7 +237,7 @@ std::string Logger::levelToString(LogLevel level) {
 
 LogLevel Logger::stringToLevel(const std::string& str) {
     std::string s = str;
-    for (auto& c : s) c = std::tolower(c);
+    for (char& c : s) c = std::tolower(c);
     
     // Remove "log_" prefix if present (e.g., "log_error" → "error")
     if (s.size() > 4 && s.substr(0, 4) == "log_") {

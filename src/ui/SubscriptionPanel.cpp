@@ -69,8 +69,14 @@ SubscriptionPanel::SubscriptionPanel(wxWindow* parent, AppController* controller
     // Connect toggle event - persist enabled state to database
     listCtrl_->Bind(wxEVT_DATAVIEW_ITEM_VALUE_CHANGED, [this](wxDataViewEvent& event) {
         int row = wxPtrToUInt(event.GetItem().GetID()) - 1;
-        if (row >= 0 && row < (int)subs_.size()) {
-            // Model already updated by SetValueByRow, just persist to database
+        if (row == 0) {
+            wxVariant restore(true);
+            model_->SetValueByRow(restore, 0, SUB_COL_ENABLED);
+            listCtrl_->Refresh();
+            event.Skip();
+            return;
+        }
+        if (row > 0 && row < static_cast<int>(subs_.size())) {
             if (controller_) {
                 wxVariant val;
                 event.GetModel()->GetValue(val, event.GetItem(), 1);
@@ -84,10 +90,45 @@ SubscriptionPanel::SubscriptionPanel(wxWindow* parent, AppController* controller
     listCtrl_->Bind(wxEVT_DATAVIEW_COLUMN_HEADER_CLICK, &SubscriptionPanel::onColumnHeaderClick, this);
 }
 
+static const std::string ALL_SUBSCRIPTION_ID = "";
+
 void SubscriptionPanel::updateSubscriptionList(const std::vector<db::models::Subitem>& subs,
                                                  const std::unordered_map<std::string, int>& proxyCounts) {
     subs_ = subs;
     proxyCounts_ = proxyCounts;
+    validProxyCounts_ = validProxyCounts_;
+
+    std::vector<db::models::Subitem> displaySubs;
+    std::unordered_map<std::string, int> displayProxyCounts;
+    std::unordered_map<std::string, int> displayValidCounts;
+
+    db::models::Subitem allItem;
+    allItem.id = ALL_SUBSCRIPTION_ID;
+    allItem.remarks = "全部";
+    allItem.enabled = "1";
+    allItem.url = "";
+    allItem.updatetime = "";
+    displaySubs.push_back(allItem);
+
+    int totalProxies = 0;
+    int totalValid = 0;
+    for (const auto& kv : proxyCounts_) {
+        totalProxies += kv.second;
+    }
+    for (const auto& kv : validProxyCounts_) {
+        totalValid += kv.second;
+    }
+    displayProxyCounts[ALL_SUBSCRIPTION_ID] = totalProxies;
+    displayValidCounts[ALL_SUBSCRIPTION_ID] = totalValid;
+    for (const auto& sub : subs_) {
+        displaySubs.push_back(sub);
+        displayProxyCounts[sub.id] = proxyCounts_.count(sub.id) ? proxyCounts_[sub.id] : 0;
+        displayValidCounts[sub.id] = validProxyCounts_.count(sub.id) ? validProxyCounts_[sub.id] : 0;
+    }
+
+    subs_ = displaySubs;
+    proxyCounts_ = displayProxyCounts;
+    validProxyCounts_ = displayValidCounts;
     model_->setData(&subs_, &proxyCounts_, &validProxyCounts_);
     model_->Reset(0);
     model_->Reset(static_cast<unsigned int>(subs_.size()));
@@ -95,10 +136,10 @@ void SubscriptionPanel::updateSubscriptionList(const std::vector<db::models::Sub
 }
 
 void SubscriptionPanel::loadSubscriptions() {
-    auto subs = controller_->loadSubscriptions();
+    std::vector<db::models::Subitem> subs = controller_->loadSubscriptions();
 
     // Single efficient GROUP BY query for all proxy counts instead of N+1 full-table scans
-    auto proxyCounts = controller_->countProxiesBySubId();
+    std::unordered_map<std::string, int> proxyCounts = controller_->countProxiesBySubId();
     validProxyCounts_ = controller_->countValidProxiesBySubId();
 
     updateSubscriptionList(subs, proxyCounts);
@@ -142,18 +183,17 @@ std::string SubscriptionPanel::getSelectedSubId() const {
 }
 
 void SubscriptionPanel::onSelectionChanged(wxDataViewEvent& event) {
-    std::string subId = getSelectedSubId();
-    if (!subId.empty()) {
-        // Notify parent frame to load proxies for this subscription
-        // Use wxGetTopLevelParent instead of GetParent() because this panel
-        // is now parented to centerPanel (wxAui wrapper), not MainFrame directly
-        wxWindow* topLevel = wxGetTopLevelParent(this);
-        if (topLevel) {
-            SubscriptionSelectedEvent evt(subId);
-            wxPostEvent(topLevel, evt);
-        }
+    (void)event;
+    wxDataViewItem sel = listCtrl_->GetSelection();
+    if (!sel.IsOk()) return;
+    int row = wxPtrToUInt(sel.GetID()) - 1;
+    if (row < 0 || row >= (int)subs_.size()) return;
+    std::string subId = subs_[row].id;
+    wxWindow* topLevel = wxGetTopLevelParent(this);
+    if (topLevel) {
+        SubscriptionSelectedEvent evt(subId);
+        wxPostEvent(topLevel, evt);
     }
-    (void)event; // Suppress unused parameter warning
 }
 
 void SubscriptionPanel::onContextMenu(wxDataViewEvent&) {
@@ -190,7 +230,7 @@ void SubscriptionPanel::onEditSubscription(wxCommandEvent&) {
     }
     std::string subId = getSelectedSubId();
     if (subId.empty()) return;
-    for (const auto& sub : subs_) {
+    for (const db::models::Subitem& sub : subs_) {
         if (sub.id == subId) {
             showEditDialog(sub);
             break;
@@ -206,7 +246,7 @@ void SubscriptionPanel::onDeleteSubscription(wxCommandEvent&) {
     std::string subId = getSelectedSubId();
     if (subId.empty()) return;
     std::string remarks;
-    for (const auto& sub : subs_) {
+    for (const db::models::Subitem& sub : subs_) {
         if (sub.id == subId) { remarks = sub.remarks; break; }
     }
     if (confirmDelete(subId, remarks)) {

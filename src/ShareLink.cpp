@@ -112,10 +112,10 @@ std::string ShareLink::urlEncode(const std::string& str) {
 std::string ShareLink::buildQueryString(const std::map<std::string, std::string>& params) {
     std::ostringstream oss;
     bool first = true;
-    for (const auto& [key, value] : params) {
-        if (!value.empty()) {
+    for (const std::pair<const std::string, std::string>& entry : params) {
+        if (!entry.second.empty()) {
             if (!first) oss << "&";
-            oss << urlEncode(key) << "=" << urlEncode(value);
+            oss << urlEncode(entry.first) << "=" << urlEncode(entry.second);
             first = false;
         }
     }

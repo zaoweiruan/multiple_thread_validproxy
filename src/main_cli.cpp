@@ -106,7 +106,7 @@ static int runDefaultTest(const std::string& configPath, const std::string& exeD
     // Init Logger before config loading, so config load errors are visible
     Logger::init(logDir.string(), logMode);
 
-    auto appConfig = config::ConfigReader::load(configPath);
+    std::optional<config::AppConfig> appConfig = config::ConfigReader::load(configPath);
     if (!appConfig) {
         logError("Failed to load config from: " + configPath);
         Logger::close();
@@ -127,7 +127,7 @@ static int runDefaultTest(const std::string& configPath, const std::string& exeD
     logInfo("Workers: " + std::to_string(numWorkers));
     logInfo("Start port: " + std::to_string(startPort));
 
-    auto startTime = std::chrono::system_clock::now();
+    std::chrono::system_clock::time_point startTime = std::chrono::system_clock::now();
     time_t startTimeT = std::chrono::system_clock::to_time_t(startTime);
     char startTimeStr[32];
     strftime(startTimeStr, sizeof(startTimeStr), "%Y-%m-%d %H:%M:%S", localtime(&startTimeT));
@@ -309,7 +309,7 @@ int main(int argc, char* argv[]) {
     
     if (commandMode == "generator") {
         Logger::init(logDir.string(), commandMode);
-        auto appConfig = config::ConfigReader::load(configPath);
+        std::optional<config::AppConfig> appConfig = config::ConfigReader::load(configPath);
         if (!appConfig) {
             logError("Failed to load config from: " + configPath);
             Logger::close();
@@ -328,7 +328,7 @@ int main(int argc, char* argv[]) {
         }
 
         db::models::ProfileitemDAO profileDao(db);
-        auto profileOpt = profileDao.getByIndexId(generatorIndexId);
+        std::optional<db::models::Profileitem> profileOpt = profileDao.getByIndexId(generatorIndexId);
 
         if (!profileOpt) {
             logError("Profile not found: " + generatorIndexId);
@@ -338,7 +338,7 @@ int main(int argc, char* argv[]) {
         }
 
         config::ConfigGenerator configGen(db);
-        auto config = configGen.generateConfig(*profileOpt);
+        config::XrayConfig config = configGen.generateConfig(*profileOpt);
 
         std::cout << "\n=== Generated Outbound JSON ===" << std::endl;
         std::cout << config.outbound_json << std::endl;
@@ -362,7 +362,7 @@ int main(int argc, char* argv[]) {
     if (commandMode == "show-sub") {
         Logger::init(logDir.string(), commandMode);
         
-        auto appConfig = config::ConfigReader::load(configPath);
+        std::optional<config::AppConfig> appConfig = config::ConfigReader::load(configPath);
         if (!appConfig) {
             logError("Failed to load config from: " + configPath);
             Logger::close();
@@ -381,13 +381,13 @@ int main(int argc, char* argv[]) {
         }
         
         db::models::SubitemDAO subDao(db);
-        auto subs = subDao.getAll();
+        std::vector<db::models::Subitem> subs = subDao.getAll();
         
         std::cout << "\n=== Subscriptions ===" << std::endl;
         std::cout << "remarks                                    | id                    | url                                               | 代理数 | 启用\n";
         std::cout << "-----------------------------------------+-----------------------+---------------------------------------------------+--------+----\n";
         
-        for (const auto& sub : subs) {
+        for (const db::models::Subitem& sub : subs) {
             std::string remarks = sub.remarks;
             std::string id = sub.id;
             std::string url = sub.url;
@@ -429,7 +429,9 @@ int main(int argc, char* argv[]) {
         };
         
         int totalCount = 0;
-        for (const auto& [type, desc] : typeCounts) {
+        for (const std::pair<int, std::string>& typeCountEntry : typeCounts) {
+            int type = typeCountEntry.first;
+            const std::string& desc = typeCountEntry.second;
             std::string sql = "SELECT COUNT(*) FROM ProfileItem WHERE ConfigType = " + std::to_string(type);
             sqlite3_stmt* stmt2 = nullptr;
             int count =0;
@@ -455,7 +457,7 @@ int main(int argc, char* argv[]) {
     if (commandMode == "find-proxy" || commandMode == "findminproxy") {
         Logger::init(logDir.string(), commandMode);
         
-        auto appConfig = config::ConfigReader::load(configPath);
+        std::optional<config::AppConfig> appConfig = config::ConfigReader::load(configPath);
         if (!appConfig) {
             logError("Failed to load config from: " + configPath);
             Logger::close();
@@ -497,7 +499,7 @@ int main(int argc, char* argv[]) {
         }
         
         if (ports.first > 0) {
-            auto res = finder.getLastResult();
+            TestResult res = finder.getLastResult();
             std::cout << "\n=== Working Proxy ===" << std::endl;
             std::cout << "IndexId: " << res.indexId << std::endl;
             std::cout << "Address: " << res.address << ":" << res.port << std::endl;
@@ -520,7 +522,7 @@ int main(int argc, char* argv[]) {
     if (commandMode == "tourl") {
         Logger::init(logDir.string(), commandMode);
         
-        auto appConfig = config::ConfigReader::load(configPath);
+        std::optional<config::AppConfig> appConfig = config::ConfigReader::load(configPath);
         if (!appConfig) {
             logError("Failed to load config from: " + configPath);
             Logger::close();
@@ -549,12 +551,12 @@ int main(int argc, char* argv[]) {
             ORDER BY CAST(pe.Delay AS INTEGER) ASC
         )";
         
-        auto profiles = profileDao.getAll(sql);
+        std::vector<db::models::Profileitem> profiles = profileDao.getAll(sql);
         std::cout << "Found " << profiles.size() << " proxies with delay > 0" << std::endl;
         
         std::string output;
-        for (const auto& profile : profiles) {
-            auto link = share::ShareLink::toShareUri(
+        for (const db::models::Profileitem& profile : profiles) {
+            std::string link = share::ShareLink::toShareUri(
                 profile.configtype,
                 profile.address,
                 profile.port,
@@ -609,7 +611,7 @@ int main(int argc, char* argv[]) {
     if (commandMode == "sync") {
         Logger::init(logDir.string(), commandMode);
         
-        auto appConfig = config::ConfigReader::load(configPath);
+        std::optional<config::AppConfig> appConfig = config::ConfigReader::load(configPath);
         if (!appConfig) {
             logError("Failed to load config from: " + configPath);
             Logger::close();
@@ -650,7 +652,7 @@ int main(int argc, char* argv[]) {
         
         sqlite3* db = nullptr;
         
-        auto appConfig = config::ConfigReader::load(configPath);
+        std::optional<config::AppConfig> appConfig = config::ConfigReader::load(configPath);
         if (!appConfig) {
             logError("Failed to load config from: " + configPath);
             Logger::close();
@@ -694,7 +696,7 @@ int main(int argc, char* argv[]) {
     if (commandMode == "dedup") {
         Logger::init(logDir.string(), commandMode);
         
-        auto appConfig = config::ConfigReader::load(configPath);
+        std::optional<config::AppConfig> appConfig = config::ConfigReader::load(configPath);
         if (!appConfig) {
             logError("Failed to load config from: " + configPath);
             Logger::close();
@@ -729,7 +731,7 @@ int main(int argc, char* argv[]) {
     if (!singleSubId.empty()) {
         Logger::init(logDir.string(), commandMode.empty() ? "test" : commandMode);
         
-        auto appConfig = config::ConfigReader::load(configPath);
+        std::optional<config::AppConfig> appConfig = config::ConfigReader::load(configPath);
         if (!appConfig) {
             logError("Failed to load config from: " + configPath);
             Logger::close();

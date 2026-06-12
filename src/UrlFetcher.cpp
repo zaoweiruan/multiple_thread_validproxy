@@ -24,7 +24,7 @@ std::string UrlFetcher::fetch(const std::string& url) {
 
 std::string UrlFetcher::fetchViaProxy(const std::string& url, int socksPort) {
     if (tester_) {
-        auto result = tester_->test(socksPort);
+        TestResult result = tester_->test(socksPort);
         if (!result.success) {
             return "";
         }

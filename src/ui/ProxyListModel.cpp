@@ -48,7 +48,7 @@ void ProxyListModel::rebuildMaps() {
 
     if (!exItems_) return;
 
-    for (const auto& ex : *exItems_) {
+    for (const db::models::ProfileExItem& ex : *exItems_) {
         delayMap_[ex.indexid] = ex.delay;
         messageMap_[ex.indexid] = ex.message;
         failuresMap_[ex.indexid] = ex.consecutive_failures;
@@ -130,7 +130,7 @@ void ProxyListModel::GetValueByRow(wxVariant& variant, unsigned int row,
         return;
     }
 
-    const auto& p = (*proxies_)[dataIdx];
+    const db::models::Profileitem& p = (*proxies_)[dataIdx];
     const std::string& idx = p.indexid;
 
     switch (col) {
@@ -147,12 +147,12 @@ void ProxyListModel::GetValueByRow(wxVariant& variant, unsigned int row,
             variant = wxVariant(p.port);
             break;
         case COL_DELAY: {
-            auto it = delayMap_.find(idx);
+            std::unordered_map<std::string, std::string>::const_iterator it = delayMap_.find(idx);
             variant = wxVariant(it != delayMap_.end() ? it->second : "-");
             break;
         }
         case COL_FAILURES: {
-            auto it = failuresMap_.find(idx);
+            std::unordered_map<std::string, int>::const_iterator it = failuresMap_.find(idx);
             variant = wxVariant(std::to_string(it != failuresMap_.end() ? it->second : 0));
             break;
         }
@@ -160,7 +160,7 @@ void ProxyListModel::GetValueByRow(wxVariant& variant, unsigned int row,
             variant = wxVariant(p.remarks);
             break;
         case COL_MESSAGE: {
-            auto it = messageMap_.find(idx);
+            std::unordered_map<std::string, std::string>::const_iterator it = messageMap_.find(idx);
             variant = wxVariant(it != messageMap_.end() ? it->second : "");
             break;
         }
@@ -209,8 +209,8 @@ int ProxyListModel::Compare(const wxDataViewItem& item1,
     if (idx1 >= proxies_->size() || idx2 >= proxies_->size())
         return 0;
 
-    const auto& a = (*proxies_)[idx1];
-    const auto& b = (*proxies_)[idx2];
+    const db::models::Profileitem& a = (*proxies_)[idx1];
+    const db::models::Profileitem& b = (*proxies_)[idx2];
 
     int cmp = 0;
     switch (col) {
@@ -229,8 +229,8 @@ int ProxyListModel::Compare(const wxDataViewItem& item1,
             break;
         case COL_DELAY: {
             int dA = 0, dB = 0;
-            auto itA = delayMap_.find(a.indexid);
-            auto itB = delayMap_.find(b.indexid);
+            std::unordered_map<std::string, std::string>::const_iterator itA = delayMap_.find(a.indexid);
+            std::unordered_map<std::string, std::string>::const_iterator itB = delayMap_.find(b.indexid);
             if (itA != delayMap_.end()) {
                 try { dA = std::stoi(itA->second); } catch (...) { }
             }
@@ -242,8 +242,8 @@ int ProxyListModel::Compare(const wxDataViewItem& item1,
         }
         case COL_FAILURES: {
             int fA = 0, fB = 0;
-            auto itA = failuresMap_.find(a.indexid);
-            auto itB = failuresMap_.find(b.indexid);
+            std::unordered_map<std::string, int>::const_iterator itA = failuresMap_.find(a.indexid);
+            std::unordered_map<std::string, int>::const_iterator itB = failuresMap_.find(b.indexid);
             if (itA != failuresMap_.end()) fA = itA->second;
             if (itB != failuresMap_.end()) fB = itB->second;
             cmp = (fA > fB) - (fA < fB);
@@ -251,8 +251,8 @@ int ProxyListModel::Compare(const wxDataViewItem& item1,
         }
         case COL_MESSAGE: {
             std::string mA, mB;
-            auto itA = messageMap_.find(a.indexid);
-            auto itB = messageMap_.find(b.indexid);
+            std::unordered_map<std::string, std::string>::const_iterator itA = messageMap_.find(a.indexid);
+            std::unordered_map<std::string, std::string>::const_iterator itB = messageMap_.find(b.indexid);
             if (itA != messageMap_.end()) mA = itA->second;
             if (itB != messageMap_.end()) mB = itB->second;
             cmp = mA.compare(mB);
@@ -314,19 +314,19 @@ std::string ProxyListModel::getIndexIdAtRow(unsigned int viewRow) const {
 
 // -------------------------------------------------------------------
 std::string ProxyListModel::getDelay(const std::string& indexId) const {
-    auto it = delayMap_.find(indexId);
+    std::unordered_map<std::string, std::string>::const_iterator it = delayMap_.find(indexId);
     return it != delayMap_.end() ? it->second : "";
 }
 
 // -------------------------------------------------------------------
 std::string ProxyListModel::getMessage(const std::string& indexId) const {
-    auto it = messageMap_.find(indexId);
+    std::unordered_map<std::string, std::string>::const_iterator it = messageMap_.find(indexId);
     return it != messageMap_.end() ? it->second : "";
 }
 
 // -------------------------------------------------------------------
 int ProxyListModel::getFailures(const std::string& indexId) const {
-    auto it = failuresMap_.find(indexId);
+    std::unordered_map<std::string, int>::const_iterator it = failuresMap_.find(indexId);
     return it != failuresMap_.end() ? it->second : 0;
 }
 

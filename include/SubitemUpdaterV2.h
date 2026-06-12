@@ -76,6 +76,7 @@ private:
     int deduplicatePhase1();
     int deduplicateMergedPhase();
     int deduplicateBlacklistPhase();  // Move proxies with consecutive_failures >= threshold to blacklist subid
+    int deduplicateConfigErrorPhase();  // Remove proxies failing checkRequired()
     void cleanupProfileExItem();
     
     bool shouldSkipUpdate(const db::models::Subitem& sub) const;

@@ -1,32 +1,38 @@
 ---
 title: "docs: Project Plans Tracker — global plan index and progress tracker"
 type: docs
-status: in_progress
+status: maintained
 date: 2026-05-11
-origin: "Continuation of project memory consolidation task"
+updated: 2026-06-11
 ---
 
 # Project Plans Tracker
 
-## Status: In Progress
+> **只记录文档引用，不记录修改、修复、操作等具体操作条目。**
+> 替代旧有逐条状态更新写法；只保留文档路径和摘要说明。
 
-> 📝 **2026-06-09** — Config validation improvements plan created. See `docs/plans/2026-06-09-config-validation-improvements-plan.md`.
-> 📝 **2026-06-09** — ConfigReader::load() 弹窗修复 (double-popup bug). See `docs/bugfix/2026-06-09-configreader-load-error-popup-fix.md`.
-> 📝 **2026-06-09** — Resizable splitter implemented for subscription/proxy panels. See `docs/plans/2026-06-09-feat-ui-resizable-splitter-v1.0.md`.
-> 📝 **2026-06-04** — #27 SubitemUpdaterV2 hardcoded `"bin/config"` path fix → ✅ completed. See `docs/bugfix/2026-06-04-subitemupdater-hardcoded-binconfig-path.md`.
-> 📝 **2026-05-19** — 批量状态更新: P4→❌ cancelled; 003→✅ completed; DLL fix→✅ completed; libpng16d/libtiffd fix→✅ completed; consolidated-ui-fixes→✅ completed; 007 frontmatter repaired.
+---
 
-## Completed Items
+## 近期文档引用
 
-### Plan Document Consolidation
-- [x] All 20+ plan documents migrated to `docs/plans/`
-- [x] Plan 003 (standardize-proxy-test-error-levels) marked `superseded` by merge plan
-- [x] Plan 012 (fix-log-level-mismatches-from-audit) marked `superseded` by merge plan
-- [x] Plan 004 (cleanup-dead-config-fields) — completed in commit `709972e`, frontmatter added
-- [x] Plan 013 reference updated (was in plan 013 doc, now in merge plan)
-- [x] DEV-PROCESS.md created with 7-step workflow
+| 日期 | 类型 | 文档路径 | 说明 |
+|------|------|----------|------|
+| 2026-06-11 | bugfix | `docs/bugfix/2026-06-11-Bugfix-ProxyBatchTester-ZeroProxyEarlyReturn-v1.0.md` | 批量测试零代理时 printSummary/stopAll 缺失修复 |
+| 2026-06-11 | bugfix | `docs/bugfix/2026-06-11-Bugfix-ProxyListPanel-RefreshFreeze-v1.0.md` | 大代理集测试后 UI 冻结修复 |
+| 2026-06-11 | bugfix | `docs/plans/2026-06-11-Spec-ProxyFinder-findWorkingProxy-bug.md` | ProxyFinder::findWorkingProxy 返回端口时未重新注入代理 |
+| 2026-06-11 | bugfix | `docs/bugfix/2026-06-11-Bugfix-ConfigGenerator-NetworkFallback-v1.0.md` | 无效网络兜底与 splithttp→xhttp 回退 |
+| 2026-06-09 | plan | `docs/plans/2026-06-09-config-validation-improvements-plan.md` | Config validation improvements |
+| 2026-06-09 | bugfix | `docs/bugfix/2026-06-09-configreader-load-error-popup-fix.md` | ConfigReader load double-popup fix |
+| 2026-06-09 | plan | `docs/plans/2026-06-09-feat-ui-resizable-splitter-v1.0.md` | Resizable splitter |
+| 2026-06-04 | bugfix | `docs/bugfix/2026-06-04-subitemupdater-hardcoded-binconfig-path.md` | SubitemUpdaterV2 hardcoded path fix |
+| 2026-06-11 | spec | `docs/plans/2026-06-11-Spec-Refactoring-Phase1-v1.0.md` | Phase 1 代码质量提升重构方案（auto 修复 / SQL 注入 / Logger / DAO 拆分） |
+| 2026-05-19 | — | 批量状态更新 | P4→❌ cancelled; 003->completed; DLL fix->completed |
 
-### Log Level Standardization (Merge Plan — Completed)
+---
+
+*项目全量文档索引见 `docs/INDEX.md`*
+
+---
 - [x] U1: `ProxyBatchTester.cpp` — 4× `LogLevel::WARN` added for boundary conditions
 - [x] U1: `ProxyBatchTester.cpp` — 4× `LogLevel::INFO` replaced REPORT (xray lifecycle + network)
 - [x] U2: `SubitemUpdaterV2.cpp` — sync failure summary log added (`LogLevel::ERR`)
@@ -35,7 +41,7 @@ origin: "Continuation of project memory consolidation task"
 - [x] U5: `ConfigGenerator.cpp` — 4× missing `LogLevel` params added (2×INFO, 2×WARN)
 - [x] U6: Residual `std::cerr`/`std::cout` removed from `ProxyBatchTester.cpp`
 
-### Notification Config (Plan 009 — Completed)
+---
 - [x] `bin/config.json` notification block has `enabled`/`on_update`/`on_test`
 - [x] `bin/worker/config_test.json` notification block complete
 - [x] `bin/test_config.json` notification block added
@@ -97,12 +103,18 @@ origin: "Continuation of project memory consolidation task"
 | 20 | 2026-06-02 | SubscriptionPanel missing detectIdOffset after sort clear | ✅ completed |
 | 21 | 2026-06-02 | PortManager clearPorts() for port leak fix | ✅ completed |
 | 22 | 2026-06-03 | Subscription timeout config - curl CONNECTTIMEOUT + config.json | ✅ completed |
-| 23 | 2026-06-03 | Network field improvements - splithttp→xhttp mapping | ✅ completed |
+| 23 | 2026-06-03 | Network field improvements - splithttp→xhttp mapping (frontend parse) | ✅ completed |
 | 24 | 2026-06-03 | UI improvements - dialog centering + copyable text | ✅ completed |
 | 25 | 2026-06-03 | Proxy context menu disabled during operations | ✅ completed |
 | 26 | 2026-06-03 | Config dialog improvements - block DB switch during ops | ✅ completed |
 | 27 | 2026-06-04 | SubitemUpdaterV2 hardcoded `"bin/config"` path fallback fix | ✅ completed |
-| 28 | 2026-06-09 | Resizable horizontal splitter for subscription/proxy panels | ✅ completed |
+| 32 | 2026-06-11 | Zero-proxy run must call printSummary/stopAll on early return; cleared redundant guard in worker entry | ✅ completed |
+| 33 | 2026-06-11 | ProxyListPanel refreshResults freeze — drop per-row ValueChanged storm, use listCtrl_->Refresh() | ✅ completed |
+| 34 | 2026-06-11 | ConfigGenerator invalid-network fallback — defaults to tcp instead of skipping; added splithttp→xhttp mapping | ✅ completed |
+| 28 | 2026-06-11 | Zero-proxy run guard: run()/runWithSubId() early-return must call printSummary() before return; removed totalProxies_==0 early-return from testProxiesMultiThreaded() as redundant | ✅ completed |
+| 29 | 2026-06-11 | ProxyListPanel refreshResults(): replace per-row ValueChanged storm with listCtrl_->Refresh() to prevent UI freeze on large proxy sets | ✅ completed |
+| 30 | 2026-06-11 | ConfigGenerator::loadProfiles(): invalid network defaults to tcp instead of skipping; added splithttp→xhttp mapping as fallback after frontend conversion | ✅ completed |
+| 31 | 2026-06-09 | Resizable horizontal splitter for subscription/proxy panels | ✅ completed |
 
 ---
 

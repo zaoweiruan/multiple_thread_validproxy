@@ -63,6 +63,8 @@ public:
     std::string lastIndexId_;
     std::atomic<bool>* externalCancel_{nullptr};
     std::vector<std::thread> workerThreads_;
+    std::vector<int> workerCurrentProxyIndex_;
+    std::mutex workerStateMutex_;
 };
 
 #endif // PROXY_BATCH_TESTER_H

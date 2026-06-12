@@ -28,22 +28,28 @@ std::vector<db::models::Profileitem> ConfigGenerator::loadProfiles(const std::st
     db::models::ProfileitemDAO dao(db_);
     // When sqlQuery is empty (default), use the DAO's own default query
     // instead of passing "" which bypasses the default parameter.
-    auto profiles = dao.getAll(sqlQuery.empty() ? "SELECT * FROM ProfileItem;" : sqlQuery);
+    std::vector<db::models::Profileitem> profiles = dao.getAll(sqlQuery.empty() ? "SELECT * FROM ProfileItem;" : sqlQuery);
     
     Logger::write("[ConfigGenerator] SQL returned " + std::to_string(profiles.size()) + " profiles", LogLevel::INFO);
     
     std::vector<db::models::Profileitem> validProfiles;
-    for (auto& p : profiles) {
+    for (db::models::Profileitem& p : profiles) {
         if (p.network.empty()) {
-            Logger::write("[ConfigGenerator] Using default network 'tcp' for " + p.address + ":" + p.port, LogLevel::WARN);
+            Logger::write("[ConfigGenerator] Using default network 'tcp' for " + p.address + ":" + p.port, LogLevel::DEBUG);
             p.network = "tcp";
         }
-        
-        if (!isValidNetwork(p.network)) {
-            Logger::write("[ConfigGenerator] Skipping " + p.address + ":" + p.port + " - invalid network: '" + p.network + "'", LogLevel::WARN);
-            continue;
+
+        if (p.network == "splithttp") {
+            Logger::write("[ConfigGenerator] Mapping splithttp to xhttp for " + p.indexid, LogLevel::DEBUG);
+            p.network = "xhttp";
         }
-        
+
+        if (!isValidNetwork(p.network)) {
+            Logger::write("[ConfigGenerator] Using default network 'tcp' for " + p.address + ":" + p.port +
+                          " (invalid: '" + p.network + "')", LogLevel::DEBUG);
+            p.network = "tcp";
+        }
+
         validProfiles.push_back(p);
     }
     
@@ -119,10 +125,10 @@ boost::json::object ConfigGenerator::buildStreamSettings(const db::models::Profi
                     alpnList.push_back(item);
                 }
                 boost::json::array alpnArr;
-                for (const auto& a : alpnList) {
-                    alpnArr.push_back(boost::json::value(a));
-                }
-                tlsSettings["alpn"] = alpnArr;
+        for (const std::string& a : alpnList) {
+            alpnArr.push_back(boost::json::value(a));
+        }
+        tlsSettings["alpn"] = alpnArr;
             }
             if (!p.fingerprint.empty()) {
                 tlsSettings["fingerprint"] = p.fingerprint;
@@ -584,7 +590,7 @@ boost::json::object ConfigGenerator::buildTUICOutbound(const db::models::Profile
             alpnList.push_back(item);
         }
         boost::json::array alpnArr;
-        for (const auto& a : alpnList) {
+        for (const std::string& a : alpnList) {
             alpnArr.push_back(boost::json::value(a));
         }
         settings["alpn"] = alpnArr;

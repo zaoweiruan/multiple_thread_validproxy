@@ -41,7 +41,7 @@ bool UIApp::OnInit()
             configPath = std::filesystem::path(exeDir) / ".." / "config.json";
         }
 
-        auto loadedConfig = config::ConfigReader::load(configPath.string());
+        std::optional<config::AppConfig> loadedConfig = config::ConfigReader::load(configPath.string());
         std::string effectiveConfigPath = configPath.string();
         if (loadedConfig) {
             cfg_ = *loadedConfig;
