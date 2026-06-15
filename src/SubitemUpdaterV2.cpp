@@ -2272,7 +2272,7 @@ bool SubitemUpdaterV2::importSubitemsFromFile(const std::string& filePath,
         subitem.id = utils::generateUniqueId();
         subitem.remarks = remarks.empty() ? extractRemarksFromUrl(url) : remarks;
         subitem.url = url;
-        subitem.enabled = "1";
+        subitem.enabled = "0";
         subitem.autoupdateinterval = "1440";
         subitem.updatetime = "0";
         subitem.sort = std::to_string(nextSort);
@@ -2370,7 +2370,7 @@ bool SubitemUpdaterV2::importSingleUrl(const std::string& url) {
     subitem.id = utils::generateUniqueId();
     subitem.remarks = extractRemarksFromUrl(url);
     subitem.url = url;
-    subitem.enabled = "1";
+    subitem.enabled = "0";
     subitem.autoupdateinterval = "1440";
     subitem.updatetime = "0";
     subitem.sort = std::to_string(nextSort);

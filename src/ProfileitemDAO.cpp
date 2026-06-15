@@ -92,13 +92,6 @@ std::optional<Profileitem> ProfileitemDAO::getByIndexId(const std::string& index
     return std::nullopt;
   }
 
-std::string ProfileitemDAO::escape(const std::string& s) {
-    std::string out;
-    out.reserve(s.size());
-    for (char c : s) { if (c == '\'') out += "''"; else out += c; }
-    return out;
-  }
-
 bool ProfileitemDAO::deleteByIndexId(const std::string& indexId) {
     char* errMsg = nullptr;
     if (sqlite3_exec(db_, "BEGIN", nullptr, nullptr, &errMsg) != SQLITE_OK) {
@@ -154,13 +147,18 @@ bool ProfileitemDAO::deleteByIndexId(const std::string& indexId) {
 }
 
 bool ProfileitemDAO::deleteBySubId(const std::string& subId) {
-    std::string sql = "DELETE FROM ProfileItem WHERE Subid = '" + escape(subId) + "';";
-    char* errMsg = nullptr;
-    int rc = sqlite3_exec(db_, sql.c_str(), nullptr, nullptr, &errMsg);
-    if (rc != SQLITE_OK) {
-      Logger::write("Delete proxies by subId error: " + std::string(errMsg ? errMsg : "unknown"), LogLevel::ERR);
-      sqlite3_free(errMsg);
-      return false;
+    const char* sql = "DELETE FROM ProfileItem WHERE Subid = ?;";
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        Logger::write("deleteBySubId prepare error: " + std::string(sqlite3_errmsg(db_)), LogLevel::ERR);
+        return false;
+    }
+    sqlite3_bind_text(stmt, 1, subId.c_str(), -1, SQLITE_TRANSIENT);
+    int rc = sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+    if (rc != SQLITE_DONE) {
+        Logger::write("deleteBySubId step error: " + std::string(sqlite3_errmsg(db_)), LogLevel::ERR);
+        return false;
     }
     return sqlite3_changes(db_) > 0;
   }

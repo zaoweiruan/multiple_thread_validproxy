@@ -38,6 +38,7 @@ public:
    bool updateSubscriptionEnabled(const std::string& id, bool enabled);
 bool updateSubitem(const db::models::Subitem& sub);
     bool deleteSubscription(const std::string& subId);
+    bool deleteProxiesBySubId(const std::string& subId);
     void updateSubscriptionAsync(const std::string& subId, wxEvtHandler* wxHandler);
   void updateAllSubscriptionsAsync(wxEvtHandler* wxHandler);
   bool importSubscription(const std::string& url);

@@ -245,7 +245,7 @@ TEST_F(ConfigReaderLoadTest, PriorityModeBackwardCompat_DirectFirst) {
             "priority_mode": "direct_first"
         }
     })");
-    auto result = ConfigReader::load(configPath("pm_df.json"));
+    std::optional<AppConfig> result = ConfigReader::load(configPath("pm_df.json"));
     ASSERT_TRUE(result.has_value());
     ASSERT_EQ(result->update_methods.size(), 2);
     EXPECT_EQ(result->update_methods[0], "direct");
@@ -258,7 +258,7 @@ TEST_F(ConfigReaderLoadTest, PriorityModeBackwardCompat_ProxyFirst) {
             "priority_mode": "proxy_first"
         }
     })");
-    auto result = ConfigReader::load(configPath("pm_pf.json"));
+    std::optional<AppConfig> result = ConfigReader::load(configPath("pm_pf.json"));
     ASSERT_TRUE(result.has_value());
     ASSERT_EQ(result->update_methods.size(), 1);
     EXPECT_EQ(result->update_methods[0], "proxy");
@@ -270,7 +270,7 @@ TEST_F(ConfigReaderLoadTest, PriorityModeBackwardCompat_DirectOnly) {
             "priority_mode": "direct_only"
         }
     })");
-    auto result = ConfigReader::load(configPath("pm_do.json"));
+    std::optional<AppConfig> result = ConfigReader::load(configPath("pm_do.json"));
     ASSERT_TRUE(result.has_value());
     ASSERT_EQ(result->update_methods.size(), 1);
     EXPECT_EQ(result->update_methods[0], "direct");
@@ -283,7 +283,7 @@ TEST_F(ConfigReaderLoadTest, UpdateMethodsTakesPriority) {
             "update_methods": ["accelerator", "direct"]
         }
     })");
-    auto result = ConfigReader::load(configPath("um_priority.json"));
+    std::optional<AppConfig> result = ConfigReader::load(configPath("um_priority.json"));
     ASSERT_TRUE(result.has_value());
     ASSERT_EQ(result->update_methods.size(), 2);
     EXPECT_EQ(result->update_methods[0], "accelerator");
@@ -296,7 +296,7 @@ TEST_F(ConfigReaderLoadTest, AcceleratorUrlParsed) {
             "accelerator_url": "https://cdn.acc.com/"
         }
     })");
-    auto result = ConfigReader::load(configPath("acc_url.json"));
+    std::optional<AppConfig> result = ConfigReader::load(configPath("acc_url.json"));
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result->accelerator_url, "https://cdn.acc.com/");
 }
@@ -305,7 +305,7 @@ TEST_F(ConfigReaderLoadTest, UpdateMethodsDefaultWhenEmpty) {
     writeConfig("um_empty.json", R"({
         "subscription": {}
     })");
-    auto result = ConfigReader::load(configPath("um_empty.json"));
+    std::optional<AppConfig> result = ConfigReader::load(configPath("um_empty.json"));
     ASSERT_TRUE(result.has_value());
     ASSERT_EQ(result->update_methods.size(), 1);
     EXPECT_EQ(result->update_methods[0], "accelerator");
@@ -317,7 +317,7 @@ TEST_F(ConfigReaderLoadTest, UpdateMethodsFiltersInvalid) {
             "update_methods": ["accelerator", "invalid", "proxy"]
         }
     })");
-    auto result = ConfigReader::load(configPath("um_invalid.json"));
+    std::optional<AppConfig> result = ConfigReader::load(configPath("um_invalid.json"));
     ASSERT_TRUE(result.has_value());
     ASSERT_EQ(result->update_methods.size(), 2);
     EXPECT_EQ(result->update_methods[0], "accelerator");

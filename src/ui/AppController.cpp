@@ -155,6 +155,11 @@ bool AppController::updateSubitem(const db::models::Subitem& sub) {
     return dao.updateSubitem(sub);
 }
 
+bool AppController::deleteProxiesBySubId(const std::string& subId) {
+    db::models::ProfileitemDAO proxyDao(db_);
+    return proxyDao.deleteBySubId(subId);
+}
+
 bool AppController::deleteSubscription(const std::string& subId) {
     // Delete associated proxies first
     db::models::ProfileitemDAO proxyDao(db_);

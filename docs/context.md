@@ -33,4 +33,4 @@
 | 2026-06-09 | 订阅列表面板 — 新增"有效"列 (delay>0) + 列名中文化（名称/有效/代理数/更新） | `docs/superpowers/specs/2026-06-09-Spec-Validproxy-subscription-column-i18n-and-valid-count-v1.0.md` |
 | 2026-06-09 | Resizable splitter for subscription/proxy panels — wxSplitterWindow implementation with parent fix | `docs/plans/2026-06-09-feat-ui-resizable-splitter-v1.0.md` |
 | 2026-06-04 | SubitemUpdaterV2 硬编码 `"bin/config"` 路径修复 | `docs/bugfix/2026-06-04-subitemupdater-hardcoded-binconfig-path.md` |
-| 2026-06-12 | ProxyBatchTester Worker-0 join 超时误告警 — 硬编码 5000ms 改为 `test_timeout_ms + 5000` | `docs/bugfix/2026-06-12-Bugfix-ProxyBatchTester-Worker0-JoinTimeout-v1.0.md` |
+| 2026-06-12 | Worker join 超时修复 v3 — 动态 join timeout + 轻量 warmup（v2 XrayApi::ping 轮询过重，v1 7s 不足） | `docs/bugfix/2026-06-12-Bugfix-ProxyBatchTester-Worker0-JoinTimeout-v1.0.md` |

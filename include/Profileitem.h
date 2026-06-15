@@ -322,7 +322,6 @@ public:
   std::unordered_map<std::string, int> countBySubId();
   std::unordered_map<std::string, int> countValidBySubId();
   std::optional<Profileitem> getByIndexId(const std::string& indexId);
-  static std::string escape(const std::string& s);
   bool deleteBySubId(const std::string& subId);
   bool deleteByIndexId(const std::string& indexId);
 };
