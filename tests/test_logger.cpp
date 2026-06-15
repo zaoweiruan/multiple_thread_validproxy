@@ -1,10 +1,12 @@
 #include <gtest/gtest.h>
+#include <functional>
 #include <thread>
 #include <fstream>
 #include <algorithm>
 #include <cctype>
 
 #include "Logger.h"
+#include "LoggerInstance.h"
 #include "test_utils.h"
 
 // ============================================================
@@ -26,7 +28,7 @@ protected:
 
     // Find a log file in the temp dir matching the prefix
     std::string findLogFile(const std::string& prefix = "test") {
-        for (const auto& entry : std::filesystem::directory_iterator(tempDir_.path())) {
+        for (const std::filesystem::directory_entry& entry : std::filesystem::directory_iterator(tempDir_.path())) {
             if (entry.is_regular_file() && entry.path().filename().string().find(prefix) == 0) {
                 return entry.path().string();
             }
@@ -47,7 +49,7 @@ TEST_F(LoggerTest, InitAndWrite) {
     Logger::write("hello world");
 
     // Give the callback time to fire (it's synchronous, so this is immediate)
-    auto entries = capture.entries();
+    std::vector<LogCapture::Entry> entries = capture.entries();
     ASSERT_GE(entries.size(), 1);
     EXPECT_TRUE(entries[0].message.find("hello world") != std::string::npos);
 }
@@ -66,7 +68,7 @@ TEST_F(LoggerTest, FileLevelFilters) {
     Logger::write("error msg", LogLevel::ERR);
 
     // Callback should capture ALL messages (it's not level-filtered)
-    auto entries = capture.entries();
+    std::vector<LogCapture::Entry> entries = capture.entries();
     EXPECT_GE(entries.size(), 3);
 
     // File should only contain WARN and above
@@ -172,7 +174,7 @@ TEST_F(LoggerTest, WriteWithoutInit) {
 // levelToString and stringToLevel round-trip
 // ============================================================
 TEST_F(LoggerTest, LevelToStringAndBack) {
-    auto testLevel = [](LogLevel level, const std::string& expected) {
+    std::function<void(LogLevel, const std::string&)> testLevel = [](LogLevel level, const std::string& expected) {
         std::string str = Logger::levelToString(level);
         EXPECT_EQ(str, expected);
         LogLevel back = Logger::stringToLevel(str);
@@ -204,7 +206,7 @@ TEST_F(LoggerTest, WriteTimestamp) {
 
     Logger::writeTimestamp("ts msg");
 
-    auto entries = capture.entries();
+    std::vector<LogCapture::Entry> entries = capture.entries();
     ASSERT_GE(entries.size(), 1);
     // Should start with '[' (timestamp bracket)
     EXPECT_EQ(entries[0].message[0], '[');
@@ -273,7 +275,7 @@ TEST_F(LoggerTest, ConcurrentWrites) {
         });
     }
 
-    for (auto& th : threads) {
+    for (std::thread& th : threads) {
         th.join();
     }
 
@@ -309,7 +311,7 @@ TEST_F(LoggerTest, DisableFileOutput) {
     Logger::write("file disabled msg");
 
     // Callback should still receive
-    auto entries = capture.entries();
+    std::vector<LogCapture::Entry> entries = capture.entries();
     EXPECT_GE(entries.size(), 1);
     EXPECT_TRUE(entries[0].message.find("file disabled msg") != std::string::npos);
 
@@ -324,4 +326,124 @@ TEST_F(LoggerTest, DisableFileOutput) {
         EXPECT_TRUE(content.find("file disabled msg") == std::string::npos)
             << "Message should not appear in file when file output is disabled";
     }
+}
+
+// ============================================================
+// LoggerInstance — 实例化 API 测试
+// ============================================================
+
+TEST(LoggerInstanceTest, InstanceWriteToCallback) {
+    LoggerInstance logger;
+    std::string captured;
+    LogLevel capturedLevel = LogLevel::INFO;
+
+    logger.setLogCallback([&](const std::string& msg, LogLevel level) {
+        captured = msg;
+        capturedLevel = level;
+    });
+
+    logger.write("instance test msg", LogLevel::WARN);
+    EXPECT_TRUE(captured.find("instance test msg") != std::string::npos);
+    EXPECT_EQ(capturedLevel, LogLevel::WARN);
+}
+
+TEST(LoggerInstanceTest, PushPopCallback) {
+    LoggerInstance logger;
+    bool firstCalled = false;
+    bool secondCalled = false;
+
+    logger.setLogCallback([&](const std::string&, LogLevel) {
+        firstCalled = true;
+    });
+
+    logger.pushCallback([&](const std::string&, LogLevel) {
+        secondCalled = true;
+    });
+
+    logger.write("test", LogLevel::INFO);
+    EXPECT_FALSE(firstCalled);
+    EXPECT_TRUE(secondCalled);
+
+    logger.popCallback();
+    logger.write("test2", LogLevel::INFO);
+    EXPECT_TRUE(firstCalled);
+}
+
+TEST(LoggerInstanceTest, LevelSettersAndGetters) {
+    LoggerInstance logger;
+    EXPECT_EQ(logger.getFileLevel(), LogLevel::DEBUG);
+    EXPECT_EQ(logger.getConsoleLevel(), LogLevel::INFO);
+
+    logger.setFileLevel(LogLevel::ERR);
+    logger.setConsoleLevel(LogLevel::WARN);
+    EXPECT_EQ(logger.getFileLevel(), LogLevel::ERR);
+    EXPECT_EQ(logger.getConsoleLevel(), LogLevel::WARN);
+
+    logger.setLevel(LogLevel::TRACE);
+    EXPECT_EQ(logger.getFileLevel(), LogLevel::TRACE);
+    EXPECT_EQ(logger.getConsoleLevel(), LogLevel::TRACE);
+}
+
+TEST(LoggerInstanceTest, FileEnableDisable) {
+    LoggerInstance logger;
+    EXPECT_TRUE(logger.isFileEnabled());
+
+    logger.setFileEnabled(false);
+    EXPECT_FALSE(logger.isFileEnabled());
+
+    logger.setFileEnabled(true);
+    EXPECT_TRUE(logger.isFileEnabled());
+}
+
+TEST(LoggerInstanceTest, IsEnabled) {
+    LoggerInstance logger;
+    EXPECT_FALSE(logger.isEnabled());
+}
+
+TEST(LoggerInstanceTest, StaticLevelConversion) {
+    EXPECT_EQ(LoggerInstance::levelToString(LogLevel::TRACE), "TRACE");
+    EXPECT_EQ(LoggerInstance::levelToString(LogLevel::DEBUG), "DEBUG");
+    EXPECT_EQ(LoggerInstance::levelToString(LogLevel::INFO), "INFO");
+    EXPECT_EQ(LoggerInstance::levelToString(LogLevel::WARN), "WARN");
+    EXPECT_EQ(LoggerInstance::levelToString(LogLevel::ERR), "ERROR");
+    EXPECT_EQ(LoggerInstance::levelToString(LogLevel::REPORT), "REPORT");
+
+    EXPECT_EQ(LoggerInstance::stringToLevel("trace"), LogLevel::TRACE);
+    EXPECT_EQ(LoggerInstance::stringToLevel("log_error"), LogLevel::ERR);
+    EXPECT_EQ(LoggerInstance::stringToLevel("report"), LogLevel::REPORT);
+    EXPECT_EQ(LoggerInstance::stringToLevel("unknown"), LogLevel::INFO);
+}
+
+TEST(LoggerInstanceTest, MultipleInstancesIsolated) {
+    LoggerInstance loggerA;
+    LoggerInstance loggerB;
+    std::string capturedA;
+    std::string capturedB;
+
+    loggerA.setLogCallback([&](const std::string& msg, LogLevel) {
+        capturedA = msg;
+    });
+    loggerB.setLogCallback([&](const std::string& msg, LogLevel) {
+        capturedB = msg;
+    });
+
+    loggerA.write("msg from A");
+    loggerB.write("msg from B");
+
+    EXPECT_TRUE(capturedA.find("msg from A") != std::string::npos);
+    EXPECT_TRUE(capturedB.find("msg from B") != std::string::npos);
+    EXPECT_TRUE(capturedA.find("msg from B") == std::string::npos);
+    EXPECT_TRUE(capturedB.find("msg from A") == std::string::npos);
+}
+
+TEST(LoggerInstanceTest, LevelDisabledLogNotInCallback) {
+    LoggerInstance logger;
+    std::string captured;
+
+    logger.setLogCallback([&](const std::string& msg, LogLevel) {
+        captured = msg;
+    });
+
+    logger.write("level msg", LogLevel::INFO);
+    EXPECT_TRUE(captured.find("level msg") != std::string::npos);
 }

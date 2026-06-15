@@ -54,6 +54,7 @@ set(CORE_SOURCES
     src/ConfigGenerator.cpp
     src/ConfigReader.cpp
     src/Logger.cpp
+    src/LoggerInstance.cpp
     src/PortManager.cpp
     src/ProfileitemDAO.cpp
     src/SubitemDAO.cpp
@@ -288,7 +289,7 @@ add_test(NAME DedupTest COMMAND test_dedup)
 # add_test(NAME ProfileitemTest COMMAND test_model)
 
 # -- Logger unit tests (zero external deps beyond gtest) --
-add_executable(test_logger tests/test_logger.cpp src/Logger.cpp)
+add_executable(test_logger tests/test_logger.cpp src/Logger.cpp src/LoggerInstance.cpp)
 target_include_directories(test_logger PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(test_logger PRIVATE gtest_main gtest)
 set_target_properties(test_logger PROPERTIES
@@ -321,7 +322,7 @@ set_target_properties(test_utils PROPERTIES
 add_test(NAME UtilsTest COMMAND test_utils)
 
 # -- ConfigReader unit tests (includes load() tests with error reporter override) --
-add_executable(test_config_reader tests/test_config_reader.cpp tests/test_config_reader_load.cpp src/ConfigReader.cpp src/Utils.cpp src/Logger.cpp)
+add_executable(test_config_reader tests/test_config_reader.cpp tests/test_config_reader_load.cpp src/ConfigReader.cpp src/Utils.cpp src/Logger.cpp src/LoggerInstance.cpp)
 target_include_directories(test_config_reader PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(test_config_reader PRIVATE gtest_main gtest D:/boost_1_88_0/lib/libboost_json-mgw14-mt-x64-1_88.a)
 set_target_properties(test_config_reader PROPERTIES
@@ -332,7 +333,7 @@ set_target_properties(test_config_reader PROPERTIES
 add_test(NAME ConfigReaderTest COMMAND test_config_reader)
 
 # -- ConfigGenerator unit tests (SQLite + boost_json) --
-add_executable(test_config_generator tests/test_config_generator.cpp src/ConfigGenerator.cpp src/ProfileitemDAO.cpp src/ProfileExItemDAO.cpp src/Logger.cpp)
+add_executable(test_config_generator tests/test_config_generator.cpp src/ConfigGenerator.cpp src/ProfileitemDAO.cpp src/ProfileExItemDAO.cpp src/Logger.cpp src/LoggerInstance.cpp)
 target_include_directories(test_config_generator PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(test_config_generator PRIVATE gtest_main gtest
     E:/vcpkg/installed/x64-mingw-static/lib/libsqlite3.a
@@ -346,7 +347,7 @@ set_target_properties(test_config_generator PROPERTIES
 add_test(NAME ConfigGeneratorTest COMMAND test_config_generator)
 
 # -- Delete Subscription tests --
-add_executable(test_delete_subscription tests/test_delete_subscription.cpp src/ProfileitemDAO.cpp src/SubitemDAO.cpp src/Logger.cpp)
+add_executable(test_delete_subscription tests/test_delete_subscription.cpp src/ProfileitemDAO.cpp src/SubitemDAO.cpp src/Logger.cpp src/LoggerInstance.cpp)
 target_include_directories(test_delete_subscription PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(test_delete_subscription PRIVATE gtest_main gtest
     E:/vcpkg/installed/x64-mingw-static/lib/libsqlite3.a

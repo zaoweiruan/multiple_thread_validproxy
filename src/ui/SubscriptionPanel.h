@@ -33,6 +33,7 @@ private:
     void onRefreshSubscription(wxCommandEvent& event);
     void onEditSubscription(wxCommandEvent& event);
     void onDeleteSubscription(wxCommandEvent& event);
+    void onDeleteProxies(wxCommandEvent& event);
     void onUpdateSubscription(wxCommandEvent& event);
     void onTestSubscription(wxCommandEvent& event);
     void onImportSubscription(wxCommandEvent& event);

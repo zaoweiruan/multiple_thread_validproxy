@@ -2,9 +2,12 @@
 #include "ConfigGenerator.h"
 #include "Utils.h"
 #include "Logger.h"
+#include "XrayApi.h"
 #include <fstream>
 #include <filesystem>
 #include <algorithm>
+#include <chrono>
+#include <thread>
 #include <windows.h>
 #include <future>
 
@@ -82,7 +85,19 @@ int ProxyBatchTester::calculateXrayInstanceCount(int proxyCount) {
 
 bool ProxyBatchTester::startXrayInstances(int count) {
     int actual = xrayManager_->start(count, config_.xray_start_port, config_.xray_api_port);
-    return actual > 0;
+    if (actual <= 0) {
+        return false;
+    }
+
+    // Brief warm-up: give Xray processes time to open their gRPC API ports.
+    // Worker threads call removeOutbound/addOutbound immediately, and each
+    // xray api subprocess can block up to 5s if gRPC isn't ready yet.
+    // Use a minimalist wait - launch subprocess per ping is too expensive.
+    std::vector<std::pair<int, int>> portPairs = xrayManager_->getPortPairs();
+    const int warmupMs = 2000;
+    std::this_thread::sleep_for(std::chrono::milliseconds(warmupMs));
+
+    return true;
 }
 
 void ProxyBatchTester::workerThreadFunc(int workerId, int socksPort, int apiPort) {
@@ -276,7 +291,18 @@ void ProxyBatchTester::testProxiesMultiThreaded() {
     // Store threads for destructor to join with timeout
     workerThreads_ = std::move(threads);
     
-    // Wait for all threads with timeout to prevent hang on curl blocking
+    // Wait for all threads with timeout to prevent hang on curl blocking.
+    // Each worker processes a share of the total proxies sequentially.
+    // Calculate a timeout proportional to the expected workload so that
+    // normal completion does not trigger the detach fallback.
+    int proxiesPerWorker = (totalProxies_ + numWorkers - 1) / numWorkers;
+    int perProxyBudgetMs = config_.test_timeout_ms + 5000; // curl test + API overhead
+    int joinTimeoutMs = proxiesPerWorker * perProxyBudgetMs;
+    const int MIN_JOIN_TIMEOUT = 60000;    // 1 min floor
+    const int MAX_JOIN_TIMEOUT = 300000;   // 5 min cap
+    if (joinTimeoutMs < MIN_JOIN_TIMEOUT) joinTimeoutMs = MIN_JOIN_TIMEOUT;
+    if (joinTimeoutMs > MAX_JOIN_TIMEOUT) joinTimeoutMs = MAX_JOIN_TIMEOUT;
+
     for (size_t idx = 0; idx < workerThreads_.size(); ++idx) {
         std::thread& t = workerThreads_[idx];
         if (t.joinable()) {
@@ -287,7 +313,6 @@ void ProxyBatchTester::testProxiesMultiThreaded() {
                 std::future<void> fut = std::async(std::launch::async, [&t]() {
                     if (t.joinable()) t.join();
                 });
-                int joinTimeoutMs = config_.test_timeout_ms + 5000;
                 if (fut.wait_for(std::chrono::milliseconds(joinTimeoutMs)) != std::future_status::ready) {
                     int proxyIdx = -1;
                     {

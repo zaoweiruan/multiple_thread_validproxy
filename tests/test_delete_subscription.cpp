@@ -108,3 +108,41 @@ TEST_F(DeleteSubscriptionTest, EscapePreventsInjection) {
 
     EXPECT_EQ(countSubscriptions(), 1);
 }
+
+TEST_F(DeleteSubscriptionTest, MultiStatementInjectionBlocked) {
+    insertSubscription("sub1", "Test");
+    insertSubscription("sub2", "Test2");
+
+    db::models::SubitemDAO dao(db_);
+    // Multi-statement injection: escape-only approach fails here
+    dao.deleteById("' ; DELETE FROM SubItem; --");
+
+    // Both subscriptions should still exist
+    EXPECT_EQ(countSubscriptions(), 2);
+}
+
+TEST_F(DeleteSubscriptionTest, UpdateSubitemInjectionBlocked) {
+    insertSubscription("sub1", "Test");
+
+    db::models::SubitemDAO dao(db_);
+    db::models::Subitem sub;
+    sub.id = "sub1";
+    sub.remarks = "'; DELETE FROM SubItem; --";
+    sub.url = "http://test.com";
+    sub.enabled = "1";
+    sub.useragent = "";
+    sub.autoupdateinterval = "";
+    EXPECT_TRUE(dao.updateSubitem(sub));
+
+    EXPECT_EQ(countSubscriptions(), 1);
+}
+
+TEST_F(DeleteSubscriptionTest, DeleteBySubIdInjectionBlocked) {
+    insertProxy("proxy1", "1.1.1.1", "sub1");
+    insertProxy("proxy2", "2.2.2.2", "sub1");
+
+    db::models::ProfileitemDAO dao(db_);
+    dao.deleteBySubId("' ; DELETE FROM ProfileItem; --");
+
+    EXPECT_EQ(countProxies(), 2);
+}

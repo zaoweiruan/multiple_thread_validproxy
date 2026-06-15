@@ -144,7 +144,6 @@ public:
   std::vector<Subitem> getEnabledSubscriptions();
   bool updateEnabled(const std::string& id, bool enabled);
   bool updateSubitem(const Subitem& sub);
-  static std::string escape(const std::string& s);
   bool deleteById(const std::string& id);
 };
 

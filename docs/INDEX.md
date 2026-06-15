@@ -2,7 +2,7 @@
 title: "docs: project document index"
 type: meta
 status: maintained
-updated: 2026-06-11
+updated: 2026-06-12
 ---
 
 # Project Document Index
@@ -31,7 +31,7 @@ updated: 2026-06-11
 | [规范化设计](#75-规范化设计) | 4 | `docs/specs/` |
 | [实施计划](#8-实施计划) | 54 | `docs/plans/` |
 | [分析报告](#9-分析报告) | 7 | `docs/reports/` |
-| [Bug 修复记录](#91-bug-修复记录) | 9 | `docs/bugfix/` |
+| [Bug 修复记录](#91-bug-修复记录) | 11 | `docs/bugfix/` |
 | [测试报告](#10-测试报告) | 1 | `docs/test/` |
 | [长期记忆](#13-长期记忆) | 1 | `docs/project-knowledge.md` (6.2 KB) |
 
@@ -153,7 +153,7 @@ updated: 2026-06-11
 | 3 | [`docs/specs/2026-06-03-ui-improvements.md`](./specs/2026-06-03-ui-improvements.md) | **UI 体验改进** — 弹窗居中 + ProxyDetail 可选择拷贝 | 54 lines |
 | 4 | [`docs/specs/2026-06-03-proxy-context-menu-disabled.md`](./specs/2026-06-03-proxy-context-menu-disabled.md) | **批量操作时禁止右键菜单** — 防止干预进行中的操作 | 43 lines |
 | 5 | [`docs/specs/2026-06-11-Spec-ProxyFinder-findWorkingProxy-bug.md`](./specs/2026-06-11-Spec-ProxyFinder-findWorkingProxy-bug.md) | **ProxyFinder::findWorkingProxy Bug Fix** — 返回端口时未重新注入代理导致代理不可用 | draft |
-| 6 | [`docs/plans/2026-06-11-Spec-Refactoring-Phase1-v1.0.md`](./plans/2026-06-11-Spec-Refactoring-Phase1-v1.0.md) | **重构方案 Phase 1** — auto 修复 / SQL 注入 / Logger 全局状态 / DAO 拆分 / SubitemUpdaterV2 拆分 / 构建参数化 | draft |
+| 6 | [`docs/plans/2026-06-11-Spec-Refactoring-Phase1-v1.0.md`](./plans/2026-06-11-Spec-Refactoring-Phase1-v1.0.md) | **重构方案 Phase 1 v1.1** — 审计更新: 3/8 任务已由历史提交完成 (writeCallback/TestResult/DAO), 其余 4 项未开始 + 1 项部分完成 | draft → v1.1 |
 
 ---
 
@@ -286,7 +286,7 @@ updated: 2026-06-11
 | 8 | [`docs/bugfix/2026-06-11-Bugfix-ConfigGenerator-NetworkFallback-v1.0.md`](./bugfix/2026-06-11-Bugfix-ConfigGenerator-NetworkFallback-v1.0.md) | **无效网络兜底与 splithttp→xhttp 回退** — ConfigGenerator invalid network 改为回退 tcp，并补充 splithttp 遗留值映射 | — |
 | 9 | [`docs/bugfix/2026-06-11-Bugfix-ProxyListPanel-RefreshFreeze-v1.0.md`](./bugfix/2026-06-11-Bugfix-ProxyListPanel-RefreshFreeze-v1.0.md) | **大代理集批量测试后 UI 冻结修复** — 逐行 ValueChanged 风暴改为单次 listCtrl_->Refresh() | — |
 | 10 | [`docs/bugfix/2026-06-11-Bugfix-ProxyBatchTester-ZeroProxyEarlyReturn-v1.0.md`](./bugfix/2026-06-11-Bugfix-ProxyBatchTester-ZeroProxyEarlyReturn-v1.0.md) | **零代理批量测试 printSummary/stopAll 缺失修复** — run()/runWithSubId() 空代理分支补齐汇总与 Xray 清理 | — |
-| 11 | [`docs/bugfix/2026-06-12-Bugfix-ProxyBatchTester-Worker0-JoinTimeout-v1.0.md`](./bugfix/2026-06-12-Bugfix-ProxyBatchTester-Worker0-JoinTimeout-v1.0.md) | **首条代理 join 超时误告警修复** — 硬编码 5000ms 改为 `test_timeout_ms + 5000` 动态计算 | 38 lines |
+| 11 | [`docs/bugfix/2026-06-12-Bugfix-ProxyBatchTester-Worker0-JoinTimeout-v1.0.md`](./bugfix/2026-06-12-Bugfix-ProxyBatchTester-Worker0-JoinTimeout-v1.0.md) | **Worker join 超时修复 v3** — 动态 join timeout (v1 7s 不足，v2 ping 轮询过重) | 64 lines |
 
 ---
 
@@ -354,4 +354,4 @@ updated: 2026-06-11
 
 ---
 
-*最后更新: 2026-06-12 | 维护者: Kilo AI*
+*最后更新: 2026-06-12 (v2) | 维护者: Kilo AI*

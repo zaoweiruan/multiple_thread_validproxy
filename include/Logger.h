@@ -5,6 +5,9 @@
 #include <fstream>
 #include <mutex>
 #include <functional>
+#include <vector>
+
+class LoggerInstance;
 
 enum class LogLevel {
     TRACE = 0,
@@ -54,19 +57,10 @@ static std::string levelToString(LogLevel level);
     static void disableFile();
     static void enableConsoleOnly();
 
+    static LoggerInstance& defaultInstance();
+
  private:
-     static std::string logDir_;
-     static std::string prefix_;
-     static std::ofstream* outFile_;
-     static std::mutex mutex_;
-     static bool enabled_;
-     static bool fileEnabled_;
-     static bool consoleEnabled_;
-     static LogLevel fileLevel_;
-     static LogLevel consoleLevel_;
-     static LogCallback logCallback_;               // 当前激活的回调（callbackStack_.back() 或 nullptr）
-     static std::vector<LogCallback> callbackStack_;// 回调栈；支持多消费者 save/restore
-     static std::mutex callbackMutex_;
+     static LoggerInstance* defaultInstance_;
  };
 
 #endif // LOGGER_H

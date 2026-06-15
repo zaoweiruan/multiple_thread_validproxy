@@ -3,7 +3,7 @@ title: "docs: Project Plans Tracker — global plan index and progress tracker"
 type: docs
 status: maintained
 date: 2026-05-11
-updated: 2026-06-11
+updated: 2026-06-12
 ---
 
 # Project Plans Tracker
@@ -17,6 +17,7 @@ updated: 2026-06-11
 
 | 日期 | 类型 | 文档路径 | 说明 |
 |------|------|----------|------|
+| 2026-06-12 | bugfix | `docs/bugfix/2026-06-12-Bugfix-ProxyBatchTester-Worker0-JoinTimeout-v1.0.md` | Worker join 超时修复 v3 — 动态 join timeout（v1 7s 不足，v2 ping 轮询过重导致启动延迟） |
 | 2026-06-11 | bugfix | `docs/bugfix/2026-06-11-Bugfix-ProxyBatchTester-ZeroProxyEarlyReturn-v1.0.md` | 批量测试零代理时 printSummary/stopAll 缺失修复 |
 | 2026-06-11 | bugfix | `docs/bugfix/2026-06-11-Bugfix-ProxyListPanel-RefreshFreeze-v1.0.md` | 大代理集测试后 UI 冻结修复 |
 | 2026-06-11 | bugfix | `docs/plans/2026-06-11-Spec-ProxyFinder-findWorkingProxy-bug.md` | ProxyFinder::findWorkingProxy 返回端口时未重新注入代理 |
@@ -26,7 +27,7 @@ updated: 2026-06-11
 | 2026-06-09 | bugfix | `docs/bugfix/2026-06-09-configreader-load-error-popup-fix.md` | ConfigReader load double-popup fix |
 | 2026-06-09 | plan | `docs/plans/2026-06-09-feat-ui-resizable-splitter-v1.0.md` | Resizable splitter |
 | 2026-06-04 | bugfix | `docs/bugfix/2026-06-04-subitemupdater-hardcoded-binconfig-path.md` | SubitemUpdaterV2 hardcoded path fix |
-| 2026-06-11 | spec | `docs/plans/2026-06-11-Spec-Refactoring-Phase1-v1.0.md` | Phase 1 代码质量提升重构方案（auto 修复 / SQL 注入 / Logger / DAO 拆分） |
+| 2026-06-12 | spec | `docs/plans/2026-06-11-Spec-Refactoring-Phase1-v1.0.md` | Phase 1 重构方案状态更新 — auto(17/17)✅ / SQL注入(3处)✅ / Logger(实例化+委托)✅ / 全部 92 tests pass |
 | 2026-05-19 | — | 批量状态更新 | P4→❌ cancelled; 003->completed; DLL fix->completed |
 
 ---

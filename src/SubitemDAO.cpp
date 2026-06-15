@@ -62,47 +62,41 @@ bool SubitemDAO::updateEnabled(const std::string& id, bool enabled) {
   }
 
 bool SubitemDAO::updateSubitem(const Subitem& sub) {
-    auto esc = [](const std::string& s) -> std::string {
-      std::string out;
-      out.reserve(s.size());
-      for (char c : s) { if (c == '\'') out += "''"; else out += c; }
-      return out;
-    };
-
-    std::string sql =
-        "UPDATE SubItem SET "
-        "Remarks = '" + esc(sub.remarks) + "', "
-        "Url = '" + esc(sub.url) + "', "
-        "Enabled = " + sub.enabled + ", "
-        "UserAgent = '" + esc(sub.useragent) + "', "
-        "AutoUpdateInterval = '" + esc(sub.autoupdateinterval) + "' "
-        "WHERE Id = '" + esc(sub.id) + "';";
-
-    char* errMsg = nullptr;
-    int rc = sqlite3_exec(db_, sql.c_str(), nullptr, nullptr, &errMsg);
-    if (rc != SQLITE_OK) {
-      Logger::write("SQL error: " + std::string(errMsg ? errMsg : "unknown"), LogLevel::ERR);
-      sqlite3_free(errMsg);
-      return false;
+    const char* sql = "UPDATE SubItem SET Remarks = ?, Url = ?, Enabled = ?, "
+                      "UserAgent = ?, AutoUpdateInterval = ? WHERE Id = ?;";
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        Logger::write("updateSubitem prepare error: " + std::string(sqlite3_errmsg(db_)), LogLevel::ERR);
+        return false;
+    }
+    sqlite3_bind_text(stmt, 1, sub.remarks.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 2, sub.url.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int(stmt, 3, std::stoi(sub.enabled));
+    sqlite3_bind_text(stmt, 4, sub.useragent.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 5, sub.autoupdateinterval.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 6, sub.id.c_str(), -1, SQLITE_TRANSIENT);
+    int rc = sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+    if (rc != SQLITE_DONE) {
+        Logger::write("updateSubitem step error: " + std::string(sqlite3_errmsg(db_)), LogLevel::ERR);
+        return false;
     }
     return true;
   }
 
-std::string SubitemDAO::escape(const std::string& s) {
-    std::string out;
-    out.reserve(s.size());
-    for (char c : s) { if (c == '\'') out += "''"; else out += c; }
-    return out;
-  }
-
 bool SubitemDAO::deleteById(const std::string& id) {
-    std::string sql = "DELETE FROM SubItem WHERE Id = '" + escape(id) + "';";
-    char* errMsg = nullptr;
-    int rc = sqlite3_exec(db_, sql.c_str(), nullptr, nullptr, &errMsg);
-    if (rc != SQLITE_OK) {
-      Logger::write("Delete subscription error: " + std::string(errMsg ? errMsg : "unknown"), LogLevel::ERR);
-      sqlite3_free(errMsg);
-      return false;
+    const char* sql = "DELETE FROM SubItem WHERE Id = ?;";
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        Logger::write("deleteById prepare error: " + std::string(sqlite3_errmsg(db_)), LogLevel::ERR);
+        return false;
+    }
+    sqlite3_bind_text(stmt, 1, id.c_str(), -1, SQLITE_TRANSIENT);
+    int rc = sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+    if (rc != SQLITE_DONE) {
+        Logger::write("deleteById step error: " + std::string(sqlite3_errmsg(db_)), LogLevel::ERR);
+        return false;
     }
     return sqlite3_changes(db_) > 0;
   }

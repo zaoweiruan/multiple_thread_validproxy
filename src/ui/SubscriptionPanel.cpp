@@ -20,6 +20,7 @@ enum {
     ID_SUB_TEST,
     ID_SUB_IMPORT,
     ID_SUB_REFRESH,
+    ID_SUB_DELETE_PROXIES,
 };
 
 // -------------------------------------------------------------------
@@ -30,6 +31,7 @@ wxBEGIN_EVENT_TABLE(SubscriptionPanel, wxPanel)
     EVT_MENU(ID_SUB_DELETE, SubscriptionPanel::onDeleteSubscription)
     EVT_MENU(ID_SUB_UPDATE, SubscriptionPanel::onUpdateSubscription)
     EVT_MENU(ID_SUB_TEST, SubscriptionPanel::onTestSubscription)
+    EVT_MENU(ID_SUB_DELETE_PROXIES, SubscriptionPanel::onDeleteProxies)
     EVT_MENU(ID_SUB_IMPORT, SubscriptionPanel::onImportSubscription)
     EVT_MENU(ID_SUB_REFRESH, SubscriptionPanel::onRefreshSubscription)
 wxEND_EVENT_TABLE()
@@ -112,15 +114,15 @@ void SubscriptionPanel::updateSubscriptionList(const std::vector<db::models::Sub
 
     int totalProxies = 0;
     int totalValid = 0;
-    for (const auto& kv : proxyCounts_) {
+    for (const std::pair<const std::string, int>& kv : proxyCounts_) {
         totalProxies += kv.second;
     }
-    for (const auto& kv : validProxyCounts_) {
+    for (const std::pair<const std::string, int>& kv : validProxyCounts_) {
         totalValid += kv.second;
     }
     displayProxyCounts[ALL_SUBSCRIPTION_ID] = totalProxies;
     displayValidCounts[ALL_SUBSCRIPTION_ID] = totalValid;
-    for (const auto& sub : subs_) {
+    for (const db::models::Subitem& sub : subs_) {
         displaySubs.push_back(sub);
         displayProxyCounts[sub.id] = proxyCounts_.count(sub.id) ? proxyCounts_[sub.id] : 0;
         displayValidCounts[sub.id] = validProxyCounts_.count(sub.id) ? validProxyCounts_[sub.id] : 0;
@@ -204,6 +206,7 @@ void SubscriptionPanel::onContextMenu(wxDataViewEvent&) {
     menu.AppendSeparator();
     menu.Append(ID_SUB_EDIT, "编辑订阅");
     menu.Append(ID_SUB_DELETE, "删除订阅");
+    menu.Append(ID_SUB_DELETE_PROXIES, "删除订阅下代理");
     menu.AppendSeparator();
     menu.Append(ID_SUB_REFRESH, "刷新");
     menu.Append(ID_SUB_IMPORT, "添加订阅");
@@ -214,6 +217,7 @@ void SubscriptionPanel::onContextMenu(wxDataViewEvent&) {
         menu.Enable(ID_SUB_TEST, false);
         menu.Enable(ID_SUB_EDIT, false);
         menu.Enable(ID_SUB_DELETE, false);
+        menu.Enable(ID_SUB_DELETE_PROXIES, false);
     }
 
     PopupMenu(&menu);
@@ -280,6 +284,27 @@ void SubscriptionPanel::onTestSubscription(wxCommandEvent&) {
         if (topLevel) {
             wxQueueEvent(topLevel, new SubscriptionTestEvent(subId));
         }
+    }
+}
+
+void SubscriptionPanel::onDeleteProxies(wxCommandEvent&) {
+    if (controller_ && controller_->isRunning()) {
+        wxMessageBox(L"操作进行中，请等待完成后再试", L"操作进行中", wxOK | wxICON_WARNING);
+        return;
+    }
+    std::string subId = getSelectedSubId();
+    if (subId.empty()) return;
+    std::string remarks;
+    for (const db::models::Subitem& sub : subs_) {
+        if (sub.id == subId) { remarks = sub.remarks; break; }
+    }
+    wxString msg = wxString::Format(L"确定删除订阅 \"%s\" 下的所有代理？", remarks);
+    wxMessageDialog dlg(this, msg, L"确认删除", wxYES_NO | wxNO_DEFAULT | wxICON_QUESTION);
+    if (dlg.ShowModal() == wxID_YES) {
+        if (controller_) {
+            controller_->deleteProxiesBySubId(subId);
+        }
+        loadSubscriptions();
     }
 }
 

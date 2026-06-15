@@ -1,55 +1,49 @@
-# 2026-06-12-Bugfix-ProxyBatchTester-Worker0-JoinTimeout-v1.0.md
+# Bugfix: ProxyBatchTester Worker-0 Join Timeout (v3 — Dynamic Join Timeout)
 
-## 摘要
+- **Date:** 2026-06-12
+- **Status:** ✅ fixed (v3)
 
-修复批量测试中首条代理（Worker-0）始终触发 "Wait timeout, detaching thread" WARN 告警的问题。
+## Summary
 
-## 问题描述
+Worker threads consistently timed out during join after Xray startup. Three versions of the fix:
 
-- 每次批量测试，第一条代理（indexid=5841116306214803185, snapp.ir:80）输出警告：
-  `[Worker-0][WARN] Wait timeout, detaching thread to prevent hang`
-- 后续所有 Worker 无此告警。
-- `src/ProxyBatchTester.cpp:290` 的 join 超时硬编码为 `5000ms`。
+| Version | Approach | Why insufficient |
+|---------|----------|-----------------|
+| v1 | Hardcoded `5000ms` → `test_timeout_ms+5000` (7s) | 7s still far too short for multi-proxy workers |
+| v2 | `XrayApi::ping()` polling in `startXrayInstances()` | Each ping launches xray.exe (expensive, ~2s/call); polling delay pushed total startup beyond join timeout |
+| **v3** | **Dynamic join timeout proportional to workload + lightweight warmup** | Worker has enough time to complete all proxies normally |
 
-## 根因分析
+## Timeline (from log: `ui_20260612_150929.log`)
 
-Worker 线程的 join 是**顺序执行**的，Worker-0 最先被 join，具备最短的 wall-clock 运行时间。而每个代理完成所需的流程包括：
+- `15:09:29` — Config load complete
+- `15:09:58` — Worker-0 join timeout WARN (29s gap)
 
-1. removeOutbound × 2 及中间 sleep（~500ms）
-2. addOutbound 及重试机制（~1-2s）
-3. sleep 300ms
-4. `proxyTester_->test()` — cURL 测试耗时可达 `test_timeout_ms`（默认 5000ms）
+## Real Root Cause
 
-合计最长可达 **7-8s** >> 硬编码的 5s 超时。Worker-1 及后续线程在 main thread 等待 Worker-0 的 5s 期间已继续执行，因此不会超时。
+1. Each worker processes `proxiesPerWorker = totalProxies / numWorkers` proxies (e.g., 25 for 100 proxies / 4 workers)
+2. Each proxy takes ~3-4s (removeOutbound×2 + addOutbound retries + 2000ms cURL test)
+3. Worker total runtime: 25 × 3.5s ≈ 88s
+4. Join timeout was `test_timeout_ms + 5000` = 7000ms — **88s >> 7s**
+5. Join always detaches, causing resource-race on stopAll()
 
-## 修复方案
+v2's `XrayApi::ping()` polling worsened the problem: `xray api lsi` subprocess takes ~2s per call, and sequential polling of 4 instances with retries added ~18s to startup, delaying workers without fixing the join timeout mismatch.
 
-将 join 超时改为动态计算：`test_timeout_ms + 5000ms`（多出的 5000ms 覆盖 API 调用与 sleep 开销）。
+## Fix (v3)
 
-```cpp
-// Before:
-if (fut.wait_for(std::chrono::milliseconds(5000)) != std::future_status::ready) {
+1. **`startXrayInstances()`** (`src/ProxyBatchTester.cpp:86-97`): Removed heavy `XrayApi::ping()` loop; replaced with simple 2s `sleep_for` warmup (avoids creating expensive xray subprocesses per ping).
 
-// After:
-int joinTimeoutMs = config_.test_timeout_ms + 5000;
-if (fut.wait_for(std::chrono::milliseconds(joinTimeoutMs)) != std::future_status::ready) {
-```
+2. **`testProxiesMultiThreaded()`** (`src/ProxyBatchTester.cpp:323-335`): Dynamic join timeout:
+   - `proxiesPerWorker = ceil(totalProxies_ / numWorkers)`
+   - `perProxyBudgetMs = test_timeout_ms + 5000` (curl test + API overhead)
+   - `joinTimeoutMs = proxiesPerWorker × perProxyBudgetMs`
+   - Clamped to [60s, 300s] range
+   - For 100 proxies / 4 workers: 25 × 7s = 175s ≈ 3 min
 
-## 覆盖范围
+## Files Changed
 
-- `src/ProxyBatchTester.cpp:290` — `testProxiesMultiThreaded()` 的 join 超时计算。
+- `src/ProxyBatchTester.cpp` — `startXrayInstances()` simplified (2s warmup), join timeout dynamic
 
-## 影响分析
+## Verification
 
-- 正: 首条代理不再误超时，批量测试行为一致。
-- 副: 若 `test_timeout_ms` 被设为极大值（如 120s），join 等待将相应延长。但 cURL 自身已受 `test_timeout_ms` 约束，不会额外挂起。
-
-## QA
-
-- Debug 编译无告警；
-- 全量 8 项 CTest 通过（100%）；
-- 后续代理流程不受影响。
-
-## 记录时间
-
-2026-06-12
+- Build: CLI + GUI + all 9 test targets pass (64/64 ninja targets)
+- Tests: 92 tests pass, 1 pre-existing skip
