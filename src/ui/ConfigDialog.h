@@ -26,8 +26,10 @@ private:
     void onPropertyChanged(wxPropertyGridEvent& event);
     bool validateConfig();
     void refreshUpdateMethodDisplay();
+    void refreshAutoTaskChainDisplay();
 
     config::AppConfig editedConfig_;
+    std::vector<std::string> stepOrder_;
     bool modified_{false};
 
     wxPropertyGrid* propGrid_;

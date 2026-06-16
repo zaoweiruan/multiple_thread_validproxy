@@ -5,6 +5,7 @@
 #include "ProxyBatchTester.h"
 #include "ConfigGenerator.h"
 #include "ShareLink.h"
+#include "AutoTaskManager.h"
 #include "Utils.h"
 #include "Logger.h"
 
@@ -25,9 +26,17 @@
 // AppController implementation
 // ---------------------------------------------------------------
 AppController::AppController(sqlite3* db, const config::AppConfig& cfg)
-    : db_(db), config_(cfg) {}
+    : db_(db), config_(cfg) {
+    if (config_.network_monitor.enabled) {
+        netMon_.Start(config_.network_monitor.checkUrls,
+                      config_.network_monitor.checkIntervalMs,
+                      config_.network_monitor.checkTimeoutMs);
+    }
+}
 
 AppController::~AppController() {
+    netMon_.Stop();
+
     // Signal cancellation first so any in-flight async work can observe the flag
     cancelRequested_ = true;
     long long ts = std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -902,4 +911,105 @@ void AppController::syncDatabasesAsync(wxEvtHandler* wxHandler) {
     cancelRequested_ = false;
     isRunning_ = true;
     workerThread_ = std::thread(&AppController::doSyncDatabases, this, wxHandler);
+}
+
+// ---------------------------------------------------------------
+// AutoTask
+// ---------------------------------------------------------------
+void AppController::runAutoTaskAsync(wxEvtHandler* wxHandler) {
+    if (workerThread_.joinable()) {
+        if (isRunning_) {
+            if (wxHandler) {
+                wxQueueEvent(wxHandler, new StatusUpdateEvent(0,
+                    "REJECT:Another operation is already in progress. Please wait or cancel it first."));
+            }
+            return;
+        }
+        workerThread_.join();
+    }
+    cancelRequested_ = false;
+    isRunning_ = true;
+    workerThread_ = std::thread(&AppController::doRunAutoTask, this, wxHandler);
+}
+
+void AppController::resumeAutoTaskAsync(wxEvtHandler* wxHandler) {
+    if (workerThread_.joinable()) {
+        if (isRunning_) {
+            if (wxHandler) {
+                wxQueueEvent(wxHandler, new StatusUpdateEvent(0,
+                    "REJECT:Another operation is already in progress. Please wait or cancel it first."));
+            }
+            return;
+        }
+        workerThread_.join();
+    }
+    cancelRequested_ = false;
+    isRunning_ = true;
+    workerThread_ = std::thread(&AppController::doResumeAutoTask, this, wxHandler);
+}
+
+void AppController::doRunAutoTask(wxEvtHandler* wxHandler) {
+    struct ResetGuard { std::atomic<bool>& flag; ~ResetGuard() { flag = false; } };
+    ResetGuard _rg{isRunning_};
+
+    try {
+        std::string baseDir = std::filesystem::path(config_.database_path).parent_path().string();
+        AutoTaskManager manager(db_, config_, baseDir, &cancelRequested_, &netMon_);
+
+        manager.setProgressCallback([wxHandler](const AutoTaskProgress& progress) {
+            wxString stepName(progress.step_name);
+            wxString msg = wxString::Format(L"自动任务 [%d/%d] %s",
+                progress.current_step, progress.total_steps,
+                stepName);
+            if (wxHandler) {
+                wxQueueEvent(wxHandler, new StatusUpdateEvent(0, msg.ToStdString()));
+            }
+        });
+
+        bool ok = manager.run(config_.auto_task.steps);
+
+        std::string msg = ok ? "AutoTask completed" : "AutoTask failed";
+        if (wxHandler) {
+            wxQueueEvent(wxHandler, new StatusUpdateEvent(0, msg));
+        }
+        Logger::write(msg, ok ? LogLevel::REPORT : LogLevel::ERR);
+    } catch (const std::exception& e) {
+        if (wxHandler) {
+            wxQueueEvent(wxHandler, new StatusUpdateEvent(0, std::string("AutoTask error: ") + e.what()));
+        }
+        Logger::write(std::string("doRunAutoTask error: ") + e.what(), LogLevel::ERR);
+    }
+}
+
+void AppController::doResumeAutoTask(wxEvtHandler* wxHandler) {
+    struct ResetGuard { std::atomic<bool>& flag; ~ResetGuard() { flag = false; } };
+    ResetGuard _rg{isRunning_};
+
+    try {
+        std::string baseDir = std::filesystem::path(config_.database_path).parent_path().string();
+        AutoTaskManager manager(db_, config_, baseDir, &cancelRequested_, &netMon_);
+
+        manager.setProgressCallback([wxHandler](const AutoTaskProgress& progress) {
+            wxString stepName(progress.step_name);
+            wxString msg = wxString::Format(L"自动任务 [%d/%d] %s",
+                progress.current_step, progress.total_steps,
+                stepName);
+            if (wxHandler) {
+                wxQueueEvent(wxHandler, new StatusUpdateEvent(0, msg.ToStdString()));
+            }
+        });
+
+        bool ok = manager.resume();
+
+        std::string msg = ok ? "AutoTask completed" : "AutoTask failed";
+        if (wxHandler) {
+            wxQueueEvent(wxHandler, new StatusUpdateEvent(0, msg));
+        }
+        Logger::write(msg, ok ? LogLevel::REPORT : LogLevel::ERR);
+    } catch (const std::exception& e) {
+        if (wxHandler) {
+            wxQueueEvent(wxHandler, new StatusUpdateEvent(0, std::string("AutoTask error: ") + e.what()));
+        }
+        Logger::write(std::string("doResumeAutoTask error: ") + e.what(), LogLevel::ERR);
+    }
 }

@@ -3,7 +3,7 @@ title: "docs: Project Plans Tracker — global plan index and progress tracker"
 type: docs
 status: maintained
 date: 2026-05-11
-updated: 2026-06-12
+updated: 2026-06-15
 ---
 
 # Project Plans Tracker
@@ -28,6 +28,7 @@ updated: 2026-06-12
 | 2026-06-09 | plan | `docs/plans/2026-06-09-feat-ui-resizable-splitter-v1.0.md` | Resizable splitter |
 | 2026-06-04 | bugfix | `docs/bugfix/2026-06-04-subitemupdater-hardcoded-binconfig-path.md` | SubitemUpdaterV2 hardcoded path fix |
 | 2026-06-12 | spec | `docs/plans/2026-06-11-Spec-Refactoring-Phase1-v1.0.md` | Phase 1 重构方案状态更新 — auto(17/17)✅ / SQL注入(3处)✅ / Logger(实例化+委托)✅ / 全部 92 tests pass |
+| 2026-06-15 | spec | `docs/plans/2026-06-15-Spec-AutoTask-v1.0.md` | AutoTask 自动化管道 — 订阅更新/批量测试/去重/同步/导出可配置管道，命令行集成(-AT/-RS/-CA)，断点续传 |
 | 2026-05-19 | — | 批量状态更新 | P4→❌ cancelled; 003->completed; DLL fix->completed |
 
 ---
@@ -117,6 +118,7 @@ updated: 2026-06-12
 | 29 | 2026-06-11 | ProxyListPanel refreshResults(): replace per-row ValueChanged storm with listCtrl_->Refresh() to prevent UI freeze on large proxy sets | ✅ completed |
 | 30 | 2026-06-11 | ConfigGenerator::loadProfiles(): invalid network defaults to tcp instead of skipping; added splithttp→xhttp mapping as fallback after frontend conversion | ✅ completed |
 | 31 | 2026-06-09 | Resizable horizontal splitter for subscription/proxy panels | ✅ completed |
+| 36 | 2026-06-15 | **AutoTask 自动化管道** — AutoTaskManager(头/源/测试) + ConfigReader auto_task 配置 + CLI 集成(-AT/-RS/-CA) + 8 项 GoogleTest 单测 | ✅ completed |
 
 ---
 

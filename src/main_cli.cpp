@@ -16,6 +16,7 @@
 #include <windows.h>
 #include <random>
 
+#include "AutoTaskManager.h"
 #include "Profileitem.h"
 #include "ProfileExItem.h"
 #include "ConfigGenerator.h"
@@ -83,7 +84,10 @@ void printHelp() {
               << "  -D, -dedup           Remove duplicate proxies from database\n"
               << "  -TU, -tourl         Export proxies (delay>0) to share links file\n"
               << "  -S, -sync [src[:dst]] Sync valid proxies from source to target DB\n"
-              << "  -IS, -import-sub-config <file|url>  Batch import subitems from file or URL\n"
+               << "  -IS, -import-sub-config <file|url>  Batch import subitems from file or URL\n"
+               << "  -AT, -auto-task      Run configured auto-task pipeline (update→test→dedup→sync)\n"
+               << "  -CA, -cancel-task    Cancel a running auto-task\n"
+               << "  -RS, -resume-task    Resume a cancelled auto-task from breakpoint\n"
               << "  -h, --help           Ignored (test-all runs by default)\n\n"
                << "If no options are provided, test-all mode is executed silently.\n";
 }
@@ -281,6 +285,12 @@ int main(int argc, char* argv[]) {
                 }
             }
             // If no argument provided, source and target will be read from config
+        } else if (arg == "-AT" || arg == "-auto-task" || arg == "--auto-task") {
+            commandMode = "auto-task";
+        } else if (arg == "-CA" || arg == "-cancel-task" || arg == "--cancel-task") {
+            commandMode = "cancel-task";
+        } else if (arg == "-RS" || arg == "-resume-task" || arg == "--resume-task") {
+            commandMode = "resume-task";
         } else if (arg == "-IS" || arg == "-import-sub-config") {
             commandMode = "import-sub";
             if (i + 1 < argc) {
@@ -693,6 +703,147 @@ int main(int argc, char* argv[]) {
         return result ? 0 : 1;
     }
     
+    if (commandMode == "auto-task") {
+        Logger::init(logDir.string(), commandMode);
+
+        std::optional<config::AppConfig> appConfig = config::ConfigReader::load(configPath);
+        if (!appConfig) {
+            logError("Failed to load config from: " + configPath);
+            Logger::close();
+            return 1;
+        }
+
+        Logger::setFileEnabled(appConfig->log_enabled);
+        Logger::setFileLevel(Logger::stringToLevel(appConfig->log_file_level));
+        Logger::setConsoleLevel(Logger::stringToLevel(appConfig->log_console_level));
+        logInfo("validproxy starting auto-task...");
+
+        sqlite3* db = nullptr;
+        if (!openDatabase(*appConfig, db, "[main] auto-task")) {
+            Logger::close();
+            return 1;
+        }
+
+        std::vector<std::string> steps;
+        if (!appConfig->auto_task.steps.empty()) {
+            steps = appConfig->auto_task.steps;
+            logInfo("AutoTask: using configured steps: " + std::to_string(steps.size()));
+        } else {
+            steps = {"update", "test", "dedup", "sync"};
+            logInfo("AutoTask: using default steps [update, test, dedup, sync]");
+        }
+
+        AutoTaskManager manager(db, *appConfig, exeDir, nullptr);
+        manager.setProgressCallback([](const AutoTaskProgress& p) {
+            std::cout << "\rAutoTask: [" << std::to_string(p.current_step + 1)
+                      << "/" << std::to_string(p.total_steps) << "] "
+                      << p.step_name << " (" << std::to_string(p.percent) << "%)    " << std::flush;
+        });
+
+        SetConsoleCtrlHandler(consoleCtrlHandler, TRUE);
+        g_cancelRequested.store(false);
+
+        bool result = manager.run(steps);
+
+        if (manager.getState().cancelled) {
+            std::cout << "\nAutoTask cancelled at step "
+                      << manager.getState().current_step_index + 1 << std::endl;
+            std::cout << "State saved to: " << manager.getStateFilePath() << std::endl;
+            std::cout << "Use -RS to resume or -CA to clear." << std::endl;
+        }
+
+        sqlite3_close(db);
+        Logger::write(result ? "auto-task completed" : "auto-task failed", LogLevel::REPORT);
+        Logger::close();
+        return result ? 0 : 1;
+    }
+
+    if (commandMode == "cancel-task") {
+        Logger::init(logDir.string(), commandMode);
+        std::optional<config::AppConfig> appConfig = config::ConfigReader::load(configPath);
+        if (!appConfig) {
+            logError("Failed to load config from: " + configPath);
+            Logger::close();
+            return 1;
+        }
+        Logger::setFileEnabled(appConfig->log_enabled);
+        Logger::setFileLevel(Logger::stringToLevel(appConfig->log_file_level));
+        Logger::setConsoleLevel(Logger::stringToLevel(appConfig->log_console_level));
+
+        std::string stateFile = !appConfig->auto_task.state_file.empty()
+            ? appConfig->auto_task.state_file : exeDir + "/worker/autotask_state.json";
+
+        AutoTaskState saved = AutoTaskManager::loadStateFile(stateFile);
+        if (saved.task_id.empty()) {
+            std::cout << "No auto-task state file found at: " << stateFile << std::endl;
+            Logger::close();
+            return 0;
+        }
+
+        if (saved.completed) {
+            std::cout << "Auto-task already completed; nothing to cancel." << std::endl;
+            Logger::close();
+            return 0;
+        }
+
+        if (saved.current_step_index < 0 || saved.current_step_index >= static_cast<int>(saved.steps.size())) {
+            std::cout << "Auto-task state has invalid step index; cannot cancel cleanly. Remove state file manually." << std::endl;
+            Logger::close();
+            return 0;
+        }
+
+        saved.cancelled = true;
+        saved.completed = false;
+        for (AutoTaskStepInfo& step : saved.steps) {
+            if (step.status == StepStatus::RUNNING) {
+                step.status = StepStatus::CANCELLED;
+            }
+        }
+        AutoTaskManager::saveStateFile(stateFile, saved);
+        std::cout << "Auto-task cancelled (state marked as cancelled)." << std::endl;
+        Logger::close();
+        return 0;
+    }
+
+    if (commandMode == "resume-task") {
+        Logger::init(logDir.string(), commandMode);
+
+        std::optional<config::AppConfig> appConfig = config::ConfigReader::load(configPath);
+        if (!appConfig) {
+            logError("Failed to load config from: " + configPath);
+            Logger::close();
+            return 1;
+        }
+
+        Logger::setFileEnabled(appConfig->log_enabled);
+        Logger::setFileLevel(Logger::stringToLevel(appConfig->log_file_level));
+        Logger::setConsoleLevel(Logger::stringToLevel(appConfig->log_console_level));
+        logInfo("validproxy resuming auto-task...");
+
+        sqlite3* db = nullptr;
+        if (!openDatabase(*appConfig, db, "[main] resume-task")) {
+            Logger::close();
+            return 1;
+        }
+
+        AutoTaskManager manager(db, *appConfig, exeDir, nullptr);
+        manager.setProgressCallback([](const AutoTaskProgress& p) {
+            std::cout << "\rAutoTask: [" << std::to_string(p.current_step + 1)
+                      << "/" << std::to_string(p.total_steps) << "] "
+                      << p.step_name << " (" << std::to_string(p.percent) << "%)    " << std::flush;
+        });
+
+        SetConsoleCtrlHandler(consoleCtrlHandler, TRUE);
+        g_cancelRequested.store(false);
+
+        bool result = manager.resume();
+
+        sqlite3_close(db);
+        Logger::write(result ? "auto-task resumed and completed" : "auto-task resume failed", LogLevel::REPORT);
+        Logger::close();
+        return result ? 0 : 1;
+    }
+
     if (commandMode == "dedup") {
         Logger::init(logDir.string(), commandMode);
         

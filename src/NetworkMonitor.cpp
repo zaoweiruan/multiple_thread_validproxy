@@ -73,9 +73,9 @@ void NetworkMonitor::ThreadLoop() {
         bool prev = connected_.exchange(anyOk);
 
         if (prev && !anyOk) {
-            Logger::write("Network connection LOST", LogLevel::WARN);
+            Logger::write("Network connection LOST", LogLevel::ERR);
         } else if (!prev && anyOk) {
-            Logger::write("Network connection RESTORED", LogLevel::WARN);
+            Logger::write("Network connection RESTORED", LogLevel::ERR);
         }
 
         int slept = 0;
