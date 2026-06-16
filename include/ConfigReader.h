@@ -41,6 +41,25 @@ struct AppConfig {
         std::string target_db;
         bool sync_skip_subids = false;
     } sync;
+
+    // AutoTask configuration
+    struct {
+        std::vector<std::string> steps;
+        bool notify_on_complete = true;
+        std::string state_file;
+    } auto_task;
+
+    // NetworkMonitor configuration
+    struct {
+        bool enabled{true};
+        std::vector<std::string> checkUrls{
+            "https://www.baidu.com",
+            "https://www.qq.com",
+            "https://www.taobao.com"
+        };
+        int checkIntervalMs{10000};
+        int checkTimeoutMs{5000};
+    } network_monitor;
 };
 
 class ConfigReader {

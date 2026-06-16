@@ -391,7 +391,57 @@ std::optional<AppConfig> ConfigReader::load(const std::string& configPath) {
     } else if (obj.contains("sync")) {
         warnWrongType("", "sync", "object");
     }
-    
+
+    if (obj.contains("auto_task") && obj["auto_task"].is_object()) {
+        boost::json::object& at = obj["auto_task"].as_object();
+        if (at.contains("steps") && at["steps"].is_array()) {
+            for (const boost::json::value& s : at["steps"].as_array()) {
+                if (s.is_string()) {
+                    config.auto_task.steps.push_back(s.as_string().c_str());
+                }
+            }
+        } else if (at.contains("steps")) {
+            warnWrongType("auto_task", "steps", "array");
+        }
+        if (at.contains("notify_on_complete") && at["notify_on_complete"].is_bool()) {
+            config.auto_task.notify_on_complete = at["notify_on_complete"].as_bool();
+        } else if (at.contains("notify_on_complete")) {
+            warnWrongType("auto_task", "notify_on_complete", "bool");
+        }
+        if (at.contains("state_file") && at["state_file"].is_string()) {
+            config.auto_task.state_file = resolvePath(at["state_file"].as_string().c_str(), exeDir);
+        } else if (at.contains("state_file")) {
+            warnWrongType("auto_task", "state_file", "string");
+        }
+    } else if (obj.contains("auto_task")) {
+        warnWrongType("", "auto_task", "object");
+    }
+
+    if (obj.contains("network_monitor") && obj["network_monitor"].is_object()) {
+        boost::json::object& nm = obj["network_monitor"].as_object();
+        if (nm.contains("enabled") && nm["enabled"].is_bool()) {
+            config.network_monitor.enabled = nm["enabled"].as_bool();
+        }
+        if (nm.contains("check_urls") && nm["check_urls"].is_array()) {
+            config.network_monitor.checkUrls.clear();
+            for (const boost::json::value& u : nm["check_urls"].as_array()) {
+                if (u.is_string()) {
+                    config.network_monitor.checkUrls.push_back(u.as_string().c_str());
+                }
+            }
+        }
+        if (nm.contains("check_interval_ms") && nm["check_interval_ms"].is_int64()) {
+            config.network_monitor.checkIntervalMs = static_cast<int>(nm["check_interval_ms"].as_int64());
+            if (config.network_monitor.checkIntervalMs <= 0) config.network_monitor.checkIntervalMs = 10000;
+        }
+        if (nm.contains("check_timeout_ms") && nm["check_timeout_ms"].is_int64()) {
+            config.network_monitor.checkTimeoutMs = static_cast<int>(nm["check_timeout_ms"].as_int64());
+            if (config.network_monitor.checkTimeoutMs <= 0) config.network_monitor.checkTimeoutMs = 5000;
+        }
+    } else if (obj.contains("network_monitor")) {
+        warnWrongType("", "network_monitor", "object");
+    }
+
     // Warn about any remaining curly-brace placeholders that were not substituted.
     // Known runtime placeholders (replaced later, not at config load time):
     //   {subid}              - replaced per-subscription in ProxyBatchTester::loadProxies()
@@ -541,6 +591,35 @@ bool ConfigReader::save(const std::string& configPath, const AppConfig& config) 
     syncObj["target_db"] = config.sync.target_db;
     syncObj["sync_skip_subids"] = config.sync.sync_skip_subids;
     root["sync"] = syncObj;
+
+    // auto_task
+    boost::json::object autoTaskObj;
+    {
+        boost::json::array stepsArr;
+        for (const std::string& s : config.auto_task.steps) {
+            stepsArr.emplace_back(s);
+        }
+        autoTaskObj["steps"] = stepsArr;
+    }
+    autoTaskObj["notify_on_complete"] = config.auto_task.notify_on_complete;
+    if (!config.auto_task.state_file.empty()) {
+        autoTaskObj["state_file"] = config.auto_task.state_file;
+    }
+    root["auto_task"] = autoTaskObj;
+
+    // network_monitor
+    boost::json::object nmObj;
+    nmObj["enabled"] = config.network_monitor.enabled;
+    {
+        boost::json::array urlsArr;
+        for (const std::string& u : config.network_monitor.checkUrls) {
+            urlsArr.emplace_back(u);
+        }
+        nmObj["check_urls"] = urlsArr;
+    }
+    nmObj["check_interval_ms"] = config.network_monitor.checkIntervalMs;
+    nmObj["check_timeout_ms"] = config.network_monitor.checkTimeoutMs;
+    root["network_monitor"] = nmObj;
 
     // Serialize and write (compact JSON)
     std::ofstream file(configPath);
