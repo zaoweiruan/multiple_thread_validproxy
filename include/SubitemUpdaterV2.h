@@ -16,6 +16,8 @@
 #include "ProxyFinder.h"
 #include "ConfigReader.h"
 
+class NetworkMonitor;
+
 namespace update {
 
 class SubitemUpdaterV2 {
@@ -25,7 +27,8 @@ public:
                     const config::AppConfig& config,
                     std::ofstream* logOut = nullptr,
                     const std::string& baseDir = "",
-                    std::atomic<bool>* externalCancel = nullptr);
+                    std::atomic<bool>* externalCancel = nullptr,
+                    const NetworkMonitor* netMon = nullptr);
 
     ~SubitemUpdaterV2() {
         cleanupXray();
@@ -117,6 +120,7 @@ private:
     int xrayProcessId_;
     HANDLE xrayJob_;
     std::atomic<bool>* externalCancel_{nullptr};
+    const NetworkMonitor* netMon_{nullptr};
 };
 
 } // namespace update

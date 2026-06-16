@@ -8,6 +8,7 @@
 #include "Utils.h"
 #include "Logger.h"
 #include "CurlEasyHandle.h"
+#include "NetworkMonitor.h"
 
 #include <curl/curl.h>
 #include <chrono>
@@ -123,10 +124,11 @@ SubitemUpdaterV2::SubitemUpdaterV2(sqlite3* db,
                                     const config::AppConfig& config,
                                     std::ofstream* logOut,
                                     const std::string& baseDir,
-                                    std::atomic<bool>* externalCancel)
+                                    std::atomic<bool>* externalCancel,
+                                    const NetworkMonitor* netMon)
     : db_(db), xrayPath_(xrayPath), config_(config), logOut_(logOut), baseDir_(baseDir),
       xrayMgr_(nullptr), proxyFinder_(nullptr), xrayProcessId_(0), xrayJob_(nullptr),
-      externalCancel_(externalCancel) {
+      externalCancel_(externalCancel), netMon_(netMon) {
 }
 
 bool SubitemUpdaterV2::run() {
@@ -150,8 +152,8 @@ bool SubitemUpdaterV2::run() {
     std::vector<db::models::Subitem> enabledSubs = subDao.getEnabledSubscriptions();
 
     if (enabledSubs.empty()) {
-        Logger::write("INFO: No enabled subscriptions found", LogLevel::INFO);
-        return false;
+        Logger::write("No enabled subscriptions found", LogLevel::WARN);
+        return true;
     }
 
     Logger::write("INFO: Found " + std::to_string(enabledSubs.size()) + " enabled subscriptions", LogLevel::INFO);
@@ -182,6 +184,7 @@ bool SubitemUpdaterV2::run() {
     }
 
     int successCount = 0;
+    int attemptedCount = 0;
     std::vector<std::tuple<std::string, std::string, std::string>> failedSubs;
     int phaseIndex = 0;
     int phaseCount = static_cast<int>(methods.size());
@@ -213,6 +216,10 @@ bool SubitemUpdaterV2::run() {
         std::function<bool(const std::string&, const std::string&, const std::string&)> processSub = [&](const std::string& subId, const std::string& subRemarks,
                                const std::string& subUrl) {
             if (isCancelled()) return false;
+            if (netMon_ && !netMon_->IsConnected()) {
+                Logger::write("[SubitemUpdaterV2] network disconnected — aborting subscription update", LogLevel::WARN);
+                return false;
+            }
 
             Logger::write("INFO: " + methodName + ": " + subUrl, LogLevel::REPORT);
 
@@ -232,6 +239,10 @@ bool SubitemUpdaterV2::run() {
             }
 
             if (isCancelled()) return false;
+            if (netMon_ && !netMon_->IsConnected()) {
+                Logger::write("[SubitemUpdaterV2] network disconnected — aborting subscription update", LogLevel::WARN);
+                return false;
+            }
 
             if (!content.empty()) {
                 Logger::write("INFO: " + methodName + " connection successful", LogLevel::INFO);
@@ -250,7 +261,7 @@ bool SubitemUpdaterV2::run() {
                     Logger::write("ERROR: Parse failed: " + subId, LogLevel::ERR);
                 }
             } else {
-                Logger::write("WARN: " + methodName + " connection failed", LogLevel::WARN);
+                Logger::write(methodName + " connection failed", LogLevel::ERR);
                 phaseFail++;
                 stillFailed.push_back({subId, subRemarks, subUrl});
                 Logger::write("ERROR: Failed to update: " + subId, LogLevel::ERR);
@@ -264,18 +275,27 @@ bool SubitemUpdaterV2::run() {
                     Logger::write("INFO: Update cancelled by user during " + methodName + " phase", LogLevel::REPORT);
                     break;
                 }
+                if (netMon_ && !netMon_->IsConnected()) {
+                    Logger::write("[SubitemUpdaterV2] network disconnected — aborting update", LogLevel::WARN);
+                    break;
+                }
                 const db::models::Subitem& sub = enabledSubs[i];
                 if (shouldSkipUpdate(sub)) {
                     Logger::write("INFO: Skipping sub " + sub.id + " (within update interval)", LogLevel::INFO);
                     continue;
                 }
                 Logger::write("[" + std::to_string(i + 1) + "/" + std::to_string(enabledSubs.size()) + "] " + methodName + ": " + sub.url, LogLevel::REPORT);
+                attemptedCount++;
                 if (!processSub(sub.id, sub.remarks, sub.url)) break;
             }
         } else {
             for (size_t i = 0; i < failedSubs.size(); ++i) {
                 if (isCancelled()) {
                     Logger::write("INFO: Update cancelled by user during " + methodName + " phase", LogLevel::REPORT);
+                    break;
+                }
+                if (netMon_ && !netMon_->IsConnected()) {
+                    Logger::write("[SubitemUpdaterV2] network disconnected — aborting update", LogLevel::WARN);
                     break;
                 }
                 Logger::write("[" + std::to_string(i + 1) + "/" + std::to_string(failedSubs.size()) + "] " + methodName + ": " + std::get<2>(failedSubs[i]), LogLevel::REPORT);
@@ -315,6 +335,15 @@ bool SubitemUpdaterV2::run() {
         deduplicate();
     }
 
+    if (successCount <= 0) {
+        if (!enabledSubs.empty() && attemptedCount == 0) {
+            Logger::write("All subscriptions skipped by update interval - nothing to update", LogLevel::ERR);
+            return true;
+        }
+        if (!enabledSubs.empty()) {
+            Logger::write("All subscriptions failed to update - check network connectivity", LogLevel::ERR);
+        }
+    }
     return successCount > 0;
 }
 
@@ -341,6 +370,10 @@ bool SubitemUpdaterV2::runSingle(const std::string& subId) {
     std::vector<UpdateMethod> methods = parseUpdateMethods(config_.update_methods);
     if (isCancelled()) {
         Logger::write("INFO: Single update cancelled by user: " + subId, LogLevel::REPORT);
+        return false;
+    }
+    if (netMon_ && !netMon_->IsConnected()) {
+        Logger::write("[SubitemUpdaterV2] network disconnected — aborting single update: " + subId, LogLevel::WARN);
         return false;
     }
     bool result = updateWithMethods(sub.url, sub.id, methods);
@@ -381,6 +414,14 @@ bool SubitemUpdaterV2::runSingleWithProxy(const std::string& subId, int socksPor
         return true;
     }
 
+    if (isCancelled()) {
+        Logger::write("INFO: Single proxy update cancelled by user: " + subId, LogLevel::REPORT);
+        return false;
+    }
+    if (netMon_ && !netMon_->IsConnected()) {
+        Logger::write("[SubitemUpdaterV2] network disconnected — aborting single proxy update: " + subId, LogLevel::WARN);
+        return false;
+    }
     std::string content = fetchUrlViaProxy(sub.url, socksPort);
     if (content.empty()) {
         Logger::write("Failed to fetch via proxy", LogLevel::INFO);
@@ -474,7 +515,7 @@ bool SubitemUpdaterV2::updateWithMethods(const std::string& subUrl, const std::s
 
 std::string SubitemUpdaterV2::fetchUrlViaAccelerator(const std::string& url) {
     if (config_.accelerator_url.empty()) {
-        Logger::write("INFO: accelerator_url empty, falling back to direct fetch", LogLevel::INFO);
+        Logger::write("accelerator_url empty, falling back to direct fetch", LogLevel::ERR);
         return fetchUrl(url);
     }
     std::string joinedUrl = utils::joinUrl(config_.accelerator_url, url);
@@ -498,7 +539,7 @@ std::string SubitemUpdaterV2::fetchUrl(const std::string& url) {
         return response;
 
     } catch (const std::exception& e) {
-        Logger::write("fetchUrl failed - " + std::string(e.what()), LogLevel::INFO);
+        Logger::write("fetchUrl failed - " + std::string(e.what()), LogLevel::ERR);
         return "";
     }
 }

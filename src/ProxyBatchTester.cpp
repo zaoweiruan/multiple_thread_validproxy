@@ -3,6 +3,7 @@
 #include "Utils.h"
 #include "Logger.h"
 #include "XrayApi.h"
+#include "NetworkMonitor.h"
 #include <fstream>
 #include <filesystem>
 #include <algorithm>
@@ -12,9 +13,9 @@
 #include <future>
 
 ProxyBatchTester::ProxyBatchTester(sqlite3* db, const config::AppConfig& config, const std::string& baseDir,
-                                   std::atomic<bool>* externalCancel)
+                                    std::atomic<bool>* externalCancel, const NetworkMonitor* netMon)
     : db_(db), config_(config), totalProxies_(0), successCount_(0), failedCount_(0), processedCount_(0)
-    , externalCancel_(externalCancel) {
+    , externalCancel_(externalCancel), netMon_(netMon) {
     
     std::string exeBaseDir = baseDir.empty() ? utils::getExecutableDir() : baseDir;
     std::string configDir = exeBaseDir + "/config";
@@ -116,6 +117,11 @@ std::string xrayApiAddr = "127.0.0.1:" + std::to_string(apiPort);
                           " observed cancelRequested_ (will exit after current proxy or immediately)", LogLevel::WARN);
             break;
         }
+        if (netMon_ && !netMon_->IsConnected()) {
+            cancelRequested_ = true;
+            Logger::write("[ProxyBatchTester] network disconnected — aborting batch test", LogLevel::WARN);
+            break;
+        }
         
         int profileIdx = -1;
         {
@@ -166,11 +172,13 @@ std::string xrayApiAddr = "127.0.0.1:" + std::to_string(apiPort);
             xrayApi.removeOutbound(tag);
             for (int i = 0; i < 10; ++i) {  // 10 * 10ms = 100ms total
                 if (isCancelled()) return;
+                if (netMon_ && !netMon_->IsConnected()) { cancelRequested_ = true; return; }
                 std::this_thread::sleep_for(std::chrono::milliseconds(10));
             }
             xrayApi.removeOutbound(tag);
             for (int i = 0; i < 40; ++i) {  // 40 * 10ms = 400ms total
                 if (isCancelled()) return;
+                if (netMon_ && !netMon_->IsConnected()) { cancelRequested_ = true; return; }
                 std::this_thread::sleep_for(std::chrono::milliseconds(10));
             }
             
@@ -187,6 +195,7 @@ std::string xrayApiAddr = "127.0.0.1:" + std::to_string(apiPort);
                     xrayApi.removeOutbound(tag);
                     for (int i = 0; i < 20; ++i) {  // 20 * 10ms = 200ms total
                         if (isCancelled()) return;
+                        if (netMon_ && !netMon_->IsConnected()) { cancelRequested_ = true; return; }
                         std::this_thread::sleep_for(std::chrono::milliseconds(10));
                     }
                 }
@@ -211,6 +220,7 @@ std::string xrayApiAddr = "127.0.0.1:" + std::to_string(apiPort);
             // sleep in 10ms increments for cancellation responsiveness
             for (int i = 0; i < 30; ++i) {  // 30 * 10ms = 300ms total
                 if (isCancelled()) return;
+                if (netMon_ && !netMon_->IsConnected()) { cancelRequested_ = true; return; }
                 std::this_thread::sleep_for(std::chrono::milliseconds(10));
             }
             
@@ -350,7 +360,7 @@ bool ProxyBatchTester::run() {
      if (totalProxies_ == 0) {
          Logger::write("No proxies to test", LogLevel::WARN);
          printSummary();
-         return false;
+         return true;
      }
      
      Logger::write("Testing " + std::to_string(totalProxies_) + " proxies total", LogLevel::REPORT);
