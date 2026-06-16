@@ -5,10 +5,12 @@
 #include <wx/propgrid/propgrid.h>
 #include <wx/propgrid/advprops.h>
 #include <wx/msgdlg.h>
+#include <wx/stdpaths.h>
 
 #include <filesystem>
 #include <fstream>
 #include <sstream>
+#include <algorithm>
 
 #include "Utils.h"
 
@@ -106,6 +108,18 @@ ConfigDialog::ConfigDialog(wxWindow* parent, const config::AppConfig& cfg)
     propGrid_->SetPropertyAttribute("sync_target_db", wxPG_FILE_SHOW_FULL_PATH, (long)1);
     propGrid_->Append(new wxBoolProperty(L"跳过保护订阅", "sync_skip_subids", cfg.sync.sync_skip_subids));
 
+    // --- 自动任务 配置 ---
+    propGrid_->Append(new wxPropertyCategory(L"自动任务"));
+    propGrid_->Append(new wxBoolProperty(L"全部更新", "autotask_step_update_all", false));
+    propGrid_->Append(new wxBoolProperty(L"全部测试", "autotask_step_test_all", false));
+    propGrid_->Append(new wxBoolProperty(L"去重", "autotask_step_dedup", false));
+    propGrid_->Append(new wxBoolProperty(L"同步", "autotask_step_sync", false));
+    propGrid_->Append(new wxBoolProperty(L"导出", "autotask_step_export", false));
+    propGrid_->Append(new wxStringProperty(L"任务链", "autotask_chain_display", L""));
+    propGrid_->SetPropertyReadOnly("autotask_chain_display");
+    propGrid_->Append(new wxBoolProperty(L"任务完成通知", "autotask_notify", cfg.auto_task.notify_on_complete));
+    propGrid_->Append(new wxStringProperty(L"状态文件路径", "autotask_state_file", cfg.auto_task.state_file));
+
     // --- 通知 配置 ---
     propGrid_->Append(new wxPropertyCategory(L"通知"));
     propGrid_->Append(new wxBoolProperty(L"启用通知", "notification_enabled", cfg.notification_enabled));
@@ -151,6 +165,31 @@ void ConfigDialog::loadConfig(const config::AppConfig& cfg) {
     propGrid_->SetPropertyValue("update_method_proxy", hasProxy);
     propGrid_->SetPropertyValue("update_method_direct", hasDirect);
     refreshUpdateMethodDisplay();
+
+    // AutoTask step checkboxes
+    bool hasUpdate = false, hasTest = false, hasDedup = false, hasSync = false, hasExport = false;
+    for (const std::string& s : cfg.auto_task.steps) {
+        if (s == "update_all") hasUpdate = true;
+        else if (s == "test_all") hasTest = true;
+        else if (s == "dedup") hasDedup = true;
+        else if (s == "sync") hasSync = true;
+        else if (s == "export") hasExport = true;
+    }
+    propGrid_->SetPropertyValue("autotask_step_update_all", hasUpdate);
+    propGrid_->SetPropertyValue("autotask_step_test_all", hasTest);
+    propGrid_->SetPropertyValue("autotask_step_dedup", hasDedup);
+    propGrid_->SetPropertyValue("autotask_step_sync", hasSync);
+    propGrid_->SetPropertyValue("autotask_step_export", hasExport);
+    stepOrder_ = cfg.auto_task.steps;
+    refreshAutoTaskChainDisplay();
+
+    std::string stateFile = cfg.auto_task.state_file;
+    if (stateFile.empty()) {
+        std::string exeDir = std::filesystem::path(
+            wxStandardPaths::Get().GetExecutablePath().ToStdString()).parent_path().string();
+        stateFile = exeDir + "/worker/autotask_state.json";
+    }
+    propGrid_->SetPropertyValue("autotask_state_file", wxString(stateFile));
 }
 
 bool ConfigDialog::saveConfig() {
@@ -228,7 +267,39 @@ bool ConfigDialog::saveConfig() {
     editedConfig_.notification_on_update = propGrid_->GetPropertyValueAsBool("notification_on_update");
     editedConfig_.notification_on_test = propGrid_->GetPropertyValueAsBool("notification_on_test");
 
+    // AutoTask fields
+    editedConfig_.auto_task.steps = stepOrder_;
+    editedConfig_.auto_task.notify_on_complete = propGrid_->GetPropertyValueAsBool("autotask_notify");
+    editedConfig_.auto_task.state_file = propGrid_->GetPropertyValueAsString("autotask_state_file").ToStdString();
+
     return validateConfig();
+}
+
+static const char* stepNameForProp(const wxString& propName) {
+    if (propName == "autotask_step_update_all") return "update_all";
+    if (propName == "autotask_step_test_all")  return "test_all";
+    if (propName == "autotask_step_dedup")     return "dedup";
+    if (propName == "autotask_step_sync")      return "sync";
+    if (propName == "autotask_step_export")    return "export";
+    return "";
+}
+
+static const wchar_t* stepDisplayName(const std::string& step) {
+    if (step == "update_all") return L"全部更新";
+    if (step == "test_all")   return L"全部测试";
+    if (step == "dedup")      return L"去重";
+    if (step == "sync")       return L"同步";
+    if (step == "export")     return L"导出";
+    return L"";
+}
+
+void ConfigDialog::refreshAutoTaskChainDisplay() {
+    wxString display;
+    for (size_t i = 0; i < stepOrder_.size(); ++i) {
+        if (i > 0) display += L" → ";
+        display += stepDisplayName(stepOrder_[i]);
+    }
+    propGrid_->SetPropertyValue("autotask_chain_display", display);
 }
 
 void ConfigDialog::refreshUpdateMethodDisplay() {
@@ -316,5 +387,19 @@ void ConfigDialog::onPropertyChanged(wxPropertyGridEvent& event) {
         propName == "update_method_proxy" ||
         propName == "update_method_direct") {
         refreshUpdateMethodDisplay();
+    }
+    if (propName.StartsWith("autotask_step_")) {
+        const char* step = stepNameForProp(propName);
+        if (step && step[0]) {
+            bool checked = propGrid_->GetPropertyValueAsBool(propName);
+            if (checked) {
+                if (std::find(stepOrder_.begin(), stepOrder_.end(), step) == stepOrder_.end()) {
+                    stepOrder_.push_back(step);
+                }
+            } else {
+                stepOrder_.erase(std::remove(stepOrder_.begin(), stepOrder_.end(), step), stepOrder_.end());
+            }
+        }
+        refreshAutoTaskChainDisplay();
     }
 }

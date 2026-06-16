@@ -16,6 +16,7 @@
 #include "Profileitem.h"
 #include "ProfileExItem.h"
 #include "ProxyFinder.h"
+#include "NetworkMonitor.h"
 
 class wxEvtHandler;
 
@@ -68,12 +69,17 @@ bool isTestCancelled() const;
    void findProxyByIndexIdAsync(const std::string& indexId, wxEvtHandler* wxHandler);
    void syncDatabasesAsync(wxEvtHandler* wxHandler);
 
-  // Export / Tool
-  std::tuple<bool, int, std::string> exportShareLinks();
+   // AutoTask
+   void runAutoTaskAsync(wxEvtHandler* wxHandler);
+   void resumeAutoTaskAsync(wxEvtHandler* wxHandler);
+
+   // Export / Tool
+   std::tuple<bool, int, std::string> exportShareLinks();
   bool deduplicate();
   bool syncDatabases(const std::string& src = "", const std::string& dst = "");
   bool generateConfig(const std::string& indexId);
-  void stopXray();
+   void stopXray();
+   NetworkMonitor* getNetworkMonitor() { return &netMon_; }
 
 private:
   void doUpdateSubscription(const std::string& subId, wxEvtHandler* wxHandler);
@@ -84,6 +90,8 @@ private:
   void doFindFirstProxy(wxEvtHandler* wxHandler);
   void doFindBestProxy(wxEvtHandler* wxHandler);
   void doSyncDatabases(wxEvtHandler* wxHandler);
+  void doRunAutoTask(wxEvtHandler* wxHandler);
+  void doResumeAutoTask(wxEvtHandler* wxHandler);
 
   sqlite3* db_;
   config::AppConfig config_;
@@ -92,6 +100,7 @@ private:
   // Worker thread (single at a time)
   std::thread workerThread_;
   TestResult lastFindResult_;
+  NetworkMonitor netMon_;
 };
 
 #endif // UI_APP_CONTROLLER_H

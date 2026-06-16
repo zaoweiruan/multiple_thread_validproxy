@@ -27,7 +27,7 @@ private:
     std::vector<std::string> urls_;
     int checkIntervalMs_{10000};
     int checkTimeoutMs_{5000};
-    std::atomic<bool> connected_{true};
+    std::atomic<bool> connected_{false};
     std::atomic<bool> stopRequested_{false};
     std::thread thread_;
 };

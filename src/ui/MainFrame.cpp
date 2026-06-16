@@ -11,6 +11,7 @@
 #include "Logger.h"
 #include "Profileitem.h"
 #include "ToolbarIcons.h"
+#include "NetworkMonitor.h"
 
 #include <wx/sizer.h>
 #include <wx/splitter.h>
@@ -42,6 +43,8 @@ enum {
     ID_MENU_GEN_CONFIG    = wxID_HIGHEST + 109,
     ID_MENU_CONFIG        = wxID_HIGHEST + 110,
     ID_MENU_ABOUT         = wxID_HIGHEST + 111,
+    ID_MENU_AUTOTASK_RUN  = wxID_HIGHEST + 112,
+    ID_MENU_AUTOTASK_RESUME = wxID_HIGHEST + 113,
     ID_TOOL_UPDATE_ALL    = wxID_HIGHEST + 200,
     ID_TOOL_TEST          = wxID_HIGHEST + 201,
     ID_TOOL_FIND          = wxID_HIGHEST + 202,
@@ -50,6 +53,7 @@ enum {
     ID_TOOL_CONFIG        = wxID_HIGHEST + 205,
     ID_TOOL_CANCEL        = wxID_HIGHEST + 208,
     ID_TOOL_SYNC          = wxID_HIGHEST + 209,
+    ID_TOOL_AUTOTASK      = wxID_HIGHEST + 210,
     ID_TOOL_CLEAR         = wxID_HIGHEST + 207,
     ID_SEARCH_BOX         = wxID_HIGHEST + 206,
     ID_TOOL_DETAIL_TOGGLE = wxID_HIGHEST + 302,
@@ -71,6 +75,8 @@ wxBEGIN_EVENT_TABLE(MainFrame, wxFrame)
     EVT_MENU(ID_MENU_EXPORT,      MainFrame::onMenuExportShareLink)
     EVT_MENU(ID_MENU_GEN_CONFIG,  MainFrame::onMenuGenerateConfig)
     EVT_MENU(ID_MENU_CONFIG,      MainFrame::onMenuConfig)
+    EVT_MENU(ID_MENU_AUTOTASK_RUN, MainFrame::onMenuAutoTask)
+    EVT_MENU(ID_MENU_AUTOTASK_RESUME, MainFrame::onMenuAutoTaskResume)
     EVT_MENU(ID_MENU_ABOUT,       MainFrame::onMenuAbout)
     // Toolbar
     EVT_MENU(ID_TOOL_UPDATE_ALL,  MainFrame::onToolUpdateAll)
@@ -81,6 +87,7 @@ wxBEGIN_EVENT_TABLE(MainFrame, wxFrame)
     EVT_MENU(ID_TOOL_CONFIG,      MainFrame::onToolConfig)
     EVT_MENU(ID_TOOL_CANCEL, MainFrame::onToolCancel)
     EVT_MENU(ID_TOOL_SYNC,       MainFrame::onToolSync)
+    EVT_MENU(ID_TOOL_AUTOTASK,   MainFrame::onMenuAutoTask)
     // Search
     EVT_TEXT_ENTER(ID_SEARCH_BOX,  MainFrame::onSearchBoxEnter)
     EVT_TEXT(ID_SEARCH_BOX,        MainFrame::onSearchTextChanged)
@@ -152,6 +159,21 @@ MainFrame::MainFrame(const config::AppConfig& cfg, sqlite3* db)
                 payload.StartsWith("Update (all)")) {
                 if (subPanel_ && controller_) {
                     controller_->loadSubscriptionsAsync(this);
+                }
+            }
+            // AutoTask completion → restore UI state and refresh panels
+            if (payload.StartsWith("AutoTask completed") ||
+                payload.StartsWith("AutoTask failed") ||
+                payload.StartsWith("AutoTask cancelled") ||
+                payload == "AutoTask completed" ||
+                payload == "AutoTask failed" ||
+                payload == "AutoTask cancelled") {
+                setOperationState(OperationType::NONE);
+                if (subPanel_ && controller_) {
+                    controller_->loadSubscriptionsAsync(this);
+                }
+                if (proxyPanel_) {
+                    proxyPanel_->refreshResults();
                 }
             }
             onStatusUpdate(evt);
@@ -248,10 +270,63 @@ Bind(wxEVT_SUB_LIST_LOADED, [this](SubListLoadedEvent& evt) {
     });
 
     loadSettings();
+
+    // Network status timer (2s poll)
+    netMonTimer_ = new wxTimer(this);
+    Bind(wxEVT_TIMER, &MainFrame::onNetMonTimer, this);
+    netMonTimer_->Start(2000);
+
+    // Create network status indicator panel on status bar field 1
+    netMonPanel_ = new wxPanel(statusBar_, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxBORDER_NONE);
+    netMonPanel_->SetBackgroundStyle(wxBG_STYLE_PAINT);
+    netMonPanel_->Bind(wxEVT_PAINT, [this](wxPaintEvent&) {
+        wxPaintDC dc(netMonPanel_);
+        wxSize sz = netMonPanel_->GetClientSize();
+        if (sz.x < 4 || sz.y < 4) return;
+        wxColour face = wxSystemSettings::GetColour(wxSYS_COLOUR_MENUBAR);
+        dc.SetBrush(wxBrush(face));
+        dc.SetPen(*wxTRANSPARENT_PEN);
+        dc.DrawRectangle(0, 0, sz.x, sz.y);
+        wxColour shadow = wxSystemSettings::GetColour(wxSYS_COLOUR_3DSHADOW);
+        wxColour highlight = wxSystemSettings::GetColour(wxSYS_COLOUR_3DHIGHLIGHT);
+        dc.SetPen(wxPen(shadow));
+        dc.DrawLine(0, 0, sz.x - 1, 0);
+        dc.DrawLine(0, 0, 0, sz.y - 1);
+        dc.SetPen(wxPen(highlight));
+        dc.DrawLine(0, sz.y - 1, sz.x - 1, sz.y - 1);
+        dc.DrawLine(sz.x - 1, 0, sz.x - 1, sz.y - 1);
+        wxString label = netMonConnected_ ? L"Network OK" : L"Disconnected";
+        dc.SetFont(wxFont(8, wxFONTFAMILY_DEFAULT, wxFONTSTYLE_NORMAL, wxFONTWEIGHT_NORMAL));
+        wxSize textExt = dc.GetTextExtent(label);
+        int textH = textExt.y;
+        int r = (textH - 2) / 2;
+        if (r < 2) r = 2;
+        int cx = r + 3;
+        int cy = sz.y / 2;
+        wxColour dotColor = netMonConnected_ ? wxColour(0, 180, 0) : wxColour(200, 0, 0);
+        dc.SetBrush(wxBrush(dotColor));
+        dc.SetPen(wxPen(dotColor));
+        dc.DrawCircle(cx, cy, r);
+        dc.SetTextForeground(wxSystemSettings::GetColour(wxSYS_COLOUR_BTNTEXT));
+        dc.DrawText(label, cx + r + 4, cy - textH / 2);
+    });
+    repositionNetMonPanel();
+    statusBar_->Bind(wxEVT_SIZE, [this](wxSizeEvent& evt) {
+        evt.Skip();
+        repositionNetMonPanel();
+    });
+
     Logger::write("[MainFrame] Constructor end", LogLevel::DEBUG);
 }
 
 MainFrame::~MainFrame() {
+    // Step 0: Stop the network monitor timer
+    if (netMonTimer_) {
+        netMonTimer_->Stop();
+        delete netMonTimer_;
+        netMonTimer_ = nullptr;
+    }
+
      // Step 1: AUI must be torn down before any panel/frame member is destroyed
      // (AUI holds references to managed panes — pointers must be valid here)
      if (auiManager_) {
@@ -321,6 +396,9 @@ void MainFrame::setOperationState(OperationType op) {
             case OperationType::SYNC:
                 tb->SetToolShortHelp(ID_TOOL_CANCEL, "停止同步");
                 break;
+            case OperationType::AUTOTASK:
+                tb->SetToolShortHelp(ID_TOOL_CANCEL, "停止自动任务");
+                break;
             default:
                 break;
         }
@@ -353,6 +431,13 @@ void MainFrame::initMenuBar() {
     proxyMenu->Append(ID_MENU_EXPORT,     "Export Share Links");
     proxyMenu->Append(ID_MENU_GEN_CONFIG, "Generate Config…");
     bar->Append(proxyMenu, "&Proxy");
+
+    wxMenu* taskMenu = new wxMenu;
+    taskMenu->Append(ID_MENU_AUTOTASK_RUN,  L"执行自动任务\tCtrl+T");
+    taskMenu->Append(ID_MENU_AUTOTASK_RESUME, L"恢复自动任务");
+    taskMenu->AppendSeparator();
+    taskMenu->Append(ID_TOOL_CANCEL, L"取消任务");
+    bar->Append(taskMenu, L"&任务");
 
     wxMenu* settingsMenu = new wxMenu;
     settingsMenu->Append(ID_MENU_CONFIG, "Configuration…\tCtrl+,");
@@ -391,6 +476,7 @@ void MainFrame::initToolBar() {
     m_toolbar->AddTool(ID_TOOL_FIND, "查找", ToolbarIcons::load("tool_find"), "查找最佳代理");
     m_toolbar->AddTool(ID_TOOL_DEDUP, "去重", ToolbarIcons::load("tool_dedup"), "去重");
     m_toolbar->AddTool(ID_TOOL_IMPORT, "导入", ToolbarIcons::load("tool_import"), "增加新订阅");
+    m_toolbar->AddTool(ID_TOOL_AUTOTASK, "自动任务", ToolbarIcons::load("tool_pipeline"), "自动任务");
     m_toolbar->AddTool(ID_TOOL_CONFIG, "配置", ToolbarIcons::load("tool_config"), "配置");
 
     // ── Search box: left-shifted by 150px from center ──
@@ -504,6 +590,28 @@ void MainFrame::initTrayIcon() {
 void MainFrame::loadSettings() {
     // Load window position / size from config if available
     // (placeholder — actual settings managed by ConfigDialog)
+}
+
+void MainFrame::repositionNetMonPanel() {
+    if (!statusBar_ || !netMonPanel_) return;
+    wxRect fieldRect;
+    statusBar_->GetFieldRect(1, fieldRect);
+    netMonPanel_->SetSize(fieldRect);
+    netMonPanel_->Refresh();
+}
+
+// -------------------------------------------------------------------
+//  Network monitor timer — updates status bar field 1
+// -------------------------------------------------------------------
+void MainFrame::onNetMonTimer(wxTimerEvent&) {
+    if (!controller_ || !netMonPanel_) return;
+    NetworkMonitor* netMon = controller_->getNetworkMonitor();
+    if (!netMon) return;
+    bool connected = netMon->IsConnected();
+    if (connected != netMonConnected_) {
+        netMonConnected_ = connected;
+        netMonPanel_->Refresh();
+    }
 }
 
 // -------------------------------------------------------------------
@@ -695,6 +803,18 @@ void MainFrame::onMenuConfig(wxCommandEvent&) {
     }
     delete configDialog_;
     configDialog_ = nullptr;
+}
+
+void MainFrame::onMenuAutoTask(wxCommandEvent&) {
+    setOperationState(OperationType::AUTOTASK);
+    setStatusText(0, L"自动任务开始…");
+    controller_->runAutoTaskAsync(this);
+}
+
+void MainFrame::onMenuAutoTaskResume(wxCommandEvent&) {
+    setOperationState(OperationType::AUTOTASK);
+    setStatusText(0, L"恢复自动任务…");
+    controller_->resumeAutoTaskAsync(this);
 }
 
 void MainFrame::onMenuAbout(wxCommandEvent&) {

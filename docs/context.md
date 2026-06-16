@@ -34,3 +34,6 @@
 | 2026-06-09 | Resizable splitter for subscription/proxy panels — wxSplitterWindow implementation with parent fix | `docs/plans/2026-06-09-feat-ui-resizable-splitter-v1.0.md` |
 | 2026-06-04 | SubitemUpdaterV2 硬编码 `"bin/config"` 路径修复 | `docs/bugfix/2026-06-04-subitemupdater-hardcoded-binconfig-path.md` |
 | 2026-06-12 | Worker join 超时修复 v3 — 动态 join timeout + 轻量 warmup（v2 XrayApi::ping 轮询过重，v1 7s 不足） | `docs/bugfix/2026-06-12-Bugfix-ProxyBatchTester-Worker0-JoinTimeout-v1.0.md` |
+| 2026-06-15 | AutoTask 管道诊断不可见修复 — SubitemUpdaterV2 return false + 日志级别低 + step name 别名缺失 + ConfigDialog 改进 + ProxyBatchTester zero-proxy return true | `docs/bugfix/2026-06-15-Bugfix-AutoTask-SubitemUpdater-logging-and-pipeline.md` |
+| 2026-06-15 | NetworkMonitor 批量网络中断中止 — 独立 NetworkMonitor 类，后台线程 HEAD 探测，auto atomic 标志，ProxyBatchTester/SubitemUpdaterV2 检测中断自动中止 | `docs/superpowers/specs/2026-06-15-Spec-NetworkMonitor-batch-network-abort-on-disconnect-v1.0.md` |
+| 2026-06-16 | **Code Review 修复清单** — CLI Ctrl+C 无法中止 AutoTask(传 nullptr)、GUI 状态文件嵌套 worker/worker/ 路径、SQL 阈值改为 between 0 and 0 导致 99% 代理排除、statusbar 图标未使用含 typo、doRunAutoTask/doResumeAutoTask 重复 30 行 | `docs/bugfix/2026-06-16-Bugfix-Review-AutoTask-CLI-StateFile-v1.0.md` |

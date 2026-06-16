@@ -378,4 +378,15 @@ set_target_properties(test_delete_subscription PROPERTIES
 )
 add_test(NAME DeleteSubscriptionTest COMMAND test_delete_subscription)
 
+# -- NetworkMonitor unit tests --
+add_executable(test_network_monitor tests/test_network_monitor.cpp src/NetworkMonitor.cpp src/Logger.cpp src/LoggerInstance.cpp)
+target_include_directories(test_network_monitor PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(test_network_monitor PRIVATE gtest_main gtest Threads::Threads CURL::libcurl)
+set_target_properties(test_network_monitor PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+)
+add_test(NAME NetworkMonitorTest COMMAND test_network_monitor)
+
 install(TARGETS validproxy validproxy-cli DESTINATION bin)

@@ -2,7 +2,7 @@
 title: "docs: project document index"
 type: meta
 status: maintained
-updated: 2026-06-12
+updated: 2026-06-15
 ---
 
 # Project Document Index
@@ -31,7 +31,7 @@ updated: 2026-06-12
 | [规范化设计](#75-规范化设计) | 4 | `docs/specs/` |
 | [实施计划](#8-实施计划) | 54 | `docs/plans/` |
 | [分析报告](#9-分析报告) | 7 | `docs/reports/` |
-| [Bug 修复记录](#91-bug-修复记录) | 11 | `docs/bugfix/` |
+| [Bug 修复记录](#91-bug-修复记录) | 13 | `docs/bugfix/` |
 | [测试报告](#10-测试报告) | 1 | `docs/test/` |
 | [长期记忆](#13-长期记忆) | 1 | `docs/project-knowledge.md` (6.2 KB) |
 
@@ -141,6 +141,7 @@ updated: 2026-06-12
 | 4 | [`docs/superpowers/specs/2026-04-17-dedup-design.md`](./superpowers/specs/2026-04-17-dedup-design.md) | **去重方案设计** — 去重算法(DH 模式兼容 REALITY)、前置/后置过滤、网络字段污损清理、NULL 安全策略 | 10.8 KB |
 | 5 | [`docs/superpowers/specs/2026-04-24-proxy-sync-design.md`](./superpowers/specs/2026-04-24-proxy-sync-design.md) | **代理同步方案设计** — 主+副本 DB 同步、strategy 路由(insert_only/update_only/upsert)、事务批处理、数据流图 | 13.1 KB |
 | 6 | [`docs/superpowers/specs/2026-04-28-subitem-batch-import-design.md`](./superpowers/specs/2026-04-28-subitem-batch-import-design.md) | **Subitem 批量导入设计** — URL Fetcher 更新、StreamBuffer+PushParser、parseSubscription()→parseContext() 分割、增量防重 | 16.1 KB |
+| 7 | [`docs/superpowers/specs/2026-06-15-Spec-NetworkMonitor-batch-network-abort-on-disconnect-v1.0.md`](./superpowers/specs/2026-06-15-Spec-NetworkMonitor-batch-network-abort-on-disconnect-v1.0.md) | **NetworkMonitor 批量网络中断中止** — 后台线程周期性 HEAD 探测大陆站点连通性，auto atomic<bool> 标志，ProxyBatchTester/SubitemUpdaterV2 检测中断自动中止 | draft |
 
 ---
 
@@ -159,7 +160,7 @@ updated: 2026-06-12
 
 ## 8. 实施计划 (docs/plans/)
 
-> 共 55 个计划文件，按日期倒序排列。
+> 共 56 个计划文件，按日期倒序排列。
 > 状态标记: ✅ completed ｜ 🔄 in_progress ｜ 📝 draft｜ ❌ blocked
 > 全局跟踪: [`docs/plans/project-plans-tracker.md`](./plans/project-plans-tracker.md)
 
@@ -176,6 +177,7 @@ updated: 2026-06-12
 
 | 日期 | 编号 | 文件 | 类型 | 说明 |
 |------|------|------|------|------|
+| 2026-06-15 |  | [`./superpowers/plans/2026-06-15-NetworkMonitor-batch-network-abort-on-disconnect.md`](./superpowers/plans/2026-06-15-NetworkMonitor-batch-network-abort-on-disconnect.md) | feat draft | **NetworkMonitor 批量网络中断中止** — 12 tasks: NetworkMonitor class, ConfigReader, ProxyBatchTester/SubitemUpdaterV2/AutoTaskManager/AppController integration, MainFrame UI, unit tests |
 | In Progress | 14-002 | [`2026-05-14-002-ui-implementation-plan.md`](./plans/2026-05-14-002-ui-implementation-plan.md) | feat | **UI 完整实现** — 11 个 U# 单元含 wxWidgets 集成、事件系统、AppController、MainFrame、6 个面板(XAUI)、AUI 布局；分 4 Phase 执行 |
 | 2026-05-18 |  | [`2026-05-18-001-fix-null-testpanel-pointer.md`](./plans/2026-05-18-001-fix-null-testpanel-pointer.md) | fix draft | MainFrame initPanels() 构造顺序修复 (nullptr 前置) |
 | 2026-05-18 |  | [`2026-05-18-003-unify-proxy-testing-ui-flow.md`](./plans/2026-05-18-003-unify-proxy-testing-ui-flow.md) | plan draft | 统一右键菜单与工具栏代理测试的 UI 流程 |
@@ -221,6 +223,7 @@ updated: 2026-06-12
 | 2026-04-17 |  | [`2026-04-17-subscription-url-proxy-fallback-plan.md`](./plans/2026-04-17-subscription-url-proxy-fallback-plan.md) | feat ✅ | 订阅 URL proxy fallback |
 | 2026-04-13 |  | [`2026-04-13-module-refactoring-plan.md`](./plans/2026-04-13-module-refactoring-plan.md) | refactor ✅ | 模块重构计划 |
 | 2026-06-01 |  | [`2026-06-01-cli-gui-binary-split.md`](./plans/2026-06-01-cli-gui-binary-split.md) | refactor ✅ | CLI/GUI 二进制拆分 — 解决 WIN32_EXECUTABLE 导致 cmd.exe 非阻塞问题 |
+| 2026-06-15 |  | [`2026-06-15-Spec-AutoTask-v1.0.md`](./plans/2026-06-15-Spec-AutoTask-v1.0.md) | feat ✅ | **AutoTask 自动化管道** — 可配置的订阅更新→批量测试→去重→同步→导出自动化工作流，含命令行集成 (-AT/-RS/-CA) |
 
 ### 8.4 `.kilo/plans/` 已迁移归档
 
@@ -287,6 +290,8 @@ updated: 2026-06-12
 | 9 | [`docs/bugfix/2026-06-11-Bugfix-ProxyListPanel-RefreshFreeze-v1.0.md`](./bugfix/2026-06-11-Bugfix-ProxyListPanel-RefreshFreeze-v1.0.md) | **大代理集批量测试后 UI 冻结修复** — 逐行 ValueChanged 风暴改为单次 listCtrl_->Refresh() | — |
 | 10 | [`docs/bugfix/2026-06-11-Bugfix-ProxyBatchTester-ZeroProxyEarlyReturn-v1.0.md`](./bugfix/2026-06-11-Bugfix-ProxyBatchTester-ZeroProxyEarlyReturn-v1.0.md) | **零代理批量测试 printSummary/stopAll 缺失修复** — run()/runWithSubId() 空代理分支补齐汇总与 Xray 清理 | — |
 | 11 | [`docs/bugfix/2026-06-12-Bugfix-ProxyBatchTester-Worker0-JoinTimeout-v1.0.md`](./bugfix/2026-06-12-Bugfix-ProxyBatchTester-Worker0-JoinTimeout-v1.0.md) | **Worker join 超时修复 v3** — 动态 join timeout (v1 7s 不足，v2 ping 轮询过重) | 64 lines |
+| 12 | [`docs/bugfix/2026-06-15-Bugfix-AutoTask-SubitemUpdater-logging-and-pipeline.md`](./bugfix/2026-06-15-Bugfix-AutoTask-SubitemUpdater-logging-and-pipeline.md) | **AutoTask: invisible diagnostics under file_level:ERROR** — SubitemUpdaterV2 all-skipped return false, log levels too low, step name aliases missing | — |
+| 13 | [`docs/bugfix/2026-06-16-Bugfix-Review-AutoTask-CLI-StateFile-v1.0.md`](./bugfix/2026-06-16-Bugfix-Review-AutoTask-CLI-StateFile-v1.0.md) | **AutoTask CLI cancel, state file path, config SQL threshold** — CLI Ctrl+C silent ignore, double-nested worker/worker/ path, SQL 99% proxy pool reduction, unused icons | 177 lines |
 
 ---
 

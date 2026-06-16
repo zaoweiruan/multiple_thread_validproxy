@@ -27,7 +27,8 @@ enum class OperationType {
     TEST,
     UPDATE,
     FIND,
-    SYNC
+    SYNC,
+    AUTOTASK
 };
 
 // ---------------------------------------------------------------
@@ -72,6 +73,8 @@ private:
     void onMenuExportShareLink(wxCommandEvent& event);
     void onMenuGenerateConfig(wxCommandEvent& event);
     void onMenuConfig(wxCommandEvent& event);
+    void onMenuAutoTask(wxCommandEvent& event);
+    void onMenuAutoTaskResume(wxCommandEvent& event);
     void onMenuAbout(wxCommandEvent& event);
     void onToolUpdateAll(wxCommandEvent& event);
     void onToolTest(wxCommandEvent& event);
@@ -88,6 +91,8 @@ private:
     void onSearchClear(wxCommandEvent& event);
     void onToggleDetailPane(wxCommandEvent& event);
     void onTestSubscription(SubscriptionTestEvent& event);
+    void onNetMonTimer(wxTimerEvent& event);
+    void repositionNetMonPanel();
 
 // Members
      wxAuiManager* auiManager_{nullptr};
@@ -107,6 +112,9 @@ private:
     wxAuiToolBarItem* m_toggleDetailItem{nullptr};  // Toggle detail panel button
     bool detailPaneVisible_{false};
     config::AppConfig config_;
+    wxTimer* netMonTimer_{nullptr};
+    wxPanel* netMonPanel_{nullptr};
+    bool netMonConnected_{true};
 
     wxDECLARE_EVENT_TABLE();
 };
