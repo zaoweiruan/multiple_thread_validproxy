@@ -29,5 +29,6 @@ private:
     int checkTimeoutMs_{5000};
     std::atomic<bool> connected_{false};
     std::atomic<bool> stopRequested_{false};
+    std::atomic<bool> firstCheckDone_{false};
     std::thread thread_;
 };

@@ -69,7 +69,7 @@ namespace {
         try {
             p.checkRequired();
         } catch (const std::exception& e) {
-            Logger::write("SKIP: " + p.address + ":" + p.port + " - " + e.what(), LogLevel::WARN);
+            Logger::write("SKIP: " + p.address + ":" + p.port + " - " + e.what(), LogLevel::INFO);
             return false;
         }
         if (!p.network.empty() && !isValidNetwork(p.network)) {
@@ -1686,7 +1686,7 @@ int SubitemUpdaterV2::deduplicateConfigErrorPhase() {
             p.checkRequired();
         } catch (const std::exception& e) {
             Logger::write("CONFIG_ERROR: " + p.indexid + " - " + p.address + ":" + p.port + " - " + e.what(), LogLevel::WARN);
-            dao.deleteByIndexId(p.indexid);
+            dao.deleteByIndexIdNoTx(p.indexid);
             deleted++;
         }
     }

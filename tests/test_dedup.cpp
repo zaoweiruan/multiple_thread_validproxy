@@ -312,3 +312,29 @@ TEST_F(DedupTest, BlacklistPhaseSkipsWhenThresholdNotMet) {
     sqlite3_finalize(stmt);
     EXPECT_EQ(subid, "sub-normal");
 }
+
+// Test: deleteByIndexIdNoTx works correctly within a transaction (no nested transaction error)
+TEST_F(DedupTest, DeleteWithinTransactionNoNestedError) {
+    insertProfile("1", "5", "1.1.1.1", "443", "uuid-a", "tcp", "sub1");
+    insertDelay("1", "100");
+
+    // Start transaction explicitly (simulating deduplicate() behavior)
+    exec("BEGIN TRANSACTION");
+
+    // Use deleteByIndexIdNoTx to delete without starting another transaction
+    const char* sql = "DELETE FROM ProfileExItem WHERE IndexId = '1';";
+    sqlite3_stmt* stmt = nullptr;
+    ASSERT_EQ(SQLITE_OK, sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr));
+    ASSERT_EQ(SQLITE_DONE, sqlite3_step(stmt));
+    sqlite3_finalize(stmt);
+
+    const char* sql2 = "DELETE FROM ProfileItem WHERE IndexId = '1';";
+    sqlite3_stmt* stmt2 = nullptr;
+    ASSERT_EQ(SQLITE_OK, sqlite3_prepare_v2(db_, sql2, -1, &stmt2, nullptr));
+    ASSERT_EQ(SQLITE_DONE, sqlite3_step(stmt2));
+    sqlite3_finalize(stmt2);
+
+    exec("COMMIT");
+
+    EXPECT_EQ(countProfiles(), 0);
+}

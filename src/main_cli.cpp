@@ -733,7 +733,7 @@ int main(int argc, char* argv[]) {
             logInfo("AutoTask: using default steps [update, test, dedup, sync]");
         }
 
-        AutoTaskManager manager(db, *appConfig, exeDir, nullptr);
+        AutoTaskManager manager(db, *appConfig, exeDir, &g_cancelRequested);
         manager.setProgressCallback([](const AutoTaskProgress& p) {
             std::cout << "\rAutoTask: [" << std::to_string(p.current_step + 1)
                       << "/" << std::to_string(p.total_steps) << "] "
@@ -771,7 +771,7 @@ int main(int argc, char* argv[]) {
         Logger::setConsoleLevel(Logger::stringToLevel(appConfig->log_console_level));
 
         std::string stateFile = !appConfig->auto_task.state_file.empty()
-            ? appConfig->auto_task.state_file : exeDir + "/worker/autotask_state.json";
+            ? appConfig->auto_task.state_file : AutoTaskManager::defaultStateFilePath();
 
         AutoTaskState saved = AutoTaskManager::loadStateFile(stateFile);
         if (saved.task_id.empty()) {
@@ -826,7 +826,7 @@ int main(int argc, char* argv[]) {
             return 1;
         }
 
-        AutoTaskManager manager(db, *appConfig, exeDir, nullptr);
+        AutoTaskManager manager(db, *appConfig, exeDir, &g_cancelRequested);
         manager.setProgressCallback([](const AutoTaskProgress& p) {
             std::cout << "\rAutoTask: [" << std::to_string(p.current_step + 1)
                       << "/" << std::to_string(p.total_steps) << "] "

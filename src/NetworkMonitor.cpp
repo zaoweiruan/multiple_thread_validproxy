@@ -71,11 +71,12 @@ void NetworkMonitor::ThreadLoop() {
         }
 
         bool prev = connected_.exchange(anyOk);
+        bool afterFirst = firstCheckDone_.exchange(true);
 
-        if (prev && !anyOk) {
-            Logger::write("Network connection LOST", LogLevel::ERR);
-        } else if (!prev && anyOk) {
+        if (afterFirst && !prev && anyOk) {
             Logger::write("Network connection RESTORED", LogLevel::ERR);
+        } else if (afterFirst && prev && !anyOk) {
+            Logger::write("Network connection LOST", LogLevel::ERR);
         }
 
         int slept = 0;

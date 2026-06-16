@@ -27,10 +27,6 @@ tool_config_png       RCDATA "docs/design/ui/icon/png/tool_config.png"
  tool_dockarrow_png    RCDATA "docs/design/ui/icon/png/tool_dockarrow.png"
 tool_pipeline_png     RCDATA "docs/design/ui/icon/png/tool_pipeline.png"
 
-// ── Status bar network connectivity icons ────────────────────────────
-statusbar_gree_png    RCDATA "docs/design/ui/icon/png/statusbar_gree.png"
-statusbar_red_png     RCDATA "docs/design/ui/icon/png/statusbar_red.png"
-
 // ── Application / frame icon (native ICON group) ────────────────────
 // Creates both RT_ICON (raw DIB data per resolution) and RT_GROUP_ICON
 // (directory of available resolutions) so Windows / wxWidgets can load

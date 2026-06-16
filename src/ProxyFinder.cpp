@@ -338,7 +338,7 @@ bool ProxyFinder::injectProxyToXray(const std::string& indexId) {
     try {
         profile.checkRequired();
     } catch (const std::exception& e) {
-        Logger::write("[ProxyFinder] Config error: " + std::string(e.what()), LogLevel::ERR);
+        Logger::write("[ProxyFinder] Config error: " + std::string(e.what()), LogLevel::INFO);
         return false;
     }
     

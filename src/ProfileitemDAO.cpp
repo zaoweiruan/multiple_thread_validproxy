@@ -146,6 +146,40 @@ bool ProfileitemDAO::deleteByIndexId(const std::string& indexId) {
     return sqlite3_changes(db_) > 0;
 }
 
+bool ProfileitemDAO::deleteByIndexIdNoTx(const std::string& indexId) {
+    bool ok = true;
+    {
+        const char* sql = "DELETE FROM ProfileExItem WHERE IndexId = ?;";
+        sqlite3_stmt* stmt = nullptr;
+        if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+            Logger::write("deleteByIndexIdNoTx ex prepare error: " + std::string(sqlite3_errmsg(db_)), LogLevel::ERR);
+            return false;
+        }
+        sqlite3_bind_text(stmt, 1, indexId.c_str(), -1, SQLITE_TRANSIENT);
+        if (sqlite3_step(stmt) != SQLITE_DONE) {
+            Logger::write("deleteByIndexIdNoTx ex error: " + std::string(sqlite3_errmsg(db_)), LogLevel::ERR);
+            ok = false;
+        }
+        sqlite3_finalize(stmt);
+    }
+
+    if (ok) {
+        const char* sql = "DELETE FROM ProfileItem WHERE IndexId = ?;";
+        sqlite3_stmt* stmt = nullptr;
+        if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+            Logger::write("deleteByIndexIdNoTx prepare error: " + std::string(sqlite3_errmsg(db_)), LogLevel::ERR);
+            return false;
+        }
+        sqlite3_bind_text(stmt, 1, indexId.c_str(), -1, SQLITE_TRANSIENT);
+        if (sqlite3_step(stmt) != SQLITE_DONE) {
+            Logger::write("deleteByIndexIdNoTx error: " + std::string(sqlite3_errmsg(db_)), LogLevel::ERR);
+            ok = false;
+        }
+        sqlite3_finalize(stmt);
+    }
+    return ok;
+}
+
 bool ProfileitemDAO::deleteBySubId(const std::string& subId) {
     const char* sql = "DELETE FROM ProfileItem WHERE Subid = ?;";
     sqlite3_stmt* stmt = nullptr;

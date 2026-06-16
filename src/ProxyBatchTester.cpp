@@ -150,7 +150,7 @@ std::string xrayApiAddr = "127.0.0.1:" + std::to_string(apiPort);
             configProfile.checkRequired();
         } catch (const std::exception& e) {
             std::string errorDetail = profile.address + ":" + profile.port + " (" + profile.configtype + ") - " + e.what();
-            Logger::write("CONFIG_ERROR: " + profile.indexid + " - " + errorDetail, LogLevel::ERR);
+            Logger::write("CONFIG_ERROR: " + profile.indexid + " - " + errorDetail, LogLevel::INFO);
             {
                 db::models::ProfileitemDAO dao(db_);
                 dao.deleteByIndexId(profile.indexid);

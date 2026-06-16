@@ -324,6 +324,7 @@ public:
   std::optional<Profileitem> getByIndexId(const std::string& indexId);
   bool deleteBySubId(const std::string& subId);
   bool deleteByIndexId(const std::string& indexId);
+   bool deleteByIndexIdNoTx(const std::string& indexId);
 };
 
 } // namespace models

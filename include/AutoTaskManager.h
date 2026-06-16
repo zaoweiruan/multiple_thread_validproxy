@@ -81,6 +81,8 @@ public:
     static std::string stepTypeToName(AutoTaskStepType type);
     static std::vector<AutoTaskStepInfo> createStepList(const std::vector<std::string>& stepNames);
 
+    static std::string defaultStateFilePath();
+
     void setProgressCallback(ProgressCallback cb);
 
 private:
