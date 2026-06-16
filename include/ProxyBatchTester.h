@@ -16,10 +16,12 @@
 #include "XrayApi.h"
 #include "ConfigGenerator.h"
 
+class NetworkMonitor;
+
 class ProxyBatchTester {
 public:
     ProxyBatchTester(sqlite3* db, const config::AppConfig& config, const std::string& baseDir = "",
-                     std::atomic<bool>* externalCancel = nullptr);
+                     std::atomic<bool>* externalCancel = nullptr, const NetworkMonitor* netMon = nullptr);
     ~ProxyBatchTester();
 
     bool run();
@@ -65,6 +67,7 @@ public:
     std::vector<std::thread> workerThreads_;
     std::vector<int> workerCurrentProxyIndex_;
     std::mutex workerStateMutex_;
+    const NetworkMonitor* netMon_{nullptr};
 };
 
 #endif // PROXY_BATCH_TESTER_H

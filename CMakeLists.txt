@@ -69,6 +69,8 @@ set(CORE_SOURCES
     src/XrayApi.cpp
     src/XrayInstance.cpp
     src/XrayManager.cpp
+    src/AutoTaskManager.cpp
+    src/NetworkMonitor.cpp
 )
 
 # ===== CLI target (CONSOLE subsystem) =====
@@ -309,6 +311,23 @@ set_target_properties(test_sharelink PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
 )
 add_test(NAME ShareLinkTest COMMAND test_sharelink)
+
+# -- AutoTaskManager unit tests --
+add_executable(test_autotask tests/test_autotask.cpp src/AutoTaskManager.cpp ${CORE_SOURCES})
+target_include_directories(test_autotask PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(test_autotask PRIVATE gtest_main gtest
+    E:/vcpkg/installed/x64-mingw-static/lib/libsqlite3.a
+    D:/boost_1_88_0/lib/libboost_json-mgw14-mt-x64-1_88.a
+    Threads::Threads
+    CURL::libcurl
+    -ldbghelp
+)
+set_target_properties(test_autotask PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+)
+add_test(NAME AutoTaskTest COMMAND test_autotask)
 
 # -- Utils unit tests (pure functions, no external deps beyond gtest) --
 add_executable(test_utils tests/test_utils.cpp src/Utils.cpp)
