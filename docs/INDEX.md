@@ -292,6 +292,7 @@ updated: 2026-06-15
 | 11 | [`docs/bugfix/2026-06-12-Bugfix-ProxyBatchTester-Worker0-JoinTimeout-v1.0.md`](./bugfix/2026-06-12-Bugfix-ProxyBatchTester-Worker0-JoinTimeout-v1.0.md) | **Worker join 超时修复 v3** — 动态 join timeout (v1 7s 不足，v2 ping 轮询过重) | 64 lines |
 | 12 | [`docs/bugfix/2026-06-15-Bugfix-AutoTask-SubitemUpdater-logging-and-pipeline.md`](./bugfix/2026-06-15-Bugfix-AutoTask-SubitemUpdater-logging-and-pipeline.md) | **AutoTask: invisible diagnostics under file_level:ERROR** — SubitemUpdaterV2 all-skipped return false, log levels too low, step name aliases missing | — |
 | 13 | [`docs/bugfix/2026-06-16-Bugfix-Review-AutoTask-CLI-StateFile-v1.0.md`](./bugfix/2026-06-16-Bugfix-Review-AutoTask-CLI-StateFile-v1.0.md) | **AutoTask CLI cancel, state file path, config SQL threshold** — CLI Ctrl+C silent ignore, double-nested worker/worker/ path, SQL 99% proxy pool reduction, unused icons | 177 lines |
+| 14 | [`docs/bugfix/2026-06-16-Bugfix-Dedup-NestedTransaction-v1.0.md`](./bugfix/2026-06-16-Bugfix-Dedup-NestedTransaction-v1.0.md) | **Nested SQLite transaction error in deduplicateConfigErrorPhase** — deduplicate() starts transaction, deleteByIndexId() tried nested BEGIN, added deleteByIndexIdNoTx() | 24 lines |
 
 ---
 

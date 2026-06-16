@@ -90,8 +90,9 @@ private:
   void doFindFirstProxy(wxEvtHandler* wxHandler);
   void doFindBestProxy(wxEvtHandler* wxHandler);
   void doSyncDatabases(wxEvtHandler* wxHandler);
-  void doRunAutoTask(wxEvtHandler* wxHandler);
-  void doResumeAutoTask(wxEvtHandler* wxHandler);
+    void doAutoTaskImpl(wxEvtHandler* wxHandler, bool resume);
+    void doRunAutoTask(wxEvtHandler* wxHandler);
+    void doResumeAutoTask(wxEvtHandler* wxHandler);
 
   sqlite3* db_;
   config::AppConfig config_;

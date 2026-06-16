@@ -117,14 +117,12 @@ ConfigDialog::ConfigDialog(wxWindow* parent, const config::AppConfig& cfg)
     propGrid_->Append(new wxBoolProperty(L"导出", "autotask_step_export", false));
     propGrid_->Append(new wxStringProperty(L"任务链", "autotask_chain_display", L""));
     propGrid_->SetPropertyReadOnly("autotask_chain_display");
-    propGrid_->Append(new wxBoolProperty(L"任务完成通知", "autotask_notify", cfg.auto_task.notify_on_complete));
-    propGrid_->Append(new wxStringProperty(L"状态文件路径", "autotask_state_file", cfg.auto_task.state_file));
-
     // --- 通知 配置 ---
     propGrid_->Append(new wxPropertyCategory(L"通知"));
     propGrid_->Append(new wxBoolProperty(L"启用通知", "notification_enabled", cfg.notification_enabled));
     propGrid_->Append(new wxBoolProperty(L"更新时通知", "notification_on_update", cfg.notification_on_update));
     propGrid_->Append(new wxBoolProperty(L"测试时通知", "notification_on_test", cfg.notification_on_test));
+    propGrid_->Append(new wxBoolProperty(L"任务完成通知", "autotask_notify", cfg.auto_task.notify_on_complete));
 
     propGrid_->SetPropertyAttributeAll(wxPG_BOOL_USE_CHECKBOX, true);
 
@@ -183,13 +181,6 @@ void ConfigDialog::loadConfig(const config::AppConfig& cfg) {
     stepOrder_ = cfg.auto_task.steps;
     refreshAutoTaskChainDisplay();
 
-    std::string stateFile = cfg.auto_task.state_file;
-    if (stateFile.empty()) {
-        std::string exeDir = std::filesystem::path(
-            wxStandardPaths::Get().GetExecutablePath().ToStdString()).parent_path().string();
-        stateFile = exeDir + "/worker/autotask_state.json";
-    }
-    propGrid_->SetPropertyValue("autotask_state_file", wxString(stateFile));
 }
 
 bool ConfigDialog::saveConfig() {
@@ -270,7 +261,6 @@ bool ConfigDialog::saveConfig() {
     // AutoTask fields
     editedConfig_.auto_task.steps = stepOrder_;
     editedConfig_.auto_task.notify_on_complete = propGrid_->GetPropertyValueAsBool("autotask_notify");
-    editedConfig_.auto_task.state_file = propGrid_->GetPropertyValueAsString("autotask_state_file").ToStdString();
 
     return validateConfig();
 }

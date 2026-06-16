@@ -123,7 +123,7 @@
   | R3 | Network 合法性 | `!network.empty() && !isValidNetwork(network)` |
   | R4 | Address 非空 | `address.empty()` |
   | R5 | Port 合法性 | `port.empty() || stoi<=0 || stoi>65535` |
-- **日志**: 每条过滤记录 `SKIP: addr:port - reason` (WARN)，汇总 `FILTER: Removed N invalid proxies` (REPORT)
+- **日志**: 每条过滤记录 `SKIP: addr:port - reason` (INFO)，汇总 `FILTER: Removed N invalid proxies` (REPORT)
 - **注意**: 空 Network 不做过滤（留到 ConfigGenerator 中默认 "tcp"）
 
 ### 3. 去重检查 (dedup check in INSERT)

@@ -672,6 +672,10 @@ void MainFrame::onMenuExit(wxCommandEvent&) {
 }
 
 void MainFrame::onMenuUpdateAll(wxCommandEvent&) {
+    if (controller_ && controller_->isRunning()) {
+        wxMessageBox(L"操作进行中，请等待完成后再试", L"操作进行中", wxOK | wxICON_WARNING, this);
+        return;
+    }
     setOperationState(OperationType::UPDATE);
     controller_->updateAllSubscriptionsAsync(this);
 }
@@ -806,12 +810,20 @@ void MainFrame::onMenuConfig(wxCommandEvent&) {
 }
 
 void MainFrame::onMenuAutoTask(wxCommandEvent&) {
+    if (controller_ && controller_->isRunning()) {
+        wxMessageBox(L"操作进行中，请等待完成后再试", L"操作进行中", wxOK | wxICON_WARNING, this);
+        return;
+    }
     setOperationState(OperationType::AUTOTASK);
     setStatusText(0, L"自动任务开始…");
     controller_->runAutoTaskAsync(this);
 }
 
 void MainFrame::onMenuAutoTaskResume(wxCommandEvent&) {
+    if (controller_ && controller_->isRunning()) {
+        wxMessageBox(L"操作进行中，请等待完成后再试", L"操作进行中", wxOK | wxICON_WARNING, this);
+        return;
+    }
     setOperationState(OperationType::AUTOTASK);
     setStatusText(0, L"恢复自动任务…");
     controller_->resumeAutoTaskAsync(this);
@@ -830,12 +842,20 @@ void MainFrame::onToolUpdateAll(wxCommandEvent& event) {
 }
 
 void MainFrame::onTestSubscription(SubscriptionTestEvent& evt) {
+    if (controller_ && controller_->isRunning()) {
+        wxMessageBox(L"操作进行中，请等待完成后再试", L"操作进行中", wxOK | wxICON_WARNING, this);
+        return;
+    }
     setOperationState(OperationType::TEST);
     controller_->testSubscriptionAsync(evt.getSubId(), this);
     setStatusText(0, "Testing subscription…");
 }
 
 void MainFrame::onToolTest(wxCommandEvent& event) {
+    if (controller_ && controller_->isRunning()) {
+        wxMessageBox(L"操作进行中，请等待完成后再试", L"操作进行中", wxOK | wxICON_WARNING, this);
+        return;
+    }
     // Test ALL proxies (not just the selected subscription)
     setOperationState(OperationType::TEST);
     controller_->testAllProxiesAsync(this);

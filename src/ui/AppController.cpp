@@ -948,7 +948,7 @@ void AppController::resumeAutoTaskAsync(wxEvtHandler* wxHandler) {
     workerThread_ = std::thread(&AppController::doResumeAutoTask, this, wxHandler);
 }
 
-void AppController::doRunAutoTask(wxEvtHandler* wxHandler) {
+void AppController::doAutoTaskImpl(wxEvtHandler* wxHandler, bool resume) {
     struct ResetGuard { std::atomic<bool>& flag; ~ResetGuard() { flag = false; } };
     ResetGuard _rg{isRunning_};
 
@@ -966,7 +966,7 @@ void AppController::doRunAutoTask(wxEvtHandler* wxHandler) {
             }
         });
 
-        bool ok = manager.run(config_.auto_task.steps);
+        bool ok = resume ? manager.resume() : manager.run(config_.auto_task.steps);
 
         std::string msg = ok ? "AutoTask completed" : "AutoTask failed";
         if (wxHandler) {
@@ -977,39 +977,14 @@ void AppController::doRunAutoTask(wxEvtHandler* wxHandler) {
         if (wxHandler) {
             wxQueueEvent(wxHandler, new StatusUpdateEvent(0, std::string("AutoTask error: ") + e.what()));
         }
-        Logger::write(std::string("doRunAutoTask error: ") + e.what(), LogLevel::ERR);
+        Logger::write(std::string("doAutoTaskImpl error: ") + e.what(), LogLevel::ERR);
     }
 }
 
+void AppController::doRunAutoTask(wxEvtHandler* wxHandler) {
+    doAutoTaskImpl(wxHandler, false);
+}
+
 void AppController::doResumeAutoTask(wxEvtHandler* wxHandler) {
-    struct ResetGuard { std::atomic<bool>& flag; ~ResetGuard() { flag = false; } };
-    ResetGuard _rg{isRunning_};
-
-    try {
-        std::string baseDir = std::filesystem::path(config_.database_path).parent_path().string();
-        AutoTaskManager manager(db_, config_, baseDir, &cancelRequested_, &netMon_);
-
-        manager.setProgressCallback([wxHandler](const AutoTaskProgress& progress) {
-            wxString stepName(progress.step_name);
-            wxString msg = wxString::Format(L"自动任务 [%d/%d] %s",
-                progress.current_step, progress.total_steps,
-                stepName);
-            if (wxHandler) {
-                wxQueueEvent(wxHandler, new StatusUpdateEvent(0, msg.ToStdString()));
-            }
-        });
-
-        bool ok = manager.resume();
-
-        std::string msg = ok ? "AutoTask completed" : "AutoTask failed";
-        if (wxHandler) {
-            wxQueueEvent(wxHandler, new StatusUpdateEvent(0, msg));
-        }
-        Logger::write(msg, ok ? LogLevel::REPORT : LogLevel::ERR);
-    } catch (const std::exception& e) {
-        if (wxHandler) {
-            wxQueueEvent(wxHandler, new StatusUpdateEvent(0, std::string("AutoTask error: ") + e.what()));
-        }
-        Logger::write(std::string("doResumeAutoTask error: ") + e.what(), LogLevel::ERR);
-    }
+    doAutoTaskImpl(wxHandler, true);
 }

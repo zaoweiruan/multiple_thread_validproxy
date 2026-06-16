@@ -29,6 +29,7 @@ updated: 2026-06-15
 | 2026-06-04 | bugfix | `docs/bugfix/2026-06-04-subitemupdater-hardcoded-binconfig-path.md` | SubitemUpdaterV2 hardcoded path fix |
 | 2026-06-12 | spec | `docs/plans/2026-06-11-Spec-Refactoring-Phase1-v1.0.md` | Phase 1 重构方案状态更新 — auto(17/17)✅ / SQL注入(3处)✅ / Logger(实例化+委托)✅ / 全部 92 tests pass |
 | 2026-06-15 | spec | `docs/plans/2026-06-15-Spec-AutoTask-v1.0.md` | AutoTask 自动化管道 — 订阅更新/批量测试/去重/同步/导出可配置管道，命令行集成(-AT/-RS/-CA)，断点续传 |
+| 2026-06-16 | bugfix | `docs/bugfix/2026-06-16-Bugfix-Review-AutoTask-CLI-StateFile-v1.0.md` | Code Review 修复: #2 状态文件路径集中 + ConfigDialog 移除, #4 未使用图标删除 |
 | 2026-05-19 | — | 批量状态更新 | P4→❌ cancelled; 003->completed; DLL fix->completed |
 
 ---

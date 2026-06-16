@@ -170,7 +170,19 @@ if (fileVersion > 1) {
 
 ---
 
+## Implemented Fixes (this session)
+
+| # | Status | Files changed |
+|---|--------|---------------|
+| 1 | **DONE** — Changed `nullptr` → `&g_cancelRequested` for both `-AT` and `-RS` CLI handlers, enabling Ctrl+C to cancel AutoTask | `main_cli.cpp` |
+| 2 | **DONE** — Added `AutoTaskManager::defaultStateFilePath()` centrally, removed ConfigDialog `autotask_state_file` property, updated `main_cli.cpp` to use static helper | `AutoTaskManager.h`, `AutoTaskManager.cpp`, `ConfigDialog.cpp`, `main_cli.cpp` |
+| 3 | **ABANDONED** — `consecutive_failures between 0 and 0` is intentional design (clean-only), not a bug | — |
+| 4 | **DONE** — Removed `statusbar_gree_png`/`statusbar_red_png` from `icons.rc`, deleted both PNG files | `icons.rc`, `statusbar_green.png`, `statusbar_red.png` |
+| 5 | **DONE** — Merged `doRunAutoTask`/`doResumeAutoTask` into `doAutoTaskImpl(wxHandler, resume)` with `bool resume` parameter, eliminating ~30-line duplication | `AppController.h`, `AppController.cpp` |
+| 6 | **DONE** — Added version check in `loadStateFile()`: rejects version > 1 with WARN log, returns default state | `AutoTaskManager.cpp` |
+
 ## Verification
 
 1. Code review of all 6 findings confirmed against actual source lines
-2. All 10 existing GoogleTest test executables pass unchanged
+2. All GoogleTest test executables pass (0 failures, 1 skip pre-existing)
+3. Build: clean, no warnings

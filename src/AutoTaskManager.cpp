@@ -30,7 +30,7 @@ AutoTaskManager::AutoTaskManager(sqlite3* db,
     if (!config_.auto_task.state_file.empty()) {
         stateFilePath_ = config_.auto_task.state_file;
     } else {
-        stateFilePath_ = baseDir_ + "/worker/autotask_state.json";
+        stateFilePath_ = defaultStateFilePath();
     }
 }
 
@@ -461,6 +461,15 @@ AutoTaskState AutoTaskManager::loadStateFile(const std::string& filePath) {
 
         boost::json::object& root = jv.as_object();
 
+        if (root.contains("version") && root["version"].is_int64()) {
+            int fileVersion = static_cast<int>(root["version"].as_int64());
+            if (fileVersion > 1) {
+                Logger::write("AutoTask: state file version " + std::to_string(fileVersion)
+                    + " > expected 1, resetting to default", LogLevel::WARN);
+                return AutoTaskState();
+            }
+        }
+
         if (root.contains("task_id") && root["task_id"].is_string())
             state.task_id = root["task_id"].as_string().c_str();
         if (root.contains("created_at") && root["created_at"].is_string())
@@ -505,10 +514,16 @@ AutoTaskState AutoTaskManager::loadStateFile(const std::string& filePath) {
     return state;
 }
 
+std::string AutoTaskManager::defaultStateFilePath() {
+    return utils::getExecutableDir() + "/worker/autotask_state.json";
+}
+
 std::string AutoTaskManager::getCurrentTimestamp() {
     auto now = std::chrono::system_clock::now();
-    time_t t = std::chrono::system_clock::to_time_t(now);
-    char buf[32];
-    strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%S", localtime(&t));
-    return std::string(buf);
+    auto timeT = std::chrono::system_clock::to_time_t(now);
+    std::tm tm{};
+    localtime_s(&tm, &timeT);
+    std::ostringstream oss;
+    oss << std::put_time(&tm, "%Y-%m-%dT%H:%M:%S");
+    return oss.str();
 }
