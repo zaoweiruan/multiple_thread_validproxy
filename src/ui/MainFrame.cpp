@@ -310,7 +310,13 @@ Bind(wxEVT_SUB_LIST_LOADED, [this](SubListLoadedEvent& evt) {
         dc.SetTextForeground(wxSystemSettings::GetColour(wxSYS_COLOUR_BTNTEXT));
         dc.DrawText(label, cx + r + 4, cy - textH / 2);
     });
+    // Hide panel if network monitor is disabled
+    if (controller_ && !controller_->getNetworkMonitor()->IsEnabled()) {
+        netMonPanel_->Show(false);
+    }
     repositionNetMonPanel();
+
+
     statusBar_->Bind(wxEVT_SIZE, [this](wxSizeEvent& evt) {
         evt.Skip();
         repositionNetMonPanel();
@@ -606,7 +612,7 @@ void MainFrame::repositionNetMonPanel() {
 void MainFrame::onNetMonTimer(wxTimerEvent&) {
     if (!controller_ || !netMonPanel_) return;
     NetworkMonitor* netMon = controller_->getNetworkMonitor();
-    if (!netMon) return;
+    if (!netMon || !netMon->IsEnabled()) return;
     bool connected = netMon->IsConnected();
     if (connected != netMonConnected_) {
         netMonConnected_ = connected;
@@ -748,11 +754,29 @@ void MainFrame::onMenuConfig(wxCommandEvent&) {
         }
         config::AppConfig cfg = configDialog_->getConfig();
         std::string oldDbPath = config_.database_path;
+        // Capture old network monitor settings BEFORE saveConfig updates config_
+        bool oldNetMonEnabled = controller_->getNetworkMonitor()->IsEnabled();
+        int oldNetMonInterval = config_.network_monitor.checkIntervalMs;
+        int oldNetMonTimeout = config_.network_monitor.checkTimeoutMs;
         bool saveOk = controller_->saveConfig(cfg);
         if (!saveOk) {
             wxMessageBox("Failed to save configuration to file.\n"
                          "Your changes may not persist after restart.",
                          "Save Error", wxOK | wxICON_WARNING);
+        }
+
+        // Detect network monitor changes
+        bool netMonSettingsChanged = (cfg.network_monitor.enabled != oldNetMonEnabled) ||
+                                     (cfg.network_monitor.checkUrls != config_.network_monitor.checkUrls) ||
+                                     (cfg.network_monitor.checkIntervalMs != oldNetMonInterval) ||
+                                     (cfg.network_monitor.checkTimeoutMs != oldNetMonTimeout);
+
+        if (netMonSettingsChanged) {
+            controller_->restartNetworkMonitor();
+            if (netMonPanel_) {
+                netMonPanel_->Show(cfg.network_monitor.enabled);
+                repositionNetMonPanel();
+            }
         }
 
         // Apply log level changes

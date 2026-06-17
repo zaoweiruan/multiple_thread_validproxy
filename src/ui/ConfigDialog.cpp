@@ -66,6 +66,13 @@ ConfigDialog::ConfigDialog(wxWindow* parent, const config::AppConfig& cfg)
     propGrid_->Append(new wxEnumProperty(L"控制台级别", "log_console_level", levelChoices));
     propGrid_->Append(new wxEnumProperty(L"文件级别", "log_file_level", levelChoices));
 
+    // --- 网络监控 配置 ---
+    propGrid_->Append(new wxPropertyCategory(L"网络监控"));
+    propGrid_->Append(new wxBoolProperty(L"启用", "network_monitor_enabled", cfg.network_monitor.enabled));
+    propGrid_->Append(new wxStringProperty(L"检测URL(逗号分隔)", "network_monitor_checkUrls", ""));
+    propGrid_->Append(new wxIntProperty(L"检测间隔(毫秒)", "network_monitor_interval", cfg.network_monitor.checkIntervalMs));
+    propGrid_->Append(new wxIntProperty(L"检测超时(毫秒)", "network_monitor_timeout", cfg.network_monitor.checkTimeoutMs));
+
     // --- 订阅 配置 ---
     propGrid_->Append(new wxPropertyCategory(L"订阅"));
     propGrid_->Append(new wxStringProperty(L"加速器URL", "accelerator_url", cfg.accelerator_url));
@@ -150,6 +157,18 @@ void ConfigDialog::loadConfig(const config::AppConfig& cfg) {
     editedConfig_ = cfg;
     propGrid_->SetPropertyValue("log_console_level", wxString(cfg.log_console_level));
     propGrid_->SetPropertyValue("log_file_level", wxString(cfg.log_file_level));
+    // Network monitor fields
+    propGrid_->SetPropertyValue("network_monitor_enabled", cfg.network_monitor.enabled);
+    {
+        wxString urls;
+        for (size_t i = 0; i < cfg.network_monitor.checkUrls.size(); ++i) {
+            if (i > 0) urls += ",";
+            urls += wxString(cfg.network_monitor.checkUrls[i]);
+        }
+        propGrid_->SetPropertyValue("network_monitor_checkUrls", urls);
+    }
+    propGrid_->SetPropertyValue("network_monitor_interval", cfg.network_monitor.checkIntervalMs);
+    propGrid_->SetPropertyValue("network_monitor_timeout", cfg.network_monitor.checkTimeoutMs);
     // Set accelerator_url
     propGrid_->SetPropertyValue("accelerator_url", wxString(cfg.accelerator_url));
     // Set update_methods checkboxes
@@ -204,6 +223,22 @@ bool ConfigDialog::saveConfig() {
     editedConfig_.log_network_failures = propGrid_->GetPropertyValueAsBool("log_network_failures");
     editedConfig_.log_console_level = propGrid_->GetPropertyValueAsString("log_console_level").ToStdString();
     editedConfig_.log_file_level = propGrid_->GetPropertyValueAsString("log_file_level").ToStdString();
+
+    // Network monitor fields
+    editedConfig_.network_monitor.enabled = propGrid_->GetPropertyValueAsBool("network_monitor_enabled");
+    editedConfig_.network_monitor.checkUrls.clear();
+    {
+        wxString raw = propGrid_->GetPropertyValueAsString("network_monitor_checkUrls");
+        wxStringTokenizer tok(raw, ",");
+        while (tok.HasMoreTokens()) {
+            wxString url = tok.GetNextToken().Trim(true).Trim(false);
+            if (!url.empty()) {
+                editedConfig_.network_monitor.checkUrls.push_back(url.ToStdString());
+            }
+        }
+    }
+    editedConfig_.network_monitor.checkIntervalMs = propGrid_->GetPropertyValueAsInt("network_monitor_interval");
+    editedConfig_.network_monitor.checkTimeoutMs = propGrid_->GetPropertyValueAsInt("network_monitor_timeout");
 
     // Subscription fields
     {
@@ -354,6 +389,28 @@ bool ConfigDialog::validateConfig() {
     if (editedConfig_.subscription_timeout_ms < 1000 || editedConfig_.subscription_timeout_ms > 120000) {
         wxMessageBox("Subscription timeout must be between 1000 and 120000 ms", "Validation Error", wxOK | wxICON_ERROR);
         return false;
+    }
+    // Network monitor validation
+    if (editedConfig_.network_monitor.checkIntervalMs < 5000 || editedConfig_.network_monitor.checkIntervalMs > 300000) {
+        wxMessageBox("Network monitor interval must be between 5000 and 300000 ms", "Validation Error", wxOK | wxICON_ERROR);
+        return false;
+    }
+    if (editedConfig_.network_monitor.checkTimeoutMs < 1000 || editedConfig_.network_monitor.checkTimeoutMs > 30000) {
+        wxMessageBox("Network monitor timeout must be between 1000 and 30000 ms", "Validation Error", wxOK | wxICON_ERROR);
+        return false;
+    }
+    // Validate checkUrls: each must be valid URL format, and at least one required when enabled
+    if (editedConfig_.network_monitor.enabled) {
+        for (const std::string& url : editedConfig_.network_monitor.checkUrls) {
+            if (!utils::isValidUrlFormat(url)) {
+                wxMessageBox("网络监控检测URL格式无效: " + wxString(url), "URL格式错误", wxOK | wxICON_WARNING);
+                return false;
+            }
+        }
+        if (editedConfig_.network_monitor.checkUrls.empty()) {
+            wxMessageBox("网络监控启用时必须配置至少一个检测URL", "验证错误", wxOK | wxICON_ERROR);
+            return false;
+        }
     }
     return true;
 }

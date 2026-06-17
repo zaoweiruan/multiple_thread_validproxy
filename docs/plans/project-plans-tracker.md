@@ -119,8 +119,7 @@ updated: 2026-06-15
 | 29 | 2026-06-11 | ProxyListPanel refreshResults(): replace per-row ValueChanged storm with listCtrl_->Refresh() to prevent UI freeze on large proxy sets | ✅ completed |
 | 30 | 2026-06-11 | ConfigGenerator::loadProfiles(): invalid network defaults to tcp instead of skipping; added splithttp→xhttp mapping as fallback after frontend conversion | ✅ completed |
 | 31 | 2026-06-09 | Resizable horizontal splitter for subscription/proxy panels | ✅ completed |
-| 36 | 2026-06-15 | **AutoTask 自动化管道** — AutoTaskManager(头/源/测试) + ConfigReader auto_task 配置 + CLI 集成(-AT/-RS/-CA) + 8 项 GoogleTest 单测 | ✅ completed |
-
+| 37 | 2026-06-17 | **Code Refactoring Phase 1** — 清理死代码、冗余头文件、合并重复逻辑 | 📝 draft |
 ---
 
 ### `.kilo/plans/` 迁移条目

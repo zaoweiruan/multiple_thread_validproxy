@@ -7,7 +7,7 @@
 #include <chrono>
 #include <thread>
 
-NetworkMonitor::NetworkMonitor() {}
+NetworkMonitor::NetworkMonitor(bool enabled) : enabled_(enabled) {}
 
 NetworkMonitor::~NetworkMonitor() {
     Stop();
@@ -33,7 +33,12 @@ void NetworkMonitor::Stop() {
 }
 
 bool NetworkMonitor::IsConnected() const {
+    if (!enabled_) return true;
     return connected_;
+}
+
+bool NetworkMonitor::IsEnabled() const {
+    return enabled_;
 }
 
 bool NetworkMonitor::CheckURL(const std::string& url, int timeoutMs) {
@@ -59,23 +64,27 @@ bool NetworkMonitor::CheckURL(const std::string& url, int timeoutMs) {
 
 void NetworkMonitor::ThreadLoop() {
     while (!stopRequested_) {
-        bool anyOk = false;
+        bool allOk = true;
 
         for (size_t i = 0; i < urls_.size(); ++i) {
             if (stopRequested_) break;
 
-            if (CheckURL(urls_[i], checkTimeoutMs_)) {
-                anyOk = true;
+            if (!CheckURL(urls_[i], checkTimeoutMs_)) {
+                allOk = false;
                 break;
             }
         }
 
-        bool prev = connected_.exchange(anyOk);
+        if (urls_.empty()) {
+            allOk = false;
+        }
+
+        bool prev = connected_.exchange(allOk);
         bool afterFirst = firstCheckDone_.exchange(true);
 
-        if (afterFirst && !prev && anyOk) {
+        if (afterFirst && !prev && allOk) {
             Logger::write("Network connection RESTORED", LogLevel::ERR);
-        } else if (afterFirst && prev && !anyOk) {
+        } else if (afterFirst && prev && !allOk) {
             Logger::write("Network connection LOST", LogLevel::ERR);
         }
 

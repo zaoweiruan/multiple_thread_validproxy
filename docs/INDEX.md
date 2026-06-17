@@ -31,7 +31,7 @@ updated: 2026-06-15
 | [规范化设计](#75-规范化设计) | 4 | `docs/specs/` |
 | [实施计划](#8-实施计划) | 54 | `docs/plans/` |
 | [分析报告](#9-分析报告) | 7 | `docs/reports/` |
-| [Bug 修复记录](#91-bug-修复记录) | 13 | `docs/bugfix/` |
+| [Bug 修复记录](#91-bug-修复记录) | 14 | `docs/bugfix/` |
 | [测试报告](#10-测试报告) | 1 | `docs/test/` |
 | [长期记忆](#13-长期记忆) | 1 | `docs/project-knowledge.md` (6.2 KB) |
 
@@ -142,6 +142,7 @@ updated: 2026-06-15
 | 5 | [`docs/superpowers/specs/2026-04-24-proxy-sync-design.md`](./superpowers/specs/2026-04-24-proxy-sync-design.md) | **代理同步方案设计** — 主+副本 DB 同步、strategy 路由(insert_only/update_only/upsert)、事务批处理、数据流图 | 13.1 KB |
 | 6 | [`docs/superpowers/specs/2026-04-28-subitem-batch-import-design.md`](./superpowers/specs/2026-04-28-subitem-batch-import-design.md) | **Subitem 批量导入设计** — URL Fetcher 更新、StreamBuffer+PushParser、parseSubscription()→parseContext() 分割、增量防重 | 16.1 KB |
 | 7 | [`docs/superpowers/specs/2026-06-15-Spec-NetworkMonitor-batch-network-abort-on-disconnect-v1.0.md`](./superpowers/specs/2026-06-15-Spec-NetworkMonitor-batch-network-abort-on-disconnect-v1.0.md) | **NetworkMonitor 批量网络中断中止** — 后台线程周期性 HEAD 探测大陆站点连通性，auto atomic<bool> 标志，ProxyBatchTester/SubitemUpdaterV2 检测中断自动中止 | draft |
+| 8 | [`docs/superpowers/specs/2026-06-16-Spec-NetworkMonitor-enabled-toggle-v1.0.md`](./superpowers/specs/2026-06-16-Spec-NetworkMonitor-enabled-toggle-v1.0.md) | **NetworkMonitor 启用开关** — 当 `enabled=false` 时 `IsConnected()` 返回 true 跳过网络检查，避免误触发中止 | draft |
 
 ---
 
@@ -155,6 +156,7 @@ updated: 2026-06-15
 | 4 | [`docs/specs/2026-06-03-proxy-context-menu-disabled.md`](./specs/2026-06-03-proxy-context-menu-disabled.md) | **批量操作时禁止右键菜单** — 防止干预进行中的操作 | 43 lines |
 | 5 | [`docs/specs/2026-06-11-Spec-ProxyFinder-findWorkingProxy-bug.md`](./specs/2026-06-11-Spec-ProxyFinder-findWorkingProxy-bug.md) | **ProxyFinder::findWorkingProxy Bug Fix** — 返回端口时未重新注入代理导致代理不可用 | draft |
 | 6 | [`docs/plans/2026-06-11-Spec-Refactoring-Phase1-v1.0.md`](./plans/2026-06-11-Spec-Refactoring-Phase1-v1.0.md) | **重构方案 Phase 1 v1.1** — 审计更新: 3/8 任务已由历史提交完成 (writeCallback/TestResult/DAO), 其余 4 项未开始 + 1 项部分完成 | draft → v1.1 |
+| 7 | [`docs/specs/2026-06-17-Spec-Code-Refactoring-Review-v1.0.md`](./specs/2026-06-17-Spec-Code-Refactoring-Review-v1.0.md) | **Code Refactoring Phase 1** — Dead code removal, redundant includes cleanup, duplicated logic merging | draft |
 
 ---
 
@@ -178,6 +180,7 @@ updated: 2026-06-15
 | 日期 | 编号 | 文件 | 类型 | 说明 |
 |------|------|------|------|------|
 | 2026-06-15 |  | [`./superpowers/plans/2026-06-15-NetworkMonitor-batch-network-abort-on-disconnect.md`](./superpowers/plans/2026-06-15-NetworkMonitor-batch-network-abort-on-disconnect.md) | feat draft | **NetworkMonitor 批量网络中断中止** — 12 tasks: NetworkMonitor class, ConfigReader, ProxyBatchTester/SubitemUpdaterV2/AutoTaskManager/AppController integration, MainFrame UI, unit tests |
+| 2026-06-16 |  | [`./superpowers/plans/2026-06-16-Plan-NetworkMonitor-enabled-toggle-v1.0.md`](./superpowers/plans/2026-06-16-Plan-NetworkMonitor-enabled-toggle-v1.0.md) | feat draft | **NetworkMonitor 启用开关** — 5 tasks: enabled flag, IsConnected logic, AppController, MainFrame status bar, ConfigDialog |
 | In Progress | 14-002 | [`2026-05-14-002-ui-implementation-plan.md`](./plans/2026-05-14-002-ui-implementation-plan.md) | feat | **UI 完整实现** — 11 个 U# 单元含 wxWidgets 集成、事件系统、AppController、MainFrame、6 个面板(XAUI)、AUI 布局；分 4 Phase 执行 |
 | 2026-05-18 |  | [`2026-05-18-001-fix-null-testpanel-pointer.md`](./plans/2026-05-18-001-fix-null-testpanel-pointer.md) | fix draft | MainFrame initPanels() 构造顺序修复 (nullptr 前置) |
 | 2026-05-18 |  | [`2026-05-18-003-unify-proxy-testing-ui-flow.md`](./plans/2026-05-18-003-unify-proxy-testing-ui-flow.md) | plan draft | 统一右键菜单与工具栏代理测试的 UI 流程 |
@@ -360,4 +363,4 @@ updated: 2026-06-15
 
 ---
 
-*最后更新: 2026-06-12 (v2) | 维护者: Kilo AI*
+*最后更新: 2026-06-17 (v2) | 维护者: Kilo AI*

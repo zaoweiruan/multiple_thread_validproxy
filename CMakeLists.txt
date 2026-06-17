@@ -142,8 +142,8 @@ if(wxWidgets_FOUND)
         src/ui/icons.rc
     )
 
-    # RC flags: let windres find data files relative to CMAKE_SOURCE_DIR
-    set(CMAKE_RC_FLAGS "${CMAKE_RC_FLAGS} -I${CMAKE_SOURCE_DIR}")
+    # RC flags: let windres find data files and MinGW headers
+    set(CMAKE_RC_FLAGS "${CMAKE_RC_FLAGS} -I${CMAKE_SOURCE_DIR} -IE:/w64devkit/x86_64-w64-mingw32/include")
 
     # ===== GUI target (WIN32 subsystem) =====
     add_executable(validproxy
