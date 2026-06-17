@@ -3,12 +3,12 @@
 #include <algorithm>
 #include <sqlite3.h>
 #include <stdexcept>
-#include <set>
 
 #include "ConfigGenerator.h"
 #include "Profileitem.h"
 #include "ProfileExItem.h"
 #include "Logger.h"
+#include "Utils.h"
 
 namespace config {
 
@@ -19,8 +19,6 @@ void bindTextOrNull(sqlite3_stmt* stmt, int idx, const std::string& val) {
         sqlite3_bind_text(stmt, idx, val.c_str(), -1, SQLITE_TRANSIENT);
     }
 }
-
-bool isValidNetwork(const std::string& network);
 
 ConfigGenerator::ConfigGenerator(sqlite3* db) : db_(db) {}
 
@@ -44,7 +42,7 @@ std::vector<db::models::Profileitem> ConfigGenerator::loadProfiles(const std::st
             p.network = "xhttp";
         }
 
-        if (!isValidNetwork(p.network)) {
+        if (!utils::isValidNetwork(p.network)) {
             Logger::write("[ConfigGenerator] Using default network 'tcp' for " + p.address + ":" + p.port +
                           " (invalid: '" + p.network + "')", LogLevel::DEBUG);
             p.network = "tcp";
@@ -83,23 +81,6 @@ bool ConfigGenerator::updateProfileExItem(const db::models::ProfileExItem& exite
     return success;
 }
 
-bool isValidNetwork(const std::string& network) {
-    if (network.empty()) return false;
-    
-    std::string lower = network;
-    std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
-    
-    static const std::set<std::string> valid = {
-        "tcp","ws","grpc","h2","httpupgrade","kcp","xhttp","http","quic"
-    };
-    
-    if (valid.count(lower) == 0) {
-        if (lower == "raw" || lower == "tcp,udp") {
-            return true;
-        }
-    }
-    return valid.count(lower) > 0;
-}
 
 boost::json::object ConfigGenerator::buildStreamSettings(const db::models::Profileitem& p) {
     boost::json::object streamSettings;

@@ -12,6 +12,7 @@ namespace utils {
     void sendNotification(const std::string& title, const std::string& message);
     std::string joinUrl(const std::string& base, const std::string& suffix);
     bool isValidUrlFormat(const std::string& url);
+    bool isValidNetwork(const std::string& network);
 }
 
 #endif // UTILS_H

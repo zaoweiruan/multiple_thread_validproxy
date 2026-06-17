@@ -105,13 +105,13 @@ TEST(ShareLinkTest, UnsupportedProtocolHttp) {
 }
 
 // ============================================================
-// Config Type Name Tests (public API)
+// Config Type Name Tests (shared ProxyTypeStrings)
 // ============================================================
 TEST(ShareLinkTest, GetConfigTypeName) {
-    EXPECT_EQ(share::getConfigTypeName(1), "VMess");
-    EXPECT_EQ(share::getConfigTypeName(3), "Shadowsocks");
-    EXPECT_EQ(share::getConfigTypeName(5), "VLESS");
-    EXPECT_EQ(share::getConfigTypeName(6), "Trojan");
-    EXPECT_EQ(share::getConfigTypeName(7), "Hysteria2");
-    EXPECT_EQ(share::getConfigTypeName(100), "Unknown");
+    EXPECT_EQ(std::string(ProxyTypeStrings::protocolName(1)), "VMess");
+    EXPECT_EQ(std::string(ProxyTypeStrings::protocolName(3)), "Shadowsocks");
+    EXPECT_EQ(std::string(ProxyTypeStrings::protocolName(5)), "VLESS");
+    EXPECT_EQ(std::string(ProxyTypeStrings::protocolName(6)), "Trojan");
+    EXPECT_EQ(std::string(ProxyTypeStrings::protocolName(7)), "Hysteria2");
+    EXPECT_EQ(std::string(ProxyTypeStrings::protocolName(100)), "Unknown");
 }

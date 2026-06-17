@@ -5,6 +5,8 @@
 #include <sstream>
 #include <iomanip>
 #include <chrono>
+#include <algorithm>
+#include <set>
 
 namespace utils {
     std::string getCurrentTimestamp() {
@@ -114,17 +116,35 @@ void sendNotification(const std::string& title, const std::string& message) {
          Shell_NotifyIconW(NIM_MODIFY, &nid);
      }
 
-    bool isValidUrlFormat(const std::string& url) {
-        if (url.find("http://") != 0 && url.find("https://") != 0) {
-            return false;
-        }
-        size_t schemeEnd = url.find("://");
-        if (schemeEnd == std::string::npos) return false;
-        std::string hostPart = url.substr(schemeEnd + 3);
-        size_t pathStart = hostPart.find('/');
-        std::string domain = (pathStart != std::string::npos)
-                            ? hostPart.substr(0, pathStart)
-                            : hostPart;
-        return domain.find('.') != std::string::npos && domain != ".";
-    }
-}
+bool isValidUrlFormat(const std::string& url) {
+         if (url.find("http://") != 0 && url.find("https://") != 0) {
+             return false;
+         }
+         size_t schemeEnd = url.find("://");
+         if (schemeEnd == std::string::npos) return false;
+         std::string hostPart = url.substr(schemeEnd + 3);
+         size_t pathStart = hostPart.find('/');
+         std::string domain = (pathStart != std::string::npos)
+                             ? hostPart.substr(0, pathStart)
+                             : hostPart;
+         return domain.find('.') != std::string::npos && domain != ".";
+     }
+
+     bool isValidNetwork(const std::string& network) {
+         if (network.empty()) return false;
+
+         std::string lower = network;
+         std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+
+         static const std::set<std::string> valid = {
+             "tcp","ws","grpc","h2","httpupgrade","kcp","xhttp","http","quic"
+         };
+
+         if (valid.count(lower) == 0) {
+             if (lower == "raw" || lower == "tcp,udp") {
+                 return true;
+             }
+         }
+         return valid.count(lower) > 0;
+     }
+ }

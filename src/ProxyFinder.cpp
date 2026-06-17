@@ -7,10 +7,23 @@
 #include "ProfileExItem.h"
 #include "Logger.h"
 #include "CurlEasyHandle.h"
+#include "ProxyTypeStrings.h"
 #include <iostream>
 #include <thread>
 #include <chrono>
 #include <algorithm>
+
+namespace ProxyFinderUtils {
+    std::string configTypeToProtocol(const std::string& configType) {
+        int type = -1;
+        try {
+            type = std::stoi(configType);
+        } catch (...) {
+            return "Unknown(" + configType + ")";
+        }
+        return std::string(ProxyTypeStrings::protocolName(type));
+    }
+}
 
 ProxyFinder::ProxyFinder(sqlite3* db, XrayManager* manager, const std::string& xrayPath, 
                          const std::string& testUrl, const std::string& targetUrl, 
@@ -18,19 +31,6 @@ ProxyFinder::ProxyFinder(sqlite3* db, XrayManager* manager, const std::string& x
     : db_(db), manager_(manager), xrayPath_(xrayPath), testUrl_(testUrl), targetUrl_(targetUrl),
       timeoutMs_(timeoutMs), currentSocksPort_(-1), currentApiPort_(-1), cancelRequested_(cancelFlag) {
     lastResult_ = {false, -1, "", "", "", 0, 0};
-}
-
-std::string ProxyFinder::configTypeToProtocol(const std::string& ct) {
-    if (ct == "1") return "VMess";
-    if (ct == "3") return "Shadowsocks";
-    if (ct == "4") return "SOCKS";
-    if (ct == "5") return "VLESS";
-    if (ct == "6") return "Trojan";
-    if (ct == "7") return "Hysteria2";
-    if (ct == "8") return "TUIC";
-    if (ct == "9") return "WireGuard";
-    if (ct == "10") return "HTTP";
-    return "Unknown(" + ct + ")";
 }
 
 ProxyFinder::~ProxyFinder() {
@@ -72,7 +72,7 @@ std::pair<int, int> ProxyFinder::findFirstWorkingProxy(const std::string& target
         
         Logger::write("[ProxyFinder] Testing " + std::to_string(i+1) + "/" + std::to_string(validProxies.size())
                      + ": " + proxy.address + ":" + std::to_string(proxy.socksPort)
-                     + " (" + configTypeToProtocol(proxy.configType) + ")"
+                     + " (" + ProxyFinderUtils::configTypeToProtocol(proxy.configType) + ")"
                      + " socks=" + std::to_string(currentSocksPort_),
                      LogLevel::INFO);
         
@@ -91,7 +91,7 @@ std::pair<int, int> ProxyFinder::findFirstWorkingProxy(const std::string& target
         
         if (testRes.success) {
             Logger::write("[ProxyFinder] Found working proxy: " + proxy.address + ":" + std::to_string(proxy.socksPort)
-                        + " (" + configTypeToProtocol(proxy.configType) + ")"
+                        + " (" + ProxyFinderUtils::configTypeToProtocol(proxy.configType) + ")"
                         + " delay=" + std::to_string(testRes.latencyMs) + "ms"
                         + " socks=" + std::to_string(currentSocksPort_),
                         LogLevel::INFO);
@@ -100,7 +100,7 @@ std::pair<int, int> ProxyFinder::findFirstWorkingProxy(const std::string& target
             return result;
         } else {
             Logger::write("[ProxyFinder] Failed: " + proxy.address + ":" + std::to_string(proxy.socksPort)
-                        + " (" + configTypeToProtocol(proxy.configType) + ")"
+                        + " (" + ProxyFinderUtils::configTypeToProtocol(proxy.configType) + ")"
                         + " - " + testRes.errorMsg,
                         LogLevel::INFO);
         }
@@ -150,13 +150,13 @@ std::pair<int, int> ProxyFinder::findWorkingProxy(const std::string& targetUrl) 
         
         Logger::write("[ProxyFinder] Testing " + std::to_string(i+1) + "/" + std::to_string(validProxies.size())
                      + ": " + proxy.address + ":" + std::to_string(proxy.socksPort)
-                     + " (" + configTypeToProtocol(proxy.configType) + ")"
+                     + " (" + ProxyFinderUtils::configTypeToProtocol(proxy.configType) + ")"
                      + " socks=" + std::to_string(currentSocksPort_),
                      LogLevel::INFO);
         
         if (!injectProxyToXray(proxy.indexId)) {
             Logger::write("[ProxyFinder] Failed to inject proxy: " + proxy.address + ":" + std::to_string(proxy.socksPort)
-                        + " (" + configTypeToProtocol(proxy.configType) + ")", LogLevel::ERR);
+                        + " (" + ProxyFinderUtils::configTypeToProtocol(proxy.configType) + ")", LogLevel::ERR);
             removeProxyFromXray();
             continue;
         }
@@ -175,12 +175,12 @@ std::pair<int, int> ProxyFinder::findWorkingProxy(const std::string& targetUrl) 
             testRes.delay = testRes.latencyMs;
             allResults.push_back(testRes);
             Logger::write("[ProxyFinder] Working proxy: " + proxy.address + ":" + std::to_string(proxy.socksPort)
-                        + " (" + configTypeToProtocol(proxy.configType) + ")"
+                        + " (" + ProxyFinderUtils::configTypeToProtocol(proxy.configType) + ")"
                         + " delay=" + std::to_string(testRes.latencyMs) + "ms",
                         LogLevel::INFO);
         } else {
             Logger::write("[ProxyFinder] Failed: " + proxy.address + ":" + std::to_string(proxy.socksPort)
-                        + " (" + configTypeToProtocol(proxy.configType) + ")"
+                        + " (" + ProxyFinderUtils::configTypeToProtocol(proxy.configType) + ")"
                         + " - " + testRes.errorMsg,
                         LogLevel::INFO);
         }
@@ -211,7 +211,7 @@ std::pair<int, int> ProxyFinder::findWorkingProxy(const std::string& targetUrl) 
                 if (injectProxyToXray(best.indexId)) {
                     result = {currentSocksPort_, currentApiPort_};
                     Logger::write("[ProxyFinder] Best proxy re-injected: " + best.address + ":" + std::to_string(best.port)
-                                + " (" + configTypeToProtocol(validProxies[i].configType) + ")"
+                                + " (" + ProxyFinderUtils::configTypeToProtocol(validProxies[i].configType) + ")"
                                 + " delay=" + std::to_string(best.latencyMs) + "ms"
                                 + " socks=" + std::to_string(result.first),
                                 LogLevel::INFO);
