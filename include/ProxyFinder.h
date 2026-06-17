@@ -6,9 +6,13 @@
 #include <utility>
 #include <atomic>
 #include <sqlite3.h>
-#include <curl/curl.h>
 
 #include "TestResult.h"
+#include "ProxyTypeStrings.h"
+
+namespace ProxyFinderUtils {
+    std::string configTypeToProtocol(const std::string& configType);
+}
 
 class XrayManager;
 class ConfigGenerator;
@@ -40,10 +44,7 @@ struct FallbackProxy {
     int socksPort;
     int delay;
     std::string configType;   // protocol type: 1=VMess, 3=SS, 4=SOCKS, 5=VLESS, etc.
-};
-
-/** Convert config type number to human-readable protocol name */
-static std::string configTypeToProtocol(const std::string& ct);
+ };
 
 private:
     std::vector<FallbackProxy> loadFallbackProxies(int maxCount = -1);

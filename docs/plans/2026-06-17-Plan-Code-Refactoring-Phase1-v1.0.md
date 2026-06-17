@@ -84,19 +84,20 @@
 - Modify: `src/ShareLink.cpp` - Remove `getConfigTypeName()`
 - Modify: `src/ProxyFinder.cpp` - Remove `configTypeToProtocol()`
 
-- [ ] **Step 1: Analyze both implementations**
-  Compare `ShareLink.cpp:485-499` and `ProxyFinder.cpp:23-34` for differences
+- [x] **Step 1: Analyze both implementations**
+   Compare `ShareLink.cpp:485-499` and `ProxyFinder.cpp:23-34` for differences
+   - ShareLink.cpp: int-based switch (cases 1-11), returns "Unknown"
+   - ProxyFinder.cpp: string-based if-else (cases 1,3-10), returns "Unknown(ct)" for unknown values
+   - Resolution: Created shared `ProxyTypeStrings::protocolName(int)` with int-based lookup, string wrapper in `ProxyFinderUtils::configTypeToProtocol(string)` for ProxyFinder
 
-- [ ] **Step 2: Create shared header**
-  Add to `include/ProxyTypeStrings.h`:
-  ```cpp
-  namespace ProxyTypeStrings {
-      std::string_view protocolName(int configType);
-  }
-  ```
+- [x] **Step 2: Create shared header**
+   Created `include/ProxyTypeStrings.h` with `constexpr std::string_view protocolName(int configType)`
 
-- [ ] **Step 3: Update both files to use shared function**
-  Replace local functions with calls to shared utility
+- [x] **Step 3: Update both files to use shared function**
+   - Removed `getConfigTypeName(int)` from ShareLink.cpp
+   - Removed `configTypeToProtocol` member function declaration from ProxyFinder.h
+   - Added `ProxyFinderUtils::configTypeToProtocol(string)` wrapper that calls `ProxyTypeStrings::protocolName(int)`
+   - Updated ShareLink.h to include ProxyTypeStrings.h
 
-- [ ] **Step 4: Build and verify**
-  Run: `cmake --build build --parallel 8`
+- [x] **Step 4: Build and verify**
+   All 97 tests passed: test_sharelink (11), test_utils (18), test_autotask (8), test_dedup (14), etc.

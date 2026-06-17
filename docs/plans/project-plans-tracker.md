@@ -119,7 +119,7 @@ updated: 2026-06-15
 | 29 | 2026-06-11 | ProxyListPanel refreshResults(): replace per-row ValueChanged storm with listCtrl_->Refresh() to prevent UI freeze on large proxy sets | ✅ completed |
 | 30 | 2026-06-11 | ConfigGenerator::loadProfiles(): invalid network defaults to tcp instead of skipping; added splithttp→xhttp mapping as fallback after frontend conversion | ✅ completed |
 | 31 | 2026-06-09 | Resizable horizontal splitter for subscription/proxy panels | ✅ completed |
-| 37 | 2026-06-17 | **Code Refactoring Phase 1** — 清理死代码、冗余头文件、合并重复逻辑 | 📝 draft |
+| 37 | 2026-06-17 | **Code Refactoring Phase 1** — Cleaned dead code files, removed redundant curl include, merged proxy type string mapping into ProxyTypeStrings.h | ✅ completed |
 ---
 
 ### `.kilo/plans/` 迁移条目

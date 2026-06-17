@@ -3,6 +3,7 @@
 
 #include <string>
 #include <map>
+#include "ProxyTypeStrings.h"
 
 namespace share {
 
@@ -101,11 +102,9 @@ private:
     static std::string base64Encode(const std::string& str);
     static std::string base64Decode(const std::string& str);
     static std::string buildQueryString(const std::map<std::string, std::string>& params);
-    static bool isValidIpv6(const std::string& addr);
+static bool isValidIpv6(const std::string& addr);
     static std::string formatIpv6(const std::string& addr);
-};
-
-std::string getConfigTypeName(int configType);
+ };
 
 }
 

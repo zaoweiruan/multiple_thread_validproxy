@@ -18,7 +18,6 @@
 #include <algorithm>
 #include <array>
 #include <functional>
-#include <set>
 #include <cstdint>
 #include <random>
 #include <windows.h>
@@ -48,21 +47,6 @@ namespace {
         }
     }
 
-    // Network whitelist check (mirrors ConfigGenerator::isValidNetwork)
-    bool isValidNetwork(const std::string& network) {
-        if (network.empty()) return false;
-        std::string lower = network;
-        std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
-        static const std::set<std::string> valid = {
-            "tcp","ws","grpc","h2","httpupgrade","kcp","xhttp","http","quic"
-        };
-        if (valid.count(lower) == 0) {
-            if (lower == "raw" || lower == "tcp,udp") {
-                return true;
-            }
-        }
-        return valid.count(lower) > 0;
-    }
 
     // Pre-filter invalid proxies using checkRequired() + network validation
     bool isValidProxy(const db::models::Profileitem& p) {
@@ -72,7 +56,7 @@ namespace {
             Logger::write("SKIP: " + p.address + ":" + p.port + " - " + e.what(), LogLevel::INFO);
             return false;
         }
-        if (!p.network.empty() && !isValidNetwork(p.network)) {
+        if (!p.network.empty() && !utils::isValidNetwork(p.network)) {
             Logger::write("SKIP: " + p.address + ":" + p.port + " - invalid network: '" + p.network + "'", LogLevel::WARN);
             return false;
         }
