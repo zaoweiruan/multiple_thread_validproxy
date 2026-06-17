@@ -12,9 +12,16 @@ static const int kShortIntervalMs = 50;
 static const int kShortTimeoutMs = 50;
 static const int kWaitMs = 500;
 
+TEST(NetworkMonitorTest, EnabledFalse_ReturnsTrue) {
+    NetworkMonitor nm(false);
+    EXPECT_TRUE(nm.IsConnected());
+    EXPECT_FALSE(nm.IsEnabled());
+}
+
 TEST(NetworkMonitorTest, IsConnected_Default_False) {
     NetworkMonitor nm;
     EXPECT_FALSE(nm.IsConnected());
+    EXPECT_TRUE(nm.IsEnabled());
 }
 
 TEST(NetworkMonitorTest, StartStop_NoCrash) {

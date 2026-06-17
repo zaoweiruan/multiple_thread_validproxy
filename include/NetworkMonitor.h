@@ -7,7 +7,7 @@
 
 class NetworkMonitor {
 public:
-    NetworkMonitor();
+    NetworkMonitor(bool enabled = true);
     ~NetworkMonitor();
 
     NetworkMonitor(const NetworkMonitor&) = delete;
@@ -18,12 +18,15 @@ public:
                int checkTimeoutMs);
     void Stop();
 
-    bool IsConnected() const;
+bool IsConnected() const;
+    bool IsEnabled() const;
+    void setEnabled(bool enabled) { enabled_ = enabled; }
 
 private:
     void ThreadLoop();
     bool CheckURL(const std::string& url, int timeoutMs);
 
+    bool enabled_{true};
     std::vector<std::string> urls_;
     int checkIntervalMs_{10000};
     int checkTimeoutMs_{5000};

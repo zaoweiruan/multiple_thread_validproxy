@@ -73,13 +73,16 @@ bool isTestCancelled() const;
    void runAutoTaskAsync(wxEvtHandler* wxHandler);
    void resumeAutoTaskAsync(wxEvtHandler* wxHandler);
 
-   // Export / Tool
-   std::tuple<bool, int, std::string> exportShareLinks();
-  bool deduplicate();
-  bool syncDatabases(const std::string& src = "", const std::string& dst = "");
-  bool generateConfig(const std::string& indexId);
-   void stopXray();
-   NetworkMonitor* getNetworkMonitor() { return &netMon_; }
+// Export / Tool
+    std::tuple<bool, int, std::string> exportShareLinks();
+   bool deduplicate();
+   bool syncDatabases(const std::string& src = "", const std::string& dst = "");
+   bool generateConfig(const std::string& indexId);
+    void stopXray();
+    NetworkMonitor* getNetworkMonitor() { return &netMon_; }
+
+    // Network monitor control
+    void restartNetworkMonitor();
 
 private:
   void doUpdateSubscription(const std::string& subId, wxEvtHandler* wxHandler);
@@ -99,9 +102,10 @@ private:
   std::atomic<bool> cancelRequested_{false};
   std::atomic<bool> isRunning_{false};
   // Worker thread (single at a time)
-  std::thread workerThread_;
-  TestResult lastFindResult_;
-  NetworkMonitor netMon_;
+std::thread workerThread_;
+   TestResult lastFindResult_;
+   NetworkMonitor netMon_;
+   bool netMonEnabled_{false};  // Cache for MainFrame to query
 };
 
 #endif // UI_APP_CONTROLLER_H

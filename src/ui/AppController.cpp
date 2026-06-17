@@ -27,7 +27,9 @@
 // ---------------------------------------------------------------
 AppController::AppController(sqlite3* db, const config::AppConfig& cfg)
     : db_(db), config_(cfg) {
-    if (config_.network_monitor.enabled) {
+    if (!config_.network_monitor.enabled) {
+        netMon_.setEnabled(false);
+    } else {
         netMon_.Start(config_.network_monitor.checkUrls,
                       config_.network_monitor.checkIntervalMs,
                       config_.network_monitor.checkTimeoutMs);
@@ -521,6 +523,18 @@ bool AppController::generateConfig(const std::string& indexId) {
 // ---------------------------------------------------------------
 void AppController::stopXray() {
     XrayManager::release();
+}
+
+void AppController::restartNetworkMonitor() {
+    netMon_.Stop();
+    if (config_.network_monitor.enabled) {
+        netMon_.setEnabled(true);
+        netMon_.Start(config_.network_monitor.checkUrls,
+                      config_.network_monitor.checkIntervalMs,
+                      config_.network_monitor.checkTimeoutMs);
+    } else {
+        netMon_.setEnabled(false);
+    }
 }
 
 // ---------------------------------------------------------------

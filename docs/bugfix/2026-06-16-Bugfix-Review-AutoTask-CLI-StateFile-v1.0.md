@@ -181,8 +181,23 @@ if (fileVersion > 1) {
 | 5 | **DONE** — Merged `doRunAutoTask`/`doResumeAutoTask` into `doAutoTaskImpl(wxHandler, resume)` with `bool resume` parameter, eliminating ~30-line duplication | `AppController.h`, `AppController.cpp` |
 | 6 | **DONE** — Added version check in `loadStateFile()`: rejects version > 1 with WARN log, returns default state | `AutoTaskManager.cpp` |
 
+## Additional Fixes (this session)
+
+| # | Status | Description | Files changed |
+|---|--------|-------------|---------------|
+| 7 | **DONE** — Added `firstCheckDone_` atomic to suppress spurious "RESTORED" log on first poll | `NetworkMonitor.cpp` |
+| 8 | **DONE** — Added `controller_->isRunning()` guard + message box in 5 handlers to prevent re-entry | `MainFrame.cpp` |
+| 9 | **DONE** — Changed `REALITY publicKey` CONFIG_ERROR log from ERR to INFO | `ProxyBatchTester.cpp`, `ProxyFinder.cpp` |
+| 10 | **DONE** — Renamed `onUpdateType` → `updateMethod` across ConfigDialog, AppController, main_cli, ConfigReader.h, SubitemUpdaterV2 | Multiple files |
+| 11 | **DONE** — Moved `autotask_notify` property to "通知" category in ConfigDialog | `ConfigDialog.cpp` |
+| 12 | **DONE** — Added `IsEnabled()` check in `onNetMonTimer` to skip unnecessary work when disabled | `MainFrame.cpp` |
+| 13 | **DONE** — Added `restartNetworkMonitor()` method; restarts thread + redraws status bar on config switch | `AppController.h`, `AppController.cpp`, `MainFrame.cpp` |
+| 14 | **DONE** — Added Network Monitor config section to ConfigDialog with enabled/URLs/interval/timeout fields | `ConfigDialog.cpp` |
+| 15 | **DONE** — Changed URL check logic from OR to AND: all URLs must pass for connection to be "connected"; added URL validation + at-least-one URL requirement on save | `NetworkMonitor.cpp`, `ConfigDialog.cpp` |
+
 ## Verification
 
-1. Code review of all 6 findings confirmed against actual source lines
-2. All GoogleTest test executables pass (0 failures, 1 skip pre-existing)
+1. Code review of all findings confirmed against actual source lines
+2. All GoogleTest test executables pass (0 failures)
 3. Build: clean, no warnings
+4. Network monitor restart + status bar redraw implemented for config switch
