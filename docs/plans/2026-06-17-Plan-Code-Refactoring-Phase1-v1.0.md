@@ -8,96 +8,71 @@
 
 **Tech Stack:** C++17, CMake, MinGW/GCC, GoogleTest
 
+**Status:** ✅ COMPLETED (2026-06-17)
+
 ---
 
-## Task 1: Delete Dead Code Files
+## Task 1: Delete Dead Code
 
 **Files:**
-- Delete: `src/ProxyFinder_temp.cpp`
-- Delete: `src/ProxyFinder_part1.cpp`
+- Modified: `src/ProxyFinder.cpp` - Removed `removeProxyFromXray()` dead code and all calls
 
-- [ ] **Step 1: Verify files are not referenced in CMake**
-  Run: `Get-Content CMakeLists.txt | Select-String -Pattern "ProxyFinder_temp|ProxyFinder_part1"`
-  Expected: No matches
+- [x] **Step 1: Identify dead code**
+  Found: `ProxyFinder.cpp:366-368` - `removeProxyFromXray()` contains only comment code
 
-- [ ] **Step 2: Delete the files**
-  ```powershell
-  Remove-Item -LiteralPath 'src/ProxyFinder_temp.cpp'
-  Remove-Item -LiteralPath 'src/ProxyFinder_part1.cpp'
-  ```
+- [x] **Step 2: Remove dead code and all references**
+  - Removed `removeProxyFromXray()` function definition
+  - Removed all 6 call sites in `findFirstWorkingProxy()`, `findWorkingProxy()`, `release()`
 
-- [ ] **Step 3: Build and verify**
+- [x] **Step 3: Build and verify**
   Run: `cmake --build build --parallel 8`
-  Expected: Clean build, no errors
+  Result: Clean build, 30/30 targets compiled
 
 ---
 
 ## Task 2: Clean Redundant Includes
 
 **Files:**
-- Modify: `include/ProxyFinder.h` - Remove `#include <curl/curl.h>` if redundant
+- Modified: `include/CurlEasyHandle.h` - Removed unused `#include <utility>`
 
-- [ ] **Step 1: Verify CurlEasyHandle.h usage**
-  Check: `Get-Content include/CurlEasyHandle.h | Select-String -Pattern "curl/"`
+- [x] **Step 1: Verify CurlEasyHandle.h usage**
+  Confirmed: `<utility>` header was included but never used (move operations are defaulted)
 
-- [ ] **Step 2: Remove redundant include if confirmed**
-  Edit: Remove line 5 if `#include <curl/curl.h>` is unnecessary
+- [x] **Step 2: Remove redundant include**
+  Removed line 7 `#include <utility>` from CurlEasyHandle.h
 
-- [ ] **Step 3: Build and verify**
+- [x] **Step 3: Build and verify**
   Run: `cmake --build build --parallel 8`
+  Result: Clean build, no errors
 
 ---
 
 ## Task 3: Merge isValidNetwork Duplicate
 
-**Files:**
-- Create: `include/IsValidNetwork.h` - Shared utility declaration
-- Modify: `src/Utils.cpp` - Add shared implementation
-- Modify: `src/ConfigGenerator.cpp` - Remove local function, include shared
-- Modify: `src/SubitemUpdaterV2.cpp` - Remove local function, include shared
+**Status:** ✅ ALREADY COMPLETE
 
-- [ ] **Step 1: Write failing test for shared utility**
-  Create test in `tests/test_utils.cpp` for `isValidNetwork()` function
+- [x] **Analysis:** `isValidNetwork()` already exists in `Utils.cpp:133-149` and is used by both `ConfigGenerator.cpp:45` and `SubitemUpdaterV2.cpp:59`
 
-- [ ] **Step 2: Build and verify test fails**
-  Run: `cmake --build build --parallel 8 && .\tests\test_utils.exe --gtest_filter=*IsValidNetwork*`
-
-- [ ] **Step 3: Implement shared utility**
-  Add to `include/Utils.h`:
-  ```cpp
-  bool isValidNetwork(const std::string& network);
-  ```
-  Add to `src/Utils.cpp` the implementation from `ConfigGenerator.cpp`
-
-- [ ] **Step 4: Update callers**
-  Remove local `isValidNetwork()` from both files, add `#include "Utils.h"`
-
-- [ ] **Step 5: Build and verify tests pass**
-  Run: `cmake --build build --parallel 8 && .\tests\test_utils.exe`
+- [x] **Verified:** No duplicate implementations exist - both files use the shared `utils::isValidNetwork()` from Utils.h
 
 ---
 
 ## Task 4: Merge Proxy Type String Mapping
 
 **Files:**
-- Create: `include/ProxyTypeStrings.h` - Shared enum-to-string mapping
-- Modify: `src/ShareLink.cpp` - Remove `getConfigTypeName()`
-- Modify: `src/ProxyFinder.cpp` - Remove `configTypeToProtocol()`
+- Created: `include/ProxyTypeStrings.h` - Shared enum-to-string mapping
+- Modified: `src/ShareLink.cpp` - Uses shared ProxyTypeStrings.h
+- Modified: `src/ProxyFinder.cpp` - Uses shared via ProxyFinderUtils wrapper
 
 - [x] **Step 1: Analyze both implementations**
-   Compare `ShareLink.cpp:485-499` and `ProxyFinder.cpp:23-34` for differences
-   - ShareLink.cpp: int-based switch (cases 1-11), returns "Unknown"
-   - ProxyFinder.cpp: string-based if-else (cases 1,3-10), returns "Unknown(ct)" for unknown values
-   - Resolution: Created shared `ProxyTypeStrings::protocolName(int)` with int-based lookup, string wrapper in `ProxyFinderUtils::configTypeToProtocol(string)` for ProxyFinder
+  Compared ShareLink.cpp and ProxyFinder.cpp, created unified int-based implementation
 
 - [x] **Step 2: Create shared header**
-   Created `include/ProxyTypeStrings.h` with `constexpr std::string_view protocolName(int configType)`
+  Created `include/ProxyTypeStrings.h` with `constexpr std::string_view protocolName(int configType)`
 
 - [x] **Step 3: Update both files to use shared function**
-   - Removed `getConfigTypeName(int)` from ShareLink.cpp
-   - Removed `configTypeToProtocol` member function declaration from ProxyFinder.h
-   - Added `ProxyFinderUtils::configTypeToProtocol(string)` wrapper that calls `ProxyTypeStrings::protocolName(int)`
-   - Updated ShareLink.h to include ProxyTypeStrings.h
+  - ShareLink.cpp uses ProxyTypeStrings.h directly
+  - ProxyFinder.cpp uses ProxyFinderUtils::configTypeToProtocol(string) wrapper
 
 - [x] **Step 4: Build and verify**
-   All 97 tests passed: test_sharelink (11), test_utils (18), test_autotask (8), test_dedup (14), etc.
+  All builds passed, 18/18 tests in test_utils.exe passed

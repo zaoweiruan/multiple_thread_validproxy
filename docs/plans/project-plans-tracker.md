@@ -30,6 +30,9 @@ updated: 2026-06-15
 | 2026-06-12 | spec | `docs/plans/2026-06-11-Spec-Refactoring-Phase1-v1.0.md` | Phase 1 重构方案状态更新 — auto(17/17)✅ / SQL注入(3处)✅ / Logger(实例化+委托)✅ / 全部 92 tests pass |
 | 2026-06-15 | spec | `docs/plans/2026-06-15-Spec-AutoTask-v1.0.md` | AutoTask 自动化管道 — 订阅更新/批量测试/去重/同步/导出可配置管道，命令行集成(-AT/-RS/-CA)，断点续传 |
 | 2026-06-16 | bugfix | `docs/bugfix/2026-06-16-Bugfix-Review-AutoTask-CLI-StateFile-v1.0.md` | Code Review 修复: #2 状态文件路径集中 + ConfigDialog 移除, #4 未使用图标删除 |
+| 2026-06-18 | spec | `docs/specs/2026-06-18-Spec-Responsibility-Decomposition-v1.0.md` | 过度职责分解方案 — ProxyBatchTester/AppController/ShareLink/ConfigGenerator/ConfigReader 五阶段拆分 |
+| 2026-06-18 | spec | `docs/specs/2026-06-18-Spec-SubitemUpdaterV2-Decomposition-v1.0.md` | SubitemUpdaterV2 分解已完成 — 提取 SubscriptionParser/Deduplicator/Importer/SubscriptionUpdater 四个类 |
+| 2026-06-18 | plan | `docs/plans/2026-06-18-Plan-Decomposition-Five-Phase-Implementation-v1.0.md` | 五阶段实施计划 — 逐任务拆解 ConfigReader → ShareLink → ConfigGenerator → ProxyBatchTester → AppController |
 | 2026-05-19 | — | 批量状态更新 | P4→❌ cancelled; 003->completed; DLL fix->completed |
 
 ---

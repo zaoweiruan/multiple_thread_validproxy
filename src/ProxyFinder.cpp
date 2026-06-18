@@ -78,7 +78,6 @@ std::pair<int, int> ProxyFinder::findFirstWorkingProxy(const std::string& target
         
         if (!injectProxyToXray(proxy.indexId)) {
             Logger::write("ERROR: ProxyFinder: Failed to inject proxy: " + proxy.indexId, LogLevel::ERR);
-            removeProxyFromXray();
             continue;
         }
         
@@ -104,8 +103,6 @@ std::pair<int, int> ProxyFinder::findFirstWorkingProxy(const std::string& target
                         + " - " + testRes.errorMsg,
                         LogLevel::INFO);
         }
-        
-        removeProxyFromXray();
     }
     
     Logger::write("[ProxyFinder] No working proxy found", LogLevel::ERR);
@@ -157,7 +154,6 @@ std::pair<int, int> ProxyFinder::findWorkingProxy(const std::string& targetUrl) 
         if (!injectProxyToXray(proxy.indexId)) {
             Logger::write("[ProxyFinder] Failed to inject proxy: " + proxy.address + ":" + std::to_string(proxy.socksPort)
                         + " (" + ProxyFinderUtils::configTypeToProtocol(proxy.configType) + ")", LogLevel::ERR);
-            removeProxyFromXray();
             continue;
         }
         
@@ -184,8 +180,6 @@ std::pair<int, int> ProxyFinder::findWorkingProxy(const std::string& targetUrl) 
                         + " - " + testRes.errorMsg,
                         LogLevel::INFO);
         }
-        
-        removeProxyFromXray();
     }
     
     if (allResults.empty()) {
@@ -227,7 +221,6 @@ std::pair<int, int> ProxyFinder::findWorkingProxy(const std::string& targetUrl) 
 }
 
 void ProxyFinder::release() {
-    removeProxyFromXray();
     currentSocksPort_ = -1;
     currentApiPort_ = -1;
 }
@@ -270,12 +263,12 @@ std::vector<ProxyFinder::FallbackProxy> ProxyFinder::loadFallbackProxies(int max
     std::vector<FallbackProxy> proxies;
     
     std::string sql = "SELECT pi.IndexId, pi.Address, pi.Port, pi.PreSocksPort, COALESCE(pe.Delay, 999999) AS Delay, pi.ConfigType "
-                  "FROM ProfileItem pi "
-                  "LEFT JOIN ProfileExItem pe ON pi.IndexId = pe.IndexId "
-                  "WHERE pi.Address IS NOT NULL AND pi.Address != '' "
-                  "AND pi.ConfigType IN ('1', '3', '4', '5', '6', '7', '8', '9', '10') "
-                  "AND COALESCE(pe.Delay, 0) > 0 "
-                  "ORDER BY CAST(pe.Delay AS INTEGER) ASC";
+              "FROM ProfileItem pi "
+              "LEFT JOIN ProfileExItem pe ON pi.IndexId = pe.IndexId "
+              "WHERE pi.Address IS NOT NULL AND pi.Address != '' "
+              "AND pi.ConfigType IN ('1', '3', '4', '5', '6', '7', '8', '9', '10') "
+              "AND COALESCE(pe.Delay, 0) > 0 "
+              "ORDER BY CAST(pe.Delay AS INTEGER) ASC";
     
     if (maxCount > 0) {
         sql += " LIMIT " + std::to_string(maxCount);
@@ -361,8 +354,4 @@ bool ProxyFinder::injectProxyToXray(const std::string& indexId) {
     }
     
     return true;
-}
-
-void ProxyFinder::removeProxyFromXray() {
-    // 暂时不清理
 }

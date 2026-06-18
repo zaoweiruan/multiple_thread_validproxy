@@ -6,6 +6,12 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+# ===== Environment-based paths (configurable via CMakePresets.json or env vars) =====
+set(BOOST_ROOT "${BOOST_ROOT}" CACHE PATH "Boost installation root")
+set(VCPKG_ROOT "${VCPKG_ROOT}" CACHE PATH "vcpkg installation root")
+set(WX64DEVKIT_ROOT "${WX64DEVKIT_ROOT}" CACHE PATH "w64devkit installation root")
+set(GTEST_ROOT "${GTEST_ROOT}" CACHE PATH "Google Test installation root")
+
 if(MSVC)
     add_compile_options(/W4 /WX /permissive- /utf-8)
     add_link_options(/UTF-8)
@@ -34,11 +40,25 @@ if(ENABLE_COVERAGE AND NOT MSVC)
     add_link_options(--coverage)
 endif()
 
+# ===== Default path fallbacks =====
+if(NOT BOOST_ROOT)
+    set(BOOST_ROOT "D:/boost_1_88_0")
+endif()
+if(NOT VCPKG_ROOT)
+    set(VCPKG_ROOT "E:/vcpkg")
+endif()
+if(NOT WX64DEVKIT_ROOT)
+    set(WX64DEVKIT_ROOT "E:/w64devkit")
+endif()
+if(NOT GTEST_ROOT)
+    set(GTEST_ROOT "E:/eclipse_workspace/googletest")
+endif()
+
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
-include_directories(D:/boost_1_88_0/include)
-include_directories(E:/vcpkg/installed/x64-mingw-static/include)
-link_directories(D:/boost_1_88_0/lib)
-link_directories(E:/vcpkg/installed/x64-mingw-static/lib)
+include_directories(${BOOST_ROOT}/include)
+include_directories(${VCPKG_ROOT}/installed/x64-mingw-static/include)
+link_directories(${BOOST_ROOT}/lib)
+link_directories(${VCPKG_ROOT}/installed/x64-mingw-static/lib)
 
 find_package(Threads REQUIRED)
 find_package(CURL REQUIRED)
@@ -64,6 +84,10 @@ set(CORE_SOURCES
     src/ProxyTester.cpp
     src/ShareLink.cpp
     src/SubitemUpdaterV2.cpp
+    src/update/SubscriptionParser.cpp
+    src/update/SubscriptionUpdater.cpp
+    src/update/Deduplicator.cpp
+    src/update/Importer.cpp
     src/UrlFetcher.cpp
     src/Utils.cpp
     src/XrayApi.cpp
@@ -82,8 +106,8 @@ add_executable(validproxy-cli
 target_link_libraries(validproxy-cli PRIVATE
     Threads::Threads
     CURL::libcurl
-    E:/vcpkg/installed/x64-mingw-static/lib/libsqlite3.a
-    D:/boost_1_88_0/lib/libboost_json-mgw14-mt-x64-1_88.a
+    ${VCPKG_ROOT}/installed/x64-mingw-static/lib/libsqlite3.a
+    ${BOOST_ROOT}/lib/libboost_json-mgw14-mt-x64-1_88.a
     -ldbghelp
 )
 
@@ -98,7 +122,7 @@ set_target_properties(validproxy-cli PROPERTIES
 # Find wxWidgets as a CMake CONFIG package from vcpkg (dynamic variant, which has proper cmake config)
 # Pre-find NanoSVG dependency so wxWidgets config can find it
 find_package(NanoSVG CONFIG QUIET
-    PATHS "E:/vcpkg/installed/x64-mingw-dynamic/share/nanosvg"
+    PATHS "${VCPKG_ROOT}/installed/x64-mingw-dynamic/share/nanosvg"
     NO_DEFAULT_PATH
 )
 if(NOT NanoSVG_FOUND)
@@ -106,7 +130,7 @@ if(NOT NanoSVG_FOUND)
 endif()
 
 find_package(wxWidgets CONFIG QUIET
-    PATHS "E:/vcpkg/installed/x64-mingw-dynamic/share/wxwidgets"
+    PATHS "${VCPKG_ROOT}/installed/x64-mingw-dynamic/share/wxwidgets"
     NO_DEFAULT_PATH
 )
 
@@ -143,7 +167,7 @@ if(wxWidgets_FOUND)
     )
 
     # RC flags: let windres find data files and MinGW headers
-    set(CMAKE_RC_FLAGS "${CMAKE_RC_FLAGS} -I${CMAKE_SOURCE_DIR} -IE:/w64devkit/x86_64-w64-mingw32/include")
+    set(CMAKE_RC_FLAGS "${CMAKE_RC_FLAGS} -I${CMAKE_SOURCE_DIR} -I${WX64DEVKIT_ROOT}/x86_64-w64-mingw32/include")
 
     # ===== GUI target (WIN32 subsystem) =====
     add_executable(validproxy
@@ -155,8 +179,8 @@ if(wxWidgets_FOUND)
     target_link_libraries(validproxy PRIVATE
         Threads::Threads
         CURL::libcurl
-        E:/vcpkg/installed/x64-mingw-static/lib/libsqlite3.a
-        D:/boost_1_88_0/lib/libboost_json-mgw14-mt-x64-1_88.a
+        ${VCPKG_ROOT}/installed/x64-mingw-static/lib/libsqlite3.a
+        ${BOOST_ROOT}/lib/libboost_json-mgw14-mt-x64-1_88.a
         -ldbghelp
     )
 
@@ -172,7 +196,7 @@ if(wxWidgets_FOUND)
     )
 
     # Add include directory for wx headers (dynamic variant headers)
-    target_include_directories(validproxy PRIVATE "E:/vcpkg/installed/x64-mingw-dynamic/include")
+    target_include_directories(validproxy PRIVATE "${VCPKG_ROOT}/installed/x64-mingw-dynamic/include")
 
     # Add include directory for UI source headers
     target_include_directories(validproxy PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/ui)
@@ -186,7 +210,7 @@ if(wxWidgets_FOUND)
 
         # Determine if we're building Debug or Release to choose correct DLL directory
         if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-            set(wx_bin_dir "E:/vcpkg/installed/x64-mingw-dynamic/debug/bin")
+            set(wx_bin_dir "${VCPKG_ROOT}/installed/x64-mingw-dynamic/debug/bin")
             # Debug DLLs have 'd' suffix
             set(WX_DLLS
                 wxbase32ud_gcc_custom.dll
@@ -204,7 +228,7 @@ if(wxWidgets_FOUND)
                 liblzma.dll
             )
         else()
-            set(wx_bin_dir "E:/vcpkg/installed/x64-mingw-dynamic/bin")
+            set(wx_bin_dir "${VCPKG_ROOT}/installed/x64-mingw-dynamic/bin")
             # Release DLLs
             set(WX_DLLS
                 wxbase32u_gcc_custom.dll
@@ -253,7 +277,7 @@ endif()
 enable_testing()
 
 # -- GTest (local source) --
-add_subdirectory(E:/eclipse_workspace/googletest ${CMAKE_BINARY_DIR}/googletest)
+add_subdirectory(${GTEST_ROOT} ${CMAKE_BINARY_DIR}/googletest)
 
 add_executable(test_curl_easy_handle tests/test_curl_easy_handle.cpp)
 target_include_directories(test_curl_easy_handle PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
@@ -270,7 +294,7 @@ target_include_directories(test_dedup PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/includ
 target_link_libraries(test_dedup PRIVATE
     gtest_main
     gtest
-    E:/vcpkg/installed/x64-mingw-static/lib/libsqlite3.a
+    ${VCPKG_ROOT}/installed/x64-mingw-static/lib/libsqlite3.a
 )
 set_target_properties(test_dedup PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
@@ -316,8 +340,8 @@ add_test(NAME ShareLinkTest COMMAND test_sharelink)
 add_executable(test_autotask tests/test_autotask.cpp src/AutoTaskManager.cpp ${CORE_SOURCES})
 target_include_directories(test_autotask PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(test_autotask PRIVATE gtest_main gtest
-    E:/vcpkg/installed/x64-mingw-static/lib/libsqlite3.a
-    D:/boost_1_88_0/lib/libboost_json-mgw14-mt-x64-1_88.a
+    ${VCPKG_ROOT}/installed/x64-mingw-static/lib/libsqlite3.a
+    ${BOOST_ROOT}/lib/libboost_json-mgw14-mt-x64-1_88.a
     Threads::Threads
     CURL::libcurl
     -ldbghelp
@@ -343,7 +367,7 @@ add_test(NAME UtilsTest COMMAND test_utils)
 # -- ConfigReader unit tests (includes load() tests with error reporter override) --
 add_executable(test_config_reader tests/test_config_reader.cpp tests/test_config_reader_load.cpp src/ConfigReader.cpp src/Utils.cpp src/Logger.cpp src/LoggerInstance.cpp)
 target_include_directories(test_config_reader PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_link_libraries(test_config_reader PRIVATE gtest_main gtest D:/boost_1_88_0/lib/libboost_json-mgw14-mt-x64-1_88.a)
+target_link_libraries(test_config_reader PRIVATE gtest_main gtest ${BOOST_ROOT}/lib/libboost_json-mgw14-mt-x64-1_88.a)
 set_target_properties(test_config_reader PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
     RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
@@ -355,8 +379,8 @@ add_test(NAME ConfigReaderTest COMMAND test_config_reader)
 add_executable(test_config_generator tests/test_config_generator.cpp src/ConfigGenerator.cpp src/ProfileitemDAO.cpp src/ProfileExItemDAO.cpp src/Logger.cpp src/LoggerInstance.cpp src/Utils.cpp)
 target_include_directories(test_config_generator PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(test_config_generator PRIVATE gtest_main gtest
-    E:/vcpkg/installed/x64-mingw-static/lib/libsqlite3.a
-    D:/boost_1_88_0/lib/libboost_json-mgw14-mt-x64-1_88.a
+    ${VCPKG_ROOT}/installed/x64-mingw-static/lib/libsqlite3.a
+    ${BOOST_ROOT}/lib/libboost_json-mgw14-mt-x64-1_88.a
 )
 set_target_properties(test_config_generator PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
@@ -369,7 +393,7 @@ add_test(NAME ConfigGeneratorTest COMMAND test_config_generator)
 add_executable(test_delete_subscription tests/test_delete_subscription.cpp src/ProfileitemDAO.cpp src/SubitemDAO.cpp src/Logger.cpp src/LoggerInstance.cpp)
 target_include_directories(test_delete_subscription PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(test_delete_subscription PRIVATE gtest_main gtest
-    E:/vcpkg/installed/x64-mingw-static/lib/libsqlite3.a
+    ${VCPKG_ROOT}/installed/x64-mingw-static/lib/libsqlite3.a
 )
 set_target_properties(test_delete_subscription PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
@@ -377,6 +401,17 @@ set_target_properties(test_delete_subscription PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
 )
 add_test(NAME DeleteSubscriptionTest COMMAND test_delete_subscription)
+
+# -- SubscriptionParser unit tests --
+add_executable(test_subscription_parser tests/test_subscription_parser.cpp src/update/SubscriptionParser.cpp src/Utils.cpp src/Logger.cpp src/LoggerInstance.cpp)
+target_include_directories(test_subscription_parser PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(test_subscription_parser PRIVATE gtest_main gtest ${BOOST_ROOT}/lib/libboost_json-mgw14-mt-x64-1_88.a)
+set_target_properties(test_subscription_parser PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+)
+add_test(NAME SubscriptionParserTest COMMAND test_subscription_parser)
 
 # -- NetworkMonitor unit tests --
 add_executable(test_network_monitor tests/test_network_monitor.cpp src/NetworkMonitor.cpp src/Logger.cpp src/LoggerInstance.cpp)

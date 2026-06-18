@@ -1,8 +1,8 @@
----
+updated: 2026-06-18
 title: "docs: project document index"
 type: meta
 status: maintained
-updated: 2026-06-15
+updated: 2026-06-18
 ---
 
 # Project Document Index
@@ -157,7 +157,8 @@ updated: 2026-06-15
 | 5 | [`docs/specs/2026-06-11-Spec-ProxyFinder-findWorkingProxy-bug.md`](./specs/2026-06-11-Spec-ProxyFinder-findWorkingProxy-bug.md) | **ProxyFinder::findWorkingProxy Bug Fix** — 返回端口时未重新注入代理导致代理不可用 | draft |
 | 6 | [`docs/plans/2026-06-11-Spec-Refactoring-Phase1-v1.0.md`](./plans/2026-06-11-Spec-Refactoring-Phase1-v1.0.md) | **重构方案 Phase 1 v1.1** — 审计更新: 3/8 任务已由历史提交完成 (writeCallback/TestResult/DAO), 其余 4 项未开始 + 1 项部分完成 | draft → v1.1 |
 | 7 | [`docs/specs/2026-06-17-Spec-Code-Refactoring-Review-v1.0.md`](./specs/2026-06-17-Spec-Code-Refactoring-Review-v1.0.md) | **Code Refactoring Phase 1** — Dead code removal, redundant includes cleanup, duplicated logic merging | draft |
-| 8 | [`include/ProxyTypeStrings.h`](./ProxyTypeStrings.h) | **ProxyTypeStrings** — Shared header for config type to protocol name mapping (Task 4: merged from ShareLink.cpp + ProxyFinder.cpp) | 21 lines |
+| 8 | [`docs/specs/2026-06-18-Spec-SubitemUpdaterV2-Decomposition-v1.0.md`](./specs/2026-06-18-Spec-SubitemUpdaterV2-Decomposition-v1.0.md) | **SubitemUpdaterV2 分解** — 提取 SubscriptionParser/Deduplicator/Importer/SubscriptionUpdater 四个类 | completed |
+| 9 | [`docs/specs/2026-06-18-Spec-Responsibility-Decomposition-v1.0.md`](./specs/2026-06-18-Spec-Responsibility-Decomposition-v1.0.md) | **过度职责分解方案** — ProxyBatchTester/AppController/ShareLink/ConfigGenerator/ConfigReader 的五阶段拆分方案 | draft |
 
 ---
 
@@ -364,4 +365,4 @@ updated: 2026-06-15
 
 ---
 
-*最后更新: 2026-06-17 (v2) | 维护者: Kilo AI*
+*最后更新: 2026-06-18 (v2) | 维护者: Kilo AI*
