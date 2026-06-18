@@ -115,6 +115,7 @@ std::string utils::generateUniqueId();  // 19 位数字, 4|5 开头
 | 日期 | 决策 | 影响 |
 |------|------|------|
 | 2026-06-11 | 稳定性加固：启用 ASAN/UBSan、MiniDump 崩溃兜底、cppcheck 静态分析、gcov 覆盖率 | 调试与构建基础设施增强 |
+| 2026-06-18 | SubitemUpdaterV2 重构：2422→1198 行，提取 SubscriptionParser/Deduplicator/Importer/SubscriptionUpdater 四个类 | 代码组织改善，单一责任原则，维护性提升 |
 | 2026-05-05 | 移除 `blacklisted` 冗余字段，改用 `consecutive_failures < threshold` 实时计算 | ProfileExItem 简化 |
 | 2026-05-05 | 去重统一为 5 字段键：`Address+Port+ConfigType+Id+Network` | 避免 VMess/VLESS 误判 |
 | 2026-04-16 | XrayManager 改为单例模式 | ProxyFinder/AppController 复用同一实例 |

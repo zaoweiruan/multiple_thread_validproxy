@@ -8,14 +8,8 @@
 #include <sqlite3.h>
 
 #include "TestResult.h"
-#include "ProxyTypeStrings.h"
-
-namespace ProxyFinderUtils {
-    std::string configTypeToProtocol(const std::string& configType);
-}
 
 class XrayManager;
-class ConfigGenerator;
 
 class ProxyFinder {
 public:
@@ -35,7 +29,7 @@ public:
     void release();
     
     TestResult getLastResult() const { return lastResult_; }
-    
+
     TestResult testProxyConnectivity(int socksPort, const std::string& targetUrl = "");
 
 struct FallbackProxy {
@@ -43,13 +37,12 @@ struct FallbackProxy {
     std::string address;
     int socksPort;
     int delay;
-    std::string configType;   // protocol type: 1=VMess, 3=SS, 4=SOCKS, 5=VLESS, etc.
- };
+    std::string configType;
+};
 
 private:
     std::vector<FallbackProxy> loadFallbackProxies(int maxCount = -1);
     bool injectProxyToXray(const std::string& indexId);
-    void removeProxyFromXray();
     
     sqlite3* db_;
     XrayManager* manager_;
