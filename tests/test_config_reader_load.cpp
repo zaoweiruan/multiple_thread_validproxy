@@ -73,7 +73,10 @@ TEST_F(ConfigReaderLoadTest, MissingDbFile) {
         "database": "/nonexistent/path/db.db"
     })");
     std::optional<AppConfig> result = ConfigReader::load(configPath("nodbfile.json"));
-    EXPECT_FALSE(result.has_value());
+    // Original behavior: missing DB logs a warning but does not block load.
+    // Path is resolved relative to exeDir (drive letter prepended on Windows).
+    ASSERT_TRUE(result.has_value());
+    EXPECT_FALSE(result->database_path.empty());
 }
 
 TEST_F(ConfigReaderLoadTest, FullConfigRoundTrip) {

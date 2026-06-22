@@ -102,6 +102,11 @@ set(CORE_SOURCES
     src/XrayManager.cpp
     src/AutoTaskManager.cpp
     src/NetworkMonitor.cpp
+    src/config/ConfigFileStore.cpp
+    src/config/ConfigPathResolver.cpp
+    src/config/ConfigJsonParser.cpp
+    src/config/ConfigJsonSerializer.cpp
+    src/config/ConfigValidator.cpp
 )
 
 # ===== CLI target (CONSOLE subsystem) =====
@@ -372,7 +377,11 @@ set_target_properties(test_utils PROPERTIES
 add_test(NAME UtilsTest COMMAND test_utils)
 
 # -- ConfigReader unit tests (includes load() tests with error reporter override) --
-add_executable(test_config_reader tests/test_config_reader.cpp tests/test_config_reader_load.cpp src/ConfigReader.cpp src/Utils.cpp src/Logger.cpp src/LoggerInstance.cpp)
+add_executable(test_config_reader tests/test_config_reader.cpp tests/test_config_reader_load.cpp
+    src/ConfigReader.cpp src/Utils.cpp src/Logger.cpp src/LoggerInstance.cpp
+    src/config/ConfigFileStore.cpp src/config/ConfigPathResolver.cpp
+    src/config/ConfigJsonParser.cpp src/config/ConfigJsonSerializer.cpp
+    src/config/ConfigValidator.cpp)
 target_include_directories(test_config_reader PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(test_config_reader PRIVATE gtest_main gtest ${BOOST_ROOT}/lib/libboost_json-mgw14-mt-x64-1_88.a)
 set_target_properties(test_config_reader PROPERTIES
