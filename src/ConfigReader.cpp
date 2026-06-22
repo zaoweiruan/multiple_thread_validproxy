@@ -9,626 +9,122 @@
 #include "Logger.h"
 #include "ConfigReader.h"
 #include "Utils.h"
+#include "config/ConfigFileStore.h"
+#include "config/ConfigPathResolver.h"
+#include "config/ConfigJsonParser.h"
+#include "config/ConfigJsonSerializer.h"
+#include "config/ConfigValidator.h"
+#include "config/sections/DatabaseConfigParser.h"
+#include "config/sections/XrayConfigParser.h"
+#include "config/sections/TestConfigParser.h"
+#include "config/sections/LogConfigParser.h"
+#include "config/sections/SubscriptionConfigParser.h"
+#include "config/sections/DedupConfigParser.h"
+#include "config/sections/NotificationConfigParser.h"
+#include "config/sections/SyncConfigParser.h"
+#include "config/sections/AutoTaskConfigParser.h"
+#include "config/sections/NetworkMonitorConfigParser.h"
 
 namespace config {
-
-static std::string resolvePath(const std::string& path, const std::string& exeDir) {
-    if (path.empty()) return "";
-    
-    std::filesystem::path p(path);
-    if (p.is_absolute()) {
-        return path;
-    }
-    
-    return (std::filesystem::path(exeDir) / p).string();
-}
 
 ConfigReader::ErrorReporter ConfigReader::errorReporter_ = [](const std::string& title, const std::string& message) {
     MessageBoxA(NULL, message.c_str(), title.c_str(), MB_ICONERROR | MB_OK);
 };
 
 std::string ConfigReader::getDefaultConfigPath() {
-    std::string exeDir = utils::getExecutableDir();
-    return exeDir + "\\config.json";
+    return ConfigPathResolver::detectExeDir() + "\\config.json";
 }
 
 std::optional<AppConfig> ConfigReader::load(const std::string& configPath) {
     Logger::write("DEBUG: Loading config from: " + configPath, LogLevel::DEBUG);
-    std::ifstream file(configPath);
-    if (!file.is_open()) {
-        Logger::write("DEBUG: Failed to open file", LogLevel::DEBUG);
-        std::string errMsg = "Failed to open configuration file.\n\n";
-        errMsg += "Path:\n" + configPath + "\n\n";
-        errMsg += "Check that the file exists and is accessible.";
-        errorReporter_("Configuration Error", errMsg);
+
+    // Step 1: Read file via ConfigFileStore
+    ConfigFileStore fileStore;
+    std::string content;
+    try {
+        content = fileStore.read(configPath);
+    } catch (const std::runtime_error& e) {
+        errorReporter_("Configuration Error", e.what());
         return std::nullopt;
     }
-
-    std::stringstream buffer;
-    buffer << file.rdbuf();
-    std::string content = buffer.str();
     Logger::write("DEBUG: File read successfully, content length: " + std::to_string(content.length()), LogLevel::DEBUG);
 
-    boost::json::value jv;
-    try {
-        Logger::write("DEBUG: About to parse JSON...", LogLevel::DEBUG);
-        jv = boost::json::parse(content);
-        Logger::write("DEBUG: JSON parsed successfully, is_object: " + std::to_string(jv.is_object()), LogLevel::DEBUG);
-    } catch (const std::exception& e) {
-        Logger::write("DEBUG: JSON exception: " + std::string(e.what()), LogLevel::DEBUG);
+    // Step 2: Parse JSON via ConfigJsonParser
+    Logger::write("DEBUG: About to parse JSON...", LogLevel::DEBUG);
+    ConfigJsonParser jsonParser;
+    boost::json::value jv = jsonParser.parse(content);
+    if (jv.is_null()) {
+        Logger::write("DEBUG: JSON parsing failed", LogLevel::DEBUG);
         std::string errMsg = "Failed to parse configuration file.\n\n";
         errMsg += "Path:\n" + configPath + "\n\n";
-        errMsg += "Error:\n" + std::string(e.what());
+        errMsg += "Error:\n" + jsonParser.lastError();
         errorReporter_("Configuration Error", errMsg);
         return std::nullopt;
     }
+    Logger::write("DEBUG: JSON parsed successfully, is_object: " + std::to_string(jv.is_object()), LogLevel::DEBUG);
 
-    if (!jv.is_object()) {
-        Logger::write("DEBUG: JSON is not an object", LogLevel::DEBUG);
-        std::string errMsg = "Invalid configuration file.\n\n";
-        errMsg += "Path:\n" + configPath + "\n\n";
-        errMsg += "The root element must be a JSON object.";
-        errorReporter_("Configuration Error", errMsg);
-        return std::nullopt;
-    }
-
+    // Step 3: Get exeDir for path resolution
     std::string exeDir = utils::getExecutableDir();
-    
+
+    // Step 4: Parse each config section via section parsers
     AppConfig config;
-    
-    std::function<void(const std::string&, const std::string&, const std::string&)> warnWrongType = [&](const std::string& section, const std::string& field, const std::string& expected) {
-        Logger::write("WARNING: config." + section + "." + field + " has wrong type (expected " + expected + "), using default", LogLevel::WARN);
-    };
-    
-    boost::json::object& obj = jv.as_object();
-    Logger::write("DEBUG: JSON object has " + std::to_string(obj.size()) + " keys", LogLevel::DEBUG);
-    
-    if (obj.contains("database")) {
-        if (obj["database"].is_string()) {
-            config.database_path = resolvePath(obj["database"].as_string().c_str(), exeDir);
-        } else if (obj["database"].is_object()) {
-            boost::json::object& db = obj["database"].as_object();
-            if (db.contains("path") && db["path"].is_string()) {
-                config.database_path = resolvePath(db["path"].as_string().c_str(), exeDir);
-            } else if (db.contains("path")) {
-                warnWrongType("database", "path", "string");
-            }
-            if (db.contains("sql") && db["sql"].is_string()) {
-                config.sql_query = db["sql"].as_string().c_str();
-            } else if (db.contains("sql")) {
-                warnWrongType("database", "sql", "string");
-            }
-            if (db.contains("sql_by_subid") && db["sql_by_subid"].is_string()) {
-                config.sql_by_subid = db["sql_by_subid"].as_string().c_str();
-            } else if (db.contains("sql_by_subid")) {
-                warnWrongType("database", "sql_by_subid", "string");
-            }
-        } else {
-            warnWrongType("", "database", "string|object");
-        }
-    }
-    
-    if (obj.contains("xray") && obj["xray"].is_object()) {
-        boost::json::object& xray = obj["xray"].as_object();
-        if (xray.contains("executable") && xray["executable"].is_string()) {
-            config.xray_executable = resolvePath(xray["executable"].as_string().c_str(), exeDir);
-        } else if (xray.contains("executable")) {
-            warnWrongType("xray", "executable", "string");
-        }
-        if (xray.contains("workers") && xray["workers"].is_int64()) {
-            config.xray_workers = static_cast<int>(xray["workers"].as_int64());
-            if (config.xray_workers <= 0) config.xray_workers = 1;
-        } else if (xray.contains("workers")) {
-            warnWrongType("xray", "workers", "int64");
-            config.xray_workers = 1;
-        } else {
-            config.xray_workers = 1;
-        }
-        if (xray.contains("start_port") && xray["start_port"].is_int64()) {
-            config.xray_start_port = static_cast<int>(xray["start_port"].as_int64());
-            if (config.xray_start_port <= 0) config.xray_start_port = 1083;
-        } else if (xray.contains("start_port")) {
-            warnWrongType("xray", "start_port", "int64");
-            config.xray_start_port = 1083;
-        } else {
-            config.xray_start_port = 1083;
-        }
-        if (xray.contains("api_port") && xray["api_port"].is_int64()) {
-            config.xray_api_port = static_cast<int>(xray["api_port"].as_int64());
-        } else if (xray.contains("api_port")) {
-            warnWrongType("xray", "api_port", "int64");
-        }
-    } else if (obj.contains("xray")) {
-        warnWrongType("", "xray", "object");
-    }
-    
-    if (obj.contains("test") && obj["test"].is_object()) {
-        boost::json::object& test = obj["test"].as_object();
-        if (test.contains("url") && test["url"].is_string()) {
-            config.test_url = test["url"].as_string().c_str();
-        } else if (test.contains("url")) {
-            warnWrongType("test", "url", "string");
-        }
-        if (test.contains("timeout_ms") && test["timeout_ms"].is_int64()) {
-            config.test_timeout_ms = static_cast<int>(test["timeout_ms"].as_int64());
-            if (config.test_timeout_ms <= 0) config.test_timeout_ms = 5000;
-        } else if (test.contains("timeout_ms")) {
-            warnWrongType("test", "timeout_ms", "int64");
-            config.test_timeout_ms = 5000;
-        } else {
-            config.test_timeout_ms = 5000;
-        }
-    } else if (obj.contains("test")) {
-        warnWrongType("", "test", "object");
-    }
-    
-    if (obj.contains("log") && obj["log"].is_object()) {
-        boost::json::object& log = obj["log"].as_object();
-        if (log.contains("enabled") && log["enabled"].is_bool()) {
-            config.log_enabled = log["enabled"].as_bool();
-        } else if (log.contains("enabled")) {
-            warnWrongType("log", "enabled", "bool");
-            config.log_enabled = true;
-        } else {
-            config.log_enabled = true;
-        }
-        if (log.contains("network_failures") && log["network_failures"].is_bool()) {
-            config.log_network_failures = log["network_failures"].as_bool();
-        } else if (log.contains("network_failures")) {
-            warnWrongType("log", "network_failures", "bool");
-            config.log_network_failures = false;
-        } else {
-            config.log_network_failures = false;
-        }
-        if (log.contains("console_level") && log["console_level"].is_string()) {
-            config.log_console_level = log["console_level"].as_string().c_str();
-        } else if (log.contains("console_level")) {
-            warnWrongType("log", "console_level", "string");
-            config.log_console_level = "INFO";
-        } else {
-            config.log_console_level = "INFO";
-        }
-        if (log.contains("file_level") && log["file_level"].is_string()) {
-            config.log_file_level = log["file_level"].as_string().c_str();
-        } else if (log.contains("file_level")) {
-            warnWrongType("log", "file_level", "string");
-            config.log_file_level = "DEBUG";
-        } else {
-            config.log_file_level = "DEBUG";
-        }
-    } else if (obj.contains("log")) {
-        warnWrongType("", "log", "object");
-    } else {
-        config.log_enabled = true;
-        config.log_network_failures = false;
-        config.log_console_level = "INFO";
-        config.log_file_level = "DEBUG";
-    }
-    
-    if (obj.contains("subscription") && obj["subscription"].is_object()) {
-        boost::json::object& sub = obj["subscription"].as_object();
-        if (sub.contains("accelerator_url") && sub["accelerator_url"].is_string()) {
-            config.accelerator_url = sub["accelerator_url"].as_string().c_str();
-        } else if (sub.contains("accelerator_url")) {
-            warnWrongType("subscription", "accelerator_url", "string");
-        }
 
-        if (sub.contains("update_methods") && sub["update_methods"].is_array()) {
-            for (const boost::json::value& m : sub["update_methods"].as_array()) {
-                if (m.is_string()) {
-                    std::string val = m.as_string().c_str();
-                    if (val == "accelerator" || val == "proxy" || val == "direct") {
-                        config.update_methods.push_back(val);
-                    }
-                }
-            }
-        } else if (sub.contains("update_methods")) {
-            warnWrongType("subscription", "update_methods", "array");
-        }
+    DatabaseConfigParser().parse(jv, config, exeDir);
+    XrayConfigParser().parse(jv, config, exeDir);
+    TestConfigParser().parse(jv, config, exeDir);
+    LogConfigParser().parse(jv, config, exeDir);
+    SubscriptionConfigParser().parse(jv, config, exeDir);
+    DedupConfigParser().parse(jv, config, exeDir);
+    NotificationConfigParser().parse(jv, config, exeDir);
+    SyncConfigParser().parse(jv, config, exeDir);
+    AutoTaskConfigParser().parse(jv, config, exeDir);
+    NetworkMonitorConfigParser().parse(jv, config, exeDir);
 
-        // Backward compatibility: priority_mode → update_methods
-        if (sub.contains("priority_mode") && sub["priority_mode"].is_string()
-            && !sub.contains("update_methods")) {
-            std::string pm = sub["priority_mode"].as_string().c_str();
-            if (pm == "direct_first") {
-                config.update_methods = {"direct", "proxy"};
-            } else if (pm == "proxy_first") {
-                config.update_methods = {"proxy"};
-            } else if (pm == "direct_only") {
-                config.update_methods = {"direct"};
-            }
-        }
-
-        // Default: if update_methods is empty after all parsing
-        if (config.update_methods.empty()) {
-            config.update_methods = {"accelerator"};
-        }
-        if (sub.contains("check_auto_update_interval") && sub["check_auto_update_interval"].is_bool()) {
-            config.check_auto_update_interval = sub["check_auto_update_interval"].as_bool();
-        } else if (sub.contains("check_auto_update_interval")) {
-            warnWrongType("subscription", "check_auto_update_interval", "bool");
-            config.check_auto_update_interval = false;
-        } else {
-            config.check_auto_update_interval = false;
-        }
-        if (sub.contains("connect_timeout_ms") && sub["connect_timeout_ms"].is_int64()) {
-            config.subscription_connect_timeout_ms = static_cast<int>(sub["connect_timeout_ms"].as_int64());
-            if (config.subscription_connect_timeout_ms <= 0) config.subscription_connect_timeout_ms = 10000;
-        } else if (sub.contains("connect_timeout_ms")) {
-            warnWrongType("subscription", "connect_timeout_ms", "int64");
-            config.subscription_connect_timeout_ms = 10000;
-        } else {
-            config.subscription_connect_timeout_ms = 10000;
-        }
-        if (sub.contains("timeout_ms") && sub["timeout_ms"].is_int64()) {
-            config.subscription_timeout_ms = static_cast<int>(sub["timeout_ms"].as_int64());
-            if (config.subscription_timeout_ms <= 0) config.subscription_timeout_ms = 30000;
-        } else if (sub.contains("timeout_ms")) {
-            warnWrongType("subscription", "timeout_ms", "int64");
-            config.subscription_timeout_ms = 30000;
-        } else {
-            config.subscription_timeout_ms = 30000;
-        }
-    } else if (obj.contains("subscription")) {
-        warnWrongType("", "subscription", "object");
-    } else {
-        config.check_auto_update_interval = false;
-        config.subscription_connect_timeout_ms = 10000;
-        config.subscription_timeout_ms = 30000;
-        config.update_methods = {"accelerator"};
-    }
-    
-    if (obj.contains("dedup") && obj["dedup"].is_object()) {
-        boost::json::object& dedup = obj["dedup"].as_object();
-        if (dedup.contains("enabled") && dedup["enabled"].is_bool()) {
-            config.dedup_enabled = dedup["enabled"].as_bool();
-        } else if (dedup.contains("enabled")) {
-            warnWrongType("dedup", "enabled", "bool");
-            config.dedup_enabled = false;
-        } else {
-            config.dedup_enabled = false;
-        }
-        if (dedup.contains("dedup_after_update") && dedup["dedup_after_update"].is_bool()) {
-            config.dedup_after_update = dedup["dedup_after_update"].as_bool();
-        } else if (dedup.contains("dedup_after_update")) {
-            warnWrongType("dedup", "dedup_after_update", "bool");
-            config.dedup_after_update = false;
-        } else {
-            config.dedup_after_update = false;
-        }
-        if (dedup.contains("blacklist_threshold") && dedup["blacklist_threshold"].is_int64()) {
-            config.blacklist_threshold = static_cast<int>(dedup["blacklist_threshold"].as_int64());
-            if (config.blacklist_threshold < 0) config.blacklist_threshold = 5;
-        } else if (dedup.contains("blacklist_threshold")) {
-            warnWrongType("dedup", "blacklist_threshold", "int64");
-            config.blacklist_threshold = 5;
-        } else {
-            config.blacklist_threshold = 5;
-        }
-        if (dedup.contains("blacklist_enabled") && dedup["blacklist_enabled"].is_bool()) {
-            config.blacklist_enabled = dedup["blacklist_enabled"].as_bool();
-        } else if (dedup.contains("blacklist_enabled")) {
-            warnWrongType("dedup", "blacklist_enabled", "bool");
-            config.blacklist_enabled = true;
-        } else {
-            config.blacklist_enabled = true;
-        }
-        if (dedup.contains("blacklist_subid") && dedup["blacklist_subid"].is_string()) {
-            config.blacklist_subid = dedup["blacklist_subid"].as_string().c_str();
-        } else if (dedup.contains("blacklist_subid")) {
-            warnWrongType("dedup", "blacklist_subid", "string");
-        }
-        if (dedup.contains("subids") && dedup["subids"].is_array()) {
-            for (const boost::json::value& sid : dedup["subids"].as_array()) {
-                if (sid.is_string()) {
-                    config.dedup_subids.push_back(sid.as_string().c_str());
-                } else {
-                    Logger::write("WARNING: config.dedup.subids element is not a string, skipping", LogLevel::WARN);
-                }
-            }
-        }
-    } else if (obj.contains("dedup")) {
-        warnWrongType("", "dedup", "object");
-    } else {
-        config.dedup_enabled = true;
-        config.dedup_after_update = false;
-        config.blacklist_threshold = 5;
-        config.blacklist_enabled = true;
-        config.blacklist_subid = "";
-    }
-    
-    if (obj.contains("notification") && obj["notification"].is_object()) {
-        boost::json::object& notification = obj["notification"].as_object();
-        if (notification.contains("enabled") && notification["enabled"].is_bool()) {
-            config.notification_enabled = notification["enabled"].as_bool();
-        } else if (notification.contains("enabled")) {
-            warnWrongType("notification", "enabled", "bool");
-            config.notification_enabled = false;
-        } else {
-            config.notification_enabled = false;
-        }
-        if (notification.contains("on_update") && notification["on_update"].is_bool()) {
-            config.notification_on_update = notification["on_update"].as_bool();
-        } else if (notification.contains("on_update")) {
-            warnWrongType("notification", "on_update", "bool");
-            config.notification_on_update = false;
-        } else {
-            config.notification_on_update = false;
-        }
-        if (notification.contains("on_test") && notification["on_test"].is_bool()) {
-            config.notification_on_test = notification["on_test"].as_bool();
-        } else if (notification.contains("on_test")) {
-            warnWrongType("notification", "on_test", "bool");
-            config.notification_on_test = false;
-        } else {
-            config.notification_on_test = false;
-        }
-    } else if (obj.contains("notification")) {
-        warnWrongType("", "notification", "object");
-    } else {
-        config.notification_enabled = false;
-        config.notification_on_update = false;
-        config.notification_on_test = false;
-    }
-    
-    if (obj.contains("sync") && obj["sync"].is_object()) {
-        boost::json::object& sync = obj["sync"].as_object();
-        if (sync.contains("source_db") && sync["source_db"].is_string()) {
-            config.sync.source_db = resolvePath(sync["source_db"].as_string().c_str(), exeDir);
-        } else if (sync.contains("source_db")) {
-            warnWrongType("sync", "source_db", "string");
-        }
-        if (sync.contains("target_db") && sync["target_db"].is_string()) {
-            config.sync.target_db = resolvePath(sync["target_db"].as_string().c_str(), exeDir);
-        } else if (sync.contains("target_db")) {
-            warnWrongType("sync", "target_db", "string");
-        }
-        if (sync.contains("sync_skip_subids") && sync["sync_skip_subids"].is_bool()) {
-            config.sync.sync_skip_subids = sync["sync_skip_subids"].as_bool();
-        } else if (sync.contains("sync_skip_subids")) {
-            warnWrongType("sync", "sync_skip_subids", "bool");
-        }
-    } else if (obj.contains("sync")) {
-        warnWrongType("", "sync", "object");
-    }
-
-    if (obj.contains("auto_task") && obj["auto_task"].is_object()) {
-        boost::json::object& at = obj["auto_task"].as_object();
-        if (at.contains("steps") && at["steps"].is_array()) {
-            for (const boost::json::value& s : at["steps"].as_array()) {
-                if (s.is_string()) {
-                    config.auto_task.steps.push_back(s.as_string().c_str());
-                }
-            }
-        } else if (at.contains("steps")) {
-            warnWrongType("auto_task", "steps", "array");
-        }
-        if (at.contains("notify_on_complete") && at["notify_on_complete"].is_bool()) {
-            config.auto_task.notify_on_complete = at["notify_on_complete"].as_bool();
-        } else if (at.contains("notify_on_complete")) {
-            warnWrongType("auto_task", "notify_on_complete", "bool");
-        }
-        if (at.contains("state_file") && at["state_file"].is_string()) {
-            config.auto_task.state_file = resolvePath(at["state_file"].as_string().c_str(), exeDir);
-        } else if (at.contains("state_file")) {
-            warnWrongType("auto_task", "state_file", "string");
-        }
-    } else if (obj.contains("auto_task")) {
-        warnWrongType("", "auto_task", "object");
-    }
-
-    if (obj.contains("network_monitor") && obj["network_monitor"].is_object()) {
-        boost::json::object& nm = obj["network_monitor"].as_object();
-        if (nm.contains("enabled") && nm["enabled"].is_bool()) {
-            config.network_monitor.enabled = nm["enabled"].as_bool();
-        }
-        if (nm.contains("check_urls") && nm["check_urls"].is_array()) {
-            config.network_monitor.checkUrls.clear();
-            for (const boost::json::value& u : nm["check_urls"].as_array()) {
-                if (u.is_string()) {
-                    config.network_monitor.checkUrls.push_back(u.as_string().c_str());
-                }
-            }
-        }
-        if (nm.contains("check_interval_ms") && nm["check_interval_ms"].is_int64()) {
-            config.network_monitor.checkIntervalMs = static_cast<int>(nm["check_interval_ms"].as_int64());
-            if (config.network_monitor.checkIntervalMs <= 0) config.network_monitor.checkIntervalMs = 10000;
-        }
-        if (nm.contains("check_timeout_ms") && nm["check_timeout_ms"].is_int64()) {
-            config.network_monitor.checkTimeoutMs = static_cast<int>(nm["check_timeout_ms"].as_int64());
-            if (config.network_monitor.checkTimeoutMs <= 0) config.network_monitor.checkTimeoutMs = 5000;
-        }
-    } else if (obj.contains("network_monitor")) {
-        warnWrongType("", "network_monitor", "object");
-    }
-
-    // Warn about any remaining curly-brace placeholders that were not substituted.
-    // Known runtime placeholders (replaced later, not at config load time):
-    //   {subid}              - replaced per-subscription in ProxyBatchTester::loadProxies()
-    //   {blacklist_threshold} - replaced before SQL execution in ProxyBatchTester::loadProxies()
-    const std::vector<std::string> knownRuntimePlaceholders = {"{subid}", "{blacklist_threshold}"};
-    std::function<bool(const std::string&)> hasUnreplaced = [&knownRuntimePlaceholders](const std::string& sql) -> bool {
-        for (size_t i = 0; i < sql.size(); ++i) {
-            if (sql[i] == '{') {
-                // Check if this '{}' pattern is a known runtime placeholder
-                bool isKnown = false;
-                for (const std::string& ph : knownRuntimePlaceholders) {
-                    if (sql.compare(i, ph.size(), ph) == 0) {
-                        isKnown = true;
-                        break;
-                    }
-                }
-                if (!isKnown) {
-                    // Check for matched closing brace
-                    size_t closingBrace = sql.find('}', i + 1);
-                    if (closingBrace != std::string::npos) {
-                        // The SQL has '{...}' that is NOT a known runtime placeholder
-                        // Extract the unknown placeholder for diagnostic message
-                        std::string unknownPlaceholder = sql.substr(i, closingBrace - i + 1);
-                        Logger::write("WARNING: " + unknownPlaceholder + " in SQL was not substituted", LogLevel::WARN);
-                    }
-                    return true;
-                }
-            }
-        }
-        return false;
-    };
-    hasUnreplaced(config.sql_query);
-    hasUnreplaced(config.sql_by_subid);
-    
+    // Step 5: Log SQL queries
     if (!config.sql_query.empty())
         Logger::write("SQL query: " + config.sql_query, LogLevel::DEBUG);
     if (!config.sql_by_subid.empty())
         Logger::write("SQL by_subid: " + config.sql_by_subid, LogLevel::DEBUG);
-    
-    if (!config.database_path.empty()) {
-        std::filesystem::path dbPath(config.database_path);
-        if (!std::filesystem::exists(dbPath)) {
-            Logger::write("ERROR: Database file not found: " + config.database_path, LogLevel::ERR);
-            std::string errMsg = "Database file not found.\n\n";
+
+    // Step 6: Validate via ConfigValidator
+    ConfigValidator validator;
+    ConfigValidator::ValidationResult validationResult = validator.validate(config, configPath);
+
+    if (!validationResult.valid) {
+        for (size_t i = 0; i < validationResult.errors.size(); ++i) {
+            Logger::write("ERROR: " + validationResult.errors[i], LogLevel::ERR);
+        }
+        std::string errMsg;
+        if (!validationResult.errors.empty()) {
+            errMsg = validationResult.errors[0] + "\n\n";
             errMsg += "Config path:\n" + configPath + "\n\n";
-            errMsg += "Database path:\n" + config.database_path + "\n\n";
             errMsg += "The application cannot start.";
-            errorReporter_("Database Error", errMsg);
+            errorReporter_("Configuration Error", errMsg);
             return std::nullopt;
         }
     }
-    
-    if (!config.xray_executable.empty()) {
-        std::filesystem::path xrayPath(config.xray_executable);
-        if (!std::filesystem::exists(xrayPath)) {
-            Logger::write("ERROR: xray executable not found: " + config.xray_executable, LogLevel::ERR);
-            std::string errMsg = "Xray executable not found.\n\n";
-            errMsg += "Config path:\n" + configPath + "\n\n";
-            errMsg += "Xray path:\n" + config.xray_executable + "\n\n";
-            errMsg += "Please check the path in the configuration file.";
-            errorReporter_("Configuration Error", errMsg);
-        }
-        // Check file extension on Windows — .exe is expected for xray executable
-        std::string ext = xrayPath.extension().string();
-        if (!ext.empty() && ext != ".exe") {
-            Logger::write("WARNING: xray executable should have .exe extension: " + config.xray_executable, LogLevel::WARN);
-        }
+
+    for (size_t i = 0; i < validationResult.warnings.size(); ++i) {
+        Logger::write("WARNING: " + validationResult.warnings[i], LogLevel::WARN);
     }
-    
+
     Logger::write("DEBUG: Config loaded successfully", LogLevel::DEBUG);
     return config;
 }
 
 bool ConfigReader::save(const std::string& configPath, const AppConfig& config) {
-    boost::json::object root;
+    // Step 1: Serialize via ConfigJsonSerializer
+    ConfigJsonSerializer serializer;
+    boost::json::object root = serializer.serialize(config);
 
-    // database
-    boost::json::object dbObj;
-    dbObj["path"] = config.database_path;
-    if (!config.sql_query.empty()) dbObj["sql"] = config.sql_query;
-    if (!config.sql_by_subid.empty()) dbObj["sql_by_subid"] = config.sql_by_subid;
-    root["database"] = dbObj;
-
-    // xray
-    boost::json::object xrayObj;
-    xrayObj["executable"] = config.xray_executable;
-    xrayObj["workers"] = config.xray_workers;
-    xrayObj["start_port"] = config.xray_start_port;
-    xrayObj["api_port"] = config.xray_api_port;
-    root["xray"] = xrayObj;
-
-    // test
-    boost::json::object testObj;
-    testObj["url"] = config.test_url;
-    testObj["timeout_ms"] = config.test_timeout_ms;
-    root["test"] = testObj;
-
-    // log
-    boost::json::object logObj;
-    logObj["enabled"] = config.log_enabled;
-    logObj["network_failures"] = config.log_network_failures;
-    logObj["console_level"] = config.log_console_level;
-    logObj["file_level"] = config.log_file_level;
-    root["log"] = logObj;
-
-    // subscription
-    boost::json::object subObj;
-    if (!config.accelerator_url.empty()) {
-        subObj["accelerator_url"] = config.accelerator_url;
-    }
-    {
-        boost::json::array methodsArr;
-        for (const std::string& m : config.update_methods) {
-            methodsArr.emplace_back(m);
-        }
-        subObj["update_methods"] = methodsArr;
-    }
-    subObj["check_auto_update_interval"] = config.check_auto_update_interval;
-    subObj["connect_timeout_ms"] = config.subscription_connect_timeout_ms;
-    subObj["timeout_ms"] = config.subscription_timeout_ms;
-    root["subscription"] = subObj;
-
-    // dedup
-    boost::json::object dedupObj;
-    dedupObj["enabled"] = config.dedup_enabled;
-    dedupObj["dedup_after_update"] = config.dedup_after_update;
-    dedupObj["blacklist_threshold"] = config.blacklist_threshold;
-    dedupObj["blacklist_enabled"] = config.blacklist_enabled;
-    dedupObj["blacklist_subid"] = config.blacklist_subid;
-    boost::json::array subidsArr;
-    for (const std::string& sid : config.dedup_subids) {
-        subidsArr.emplace_back(sid);
-    }
-    dedupObj["subids"] = subidsArr;
-    root["dedup"] = dedupObj;
-
-    // notification
-    boost::json::object notifObj;
-    notifObj["enabled"] = config.notification_enabled;
-    notifObj["on_update"] = config.notification_on_update;
-    notifObj["on_test"] = config.notification_on_test;
-    root["notification"] = notifObj;
-
-    // sync
-    boost::json::object syncObj;
-    syncObj["source_db"] = config.sync.source_db;
-    syncObj["target_db"] = config.sync.target_db;
-    syncObj["sync_skip_subids"] = config.sync.sync_skip_subids;
-    root["sync"] = syncObj;
-
-    // auto_task
-    boost::json::object autoTaskObj;
-    {
-        boost::json::array stepsArr;
-        for (const std::string& s : config.auto_task.steps) {
-            stepsArr.emplace_back(s);
-        }
-        autoTaskObj["steps"] = stepsArr;
-    }
-    autoTaskObj["notify_on_complete"] = config.auto_task.notify_on_complete;
-    if (!config.auto_task.state_file.empty()) {
-        autoTaskObj["state_file"] = config.auto_task.state_file;
-    }
-    root["auto_task"] = autoTaskObj;
-
-    // network_monitor
-    boost::json::object nmObj;
-    nmObj["enabled"] = config.network_monitor.enabled;
-    {
-        boost::json::array urlsArr;
-        for (const std::string& u : config.network_monitor.checkUrls) {
-            urlsArr.emplace_back(u);
-        }
-        nmObj["check_urls"] = urlsArr;
-    }
-    nmObj["check_interval_ms"] = config.network_monitor.checkIntervalMs;
-    nmObj["check_timeout_ms"] = config.network_monitor.checkTimeoutMs;
-    root["network_monitor"] = nmObj;
-
-    // Serialize and write (compact JSON)
-    std::ofstream file(configPath);
-    if (!file.is_open()) {
+    // Step 2: Write via ConfigFileStore
+    ConfigFileStore fileStore;
+    try {
+        fileStore.write(configPath, boost::json::serialize(root));
+    } catch (const std::runtime_error& e) {
         Logger::write("Failed to write config to: " + configPath, LogLevel::ERR);
         return false;
     }
-    file << boost::json::serialize(root);
-    file.close();
 
     Logger::write("Config saved to: " + configPath, LogLevel::INFO);
     return true;
