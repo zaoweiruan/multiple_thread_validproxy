@@ -1,0 +1,116 @@
+#include "config/ConfigJsonSerializer.h"
+
+namespace config {
+
+boost::json::object ConfigJsonSerializer::serialize(const AppConfig& config) const {
+    boost::json::object root;
+
+    // database
+    boost::json::object dbObj;
+    dbObj["path"] = config.database_path;
+    if (!config.sql_query.empty()) dbObj["sql"] = config.sql_query;
+    if (!config.sql_by_subid.empty()) dbObj["sql_by_subid"] = config.sql_by_subid;
+    root["database"] = dbObj;
+
+    // xray
+    boost::json::object xrayObj;
+    xrayObj["executable"] = config.xray_executable;
+    xrayObj["workers"] = config.xray_workers;
+    xrayObj["start_port"] = config.xray_start_port;
+    xrayObj["api_port"] = config.xray_api_port;
+    root["xray"] = xrayObj;
+
+    // test
+    boost::json::object testObj;
+    testObj["url"] = config.test_url;
+    testObj["timeout_ms"] = config.test_timeout_ms;
+    root["test"] = testObj;
+
+    // log
+    boost::json::object logObj;
+    logObj["enabled"] = config.log_enabled;
+    logObj["network_failures"] = config.log_network_failures;
+    logObj["console_level"] = config.log_console_level;
+    logObj["file_level"] = config.log_file_level;
+    root["log"] = logObj;
+
+    // subscription
+    boost::json::object subObj;
+    if (!config.accelerator_url.empty()) {
+        subObj["accelerator_url"] = config.accelerator_url;
+    }
+    {
+        boost::json::array methodsArr;
+        for (const std::string& m : config.update_methods) {
+            methodsArr.emplace_back(m);
+        }
+        subObj["update_methods"] = methodsArr;
+    }
+    subObj["check_auto_update_interval"] = config.check_auto_update_interval;
+    subObj["connect_timeout_ms"] = config.subscription_connect_timeout_ms;
+    subObj["timeout_ms"] = config.subscription_timeout_ms;
+    root["subscription"] = subObj;
+
+    // dedup
+    boost::json::object dedupObj;
+    dedupObj["enabled"] = config.dedup_enabled;
+    dedupObj["dedup_after_update"] = config.dedup_after_update;
+    dedupObj["blacklist_threshold"] = config.blacklist_threshold;
+    dedupObj["blacklist_enabled"] = config.blacklist_enabled;
+    dedupObj["blacklist_subid"] = config.blacklist_subid;
+    {
+        boost::json::array subidsArr;
+        for (const std::string& sid : config.dedup_subids) {
+            subidsArr.emplace_back(sid);
+        }
+        dedupObj["subids"] = subidsArr;
+    }
+    root["dedup"] = dedupObj;
+
+    // notification
+    boost::json::object notifObj;
+    notifObj["enabled"] = config.notification_enabled;
+    notifObj["on_update"] = config.notification_on_update;
+    notifObj["on_test"] = config.notification_on_test;
+    root["notification"] = notifObj;
+
+    // sync
+    boost::json::object syncObj;
+    syncObj["source_db"] = config.sync.source_db;
+    syncObj["target_db"] = config.sync.target_db;
+    syncObj["sync_skip_subids"] = config.sync.sync_skip_subids;
+    root["sync"] = syncObj;
+
+    // auto_task
+    boost::json::object autoTaskObj;
+    {
+        boost::json::array stepsArr;
+        for (const std::string& s : config.auto_task.steps) {
+            stepsArr.emplace_back(s);
+        }
+        autoTaskObj["steps"] = stepsArr;
+    }
+    autoTaskObj["notify_on_complete"] = config.auto_task.notify_on_complete;
+    if (!config.auto_task.state_file.empty()) {
+        autoTaskObj["state_file"] = config.auto_task.state_file;
+    }
+    root["auto_task"] = autoTaskObj;
+
+    // network_monitor
+    boost::json::object nmObj;
+    nmObj["enabled"] = config.network_monitor.enabled;
+    {
+        boost::json::array urlsArr;
+        for (const std::string& u : config.network_monitor.checkUrls) {
+            urlsArr.emplace_back(u);
+        }
+        nmObj["check_urls"] = urlsArr;
+    }
+    nmObj["check_interval_ms"] = config.network_monitor.checkIntervalMs;
+    nmObj["check_timeout_ms"] = config.network_monitor.checkTimeoutMs;
+    root["network_monitor"] = nmObj;
+
+    return root;
+}
+
+} // namespace config
