@@ -1,5 +1,5 @@
-#ifndef CONFIG_CONFIGFILESTORE_H
-#define CONFIG_CONFIGFILESTORE_H
+#ifndef CONFIG_FILE_STORE_H
+#define CONFIG_FILE_STORE_H
 
 #include <string>
 
