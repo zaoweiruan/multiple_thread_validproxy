@@ -107,6 +107,29 @@ set(CORE_SOURCES
     src/config/ConfigJsonParser.cpp
     src/config/ConfigJsonSerializer.cpp
     src/config/ConfigValidator.cpp
+    src/share/UriCodec.cpp
+    src/share/Ipv6Formatter.cpp
+    src/share/VLESSUriBuilder.cpp
+    src/share/VMessUriBuilder.cpp
+    src/share/TrojanUriBuilder.cpp
+    src/share/SSUriBuilder.cpp
+    src/share/Hysteria2UriBuilder.cpp
+    src/share/TUICUriBuilder.cpp
+    src/share/ShareLinkFactory.cpp
+    src/config/ProfileConfigRepository.cpp
+    src/config/ProfileNormalizer.cpp
+    src/config/StreamSettingsBuilder.cpp
+    src/config/OutboundBuilderFactory.cpp
+    src/config/XrayConfigAssembler.cpp
+    src/config/outbound/VLESSOutboundBuilder.cpp
+    src/config/outbound/VMessOutboundBuilder.cpp
+    src/config/outbound/SSOutboundBuilder.cpp
+    src/config/outbound/TrojanOutboundBuilder.cpp
+    src/config/outbound/SOCKSOutboundBuilder.cpp
+    src/config/outbound/HTTPOutboundBuilder.cpp
+    src/config/outbound/Hysteria2OutboundBuilder.cpp
+    src/config/outbound/TUICOutboundBuilder.cpp
+    src/config/outbound/WireGuardOutboundBuilder.cpp
 )
 
 # ===== CLI target (CONSOLE subsystem) =====
@@ -337,8 +360,20 @@ set_target_properties(test_logger PROPERTIES
 )
 add_test(NAME LoggerTest COMMAND test_logger)
 
-# -- ShareLink unit tests (pure functions, no external deps beyond gtest) --
-add_executable(test_sharelink tests/test_sharelink.cpp src/ShareLink.cpp)
+# -- ShareLink unit tests (now delegates to extracted builders, includes factory + 6 builders) --
+add_executable(test_sharelink
+    tests/test_sharelink.cpp
+    src/ShareLink.cpp
+    src/share/ShareLinkFactory.cpp
+    src/share/UriCodec.cpp
+    src/share/Ipv6Formatter.cpp
+    src/share/VLESSUriBuilder.cpp
+    src/share/VMessUriBuilder.cpp
+    src/share/TrojanUriBuilder.cpp
+    src/share/SSUriBuilder.cpp
+    src/share/Hysteria2UriBuilder.cpp
+    src/share/TUICUriBuilder.cpp
+)
 target_include_directories(test_sharelink PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(test_sharelink PRIVATE gtest_main gtest)
 set_target_properties(test_sharelink PROPERTIES
@@ -347,6 +382,17 @@ set_target_properties(test_sharelink PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
 )
 add_test(NAME ShareLinkTest COMMAND test_sharelink)
+
+# -- UriCodec unit tests (encoding utilities extracted from ShareLink) --
+add_executable(test_uri_codec tests/test_uri_codec.cpp src/share/UriCodec.cpp)
+target_include_directories(test_uri_codec PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(test_uri_codec PRIVATE gtest_main gtest)
+set_target_properties(test_uri_codec PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+)
+add_test(NAME UriCodecTest COMMAND test_uri_codec)
 
 # -- AutoTaskManager unit tests --
 add_executable(test_autotask tests/test_autotask.cpp src/AutoTaskManager.cpp ${CORE_SOURCES})
@@ -391,8 +437,30 @@ set_target_properties(test_config_reader PROPERTIES
 )
 add_test(NAME ConfigReaderTest COMMAND test_config_reader)
 
-# -- ConfigGenerator unit tests (SQLite + boost_json) --
-add_executable(test_config_generator tests/test_config_generator.cpp src/ConfigGenerator.cpp src/ProfileitemDAO.cpp src/ProfileExItemDAO.cpp src/Logger.cpp src/LoggerInstance.cpp src/Utils.cpp)
+# -- ConfigGenerator unit tests (SQLite + boost_json, now delegates to extracted components) --
+add_executable(test_config_generator
+    tests/test_config_generator.cpp
+    src/ConfigGenerator.cpp
+    src/ProfileitemDAO.cpp
+    src/ProfileExItemDAO.cpp
+    src/Logger.cpp
+    src/LoggerInstance.cpp
+    src/Utils.cpp
+    src/config/ProfileConfigRepository.cpp
+    src/config/ProfileNormalizer.cpp
+    src/config/StreamSettingsBuilder.cpp
+    src/config/OutboundBuilderFactory.cpp
+    src/config/XrayConfigAssembler.cpp
+    src/config/outbound/VLESSOutboundBuilder.cpp
+    src/config/outbound/VMessOutboundBuilder.cpp
+    src/config/outbound/SSOutboundBuilder.cpp
+    src/config/outbound/TrojanOutboundBuilder.cpp
+    src/config/outbound/SOCKSOutboundBuilder.cpp
+    src/config/outbound/HTTPOutboundBuilder.cpp
+    src/config/outbound/Hysteria2OutboundBuilder.cpp
+    src/config/outbound/TUICOutboundBuilder.cpp
+    src/config/outbound/WireGuardOutboundBuilder.cpp
+)
 target_include_directories(test_config_generator PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(test_config_generator PRIVATE gtest_main gtest
     ${VCPKG_ROOT}/installed/x64-mingw-static/lib/libsqlite3.a
@@ -450,5 +518,62 @@ set_target_properties(test_network_monitor PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
 )
 add_test(NAME NetworkMonitorTest COMMAND test_network_monitor)
+
+# -- Ipv6Formatter unit tests (pure functions, no external deps beyond gtest) --
+add_executable(test_ipv6_formatter tests/test_ipv6_formatter.cpp src/share/Ipv6Formatter.cpp)
+target_include_directories(test_ipv6_formatter PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(test_ipv6_formatter PRIVATE gtest_main gtest)
+set_target_properties(test_ipv6_formatter PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+)
+add_test(NAME Ipv6FormatterTest COMMAND test_ipv6_formatter)
+
+# -- ShareUriBuilders unit tests (6 protocol URI builders, no external deps beyond gtest) --
+add_executable(test_share_uri_builders
+    tests/test_vless_uri_builder.cpp
+    tests/test_vmess_uri_builder.cpp
+    tests/test_trojan_uri_builder.cpp
+    tests/test_ss_uri_builder.cpp
+    tests/test_hysteria2_uri_builder.cpp
+    tests/test_tuic_uri_builder.cpp
+    src/share/VLESSUriBuilder.cpp
+    src/share/VMessUriBuilder.cpp
+    src/share/TrojanUriBuilder.cpp
+    src/share/SSUriBuilder.cpp
+    src/share/Hysteria2UriBuilder.cpp
+    src/share/TUICUriBuilder.cpp
+    src/share/UriCodec.cpp
+)
+target_include_directories(test_share_uri_builders PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(test_share_uri_builders PRIVATE gtest_main gtest)
+set_target_properties(test_share_uri_builders PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+)
+add_test(NAME ShareUriBuildersTest COMMAND test_share_uri_builders)
+
+# -- ShareLinkFactory unit tests (routing logic, includes 6 builders) --
+add_executable(test_sharelink_factory
+    tests/test_sharelink_factory.cpp
+    src/share/ShareLinkFactory.cpp
+    src/share/UriCodec.cpp
+    src/share/VLESSUriBuilder.cpp
+    src/share/VMessUriBuilder.cpp
+    src/share/TrojanUriBuilder.cpp
+    src/share/SSUriBuilder.cpp
+    src/share/Hysteria2UriBuilder.cpp
+    src/share/TUICUriBuilder.cpp
+)
+target_include_directories(test_sharelink_factory PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(test_sharelink_factory PRIVATE gtest_main gtest)
+set_target_properties(test_sharelink_factory PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+)
+add_test(NAME ShareLinkFactoryTest COMMAND test_sharelink_factory)
 
 install(TARGETS validproxy validproxy-cli DESTINATION bin)
