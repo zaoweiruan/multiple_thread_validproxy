@@ -36,11 +36,6 @@ private:
     ConfigReader::ErrorReporter originalReporter_;
 };
 
-static void touchFile(const std::string& path) {
-    std::ofstream f(path);
-    f.close();
-}
-
 TEST_F(ConfigReaderLoadTest, FileNotFound) {
     std::optional<AppConfig> result = ConfigReader::load(configPath("nonexistent.json"));
     EXPECT_FALSE(result.has_value());
@@ -322,4 +317,315 @@ TEST_F(ConfigReaderLoadTest, UpdateMethodsFiltersInvalid) {
     ASSERT_EQ(result->update_methods.size(), 2);
     EXPECT_EQ(result->update_methods[0], "accelerator");
     EXPECT_EQ(result->update_methods[1], "proxy");
+}
+
+// ============================================================
+// Section-level defaults: each section parsed independently
+// ============================================================
+
+TEST_F(ConfigReaderLoadTest, SectionDefaults_Database) {
+    std::string dbPath =
+        (std::filesystem::path(tempDir_.path()) / "section_test.db").generic_string();
+    touchFile(dbPath);
+
+    writeConfig("sec_db.json", R"({
+        "database": {
+            "path": ")" + dbPath + R"(",
+            "sql": "SELECT 1",
+            "sql_by_subid": "SELECT 1 WHERE subid='{subid}'"
+        }
+    })");
+    std::optional<AppConfig> result = ConfigReader::load(configPath("sec_db.json"));
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result->database_path, dbPath);
+    EXPECT_EQ(result->sql_query, "SELECT 1");
+    EXPECT_EQ(result->sql_by_subid, "SELECT 1 WHERE subid='{subid}'");
+}
+
+TEST_F(ConfigReaderLoadTest, SectionDefaults_Xray) {
+    std::string xrayPath =
+        (std::filesystem::path(tempDir_.path()) / "section_xray.exe").generic_string();
+    touchFile(xrayPath);
+
+    writeConfig("sec_xray.json", R"({
+        "xray": {
+            "executable": ")" + xrayPath + R"(",
+            "workers": 4,
+            "start_port": 2080,
+            "api_port": 2081
+        }
+    })");
+    std::optional<AppConfig> result = ConfigReader::load(configPath("sec_xray.json"));
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result->xray_executable, xrayPath);
+    EXPECT_EQ(result->xray_workers, 4);
+    EXPECT_EQ(result->xray_start_port, 2080);
+    EXPECT_EQ(result->xray_api_port, 2081);
+}
+
+TEST_F(ConfigReaderLoadTest, SectionDefaults_Test) {
+    writeConfig("sec_test.json", R"({
+        "test": {
+            "url": "https://test.com",
+            "timeout_ms": 3000
+        }
+    })");
+    std::optional<AppConfig> result = ConfigReader::load(configPath("sec_test.json"));
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result->test_url, "https://test.com");
+    EXPECT_EQ(result->test_timeout_ms, 3000);
+}
+
+TEST_F(ConfigReaderLoadTest, SectionDefaults_Log) {
+    writeConfig("sec_log.json", R"({
+        "log": {
+            "enabled": false,
+            "network_failures": true,
+            "console_level": "WARN",
+            "file_level": "INFO"
+        }
+    })");
+    std::optional<AppConfig> result = ConfigReader::load(configPath("sec_log.json"));
+    ASSERT_TRUE(result.has_value());
+    EXPECT_FALSE(result->log_enabled);
+    EXPECT_TRUE(result->log_network_failures);
+    EXPECT_EQ(result->log_console_level, "WARN");
+    EXPECT_EQ(result->log_file_level, "INFO");
+}
+
+TEST_F(ConfigReaderLoadTest, SectionDefaults_Subscription) {
+    writeConfig("sec_sub.json", R"({
+        "subscription": {
+            "accelerator_url": "https://cdn.acc.com/",
+            "update_methods": ["proxy", "direct"],
+            "check_auto_update_interval": true,
+            "connect_timeout_ms": 5000,
+            "timeout_ms": 20000
+        }
+    })");
+    std::optional<AppConfig> result = ConfigReader::load(configPath("sec_sub.json"));
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result->accelerator_url, "https://cdn.acc.com/");
+    ASSERT_EQ(result->update_methods.size(), 2);
+    EXPECT_EQ(result->update_methods[0], "proxy");
+    EXPECT_EQ(result->update_methods[1], "direct");
+    EXPECT_TRUE(result->check_auto_update_interval);
+    EXPECT_EQ(result->subscription_connect_timeout_ms, 5000);
+    EXPECT_EQ(result->subscription_timeout_ms, 20000);
+}
+
+TEST_F(ConfigReaderLoadTest, SectionDefaults_Dedup) {
+    writeConfig("sec_dedup.json", R"({
+        "dedup": {
+            "enabled": false,
+            "dedup_after_update": true,
+            "blacklist_threshold": 10,
+            "blacklist_enabled": false,
+            "blacklist_subid": "bl",
+            "subids": ["a", "b"]
+        }
+    })");
+    std::optional<AppConfig> result = ConfigReader::load(configPath("sec_dedup.json"));
+    ASSERT_TRUE(result.has_value());
+    EXPECT_FALSE(result->dedup_enabled);
+    EXPECT_TRUE(result->dedup_after_update);
+    EXPECT_EQ(result->blacklist_threshold, 10);
+    EXPECT_FALSE(result->blacklist_enabled);
+    EXPECT_EQ(result->blacklist_subid, "bl");
+    ASSERT_EQ(result->dedup_subids.size(), 2);
+    EXPECT_EQ(result->dedup_subids[0], "a");
+    EXPECT_EQ(result->dedup_subids[1], "b");
+}
+
+TEST_F(ConfigReaderLoadTest, SectionDefaults_Notification) {
+    writeConfig("sec_notif.json", R"({
+        "notification": {
+            "enabled": true,
+            "on_update": true,
+            "on_test": true
+        }
+    })");
+    std::optional<AppConfig> result = ConfigReader::load(configPath("sec_notif.json"));
+    ASSERT_TRUE(result.has_value());
+    EXPECT_TRUE(result->notification_enabled);
+    EXPECT_TRUE(result->notification_on_update);
+    EXPECT_TRUE(result->notification_on_test);
+}
+
+TEST_F(ConfigReaderLoadTest, SectionDefaults_Sync) {
+    // Use absolute paths (drive-letter qualified on MinGW/Windows)
+    std::string srcDb =
+        (std::filesystem::path(tempDir_.path()) / "sec_src.db").generic_string();
+    std::string dstDb =
+        (std::filesystem::path(tempDir_.path()) / "sec_dst.db").generic_string();
+
+    writeConfig("sec_sync.json", R"({
+        "sync": {
+            "source_db": ")" + srcDb + R"(",
+            "target_db": ")" + dstDb + R"(",
+            "sync_skip_subids": true
+        }
+    })");
+    std::optional<AppConfig> result = ConfigReader::load(configPath("sec_sync.json"));
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result->sync.source_db, srcDb);
+    EXPECT_EQ(result->sync.target_db, dstDb);
+    EXPECT_TRUE(result->sync.sync_skip_subids);
+}
+
+// ============================================================
+// Type coercion: wrong JSON types fall back to defaults
+// ============================================================
+
+TEST_F(ConfigReaderLoadTest, TypeCoercion_BoolFromString) {
+    writeConfig("boolstr.json", R"({
+        "log": {
+            "enabled": "true"
+        }
+    })");
+    std::optional<AppConfig> result = ConfigReader::load(configPath("boolstr.json"));
+    ASSERT_TRUE(result.has_value());
+    // String "true" is not a JSON bool, so the code falls back to the default (true)
+    EXPECT_TRUE(result->log_enabled);
+}
+
+TEST_F(ConfigReaderLoadTest, TypeCoercion_IntFromBool) {
+    writeConfig("intbool.json", R"({
+        "xray": {
+            "workers": true
+        }
+    })");
+    std::optional<AppConfig> result = ConfigReader::load(configPath("intbool.json"));
+    ASSERT_TRUE(result.has_value());
+    // Bool true is not int64, so the code falls back to the default (1)
+    EXPECT_EQ(result->xray_workers, 1);
+}
+
+// ============================================================
+// Path resolution: subdirectory config files
+// ============================================================
+
+TEST_F(ConfigReaderLoadTest, PathResolution_Relative) {
+    // Config in a subdirectory with absolute paths — verifies that
+    // loading from a nested path does not break absolute path resolution.
+    std::string subdir = tempDir_.path() + "/subdir";
+    std::filesystem::create_directories(subdir);
+
+    std::string dbPath =
+        (std::filesystem::path(subdir) / "sub_test.db").generic_string();
+    std::string xrayPath =
+        (std::filesystem::path(subdir) / "sub_xray.exe").generic_string();
+    touchFile(dbPath);
+    touchFile(xrayPath);
+
+    writeConfig("subdir/config.json", R"({
+        "database": ")" + dbPath + R"(",
+        "xray": {
+            "executable": ")" + xrayPath + R"(",
+            "workers": 2,
+            "start_port": 2085
+        }
+    })");
+    std::optional<AppConfig> result = ConfigReader::load(configPath("subdir/config.json"));
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result->database_path, dbPath);
+    EXPECT_EQ(result->xray_executable, xrayPath);
+}
+
+// ============================================================
+// Save → load round-trip via ConfigReader::save()
+// ============================================================
+
+TEST_F(ConfigReaderLoadTest, SaveRoundTripInLoad) {
+    std::string tmpDirGeneric = std::filesystem::path(tempDir_.path()).generic_string();
+    std::string dbPath = tmpDirGeneric + "/sriltest.db";
+    std::string xrayPath = tmpDirGeneric + "/srilxray.exe";
+    std::string syncSrcPath = tmpDirGeneric + "/sril_src.db";
+    std::string syncDstPath = tmpDirGeneric + "/sril_dst.db";
+    touchFile(dbPath);
+    touchFile(xrayPath);
+
+    writeConfig("sril_load.json", R"({
+        "database": ")" + dbPath + R"(",
+        "xray": {
+            "executable": ")" + xrayPath + R"(",
+            "workers": 3,
+            "start_port": 2000,
+            "api_port": 2001
+        },
+        "test": {
+            "url": "https://sril.example.com",
+            "timeout_ms": 4000
+        },
+        "log": {
+            "enabled": false,
+            "network_failures": true,
+            "console_level": "WARN",
+            "file_level": "ERROR"
+        },
+        "subscription": {
+            "accelerator_url": "https://sril.acc.com/",
+            "update_methods": ["accelerator", "proxy"],
+            "check_auto_update_interval": true,
+            "connect_timeout_ms": 7000,
+            "timeout_ms": 25000
+        },
+        "dedup": {
+            "enabled": false,
+            "dedup_after_update": true,
+            "blacklist_threshold": 3,
+            "blacklist_enabled": false,
+            "blacklist_subid": "sril_bl",
+            "subids": ["x", "y"]
+        },
+        "notification": {
+            "enabled": true,
+            "on_update": false,
+            "on_test": true
+        },
+        "sync": {
+            "source_db": ")" + syncSrcPath + R"(",
+            "target_db": ")" + syncDstPath + R"(",
+            "sync_skip_subids": false
+        }
+    })");
+    std::optional<AppConfig> original = ConfigReader::load(configPath("sril_load.json"));
+    ASSERT_TRUE(original.has_value());
+
+    std::string savedPath = configPath("sril_roundtrip.json");
+    ASSERT_TRUE(ConfigReader::save(savedPath, *original));
+
+    std::optional<AppConfig> reloaded = ConfigReader::load(savedPath);
+    ASSERT_TRUE(reloaded.has_value());
+
+    EXPECT_EQ(reloaded->database_path, original->database_path);
+    EXPECT_EQ(reloaded->sql_query, original->sql_query);
+    EXPECT_EQ(reloaded->sql_by_subid, original->sql_by_subid);
+    EXPECT_EQ(reloaded->xray_executable, original->xray_executable);
+    EXPECT_EQ(reloaded->xray_workers, original->xray_workers);
+    EXPECT_EQ(reloaded->xray_start_port, original->xray_start_port);
+    EXPECT_EQ(reloaded->xray_api_port, original->xray_api_port);
+    EXPECT_EQ(reloaded->test_url, original->test_url);
+    EXPECT_EQ(reloaded->test_timeout_ms, original->test_timeout_ms);
+    EXPECT_EQ(reloaded->log_enabled, original->log_enabled);
+    EXPECT_EQ(reloaded->log_network_failures, original->log_network_failures);
+    EXPECT_EQ(reloaded->log_console_level, original->log_console_level);
+    EXPECT_EQ(reloaded->log_file_level, original->log_file_level);
+    EXPECT_EQ(reloaded->accelerator_url, original->accelerator_url);
+    EXPECT_EQ(reloaded->update_methods, original->update_methods);
+    EXPECT_EQ(reloaded->check_auto_update_interval, original->check_auto_update_interval);
+    EXPECT_EQ(reloaded->subscription_connect_timeout_ms, original->subscription_connect_timeout_ms);
+    EXPECT_EQ(reloaded->subscription_timeout_ms, original->subscription_timeout_ms);
+    EXPECT_EQ(reloaded->dedup_enabled, original->dedup_enabled);
+    EXPECT_EQ(reloaded->dedup_after_update, original->dedup_after_update);
+    EXPECT_EQ(reloaded->blacklist_threshold, original->blacklist_threshold);
+    EXPECT_EQ(reloaded->blacklist_enabled, original->blacklist_enabled);
+    EXPECT_EQ(reloaded->blacklist_subid, original->blacklist_subid);
+    EXPECT_EQ(reloaded->dedup_subids, original->dedup_subids);
+    EXPECT_EQ(reloaded->notification_enabled, original->notification_enabled);
+    EXPECT_EQ(reloaded->notification_on_update, original->notification_on_update);
+    EXPECT_EQ(reloaded->notification_on_test, original->notification_on_test);
+    EXPECT_EQ(reloaded->sync.source_db, original->sync.source_db);
+    EXPECT_EQ(reloaded->sync.target_db, original->sync.target_db);
+    EXPECT_EQ(reloaded->sync.sync_skip_subids, original->sync.sync_skip_subids);
 }
