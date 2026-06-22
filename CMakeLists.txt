@@ -134,6 +134,15 @@ set(CORE_SOURCES
     src/test/XrayWorkerPool.cpp
     src/test/ProxyTestCounters.cpp
     src/test/ProxyTestResultSink.cpp
+    src/service/DatabaseConnectionService.cpp
+    src/service/ConfigService.cpp
+    src/service/SubscriptionService.cpp
+    src/service/ProxyListService.cpp
+    src/service/ProxyTestService.cpp
+    src/service/ShareLinkExportService.cpp
+    src/service/DatabaseMaintenanceService.cpp
+    src/service/AutoTaskService.cpp
+    src/ui/UiOperationRunner.cpp
 )
 
 # ===== CLI target (CONSOLE subsystem) =====
