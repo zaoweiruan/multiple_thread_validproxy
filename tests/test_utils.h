@@ -2,6 +2,7 @@
 #define TEST_UTILS_H
 
 #include <gtest/gtest.h>
+#include <fstream>
 #include <string>
 #include <vector>
 #include <mutex>
@@ -101,5 +102,13 @@ private:
     mutable std::mutex mtx_;
     std::vector<Entry> entries_;
 };
+
+// ============================================================
+// touchFile — create an empty file for test validation
+// ============================================================
+inline void touchFile(const std::string& path) {
+    std::ofstream f(path);
+    f.close();
+}
 
 #endif // TEST_UTILS_H
