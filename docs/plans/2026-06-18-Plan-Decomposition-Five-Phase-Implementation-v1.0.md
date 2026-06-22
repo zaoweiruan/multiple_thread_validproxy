@@ -1,7 +1,7 @@
 ---
 title: "Five-Phase Implementation Plan — Responsibility Decomposition for 5 Core Modules"
 type: plan
-status: draft
+status: in_progress
 date: 2026-06-18
 depends_on: docs/specs/2026-06-18-Spec-Responsibility-Decomposition-v1.0.md
 ---
@@ -27,7 +27,18 @@ Implements the decomposition spec [`docs/specs/2026-06-18-Spec-Responsibility-De
 
 ---
 
-## Phase 0: Characterization Tests (Preparation)
+## Phase 0: Characterization Tests (Preparation) — ✅ COMPLETED (2026-06-22)
+
+All 115 tests pass across 4 test executables:
+- **test_config_reader_load**: 30 tests — ConfigReader::load() section defaults, type coercion, path resolution
+- **test_config_reader**: 4 tests — ConfigReader::save() round-trip, overwrite, custom path
+- **test_sharelink**: 21 tests — Exact URI matching for all 6 protocols, reality params, Chinese remarks
+- **test_config_generator**: 13 tests (1 skipped) — Network normalization gap documented (in loadProfiles, not generateConfig)
+- **test_proxy_batch_components**: 47 tests (NEW) — SqlTemplate, BlacklistThreshold, WorkerCount, CancelState, Summary, QueueManagement, EdgeCases
+
+Key finding: `generateConfig()` does not use `db_` — nullptr works. Network normalization lives in `loadProfiles()`, not `generateConfig()`.
+
+---
 
 **Rule**: Write characterization tests BEFORE touching any production code. If a test fails after extraction, the extraction changed behavior — roll back immediately.
 
