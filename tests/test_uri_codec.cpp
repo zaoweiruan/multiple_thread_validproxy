@@ -13,7 +13,7 @@ TEST(UriCodecTest, Base64EncodeEmpty) {
 
 TEST(UriCodecTest, Base64DecodeHello) {
     std::string result = share::UriCodec::base64Decode("aGVsbG8=");
-    EXPECT_EQ(result, "he@lo");
+    EXPECT_EQ(result, "hello");
 }
 
 TEST(UriCodecTest, Base64DecodeShortString) {
