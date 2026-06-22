@@ -1,5 +1,5 @@
-#ifndef CONFIG_CONFIGJSONSERIALIZER_H
-#define CONFIG_CONFIGJSONSERIALIZER_H
+#ifndef CONFIG_JSON_SERIALIZER_H
+#define CONFIG_JSON_SERIALIZER_H
 
 #include <boost/json.hpp>
 #include "ConfigReader.h"
