@@ -104,21 +104,21 @@ TEST(ConfigGeneratorTest, GenerateVlessOutbound_NoDb) {
     XrayConfig cfg = gen.generateConfig(p);
     boost::json::value jv = parseOutboundJson(cfg);
 
-    auto const& root = jv.as_object();
+    const boost::json::object& root = jv.as_object();
     ASSERT_TRUE(root.contains("outbounds"));
-    auto const& outbounds = root.at("outbounds").as_array();
+    const boost::json::array& outbounds = root.at("outbounds").as_array();
     ASSERT_EQ(outbounds.size(), 1);
 
-    auto const& outbound = outbounds[0].as_object();
+    const boost::json::object& outbound = outbounds[0].as_object();
     EXPECT_STREQ(outbound.at("protocol").as_string().c_str(), "vless");
 
-    auto const& settings = outbound.at("settings").as_object();
-    auto const& vnext = settings.at("vnext").as_array();
+    const boost::json::object& settings = outbound.at("settings").as_object();
+    const boost::json::array& vnext = settings.at("vnext").as_array();
     ASSERT_EQ(vnext.size(), 1);
     EXPECT_STREQ(vnext[0].as_object().at("address").as_string().c_str(), "example.com");
     EXPECT_EQ(vnext[0].as_object().at("port").as_int64(), 443);
 
-    auto const& users = vnext[0].as_object().at("users").as_array();
+    const boost::json::array& users = vnext[0].as_object().at("users").as_array();
     ASSERT_EQ(users.size(), 1);
     EXPECT_STREQ(users[0].as_object().at("id").as_string().c_str(), "uuid-test");
 
@@ -138,8 +138,8 @@ TEST(ConfigGeneratorTest, NetworkNormalization_EmptyToTcp) {
     XrayConfig cfg = gen.generateConfig(p);
     boost::json::value jv = parseOutboundJson(cfg);
 
-    auto const& outbound = jv.as_object().at("outbounds").as_array()[0].as_object();
-    auto const& streamSettings = outbound.at("streamSettings").as_object();
+    const boost::json::object& outbound = jv.as_object().at("outbounds").as_array()[0].as_object();
+    const boost::json::object& streamSettings = outbound.at("streamSettings").as_object();
     EXPECT_FALSE(streamSettings.contains("network"));
 }
 
@@ -156,8 +156,8 @@ TEST(ConfigGeneratorTest, NetworkNormalization_SplithttpToXhttp) {
     XrayConfig cfg = gen.generateConfig(p);
     boost::json::value jv = parseOutboundJson(cfg);
 
-    auto const& outbound = jv.as_object().at("outbounds").as_array()[0].as_object();
-    auto const& streamSettings = outbound.at("streamSettings").as_object();
+    const boost::json::object& outbound = jv.as_object().at("outbounds").as_array()[0].as_object();
+    const boost::json::object& streamSettings = outbound.at("streamSettings").as_object();
     EXPECT_STREQ(streamSettings.at("network").as_string().c_str(), "splithttp");
 }
 
@@ -174,8 +174,8 @@ TEST(ConfigGeneratorTest, NetworkNormalization_InvalidToTcp) {
     XrayConfig cfg = gen.generateConfig(p);
     boost::json::value jv = parseOutboundJson(cfg);
 
-    auto const& outbound = jv.as_object().at("outbounds").as_array()[0].as_object();
-    auto const& streamSettings = outbound.at("streamSettings").as_object();
+    const boost::json::object& outbound = jv.as_object().at("outbounds").as_array()[0].as_object();
+    const boost::json::object& streamSettings = outbound.at("streamSettings").as_object();
     EXPECT_STREQ(streamSettings.at("network").as_string().c_str(), "weird_protocol");
 }
 
@@ -193,8 +193,8 @@ TEST(ConfigGeneratorTest, NetworkNormalization_ValidPassthrough) {
         XrayConfig cfg = gen.generateConfig(p);
         boost::json::value jv = parseOutboundJson(cfg);
 
-        auto const& outbound = jv.as_object().at("outbounds").as_array()[0].as_object();
-        auto const& streamSettings = outbound.at("streamSettings").as_object();
+        const boost::json::object& outbound = jv.as_object().at("outbounds").as_array()[0].as_object();
+        const boost::json::object& streamSettings = outbound.at("streamSettings").as_object();
         EXPECT_STREQ(streamSettings.at("network").as_string().c_str(), net.c_str())
             << "network=" << net;
     }
@@ -213,11 +213,11 @@ TEST(ConfigGeneratorTest, RealitySettings) {
     XrayConfig cfg = gen.generateConfig(p);
     boost::json::value jv = parseOutboundJson(cfg);
 
-    auto const& outbound = jv.as_object().at("outbounds").as_array()[0].as_object();
-    auto const& streamSettings = outbound.at("streamSettings").as_object();
+    const boost::json::object& outbound = jv.as_object().at("outbounds").as_array()[0].as_object();
+    const boost::json::object& streamSettings = outbound.at("streamSettings").as_object();
     ASSERT_TRUE(streamSettings.contains("realitySettings"));
 
-    auto const& reality = streamSettings.at("realitySettings").as_object();
+    const boost::json::object& reality = streamSettings.at("realitySettings").as_object();
     EXPECT_STREQ(reality.at("serverName").as_string().c_str(), "example.com");
     EXPECT_STREQ(reality.at("publicKey").as_string().c_str(), "test-public-key");
     EXPECT_STREQ(reality.at("fingerprint").as_string().c_str(), "chrome");
@@ -239,11 +239,11 @@ TEST(ConfigGeneratorTest, TlsSettings) {
     XrayConfig cfg = gen.generateConfig(p);
     boost::json::value jv = parseOutboundJson(cfg);
 
-    auto const& outbound = jv.as_object().at("outbounds").as_array()[0].as_object();
-    auto const& streamSettings = outbound.at("streamSettings").as_object();
+    const boost::json::object& outbound = jv.as_object().at("outbounds").as_array()[0].as_object();
+    const boost::json::object& streamSettings = outbound.at("streamSettings").as_object();
     ASSERT_TRUE(streamSettings.contains("tlsSettings"));
 
-    auto const& tls = streamSettings.at("tlsSettings").as_object();
+    const boost::json::object& tls = streamSettings.at("tlsSettings").as_object();
     EXPECT_STREQ(tls.at("serverName").as_string().c_str(), "example.com");
     EXPECT_EQ(tls.at("allowInsecure").as_bool(), true);
     EXPECT_STREQ(tls.at("fingerprint").as_string().c_str(), "chrome");
@@ -270,14 +270,14 @@ TEST(ConfigGeneratorTest, MultipleOutboundTypes) {
         {"7", "hysteria"},
     };
 
-    for (const auto& tc : testCases) {
-        Profileitem p = makeProfile(tc.configType, "example.com", "443", "uuid-test");
+    for (std::size_t i = 0; i < 5; ++i) {
+        Profileitem p = makeProfile(testCases[i].configType, "example.com", "443", "uuid-test");
         XrayConfig cfg = gen.generateConfig(p);
         boost::json::value jv = parseOutboundJson(cfg);
 
-        auto const& outbound = jv.as_object().at("outbounds").as_array()[0].as_object();
-        EXPECT_STREQ(outbound.at("protocol").as_string().c_str(), tc.expectedProtocol.c_str())
-            << "configType=" << tc.configType;
+        const boost::json::object& outbound = jv.as_object().at("outbounds").as_array()[0].as_object();
+        EXPECT_STREQ(outbound.at("protocol").as_string().c_str(), testCases[i].expectedProtocol.c_str())
+            << "configType=" << testCases[i].configType;
     }
 }
 
@@ -294,15 +294,15 @@ TEST(ConfigGeneratorTest, ProfileWithWsPath) {
     XrayConfig cfg = gen.generateConfig(p);
     boost::json::value jv = parseOutboundJson(cfg);
 
-    auto const& outbound = jv.as_object().at("outbounds").as_array()[0].as_object();
-    auto const& streamSettings = outbound.at("streamSettings").as_object();
+    const boost::json::object& outbound = jv.as_object().at("outbounds").as_array()[0].as_object();
+    const boost::json::object& streamSettings = outbound.at("streamSettings").as_object();
     ASSERT_TRUE(streamSettings.contains("wsSettings"));
 
-    auto const& ws = streamSettings.at("wsSettings").as_object();
+    const boost::json::object& ws = streamSettings.at("wsSettings").as_object();
     EXPECT_STREQ(ws.at("path").as_string().c_str(), "/websocket");
     EXPECT_STREQ(ws.at("host").as_string().c_str(), "ws.example.com");
 
-    auto const& headers = ws.at("headers").as_object();
+    const boost::json::object& headers = ws.at("headers").as_object();
     EXPECT_STREQ(headers.at("host").as_string().c_str(), "ws.example.com");
 }
 
@@ -318,10 +318,10 @@ TEST(ConfigGeneratorTest, ProfileWithGrpcService) {
     XrayConfig cfg = gen.generateConfig(p);
     boost::json::value jv = parseOutboundJson(cfg);
 
-    auto const& outbound = jv.as_object().at("outbounds").as_array()[0].as_object();
-    auto const& streamSettings = outbound.at("streamSettings").as_object();
+    const boost::json::object& outbound = jv.as_object().at("outbounds").as_array()[0].as_object();
+    const boost::json::object& streamSettings = outbound.at("streamSettings").as_object();
     ASSERT_TRUE(streamSettings.contains("grpcSettings"));
 
-    auto const& grpc = streamSettings.at("grpcSettings").as_object();
+    const boost::json::object& grpc = streamSettings.at("grpcSettings").as_object();
     EXPECT_STREQ(grpc.at("serviceName").as_string().c_str(), "my-service");
 }
