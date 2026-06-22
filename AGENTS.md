@@ -184,3 +184,63 @@ cmake --build build --parallel 8 && .\scripts\run_coverage.ps1
 | `测试` / `test` / `单元测试` / `ctest` | **cmake-build** | 1. 执行 `cmake --build build` 编译。 <br> 2. 执行 `ctest -V` 运行全量测试。 |
 | `构建` / `编译` / `build` / `cmake` / `CI` | **cmake-build** | 1. 按 Debug 模式配置构建：`cmake -B build -G "Ninja" -DCMAKE_BUILD_TYPE=Debug`。<br>2. 并行编译：`cmake --build build --parallel 8`。 |
 | `部署` / `发布` / `release` / `deploy` | **release-skills** | 1. 自动检测版本文件与 changelog，按语义化版本规范发布。 |
+
+* * *
+
+## 7\. AI 图像生成 API 规范
+
+当需要生成图像时（如用户请求"画图"、"生成图片"、"画一只XX"等），使用 Agnes Image 2.1 Flash API。
+
+### 7.1 API 端点
+
+| 项目 | 值 |
+| :--- | :--- |
+| **端点** | `POST https://apihub.agnes-ai.com/v1/images/generations` |
+| **认证** | `Bearer sk-8yl1JDY4odsPaeA0RlwMv6QKbq7FbLSx2GUPFEShfbLsAfnk` |
+| **内容类型** | `application/json` |
+
+### 7.2 请求参数
+
+```powershell
+$body = @{
+    model     = "agnes-image-2.1-flash"
+    prompt    = "<详细描述，如: draw a cute cat, detailed illustration, beautiful artwork>"
+    n         = 1
+    size      = "1024x1024"
+} | ConvertTo-Json
+```
+
+### 7.3 响应格式
+
+```json
+{
+  "created": 1781776598,
+  "data": [{
+    "b64_json": null,
+    "revised_prompt": null,
+    "url": "https://platform-outputs.agnes-ai.space/images/text-to-image/..."
+  }]
+}
+```
+
+**注意**：`b64_json` 字段为 `null`，图像通过 `url` 字段提供的链接下载。
+
+### 7.4 使用流程（PowerShell）
+
+```powershell
+# 步骤1: 调用 API 生成图像
+$body = @{ model="agnes-image-2.1-flash"; prompt="draw a cute cat, detailed illustration, beautiful artwork"; n=1; size="1024x1024" } | ConvertTo-Json
+$response = Invoke-RestMethod -Uri 'https://apihub.agnes-ai.com/v1/images/generations' -Method POST -Headers @{'Authorization'='Bearer sk-8yl1JDY4odsPaeA0RlwMv6QKbq7FbLSx2GUPFEShfbLsAfnk'; 'Content-Type'='application/json'} -Body $body
+
+# 步骤2: 从响应中提取 URL 并下载图像
+$url = $response.data[0].url
+Invoke-WebRequest -Uri $url -OutFile "$PWD\output-image.png"
+```
+
+### 7.5 已执行记录
+
+| 日期 | 提示词 | 输出文件 | 文件大小 |
+| :--- | :--- | :--- | :--- |
+| 2026-06-18 | `draw a cute cat, detailed illustration, beautiful artwork` | `cat-image.png` | 1.85 MB |
+
+* * *

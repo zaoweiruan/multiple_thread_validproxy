@@ -27,6 +27,13 @@ if(ENABLE_SANITIZERS AND NOT MSVC)
     add_link_options(-fsanitize=address,undefined)
 endif()
 
+# Debug flags belong only in CMAKE_CXX_FLAGS_DEBUG
+# Purge any stale -g3/-O0 leaked into base CMAKE_CXX_FLAGS from cached config
+string(REGEX REPLACE "(^| )-g[0-3]( |$)" " " CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
+string(REGEX REPLACE "(^| )-O0( |$)" " " CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
+string(STRIP "${CMAKE_CXX_FLAGS}" CMAKE_CXX_FLAGS)
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}" CACHE STRING "Flags used by the compiler during all build types." FORCE)
+
 set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -g3 -O0")
 
 # ===== Coverage options =====

@@ -181,6 +181,7 @@ updated: 2026-06-18
 
 | 日期 | 编号 | 文件 | 类型 | 说明 |
 |------|------|------|------|------|
+| 2026-06-18 |  | [`./plans/2026-06-18-Plan-Decomposition-Five-Phase-Implementation-v1.0.md`](./plans/2026-06-18-Plan-Decomposition-Five-Phase-Implementation-v1.0.md) | refactor draft | **五阶段职责分解实施计划** — 70+ 新文件，逐任务拆解 ConfigReader/ShareLink/ConfigGenerator/ProxyBatchTester/AppController |
 | 2026-06-15 |  | [`./superpowers/plans/2026-06-15-NetworkMonitor-batch-network-abort-on-disconnect.md`](./superpowers/plans/2026-06-15-NetworkMonitor-batch-network-abort-on-disconnect.md) | feat draft | **NetworkMonitor 批量网络中断中止** — 12 tasks: NetworkMonitor class, ConfigReader, ProxyBatchTester/SubitemUpdaterV2/AutoTaskManager/AppController integration, MainFrame UI, unit tests |
 | 2026-06-16 |  | [`./superpowers/plans/2026-06-16-Plan-NetworkMonitor-enabled-toggle-v1.0.md`](./superpowers/plans/2026-06-16-Plan-NetworkMonitor-enabled-toggle-v1.0.md) | feat draft | **NetworkMonitor 启用开关** — 5 tasks: enabled flag, IsConnected logic, AppController, MainFrame status bar, ConfigDialog |
 | In Progress | 14-002 | [`2026-05-14-002-ui-implementation-plan.md`](./plans/2026-05-14-002-ui-implementation-plan.md) | feat | **UI 完整实现** — 11 个 U# 单元含 wxWidgets 集成、事件系统、AppController、MainFrame、6 个面板(XAUI)、AUI 布局；分 4 Phase 执行 |
