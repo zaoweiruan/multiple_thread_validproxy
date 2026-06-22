@@ -130,6 +130,10 @@ set(CORE_SOURCES
     src/config/outbound/Hysteria2OutboundBuilder.cpp
     src/config/outbound/TUICOutboundBuilder.cpp
     src/config/outbound/WireGuardOutboundBuilder.cpp
+    src/test/ProxyBatchQuery.cpp
+    src/test/XrayWorkerPool.cpp
+    src/test/ProxyTestCounters.cpp
+    src/test/ProxyTestResultSink.cpp
 )
 
 # ===== CLI target (CONSOLE subsystem) =====
@@ -507,6 +511,34 @@ set_target_properties(test_proxy_batch_components PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
 )
 add_test(NAME ProxyBatchComponentsTest COMMAND test_proxy_batch_components)
+
+# -- ProxyBatchQuery integration tests (uses test DB) --
+add_executable(test_proxy_batch_query tests/test_proxy_batch_query.cpp src/test/ProxyBatchQuery.cpp
+    src/ConfigGenerator.cpp src/ProfileitemDAO.cpp src/ProfileExItemDAO.cpp
+    src/Logger.cpp src/LoggerInstance.cpp src/Utils.cpp
+    src/config/ProfileConfigRepository.cpp src/config/ProfileNormalizer.cpp
+    src/config/StreamSettingsBuilder.cpp src/config/OutboundBuilderFactory.cpp
+    src/config/XrayConfigAssembler.cpp
+    src/config/outbound/VLESSOutboundBuilder.cpp
+    src/config/outbound/VMessOutboundBuilder.cpp
+    src/config/outbound/SSOutboundBuilder.cpp
+    src/config/outbound/TrojanOutboundBuilder.cpp
+    src/config/outbound/SOCKSOutboundBuilder.cpp
+    src/config/outbound/HTTPOutboundBuilder.cpp
+    src/config/outbound/Hysteria2OutboundBuilder.cpp
+    src/config/outbound/TUICOutboundBuilder.cpp
+    src/config/outbound/WireGuardOutboundBuilder.cpp)
+target_include_directories(test_proxy_batch_query PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(test_proxy_batch_query PRIVATE gtest_main gtest
+    ${BOOST_ROOT}/lib/libboost_json-mgw14-mt-x64-1_88.a
+    ${VCPKG_ROOT}/installed/x64-mingw-static/lib/libsqlite3.a
+)
+set_target_properties(test_proxy_batch_query PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+)
+add_test(NAME ProxyBatchQueryTest COMMAND test_proxy_batch_query)
 
 # -- NetworkMonitor unit tests --
 add_executable(test_network_monitor tests/test_network_monitor.cpp src/NetworkMonitor.cpp src/Logger.cpp src/LoggerInstance.cpp)
