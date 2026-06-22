@@ -98,13 +98,15 @@ updated: 2026-06-15
 
 | # | Plan | Description | Status |
 |---|------|-------------|--------|
-| 1 | 14-002 | UI 图形界面实现 — 基于 wxWidgets (见下方 UI Implementation 详表) | 📝 draft |
+| 1 | Five-Phase | Responsibility Decomposition (Phase 0 ✅, Phases 1–5 pending) | 🔄 in_progress |
 
 ### Recently Completed Plans
 
 | # | Plan | Description | Status |
 |---|------|-------------|--------|
 | 17 | 2026-06-02 | Subscription panel right-click delete functionality | ✅ completed |
+| — | 14-002 | UI 图形界面实现 — 基于 wxWidgets (见下方 UI Implementation 详表) | ✅ completed |
+| — | Phase 0 | Characterization tests for 5 decomposition targets (115 tests) | ✅ completed |
 | 18 | 2026-06-02 | Subscription panel column sorting (Name, Proxies, Update) | ✅ completed |
 | 19 | 2026-06-02 | ProxyListPanel Row# column sorts by IndexId instead of row number | ✅ completed |
 | 20 | 2026-06-02 | SubscriptionPanel missing detectIdOffset after sort clear | ✅ completed |
