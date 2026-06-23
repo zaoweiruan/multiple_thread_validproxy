@@ -98,12 +98,14 @@ updated: 2026-06-15
 
 | # | Plan | Description | Status |
 |---|------|-------------|--------|
-| 1 | Five-Phase | Responsibility Decomposition (Phase 0 ✅, Phases 1–5 pending) | 🔄 in_progress |
 
 ### Recently Completed Plans
 
 | # | Plan | Description | Status |
 |---|------|-------------|--------|
+| 1 | Five-Phase | Responsibility Decomposition (Phase 0-5 completed) | ✅ completed |
+| — | Phase 4 | ProxyBatchTester components: ProxyBatchQuery, XrayWorkerPool, ProxyTestCounters, ProxyTestResultSink | ✅ completed |
+| — | Phase 5 | AppController services: DatabaseConnectionService, ConfigService, SubscriptionService, ProxyListService, ProxyTestService, ShareLinkExportService, DatabaseMaintenanceService, AutoTaskService, UiOperationRunner | ✅ completed |
 | 17 | 2026-06-02 | Subscription panel right-click delete functionality | ✅ completed |
 | — | 14-002 | UI 图形界面实现 — 基于 wxWidgets (见下方 UI Implementation 详表) | ✅ completed |
 | — | Phase 0 | Characterization tests for 5 decomposition targets (115 tests) | ✅ completed |
