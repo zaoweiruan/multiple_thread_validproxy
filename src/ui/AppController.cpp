@@ -26,13 +26,20 @@
 // AppController implementation
 // ---------------------------------------------------------------
 AppController::AppController(sqlite3* db, const config::AppConfig& cfg)
-    : db_(db), config_(cfg) {
+    : db_(db), config_(cfg),
+      configService_(),
+      subscriptionService_(db),
+      proxyListService_(db),
+      proxyTestService_(db, cfg),
+      shareLinkService_(db),
+      dbMaintenanceService_(db, cfg),
+      autoTaskService_(db, cfg, &cancelRequested_, &netMon_) {
     if (!config_.network_monitor.enabled) {
         netMon_.setEnabled(false);
     } else {
         netMon_.Start(config_.network_monitor.checkUrls,
-                      config_.network_monitor.checkIntervalMs,
-                      config_.network_monitor.checkTimeoutMs);
+                     config_.network_monitor.checkIntervalMs,
+                     config_.network_monitor.checkTimeoutMs);
     }
 }
 

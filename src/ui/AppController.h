@@ -17,6 +17,15 @@
 #include "ProfileExItem.h"
 #include "ProxyFinder.h"
 #include "NetworkMonitor.h"
+#include "ui/UiOperationRunner.h"
+#include "service/ConfigService.h"
+#include "service/DatabaseConnectionService.h"
+#include "service/SubscriptionService.h"
+#include "service/ProxyListService.h"
+#include "service/ProxyTestService.h"
+#include "service/ShareLinkExportService.h"
+#include "service/DatabaseMaintenanceService.h"
+#include "service/AutoTaskService.h"
 
 class wxEvtHandler;
 
@@ -37,7 +46,7 @@ public:
    std::vector<db::models::Subitem> loadSubscriptions();
    void loadSubscriptionsAsync(wxEvtHandler* handler);
    bool updateSubscriptionEnabled(const std::string& id, bool enabled);
-bool updateSubitem(const db::models::Subitem& sub);
+  bool updateSubitem(const db::models::Subitem& sub);
     bool deleteSubscription(const std::string& subId);
     bool deleteProxiesBySubId(const std::string& subId);
     void updateSubscriptionAsync(const std::string& subId, wxEvtHandler* wxHandler);
@@ -69,7 +78,7 @@ bool isTestCancelled() const;
    void findProxyByIndexIdAsync(const std::string& indexId, wxEvtHandler* wxHandler);
    void syncDatabasesAsync(wxEvtHandler* wxHandler);
 
-   // AutoTask
+    // AutoTask
    void runAutoTaskAsync(wxEvtHandler* wxHandler);
    void resumeAutoTaskAsync(wxEvtHandler* wxHandler);
 
@@ -106,6 +115,15 @@ std::thread workerThread_;
    TestResult lastFindResult_;
    NetworkMonitor netMon_;
    bool netMonEnabled_{false};  // Cache for MainFrame to query
+
+   // Phase 5 services
+   service::ConfigService configService_;
+   service::SubscriptionService subscriptionService_;
+   service::ProxyListService proxyListService_;
+   service::ProxyTestService proxyTestService_;
+   service::ShareLinkExportService shareLinkService_;
+   service::DatabaseMaintenanceService dbMaintenanceService_;
+   service::AutoTaskService autoTaskService_;
 };
 
 #endif // UI_APP_CONTROLLER_H
