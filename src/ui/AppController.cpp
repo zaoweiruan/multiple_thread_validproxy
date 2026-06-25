@@ -26,20 +26,17 @@
 // AppController implementation
 // ---------------------------------------------------------------
 AppController::AppController(sqlite3* db, const config::AppConfig& cfg)
-    : db_(db), config_(cfg),
-      configService_(),
-      subscriptionService_(db),
-      proxyListService_(db),
-      proxyTestService_(db, cfg),
-      shareLinkService_(db),
-      dbMaintenanceService_(db, cfg),
-      autoTaskService_(db, cfg, &cancelRequested_, &netMon_) {
+    : db_(db), config_(cfg) {
     if (!config_.network_monitor.enabled) {
         netMon_.setEnabled(false);
     } else {
         netMon_.Start(config_.network_monitor.checkUrls,
                      config_.network_monitor.checkIntervalMs,
                      config_.network_monitor.checkTimeoutMs);
+        // When the monitor detects network loss, it will set this flag,
+        // which propagates to ProxyBatchTester via externalCancel,
+        // causing active tests to abort immediately.
+        netMon_.setCancelOnDisconnect(&cancelRequested_);
     }
 }
 
@@ -539,6 +536,7 @@ void AppController::restartNetworkMonitor() {
         netMon_.Start(config_.network_monitor.checkUrls,
                       config_.network_monitor.checkIntervalMs,
                       config_.network_monitor.checkTimeoutMs);
+        netMon_.setCancelOnDisconnect(&cancelRequested_);
     } else {
         netMon_.setEnabled(false);
     }
@@ -598,7 +596,7 @@ void AppController::doTestSubscription(const std::string& subId, wxEvtHandler* w
     ResetGuard _rg{isRunning_};
 
     try {
-        ProxyBatchTester tester(db_, config_, "", &cancelRequested_);
+        ProxyBatchTester tester(db_, config_, "", &cancelRequested_, &netMon_);
         bool ok = tester.runWithSubId(subId);
 
         if (wxHandler) {
@@ -635,7 +633,7 @@ void AppController::doTestSingleProxy(const std::string& indexId, wxEvtHandler* 
     ResetGuard _rg{isRunning_};
 
     try {
-        ProxyBatchTester tester(db_, config_, "", &cancelRequested_);
+        ProxyBatchTester tester(db_, config_, "", &cancelRequested_, &netMon_);
         bool ok = tester.runWithIndexId(indexId);
 
         // Get actual test result (delay + message) from the tester
@@ -671,7 +669,7 @@ void AppController::doTestAllProxies(wxEvtHandler* wxHandler) {
     ResetGuard _rg{isRunning_};
 
     try {
-        ProxyBatchTester tester(db_, config_, "", &cancelRequested_);
+        ProxyBatchTester tester(db_, config_, "", &cancelRequested_, &netMon_);
         bool ok = tester.run();
 
         if (wxHandler) {
@@ -895,7 +893,7 @@ void AppController::findProxyByIndexIdAsync(const std::string& indexId, wxEvtHan
                 return;
             }
             
-            ProxyBatchTester tester(db_, config_, "", &cancelRequested_);
+            ProxyBatchTester tester(db_, config_, "", &cancelRequested_, &netMon_);
             bool ok = tester.runWithIndexId(it->indexid);
 
             if (wxHandler) {

@@ -86,6 +86,13 @@ void NetworkMonitor::ThreadLoop() {
             Logger::write("Network connection RESTORED", LogLevel::ERR);
         } else if (afterFirst && prev && !allOk) {
             Logger::write("Network connection LOST", LogLevel::ERR);
+            // Setting the external cancel flag will cause any in-flight
+            // ProxyBatchTester workers to abort via isCancelled(), and
+            // ongoing curl perform() calls to abort via the progress callback.
+            if (cancelOnDisconnect_) {
+                cancelOnDisconnect_->store(true);
+                Logger::write("[NetworkMonitor] cancelOnDisconnect triggered", LogLevel::ERR);
+            }
         }
 
         int slept = 0;

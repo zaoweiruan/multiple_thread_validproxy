@@ -22,6 +22,11 @@ bool IsConnected() const;
     bool IsEnabled() const;
     void setEnabled(bool enabled) { enabled_ = enabled; }
 
+    /// Register an external flag that will be set to true when the network
+    /// transitions from connected to disconnected. This allows the monitor
+    /// to trigger cancellation in dependent operations (e.g. batch testing).
+    void setCancelOnDisconnect(std::atomic<bool>* flag) { cancelOnDisconnect_ = flag; }
+
 private:
     void ThreadLoop();
     bool CheckURL(const std::string& url, int timeoutMs);
@@ -33,5 +38,6 @@ private:
     std::atomic<bool> connected_{false};
     std::atomic<bool> stopRequested_{false};
     std::atomic<bool> firstCheckDone_{false};
+    std::atomic<bool>* cancelOnDisconnect_{nullptr};
     std::thread thread_;
 };

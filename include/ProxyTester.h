@@ -2,6 +2,7 @@
 #define PROXY_TESTER_H
 
 #include <string>
+#include <atomic>
 #include <curl/curl.h>
 
 #include "TestResult.h"
@@ -13,7 +14,7 @@ public:
     ProxyTester(XrayManager* manager, const std::string& testUrl, int timeoutMs);
     ~ProxyTester();
     
-    TestResult test(int socksPort);
+    TestResult test(int socksPort, std::atomic<bool>* cancelFlag = nullptr);
     XrayManager* getManager() const;
 
 private:

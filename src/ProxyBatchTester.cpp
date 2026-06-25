@@ -237,7 +237,7 @@ std::string xrayApiAddr = "127.0.0.1:" + std::to_string(apiPort);
                 continue;
             }
             
-            TestResult result = proxyTester_->test(socksPort);
+            TestResult result = proxyTester_->test(socksPort, &cancelRequested_);
             
             int currentNum;
             if (result.success) {
