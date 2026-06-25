@@ -8,7 +8,7 @@ ProxyTester::ProxyTester(XrayManager* manager, const std::string& testUrl, int t
 
 ProxyTester::~ProxyTester() {}
 
-TestResult ProxyTester::test(int socksPort) {
+TestResult ProxyTester::test(int socksPort, std::atomic<bool>* cancelFlag) {
     TestResult result; // test event bridging via mediator can be emitted from here if needed
     result.success = false;
     result.latencyMs = -1;
@@ -23,8 +23,13 @@ TestResult ProxyTester::test(int socksPort) {
             .setNoBody(true)
             .setConnectTimeoutMs(timeoutMs_)  // 连接超时
             .setTimeoutMs(timeoutMs_)
-            .setFollowLocation(true)
-            .perform();
+            .setFollowLocation(true);
+
+        if (cancelFlag) {
+            curl.setCancelFlag(cancelFlag);
+        }
+
+        curl.perform();
 
         result.latencyMs = static_cast<long>(curl.getTotalTime() * 1000);
         long responseCode = curl.getResponseCode();

@@ -1,9 +1,10 @@
 ---
 title: "Five-Phase Implementation Plan — Responsibility Decomposition for 5 Core Modules"
 type: plan
-status: in_progress
+status: completed
 date: 2026-06-18
 depends_on: docs/specs/2026-06-18-Spec-Responsibility-Decomposition-v1.0.md
+completed: 2026-06-22
 ---
 
 # Five-Phase Implementation Plan
@@ -16,14 +17,14 @@ Implements the decomposition spec [`docs/specs/2026-06-18-Spec-Responsibility-De
 
 **Total estimated new files**: ~70 `.h` + `.cpp` pairs across 6 phases.
 
-| Phase | Module | Risk | Est. New Files | Est. Tasks | Depends On |
-|-------|--------|------|---------------|-----------|------------|
-| 0 | — (characterization tests) | None | 0 | 5 | — |
-| 1 | ConfigReader | Low | 16 | 7 | Phase 0.1, 0.2 |
-| 2 | ShareLink | Low | 10 | 5 | Phase 0.3 |
-| 3 | ConfigGenerator | Medium | 20 | 7 | Phase 0.4 |
-| 4 | ProxyBatchTester | High | 10 | 6 | Phase 0.5, Phase 1–3 |
-| 5 | AppController | Medium | 16 | 10 | All above |
+| Phase | Module | Risk | Est. New Files | Est. Tasks | Depends On | Status |
+|-------|--------|------|---------------|-----------|------------|--------|
+| 0 | — (characterization tests) | None | 0 | 5 | — | ✅ Completed |
+| 1 | ConfigReader | Low | 16 | 7 | Phase 0.1, 0.2 | ✅ Completed |
+| 2 | ShareLink | Low | 10 | 5 | Phase 0.3 | ✅ Completed |
+| 3 | ConfigGenerator | Medium | 20 | 7 | Phase 0.4 | ✅ Completed |
+| 4 | ProxyBatchTester | High | 10 | 6 | Phase 0.5, Phase 1–3 | ✅ Completed |
+| 5 | AppController | Medium | 16 | 10 | All above | ✅ Completed |
 
 ---
 
@@ -132,7 +133,7 @@ Key finding: `generateConfig()` does not use `db_` — nullptr works. Network no
 
 ---
 
-## Phase 1: ConfigReader Decomposition (Low Risk)
+## Phase 1: ConfigReader Decomposition (Low Risk) — ✅ COMPLETED (2026-06-22)
 
 **Principle**: Extract components bottom-up. Each new class is independently testable. `ConfigReader::load()` and `save()` remain unchanged in signature — they internally delegate.
 
@@ -332,7 +333,7 @@ private:
 
 ---
 
-## Phase 2: ShareLink Decomposition (Low Risk)
+## Phase 2: ShareLink Decomposition (Low Risk) — ✅ COMPLETED (2026-06-22)
 
 ### Task 2.1 — Create `UriCodec`
 
@@ -457,7 +458,7 @@ std::string ShareLink::toShareUri(const db::models::Profileitem& profile) {
 
 ---
 
-## Phase 3: ConfigGenerator Decomposition (Medium Risk)
+## Phase 3: ConfigGenerator Decomposition (Medium Risk) — ✅ COMPLETED (2026-06-22)
 
 ### Task 3.1 — Create `ProfileConfigRepository`
 
@@ -677,7 +678,7 @@ bool ConfigGenerator::generateConfig(const db::models::Profileitem& profile,
 
 ---
 
-## Phase 4: ProxyBatchTester Decomposition (High Risk)
+## Phase 4: ProxyBatchTester Decomposition (High Risk) — ✅ COMPLETED (2026-06-22)
 
 ### Task 4.1 — Create `ProxyBatchQuery`
 
@@ -854,7 +855,7 @@ private:
 
 ---
 
-## Phase 5: AppController Decomposition (Medium Risk)
+## Phase 5: AppController Decomposition (Medium Risk) — ✅ COMPLETED (2026-06-22)
 
 ### Task 5.1 — Create `UiOperationRunner`
 
@@ -1214,4 +1215,6 @@ This plan's status is tracked in:
 - `docs/INDEX.md` §7.5 (规范化设计) — spec reference
 - `docs/plans/project-plans-tracker.md` — global plan index
 
-Update both files when plan status changes or when phases complete.
+**Status**: ✅ ALL PHASES COMPLETED (2026-06-22)
+
+All 6 phases (0–5) have been implemented, tested, and committed. The responsibility decomposition is complete.

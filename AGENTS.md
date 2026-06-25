@@ -10,7 +10,7 @@
 | **目标平台** | Windows (MinGW/GCC) | 必须保证 GCC 编译器的兼容性。**默认终端：PowerShell**，所有模型、MCP tools、skills 必须使用 PowerShell 命令语法 |
 | **核心业务** | 代理验证与网络转发 | 涉及 Xray-core、gRPC API、cURL HTTP 请求及 SQLite 存储 |
 | **文档总图** | **`docs/INDEX.md`** ⭐ | **全量静态文档、历史分析及变更记录的唯一分类总索引入口** |
-| **系统版本** | 1.0.3 | 入口点：`src/main_gui.cpp` |
+| **系统版本** | 1.0.3 | 入口点：`src/main_gui.cpp`（包含 `main()`，创建并启动 `UIApp` wxWidgets 实例） |
 
 * * *
 
@@ -21,7 +21,7 @@
 ./include/        头文件
 ./src/ui/         UI 层 — wxWidgets (AppController, MainFrame, 6 面板)
 ./tests/          单元测试 — Google Test（所有可编译测试源码必须在此）
-./test/           测试数据集 — 仅存放测试数据库、测试脚本、配置文件，禁止包含源码
+./test/           测试数据集 — 仅存放测试数据库、配置文件、模拟脚本，禁止包含源码
 ./bin/            生产运行目录 (配置文件 config.json + 数据库 worker/guindb.db)
 ./docs/           项目文档主目录
   ├── INDEX.md   ⭐ 核心主索引：全量长短期文档分类索引入口点（AI 检索必读）
@@ -176,13 +176,17 @@ cmake --build build --parallel 8 && .\scripts\run_coverage.ps1
 
 | 用户输入意图包含的关键词 | 匹配的技能/方法论 (Skills) | AI 应当输出的特定行为约束 |
 | :--- | :--- | :--- |
+| `构思` / `brainstorm` / `头脑风暴` / `创意方案` / `需求分析` / `需求探索` | **brainstorming** | 1. 加载技能 `skill(name="brainstorming")`。<br>2. 引导用户明确需求边界、核心目标和约束条件。<br>3. 输出多个可选方案供用户决策。<br>4. 决策完成后再进入实现阶段（路由至 using-superpowers）。 |
 | `调整功能` / `开发功能` / `新增功能` / `重构` / `架构调整` / `修改行为` | **using-superpowers** |1. 严格检查是否**禁止了 `auto`**。<br>2. 优先通过读取 docs/INDEX.md 检索开发规范、历史技术规格设计文档（Spec）。<br>3. 在修改后将其更新至 `docs/plans/project-plans-tracker.md`。 |
 | `bug` / `修复` / `fix` / `异常` / `崩溃` / `错误` / `测试失败` / `故障` | **systematic-debugging** | 1. 启动根因分析（RCA）。 <br> 2. 明确指出受影响的模块文件（如 `XrayApi.cpp` ）。 <br> 3. 提供异常捕获加固方案，并输出修复日志到 `docs/bugfix/`。 |
-| `ASAN` / `sanitizer` / `调试` / `debug` / `dump` / `cppcheck` / `覆盖率` / `coverage` / `稳定性` / `MiniDump` | — | 1. 优先引用 **AGENTS.md §4.2** 获取调试命令速查。<br>2. 深度工作流（ASAN 输出解读 / dump 分析 / Logger 调优）参考 **project-knowledge.md §8**。 |
+| `ASAN` / `sanitizer` / `调试` / `debug` / `dump` / `cppcheck` / `覆盖率` / `coverage` / `稳定性` / `MiniDump` | — | 1. 优先引用 **AGENTS.md §4.2** 获取调试命令速查。<br>2. 深度工作流（ASAN 输出解读 / dump 分析 / Logger 调优）参考 **`docs/project-knowledge.md#8`**。 |
 | `计划` / `方案` / `制定计划` / `设计文档` / `design doc` / `spec` / `技术方案` | **writing-plans** | 1. 严格遵循产品/工程视角区分（PRD 与 Spec 隔离）。<br>2. 产出包含输入、输出、边界条件、前置条件的标准 Markdown。 |
 | `实现` / `编码` / `写代码` / `implement` | **test-driven-development** | 1. 强制要求在编写实现代码的同时，或之前，在 `tests/` 目录下提供 Google Test（`TEST_F`）测试用例。 |
 | `测试` / `test` / `单元测试` / `ctest` | **cmake-build** | 1. 执行 `cmake --build build` 编译。 <br> 2. 执行 `ctest -V` 运行全量测试。 |
 | `构建` / `编译` / `build` / `cmake` / `CI` | **cmake-build** | 1. 按 Debug 模式配置构建：`cmake -B build -G "Ninja" -DCMAKE_BUILD_TYPE=Debug`。<br>2. 并行编译：`cmake --build build --parallel 8`。 |
+| `commit` / `提交` / `git` / `分支` / `branch` / `合并` / `merge` / `推送` / `push` / `PR` / `pull request` / `rebase` / `stash` | **git-master** | 1. 加载技能 `skill(name="git-master")`。<br>2. 严格遵循该技能的分阶段工作流，确保原子提交和版本管理规范。 |
+| `代码审查` / `code review` / `代码评审` / `review` / `PR review` | **requesting-code-review** | 1. 加载技能 `skill(name="requesting-code-review")`。<br>2. 在功能完成并验证测试通过后，提交代码审查。 |
+| `完成` / `complete` / `验证通过` / `verify` / `验证完成` | **verification-before-completion** | 1. 加载技能 `skill(name="verification-before-completion")`。<br>2. 在声称任务完成前必须运行所需验证命令，确认输出后再声明完成。 |
 | `画图` / `生成图片` / `画一只XX` / `image generation` / `generate image` / `draw a` | **agnes-image-gen** | 1. 加载技能 `skill(name="agnes-image-gen")`。<br>2. 提取用户描述，增强为详细英文 prompt（风格、光影、构图）。<br>3. 调用 Agnes Image 2.1 Flash API，下载生成的图像。<br>4. 报告保存路径给用户。 |
 | `生成视频` / `制作动画` / `画一段视频` / `video generation` / `create video` / `make a clip` | **agnes-video-gen** | 1. 加载技能 `skill(name="agnes-video-gen")`。<br>2. 提取用户描述，增强为详细英文 cinematic prompt（镜头运动、光影、风格、画质）。<br>3. 调用 Agnes Video V2.0 API 创建异步任务。<br>4. 轮询任务状态直到 completed，下载 MP4 视频。<br>5. 报告保存路径给用户。 |
 | `部署` / `发布` / `release` / `deploy` | **release-skills** | 1. 自动检测版本文件与 changelog，按语义化版本规范发布。 |

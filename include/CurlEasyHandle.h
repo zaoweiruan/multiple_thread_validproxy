@@ -4,6 +4,7 @@
 #include <curl/curl.h>
 #include <string>
 #include <stdexcept>
+#include <atomic>
 
 class CurlEasyHandle {
 public:
@@ -98,7 +99,20 @@ public:
         return size * nmemb;
     }
 
+    /// Set an atomic flag that, when true, will abort the blocking perform() call
+    /// via libcurl's progress callback. Useful for cancellation during batch testing.
+    CurlEasyHandle& setCancelFlag(std::atomic<bool>* flag) {
+        cancelFlag_ = flag;
+        return *this;
+    }
+
     void perform() {
+        if (cancelFlag_) {
+            // Enable the progress callback so we can abort when cancellation is requested
+            curl_easy_setopt(curl_, CURLOPT_NOPROGRESS, 0L);
+            curl_easy_setopt(curl_, CURLOPT_XFERINFOFUNCTION, cancelCallback);
+            curl_easy_setopt(curl_, CURLOPT_XFERINFODATA, cancelFlag_);
+        }
         CURLcode res = curl_easy_perform(curl_);
         if (res != CURLE_OK) {
             throw std::runtime_error(std::string("curl_easy_perform failed: ") + curl_easy_strerror(res));
@@ -119,11 +133,21 @@ public:
 
 private:
     CURL* curl_;
+    std::atomic<bool>* cancelFlag_{nullptr};
 
     void checkCurlCode(CURLcode code, const std::string& context) {
         if (code != CURLE_OK) {
             throw std::runtime_error("CURL error in " + context + ": " + curl_easy_strerror(code));
         }
+    }
+
+    /// libcurl progress callback: returns non-zero to abort the transfer
+    /// when the cancel flag is set to true.
+    static int cancelCallback(void* clientp, curl_off_t dltotal, curl_off_t dlnow,
+                              curl_off_t ultotal, curl_off_t ulnow) {
+        (void)dltotal; (void)dlnow; (void)ultotal; (void)ulnow;
+        auto* flag = static_cast<std::atomic<bool>*>(clientp);
+        return flag->load() ? 1 : 0;
     }
 };
 
