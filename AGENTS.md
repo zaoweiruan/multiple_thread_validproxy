@@ -6,7 +6,7 @@
 | :--- | :--- | :--- |
 | **编程语言** | C++ 20/17 (**标准: C++17**) | **核心约束：全栈代码中禁止使用 `auto` 进行类型推导** |
 | **构建系统** | CMake + Ninja | Debug 模式编译：`cmake -B build -G "Ninja" -DCMAKE_BUILD_TYPE=Debug` |
-| **UI 框架** | wxWidgets 3.2+ (wxMSW) | 仅在 GUI 模式下生效，入口文件为 `src/ui/UIApp.cpp` |
+| **UI 框架** | wxWidgets 3.2+ (wxMSW) | 仅在 GUI 模式下生效，入口文件为 `src/ui/UIApp.cpp`。本地源码路径：`E:\eclipse_workspace\wxWidgets` |
 | **目标平台** | Windows (MinGW/GCC) | 必须保证 GCC 编译器的兼容性。**默认终端：PowerShell**，所有模型、MCP tools、skills 必须使用 PowerShell 命令语法 |
 | **核心业务** | 代理验证与网络转发 | 涉及 Xray-core、gRPC API、cURL HTTP 请求及 SQLite 存储 |
 | **文档总图** | **`docs/INDEX.md`** ⭐ | **全量静态文档、历史分析及变更记录的唯一分类总索引入口** |

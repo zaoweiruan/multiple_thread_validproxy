@@ -291,6 +291,7 @@
 | **API** | Application Programming Interface |
 | **RPC** | Remote Procedure Call |
 | **URL** | Uniform Resource Locator |
+| **CS_DBLCLKS** | Class Style Double Clicks (Windows GUI) |
 
 ---
 
@@ -304,6 +305,7 @@
 | **Fluent API** | `CurlEasyHandle` | 链式调用： `.setUrl().setProxy().setTimeoutMs().perform()` |
 | **Strategy** | `SubitemUpdaterV2::Strategy` | 更新策略模式（DirectFirst/ProxyFirst/DirectOnly） |
 | **Multi-thread Worker** | `ProxyBatchTester` | 多线程工作队列模式 |
+| **Selection-change Double-click** | `SubscriptionPanel` / `ProxyListPanel` | wxWidgets MSW 平台 DataViewCtrl 双击无效 Workaround：跟踪 lastSelItem/lastSelTime，通过 500ms 内同一项二次选中检测双击触发 |
 
 ---
 

@@ -72,6 +72,10 @@ private:
     };
     SortState sortState_;
 
+    // Double-click detection (MSW wxDataViewMainWindow lacks CS_DBLCLKS)
+    wxDataViewItem lastSelItem_;
+    wxLongLong lastSelTime_{0};
+
     wxDECLARE_EVENT_TABLE();
 };
 
