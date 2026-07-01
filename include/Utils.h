@@ -13,6 +13,8 @@ namespace utils {
     std::string joinUrl(const std::string& base, const std::string& suffix);
     bool isValidUrlFormat(const std::string& url);
     bool isValidNetwork(const std::string& network);
+    bool isPortAvailable(int port);
+    int findAvailablePort(int startPort, int maxAttempts = 100);
 }
 
 #endif // UTILS_H

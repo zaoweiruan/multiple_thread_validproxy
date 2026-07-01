@@ -48,6 +48,19 @@ inline void NetworkMonitorConfigParser::parse(const boost::json::value& root, Ap
         } else if (nm.contains("check_timeout_ms")) {
             Logger::write("WARNING: config.network_monitor.check_timeout_ms has wrong type (expected int64), using default", LogLevel::WARN);
         }
+
+        // Parse max_probes for probe-on-disconnect (0 = immediate cancel, >0 = probe mode)
+        if (nm.contains("probe_on_disconnect") && nm.at("probe_on_disconnect").is_object()) {
+            const boost::json::object& pd = nm.at("probe_on_disconnect").as_object();
+            if (pd.contains("max_probes") && pd.at("max_probes").is_int64()) {
+                config.network_monitor.maxProbes = static_cast<int>(pd.at("max_probes").as_int64());
+                if (config.network_monitor.maxProbes < 0) {
+                    config.network_monitor.maxProbes = 0;
+                }
+            } else if (pd.contains("max_probes")) {
+                Logger::write("WARNING: config.network_monitor.probe_on_disconnect.max_probes has wrong type (expected int64), using default", LogLevel::WARN);
+            }
+        }
     } else if (obj.contains("network_monitor")) {
         Logger::write("WARNING: config.network_monitor has wrong type (expected object), using default", LogLevel::WARN);
     }

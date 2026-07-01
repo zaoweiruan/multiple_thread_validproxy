@@ -96,6 +96,17 @@ boost::json::object ConfigJsonSerializer::serialize(const AppConfig& config) con
     }
     root["auto_task"] = autoTaskObj;
 
+    // proxy
+    boost::json::object proxyObj;
+    proxyObj["socks_base_port"] = config.proxy.socks_base_port;
+    if (!config.proxy.xray_asset_dir.empty()) {
+        proxyObj["xray_asset_dir"] = config.proxy.xray_asset_dir;
+    }
+    if (!config.proxy.template_config_path.empty()) {
+        proxyObj["template_config_path"] = config.proxy.template_config_path;
+    }
+    root["proxy"] = proxyObj;
+
     // network_monitor
     boost::json::object nmObj;
     nmObj["enabled"] = config.network_monitor.enabled;
@@ -108,6 +119,11 @@ boost::json::object ConfigJsonSerializer::serialize(const AppConfig& config) con
     }
     nmObj["check_interval_ms"] = config.network_monitor.checkIntervalMs;
     nmObj["check_timeout_ms"] = config.network_monitor.checkTimeoutMs;
+    {
+        boost::json::object pdObj;
+        pdObj["max_probes"] = config.network_monitor.maxProbes;
+        nmObj["probe_on_disconnect"] = pdObj;
+    }
     root["network_monitor"] = nmObj;
 
     return root;

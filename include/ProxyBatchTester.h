@@ -48,6 +48,10 @@ public:
     void workerThreadFunc(int workerId, int socksPort, int apiPort);
     void logToConsole(const std::string& msg);
 
+    /// Wait for network recovery or cancellation.
+    /// Returns true if network is connected (resume testing), false if cancelled (exit).
+    bool waitForNetworkRecovery();
+
     sqlite3* db_;
     config::AppConfig config_;
     XrayManager* xrayManager_;

@@ -157,6 +157,7 @@ target_link_libraries(validproxy-cli PRIVATE
     ${VCPKG_ROOT}/installed/x64-mingw-static/lib/libsqlite3.a
     ${BOOST_ROOT}/lib/libboost_json-mgw14-mt-x64-1_88.a
     -ldbghelp
+    -lws2_32
 )
 
 # Force CLI output to bin (override global setting for tests)
@@ -230,6 +231,7 @@ if(wxWidgets_FOUND)
         ${VCPKG_ROOT}/installed/x64-mingw-static/lib/libsqlite3.a
         ${BOOST_ROOT}/lib/libboost_json-mgw14-mt-x64-1_88.a
         -ldbghelp
+        -lws2_32
     )
 
     # Link wxWidgets imported targets
@@ -309,6 +311,14 @@ if(wxWidgets_FOUND)
     endfunction()
 
     copy_wx_dlls(validproxy)
+
+    # Copy validproxy.exe to bin/worker/ (runtime worker directory)
+    add_custom_command(TARGET validproxy POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CMAKE_SOURCE_DIR}/bin/validproxy.exe"
+            "${CMAKE_SOURCE_DIR}/bin/worker/validproxy.exe"
+        COMMENT "Copying validproxy.exe to bin/worker/"
+    )
 
     # WIN32_EXECUTABLE creates GUI subsystem executable (no console window)
     set_target_properties(validproxy PROPERTIES
@@ -416,6 +426,7 @@ target_link_libraries(test_autotask PRIVATE gtest_main gtest
     Threads::Threads
     CURL::libcurl
     -ldbghelp
+    -lws2_32
 )
 set_target_properties(test_autotask PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
@@ -427,7 +438,7 @@ add_test(NAME AutoTaskTest COMMAND test_autotask)
 # -- Utils unit tests (pure functions, no external deps beyond gtest) --
 add_executable(test_utils tests/test_utils.cpp src/Utils.cpp)
 target_include_directories(test_utils PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_link_libraries(test_utils PRIVATE gtest_main gtest)
+target_link_libraries(test_utils PRIVATE gtest_main gtest -lws2_32)
 set_target_properties(test_utils PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
     RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
@@ -442,7 +453,7 @@ add_executable(test_config_reader tests/test_config_reader.cpp tests/test_config
     src/config/ConfigJsonParser.cpp src/config/ConfigJsonSerializer.cpp
     src/config/ConfigValidator.cpp)
 target_include_directories(test_config_reader PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_link_libraries(test_config_reader PRIVATE gtest_main gtest ${BOOST_ROOT}/lib/libboost_json-mgw14-mt-x64-1_88.a)
+target_link_libraries(test_config_reader PRIVATE gtest_main gtest ${BOOST_ROOT}/lib/libboost_json-mgw14-mt-x64-1_88.a -lws2_32)
 set_target_properties(test_config_reader PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
     RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
@@ -478,6 +489,7 @@ target_include_directories(test_config_generator PRIVATE ${CMAKE_CURRENT_SOURCE_
 target_link_libraries(test_config_generator PRIVATE gtest_main gtest
     ${VCPKG_ROOT}/installed/x64-mingw-static/lib/libsqlite3.a
     ${BOOST_ROOT}/lib/libboost_json-mgw14-mt-x64-1_88.a
+    -lws2_32
 )
 set_target_properties(test_config_generator PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
@@ -502,7 +514,7 @@ add_test(NAME DeleteSubscriptionTest COMMAND test_delete_subscription)
 # -- SubscriptionParser unit tests --
 add_executable(test_subscription_parser tests/test_subscription_parser.cpp src/update/SubscriptionParser.cpp src/Utils.cpp src/Logger.cpp src/LoggerInstance.cpp)
 target_include_directories(test_subscription_parser PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_link_libraries(test_subscription_parser PRIVATE gtest_main gtest ${BOOST_ROOT}/lib/libboost_json-mgw14-mt-x64-1_88.a)
+target_link_libraries(test_subscription_parser PRIVATE gtest_main gtest ${BOOST_ROOT}/lib/libboost_json-mgw14-mt-x64-1_88.a -lws2_32)
 set_target_properties(test_subscription_parser PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
     RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
@@ -541,6 +553,7 @@ target_include_directories(test_proxy_batch_query PRIVATE ${CMAKE_CURRENT_SOURCE
 target_link_libraries(test_proxy_batch_query PRIVATE gtest_main gtest
     ${BOOST_ROOT}/lib/libboost_json-mgw14-mt-x64-1_88.a
     ${VCPKG_ROOT}/installed/x64-mingw-static/lib/libsqlite3.a
+    -lws2_32
 )
 set_target_properties(test_proxy_batch_query PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests

@@ -1130,6 +1130,16 @@ bool SubitemUpdaterV2::syncDatabases(const std::string& sourceDbPath,
     int successCount = 0;
     int failCount = 0;
     
+    // Begin transaction on dstDb for atomic proxy migration
+    char* errMsg = nullptr;
+    if (sqlite3_exec(dstDb, "BEGIN TRANSACTION;", nullptr, nullptr, &errMsg) != SQLITE_OK) {
+        Logger::write("syncDatabases: BEGIN TRANSACTION failed: " + std::string(errMsg ? errMsg : "unknown"), LogLevel::ERR);
+        sqlite3_free(errMsg);
+        sqlite3_close(srcDb);
+        sqlite3_close(dstDb);
+        return false;
+    }
+    
     // 4. Migrate each proxy
     for (const db::models::Profileitem& profile : profiles) {
         // Skip proxies whose Subid is in dedup_subids when sync_skip_subids is enabled
@@ -1165,6 +1175,16 @@ bool SubitemUpdaterV2::syncDatabases(const std::string& sourceDbPath,
     
     // 5. Output statistics
     Logger::write("Migration Result — Total: " + std::to_string(profiles.size()) + ", Succeeded: " + std::to_string(successCount) + ", Failed: " + std::to_string(failCount), LogLevel::REPORT);
+
+    // Commit the transaction
+    if (sqlite3_exec(dstDb, "COMMIT;", nullptr, nullptr, &errMsg) != SQLITE_OK) {
+        Logger::write("syncDatabases: COMMIT failed, attempting ROLLBACK: " + std::string(errMsg ? errMsg : "unknown"), LogLevel::ERR);
+        sqlite3_free(errMsg);
+        sqlite3_exec(dstDb, "ROLLBACK;", nullptr, nullptr, nullptr);
+        sqlite3_close(srcDb);
+        sqlite3_close(dstDb);
+        return false;
+    }
 
     if (failCount > 0) {
         Logger::write("Sync failed: " + std::to_string(failCount) + " proxy(es) failed to migrate", LogLevel::ERR);

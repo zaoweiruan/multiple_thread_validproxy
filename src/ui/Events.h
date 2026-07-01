@@ -41,6 +41,7 @@ class SubscriptionTestEvent;
 class ProxySelectionEvent;
 class ProxyListLoadedEvent;
 class SubListLoadedEvent;
+class StandaloneProxyEvent;
 
 wxDECLARE_EVENT(wxEVT_PROXY_TEST_PROGRESS, ProxyTestProgressEvent);
 wxDECLARE_EVENT(wxEVT_LOG_MESSAGE, LogMessageEvent);
@@ -50,6 +51,7 @@ wxDECLARE_EVENT(wxEVT_SUBSCRIPTION_TEST, SubscriptionTestEvent);
 wxDECLARE_EVENT(wxEVT_PROXY_SELECTION, ProxySelectionEvent);
 wxDECLARE_EVENT(wxEVT_PROXY_LIST_LOADED, ProxyListLoadedEvent);
 wxDECLARE_EVENT(wxEVT_SUB_LIST_LOADED, SubListLoadedEvent);
+wxDECLARE_EVENT(wxEVT_STANDALONE_PROXY, StandaloneProxyEvent);
 
 // ---------------------------------------------------------------
 // ProxyTestProgressEvent — sent during batch testing
@@ -229,6 +231,34 @@ public:
 private:
     std::vector<db::models::Subitem> subs_;
     std::unordered_map<std::string, int> proxyCounts_;
+};
+
+// ---------------------------------------------------------------
+// StandaloneProxyEvent — sent when a standalone proxy starts/stops
+// ---------------------------------------------------------------
+class StandaloneProxyEvent : public wxEvent {
+public:
+    StandaloneProxyEvent(const std::string& indexId = "",
+                         const std::string& address = "",
+                         int socksPort = 0,
+                         bool started = true,
+                         const std::string& error = "")
+        : wxEvent(0, wxEVT_STANDALONE_PROXY),
+          indexId_(indexId), address_(address), error_(error),
+          socksPort_(socksPort), started_(started) {}
+
+    wxEvent* Clone() const override { return new StandaloneProxyEvent(*this); }
+
+    std::string getIndexId() const { return indexId_; }
+    std::string getAddress() const { return address_; }
+    int getSocksPort() const { return socksPort_; }
+    bool isStarted() const { return started_; }
+    std::string getError() const { return error_; }
+
+private:
+    std::string indexId_, address_, error_;
+    int socksPort_;
+    bool started_;
 };
 
 #endif // UI_EVENTS_H

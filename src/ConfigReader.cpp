@@ -24,6 +24,7 @@
 #include "config/sections/SyncConfigParser.h"
 #include "config/sections/AutoTaskConfigParser.h"
 #include "config/sections/NetworkMonitorConfigParser.h"
+#include "config/sections/ProxyConfigParser.h"
 
 namespace config {
 
@@ -79,6 +80,7 @@ std::optional<AppConfig> ConfigReader::load(const std::string& configPath) {
     SyncConfigParser().parse(jv, config, exeDir);
     AutoTaskConfigParser().parse(jv, config, exeDir);
     NetworkMonitorConfigParser().parse(jv, config, exeDir);
+    ProxyConfigParser().parse(jv, config, exeDir);
 
     // Step 5: Log SQL queries
     if (!config.sql_query.empty())

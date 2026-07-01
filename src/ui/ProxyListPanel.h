@@ -44,9 +44,11 @@ private:
     void onContextMenu(wxDataViewEvent& event);
     void onTestProxy(wxCommandEvent& event);
     void onExportShareLink(wxCommandEvent& event);
+    void onStartProxy(wxCommandEvent& event);
     void onProxyTestProgress(ProxyTestProgressEvent& event);
     void onColumnHeaderClick(wxDataViewEvent& event);
     void onSelectionChanged(wxDataViewEvent& event);
+    void onStandaloneProxyEvent(StandaloneProxyEvent& event);
 
     void selectFirstProxy();
     void updateProxyList(const std::vector<db::models::Profileitem>& proxies,

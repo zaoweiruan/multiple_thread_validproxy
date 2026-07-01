@@ -60,7 +60,19 @@ struct AppConfig {
         };
         int checkIntervalMs{10000};
         int checkTimeoutMs{5000};
+
+        // Probe-on-disconnect: pause testing on disconnect, probe N times before cancel.
+        // If maxProbes > 0: pause and probe before cancel (configurable grace window).
+        // If maxProbes = 0: immediate cancel on first disconnect (legacy behavior).
+        int maxProbes{3};
     } network_monitor;
+
+    // Proxy configuration (standalone proxy)
+    struct {
+        int socks_base_port = 10808;
+        std::string xray_asset_dir;
+        std::string template_config_path;
+    } proxy;
 };
 
 class ConfigReader {
