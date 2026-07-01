@@ -13,6 +13,16 @@
 #include <sstream>
 #include "Utils.h"
 
+// Double-click timeout for MSW workaround.
+// wxDataViewMainWindow registers its window class without CS_DBLCLKS on MSW,
+// so wxEVT_DATAVIEW_ITEM_ACTIVATED never fires on double-click.
+// We detect double-click via rapid consecutive selection of the same item instead.
+#ifdef __WXMSW__
+static const long DBLCLICK_TIMEOUT_MS = static_cast<long>(::GetDoubleClickTime());
+#else
+static const long DBLCLICK_TIMEOUT_MS = 500;
+#endif
+
 enum {
     ID_SUB_EDIT = wxID_HIGHEST + 400,
     ID_SUB_DELETE,
@@ -90,6 +100,12 @@ SubscriptionPanel::SubscriptionPanel(wxWindow* parent, AppController* controller
 
     // Bind column header click for sorting
     listCtrl_->Bind(wxEVT_DATAVIEW_COLUMN_HEADER_CLICK, &SubscriptionPanel::onColumnHeaderClick, this);
+
+    // Double-click to edit subscription
+    listCtrl_->Bind(wxEVT_DATAVIEW_ITEM_ACTIVATED, [this](wxDataViewEvent&) {
+        wxCommandEvent dummy;
+        onEditSubscription(dummy);
+    });
 }
 
 static const std::string ALL_SUBSCRIPTION_ID = "";
@@ -187,10 +203,30 @@ std::string SubscriptionPanel::getSelectedSubId() const {
 void SubscriptionPanel::onSelectionChanged(wxDataViewEvent& event) {
     (void)event;
     wxDataViewItem sel = listCtrl_->GetSelection();
-    if (!sel.IsOk()) return;
+    if (!sel.IsOk()) {
+        lastSelItem_ = wxDataViewItem();
+        return;
+    }
     int row = wxPtrToUInt(sel.GetID()) - 1;
     if (row < 0 || row >= (int)subs_.size()) return;
     std::string subId = subs_[row].id;
+
+    // Double-click detection: same item selected twice within timeout.
+    // Workaround for MSW wxDataViewMainWindow lacking CS_DBLCLKS class style.
+    wxLongLong now = wxGetLocalTimeMillis();
+    if (lastSelItem_.IsOk() && sel.IsOk() &&
+        lastSelItem_.GetID() == sel.GetID() &&
+        now - lastSelTime_ < DBLCLICK_TIMEOUT_MS) {
+        wxCommandEvent dummy;
+        onEditSubscription(dummy);
+        // Reset to prevent triple-click from triggering action again
+        lastSelItem_ = wxDataViewItem();
+        lastSelTime_ = 0;
+    } else {
+        lastSelItem_ = sel;
+        lastSelTime_ = now;
+    }
+
     wxWindow* topLevel = wxGetTopLevelParent(this);
     if (topLevel) {
         SubscriptionSelectedEvent evt(subId);
@@ -300,6 +336,7 @@ void SubscriptionPanel::onDeleteProxies(wxCommandEvent&) {
     }
     wxString msg = wxString::Format(L"确定删除订阅 \"%s\" 下的所有代理？", remarks);
     wxMessageDialog dlg(this, msg, L"确认删除", wxYES_NO | wxNO_DEFAULT | wxICON_QUESTION);
+    dlg.CentreOnScreen();
     if (dlg.ShowModal() == wxID_YES) {
         if (controller_) {
             controller_->deleteProxiesBySubId(subId);
@@ -310,6 +347,7 @@ void SubscriptionPanel::onDeleteProxies(wxCommandEvent&) {
 
 void SubscriptionPanel::onImportSubscription(wxCommandEvent&) {
     wxTextEntryDialog dlg(this, "Enter subscription URL:", "Import Subscription", "");
+    dlg.CentreOnScreen();
     if (dlg.ShowModal() == wxID_OK) {
         wxString url = dlg.GetValue();
         if (!url.empty()) {
@@ -412,6 +450,7 @@ void SubscriptionPanel::showEditDialog(const db::models::Subitem& sub) {
     dlg.SetSizer(topSizer);
     dlg.Layout();
     dlg.SetMinSize(wxSize(900, 250));
+    dlg.CentreOnScreen();
 
     bool urlValid = true;
     dlg.Bind(wxEVT_BUTTON, [&](wxCommandEvent& evt) {
@@ -446,5 +485,6 @@ bool SubscriptionPanel::confirmDelete(const std::string& id, const std::string& 
                                      remarks, id);
     wxMessageDialog dlg(this, msg, "Confirm Delete",
                          wxYES_NO | wxNO_DEFAULT | wxICON_QUESTION);
+    dlg.CentreOnScreen();
     return dlg.ShowModal() == wxID_YES;
 }

@@ -14,6 +14,9 @@
     - `v2rayN\ServiceLib\Models\ProfileItem.cs` — 数据模型
     - `v2rayN\ServiceLib\Manager\AppManager.cs` — ProfileItems() 获取代理列表
 - **xray 源码目录**: `E:\eclipse_workspace\Xray-core`
+- **wxWidgets 源码目录**: `E:\eclipse_workspace\wxWidgets`
+  - 关键文件:
+    - `src/generic/datavgen.cpp:2091` — wxDataViewMainWindow Create() 缺失 CS_DBLCLKS 导致 MSW 平台双击无效
 
 ## 二、项目配置文件
 
@@ -42,3 +45,5 @@
 | 2026-06-25 | **NetworkMonitor 断连探测机制** — 断连后暂停测试，按配置阈值连续探测 N 次后再决定是否终止。修改: ConfigReader (probe_on_disconnect 结构体)、NetworkMonitor (consecutiveFailures_ 延迟取消)、ProxyBatchTester (waitForNetworkRecovery 暂停等待) | `docs/specs/2026-06-25-Spec-NetworkMonitor-ProbeOnDisconnect-v1.0.md` |
 | 2026-06-26 | **SubitemUpdaterV2 未传入 netMon_** — doUpdateSubscription/doUpdateAllSubscriptions 构造 SubitemUpdaterV2 时未传第7参数 netMon (默认 nullptr)，6处 IsConnected() 空指针短路永不触发 | `docs/bugfix/2026-06-26-Bugfix-SubitemUpdaterV2-MissingNetMon-v1.0.md` |
 | 2026-07-01 | **Sync 目标库新订阅 enabled 默认 0** — migrateSubscription() 直接复制源库 enabled 状态，目标库新订阅应默认禁用 | `docs/bugfix/2026-07-01-Bugfix-Sync-Subscription-EnabledDefault-v1.0.md` |
+| 2026-07-01 | **SubscriptionPanel/ProxyListPanel 双击无反应** — MSW wxDataViewMainWindow 缺失 CS_DBLCLKS，使用 selection-change-based 双击检测绕过限制 | `docs/bugfix/2026-07-01-Bugfix-DoubleClick-V1.0.md` |
+| 2026-07-01 | **对话框屏幕居中** — 6 处 wxDialog/wxMessageDialog 添加 CentreOnScreen() 调用 | `docs/specs/2026-07-01-Spec-DialogCentering-v1.0.md` |

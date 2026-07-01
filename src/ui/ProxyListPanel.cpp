@@ -9,6 +9,16 @@
 #include <wx/menu.h>
 #include <wx/msgdlg.h>
 
+// Double-click timeout for MSW workaround.
+// wxDataViewMainWindow registers its window class without CS_DBLCLKS on MSW,
+// so wxEVT_DATAVIEW_ITEM_ACTIVATED never fires on double-click.
+// We detect double-click via rapid consecutive selection of the same item instead.
+#ifdef __WXMSW__
+static const long DBLCLICK_TIMEOUT_MS = static_cast<long>(::GetDoubleClickTime());
+#else
+static const long DBLCLICK_TIMEOUT_MS = 500;
+#endif
+
 // Context menu command IDs — must be unique to avoid wxID_ANY collisions
 enum {
     ID_CONTEXT_TEST_PROXY    = wxID_HIGHEST + 400,
@@ -63,6 +73,12 @@ ProxyListPanel::ProxyListPanel(wxWindow* parent, AppController* controller,
     Bind(wxEVT_PROXY_TEST_PROGRESS, &ProxyListPanel::onProxyTestProgress, this);
     Bind(wxEVT_STANDALONE_PROXY, &ProxyListPanel::onStandaloneProxyEvent, this);
     Bind(wxEVT_DATAVIEW_COLUMN_HEADER_CLICK, &ProxyListPanel::onColumnHeaderClick, this);
+
+    // Double-click to start proxy
+    listCtrl_->Bind(wxEVT_DATAVIEW_ITEM_ACTIVATED, [this](wxDataViewEvent&) {
+        wxCommandEvent dummy;
+        onStartProxy(dummy);
+    });
 }
 
 ProxyListPanel::~ProxyListPanel() = default;
@@ -301,16 +317,20 @@ void ProxyListPanel::onStartProxy(wxCommandEvent& event) {
         // Port occupied — find the next free port
         int freePort = utils::findAvailablePort(desiredPort + 1);
         if (freePort < 0) {
-            wxMessageBox(wxString::Format("端口 %d 已被占用，且无法找到其他空闲端口。", desiredPort),
-                         "端口检查", wxOK | wxICON_WARNING);
+            wxMessageDialog dlg(this,
+                wxString::Format("端口 %d 已被占用，且无法找到其他空闲端口。", desiredPort),
+                "端口检查", wxOK | wxICON_WARNING);
+            dlg.CentreOnScreen();
+            dlg.ShowModal();
             Logger::write("[UI] No free port found for standalone proxy (base port " + std::to_string(desiredPort)
                           + " occupied)", LogLevel::ERR);
             return;
         }
         // Ask user whether to use the alternate port
         wxString msg = wxString::Format("端口 %d 已被占用，是否使用端口 %d 开启代理？", desiredPort, freePort);
-        int answer = wxMessageBox(msg, "端口占用提示", wxYES_NO | wxICON_QUESTION | wxNO_DEFAULT);
-        if (answer != wxYES) {
+        wxMessageDialog portDlg(this, msg, "端口占用提示", wxYES_NO | wxICON_QUESTION | wxNO_DEFAULT);
+        portDlg.CentreOnScreen();
+        if (portDlg.ShowModal() != wxID_YES) {
             Logger::write("[UI] User declined alternate port " + std::to_string(freePort)
                           + " for standalone proxy", LogLevel::INFO);
             return;
@@ -355,7 +375,10 @@ void ProxyListPanel::onProxyTestProgress(ProxyTestProgressEvent& event) {
 // -------------------------------------------------------------------
 void ProxyListPanel::onSelectionChanged(wxDataViewEvent& event) {
     wxDataViewItem item = listCtrl_->GetSelection();
-    if (!item.IsOk()) return;
+    if (!item.IsOk()) {
+        lastSelItem_ = wxDataViewItem();
+        return;
+    }
 
     unsigned int viewRow = model_->GetRow(item);
     if (viewRow == static_cast<unsigned int>(-1)) return;
@@ -364,6 +387,23 @@ void ProxyListPanel::onSelectionChanged(wxDataViewEvent& event) {
     if (!proxy) return;
 
     const std::string& indexId = proxy->indexid;
+
+    // Double-click detection: same item selected twice within timeout.
+    // Workaround for MSW wxDataViewMainWindow lacking CS_DBLCLKS class style.
+    wxLongLong now = wxGetLocalTimeMillis();
+    if (lastSelItem_.IsOk() && item.IsOk() &&
+        lastSelItem_.GetID() == item.GetID() &&
+        now - lastSelTime_ < DBLCLICK_TIMEOUT_MS) {
+        wxCommandEvent dummy;
+        onStartProxy(dummy);
+        // Reset to prevent triple-click from triggering action again
+        lastSelItem_ = wxDataViewItem();
+        lastSelTime_ = 0;
+    } else {
+        lastSelItem_ = item;
+        lastSelTime_ = now;
+    }
+
     std::string delay   = model_->getDelay(indexId);
     std::string message = model_->getMessage(indexId);
     int failures        = model_->getFailures(indexId);
