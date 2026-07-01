@@ -862,6 +862,9 @@ bool SubitemUpdaterV2::migrateSubscription(sqlite3* srcDb, sqlite3* dstDb,
         return false; // No valid subscription found
     }
     
+    // New subscriptions synced to target should start disabled
+    subitem.enabled = "0";
+
     return insertSubItem(dstDb, subitem);
 }
 

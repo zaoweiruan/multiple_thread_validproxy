@@ -30,7 +30,7 @@ status: maintained
 | [规范化设计](#75-规范化设计) | 5 | `docs/specs/` |
 | [实施计划](#8-实施计划) | 54 | `docs/plans/` |
 | [分析报告](#9-分析报告) | 8 | `docs/reports/` |
-| [Bug 修复记录](#91-bug-修复记录) | 17 | `docs/bugfix/` |
+| [Bug 修复记录](#91-bug-修复记录) | 18 | `docs/bugfix/` |
 | [测试报告](#10-测试报告) | 1 | `docs/test/` |
 | [长期记忆](#13-长期记忆) | 1 | `docs/project-knowledge.md` (6.2 KB) |
 
@@ -159,7 +159,7 @@ status: maintained
 | 7 | [`docs/specs/2026-06-17-Spec-Code-Refactoring-Review-v1.0.md`](./specs/2026-06-17-Spec-Code-Refactoring-Review-v1.0.md) | **Code Refactoring Phase 1** — Dead code removal, redundant includes cleanup, duplicated logic merging | draft |
 | 8 | [`docs/specs/2026-06-18-Spec-SubitemUpdaterV2-Decomposition-v1.0.md`](./specs/2026-06-18-Spec-SubitemUpdaterV2-Decomposition-v1.0.md) | **SubitemUpdaterV2 分解** — 提取 SubscriptionParser/Deduplicator/Importer/SubscriptionUpdater 四个类 | completed |
 | 9 | [`docs/specs/2026-06-18-Spec-Responsibility-Decomposition-v1.0.md`](./specs/2026-06-18-Spec-Responsibility-Decomposition-v1.0.md) | **过度职责分解方案** — ProxyBatchTester/AppController/ShareLink/ConfigGenerator/ConfigReader 的五阶段拆分方案 | ✅ completed |
-| 10 | [`docs/specs/2026-07-01-Spec-PortDetectionRefactor-v1.0.md`](./specs/2026-07-01-Spec-PortDetectionRefactor-v1.0.md) | **端口探测重构方案** — 消除 `PortManager::isInUse()` 与 `utils::isPortAvailable()` 的重复，修复 `bind()` 假阳性，统一使用 connect+select 检测 | draft |
+| 10 | [`docs/specs/2026-07-01-Spec-PortDetectionRefactor-v1.0.md`](./specs/2026-07-01-Spec-PortDetectionRefactor-v1.0.md) | **端口探测重构方案** — 消除 `PortManager::isInUse()` 与 `utils::isPortAvailable()` 的重复，修复 `bind()` 假阳性，统一使用 connect+select 检测 | ✅ completed |
 
 ---
 
@@ -305,6 +305,7 @@ status: maintained
 | 15 | [`docs/bugfix/2026-06-25-Bugfix-NetworkDisconnect-CancelChain-v1.0.md`](./bugfix/2026-06-25-Bugfix-NetworkDisconnect-CancelChain-v1.0.md) | **Network disconnect does not stop batch testing** — NetworkMonitor detects LOST but has no way to signal ProxyBatchTester; added setCancelOnDisconnect() to wire cancellation chain | 65 lines |
 | 16 | [`docs/bugfix/2026-06-26-Bugfix-SubitemUpdaterV2-MissingNetMon-v1.0.md`](./bugfix/2026-06-26-Bugfix-SubitemUpdaterV2-MissingNetMon-v1.0.md) | **SubitemUpdaterV2 未传入 netMon_ 导致网络断开时静默绕过** — doUpdateSubscription/doUpdateAllSubscriptions 构建 SubitemUpdaterV2 时未传第7参数 netMon，6处 IsConnected() 空指针短路永不触发 | — |
 | 17 | [`docs/bugfix/2026-07-01-Bugfix-isPortAvailable-WildcardListener-v1.0.md`](./bugfix/2026-07-01-Bugfix-isPortAvailable-WildcardListener-v1.0.md) | **isPortAvailable() 对 0.0.0.0 通配监听者返回假阳性** — bind(INADDR_LOOPBACK) 在 Windows 下与已有 0.0.0.0:port 监听共存，改为非阻塞 connect(127.0.0.1:port) + select(200ms) | — |
+| 18 | [`docs/bugfix/2026-07-01-Bugfix-Sync-Subscription-EnabledDefault-v1.0.md`](./bugfix/2026-07-01-Bugfix-Sync-Subscription-EnabledDefault-v1.0.md) | **Sync 目标库新订阅 enabled 默认值为 0** — migrateSubscription() 直接复制源库 enabled 状态，目标库新订阅应默认禁用，与 Importer 行为一致 | — |
 
 ---
 

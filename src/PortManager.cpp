@@ -1,6 +1,5 @@
 #include "PortManager.h"
-#include <winsock2.h>
-#include <ws2tcpip.h>
+#include "Utils.h"
 
 std::vector<int> PortManager::usedPorts_;
 
@@ -26,17 +25,8 @@ int PortManager::findAvailable(int startPort, int maxAttempts) {
 }
 
 bool PortManager::isInUse(int port) {
-    SOCKET sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-    if (sock == INVALID_SOCKET) return false;
-    
-    struct sockaddr_in addr;
-    addr.sin_family = AF_INET;
-    addr.sin_port = htons(static_cast<u_short>(port));
-    addr.sin_addr.s_addr = inet_addr("127.0.0.1");
-    
-    int result = bind(sock, (struct sockaddr*)&addr, sizeof(addr));
-    closesocket(sock);
-    return result == SOCKET_ERROR;
+    // Delegate to the corrected connect-based detection in Utils
+    return !utils::isPortAvailable(port);
 }
 
 std::vector<int> PortManager::allocateRange(int startPort, int count) {
