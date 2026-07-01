@@ -41,3 +41,4 @@
 | 2026-06-18 | SubitemUpdaterV2.cpp 2422→1198 行重构 — 提取 SubscriptionParser/Deduplicator/Importer/SubscriptionUpdater 四个类 | `docs/specs/2026-06-18-Spec-SubitemUpdaterV2-Decomposition-v1.0.md` |
 | 2026-06-25 | **NetworkMonitor 断连探测机制** — 断连后暂停测试，按配置阈值连续探测 N 次后再决定是否终止。修改: ConfigReader (probe_on_disconnect 结构体)、NetworkMonitor (consecutiveFailures_ 延迟取消)、ProxyBatchTester (waitForNetworkRecovery 暂停等待) | `docs/specs/2026-06-25-Spec-NetworkMonitor-ProbeOnDisconnect-v1.0.md` |
 | 2026-06-26 | **SubitemUpdaterV2 未传入 netMon_** — doUpdateSubscription/doUpdateAllSubscriptions 构造 SubitemUpdaterV2 时未传第7参数 netMon (默认 nullptr)，6处 IsConnected() 空指针短路永不触发 | `docs/bugfix/2026-06-26-Bugfix-SubitemUpdaterV2-MissingNetMon-v1.0.md` |
+| 2026-07-01 | **Sync 目标库新订阅 enabled 默认 0** — migrateSubscription() 直接复制源库 enabled 状态，目标库新订阅应默认禁用 | `docs/bugfix/2026-07-01-Bugfix-Sync-Subscription-EnabledDefault-v1.0.md` |
