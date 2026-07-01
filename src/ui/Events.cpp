@@ -8,3 +8,4 @@ wxDEFINE_EVENT(wxEVT_SUBSCRIPTION_TEST, SubscriptionTestEvent);
 wxDEFINE_EVENT(wxEVT_PROXY_SELECTION, ProxySelectionEvent);
 wxDEFINE_EVENT(wxEVT_PROXY_LIST_LOADED, ProxyListLoadedEvent);
 wxDEFINE_EVENT(wxEVT_SUB_LIST_LOADED, SubListLoadedEvent);
+wxDEFINE_EVENT(wxEVT_STANDALONE_PROXY, StandaloneProxyEvent);

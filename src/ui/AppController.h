@@ -10,6 +10,8 @@
 #include <memory>
 #include <sqlite3.h>
 #include <wx/event.h>
+#include <mutex>
+#include <windows.h>
 
 #include "ConfigReader.h"
 #include "Subitem.h"
@@ -19,6 +21,17 @@
 #include "NetworkMonitor.h"
 
 class wxEvtHandler;
+
+// ---------------------------------------------------------------
+// StandaloneProxyInfo — tracks an independently launched Xray proxy
+// ---------------------------------------------------------------
+struct StandaloneProxyInfo {
+    std::string indexId;
+    std::string configPath;
+    int socksPort = 0;
+    HANDLE processHandle = nullptr;
+    bool running = false;
+};
 
 class AppController {
 public:
@@ -84,6 +97,11 @@ bool isTestCancelled() const;
     // Network monitor control
     void restartNetworkMonitor();
 
+    // Standalone proxy management
+    bool startStandaloneProxy(const std::string& indexId, int overridePort = 0);
+    int getStandaloneSocksPort(const std::string& indexId) const;
+    std::vector<std::string> getRunningStandaloneIds() const;
+
 private:
   void doUpdateSubscription(const std::string& subId, wxEvtHandler* wxHandler);
   void doUpdateAllSubscriptions(wxEvtHandler* wxHandler);
@@ -106,6 +124,10 @@ std::thread workerThread_;
    TestResult lastFindResult_;
    NetworkMonitor netMon_;
    bool netMonEnabled_{false};  // Cache for MainFrame to query
+
+  // Standalone proxy state
+  mutable std::mutex standaloneMutex_;
+  std::unordered_map<std::string, StandaloneProxyInfo> standaloneProxies_;
 };
 
 #endif // UI_APP_CONTROLLER_H

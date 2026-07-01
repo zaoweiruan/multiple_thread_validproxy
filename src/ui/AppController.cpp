@@ -4,6 +4,7 @@
 #include "SubitemUpdaterV2.h"
 #include "ProxyBatchTester.h"
 #include "ConfigGenerator.h"
+#include "config/OutboundBuilderFactory.h"
 #include "ShareLink.h"
 #include "AutoTaskManager.h"
 #include "Utils.h"
@@ -33,15 +34,22 @@ AppController::AppController(sqlite3* db, const config::AppConfig& cfg)
         netMon_.Start(config_.network_monitor.checkUrls,
                      config_.network_monitor.checkIntervalMs,
                      config_.network_monitor.checkTimeoutMs);
-        // When the monitor detects network loss, it will set this flag,
+        // Configure probe-on-disconnect: wait for N consecutive failed probes
+        // before setting the cancel flag, instead of aborting immediately.
+        // maxProbes > 0: probe mode (grace window). maxProbes == 0: immediate cancel.
+        netMon_.setProbeOnDisconnect(config_.network_monitor.maxProbes);
+        // When the monitor exhausts its probe threshold, it will set this flag,
         // which propagates to ProxyBatchTester via externalCancel,
-        // causing active tests to abort immediately.
+        // causing active tests to abort.
         netMon_.setCancelOnDisconnect(&cancelRequested_);
     }
 }
 
 AppController::~AppController() {
     netMon_.Stop();
+
+    // Standalone proxy processes run independently — NOT terminated here,
+    // so they keep running when the main program exits.
 
     // Signal cancellation first so any in-flight async work can observe the flag
     cancelRequested_ = true;
@@ -536,10 +544,163 @@ void AppController::restartNetworkMonitor() {
         netMon_.Start(config_.network_monitor.checkUrls,
                       config_.network_monitor.checkIntervalMs,
                       config_.network_monitor.checkTimeoutMs);
+        // Configure probe-on-disconnect: maxProbes > 0 enables probe mode
+        netMon_.setProbeOnDisconnect(config_.network_monitor.maxProbes);
         netMon_.setCancelOnDisconnect(&cancelRequested_);
     } else {
         netMon_.setEnabled(false);
     }
+}
+
+// ---------------------------------------------------------------
+// Standalone proxy management
+// ---------------------------------------------------------------
+bool AppController::startStandaloneProxy(const std::string& indexId, int overridePort) {
+    std::lock_guard<std::mutex> lock(standaloneMutex_);
+
+    // Fetch proxy from DB
+    db::models::ProfileitemDAO dao(db_);
+    db::models::Profileitem profile;
+    {
+        auto opt = dao.getByIndexId(indexId);
+        if (!opt) {
+            Logger::write("[StandaloneProxy] Profile not found: " + indexId, LogLevel::ERR);
+            return false;
+        }
+        profile = std::move(*opt);
+    }
+
+    // Use override port if provided, otherwise use configured SOCKS port
+    int socksPort = (overridePort > 0) ? overridePort : config_.proxy.socks_base_port;
+
+    // Generate proxy outbound JSON using the same builder as ConfigGenerator
+    config::OutboundBuilderFactory factory;
+    boost::json::object proxyOutbound = factory.create(profile, "proxy");
+
+    // Build outbounds array: proxy + freedom + blackhole
+    boost::json::array outboundsArr;
+    outboundsArr.push_back(proxyOutbound);
+
+    boost::json::object freedomOutbound;
+    freedomOutbound["tag"] = "direct";
+    freedomOutbound["protocol"] = "freedom";
+    outboundsArr.push_back(freedomOutbound);
+
+    boost::json::object blackholeOutbound;
+    blackholeOutbound["tag"] = "block";
+    blackholeOutbound["protocol"] = "blackhole";
+    outboundsArr.push_back(blackholeOutbound);
+
+    // Read the full config template
+    std::string exeDir = utils::getExecutableDir();
+    std::string templatePath = config_.proxy.template_config_path;
+    if (templatePath.empty()) {
+        templatePath = exeDir + "\\xray-config-template.json";
+    }
+    std::ifstream templateFile(templatePath);
+    if (!templateFile.is_open()) {
+        Logger::write("[StandaloneProxy] Cannot open template: " + templatePath, LogLevel::ERR);
+        return false;
+    }
+    std::string templateContent((std::istreambuf_iterator<char>(templateFile)),
+                                 std::istreambuf_iterator<char>());
+    templateFile.close();
+
+    // Parse and modify the template
+    boost::json::value templateVal = boost::json::parse(templateContent);
+    boost::json::object configObj = templateVal.as_object();
+
+    // Replace the SOCKS inbound port with the dynamically allocated port
+    if (configObj.contains("inbounds") && !configObj["inbounds"].as_array().empty()) {
+        configObj["inbounds"].as_array()[0].as_object()["port"] = socksPort;
+    }
+
+    // Replace the outbounds array with our generated one
+    configObj["outbounds"] = outboundsArr;
+
+    // Ensure config subdirectory exists
+    std::string configDir = exeDir + "\\config";
+    std::error_code ec;
+    if (!std::filesystem::exists(configDir) && !std::filesystem::create_directories(configDir, ec)) {
+        Logger::write("[StandaloneProxy] Failed to create config dir: " + ec.message(), LogLevel::ERR);
+        return false;
+    }
+
+    // Write the final config file
+    std::string configPath = configDir + "\\standalone_" + indexId + ".json";
+    {
+        std::ofstream configFile(configPath);
+        if (!configFile.is_open()) {
+            Logger::write("[StandaloneProxy] Failed to write config: " + configPath, LogLevel::ERR);
+            return false;
+        }
+        configFile << boost::json::serialize(configObj);
+        configFile.close();
+    }
+
+    // Determine XRAY_LOCATION_ASSET from config or derive from xray path
+    std::string assetDir = config_.proxy.xray_asset_dir;
+    if (assetDir.empty()) {
+        assetDir = std::filesystem::path(config_.xray_executable).parent_path().parent_path().string();
+    }
+
+    // Build command line: "xray.exe run -c <configPath>"
+    std::string cmd = "\"" + config_.xray_executable + "\" run -c \"" + configPath + "\"";
+    Logger::write("[StandaloneProxy] Executing: " + cmd, LogLevel::INFO);
+
+    STARTUPINFOA si = {};
+    si.cb = sizeof(si);
+    PROCESS_INFORMATION pi = {};
+
+    std::vector<char> cmdBuf(cmd.begin(), cmd.end());
+    cmdBuf.push_back('\0');
+
+    // Set XRAY_LOCATION_ASSET environment variable (inherited by child)
+    SetEnvironmentVariableA("XRAY_LOCATION_ASSET", assetDir.c_str());
+
+    BOOL created = CreateProcessA(nullptr, cmdBuf.data(), nullptr, nullptr, FALSE,
+                                   CREATE_NEW_CONSOLE,
+                                   nullptr, nullptr, &si, &pi);
+    if (!created) {
+        DWORD err = GetLastError();
+        Logger::write("[StandaloneProxy] CreateProcess failed: " + std::to_string(err), LogLevel::ERR);
+        return false;
+    }
+
+    // Store process info (no Job Object — process runs independently from parent)
+    StandaloneProxyInfo info;
+    info.indexId = indexId;
+    info.configPath = configPath;
+    info.socksPort = socksPort;
+    info.processHandle = pi.hProcess;
+    info.running = true;
+    standaloneProxies_[indexId] = std::move(info);
+
+    CloseHandle(pi.hThread);
+
+    Logger::write("[StandaloneProxy] Started " + indexId + " on SOCKS5 :" + std::to_string(socksPort),
+                  LogLevel::REPORT);
+    return true;
+}
+
+int AppController::getStandaloneSocksPort(const std::string& indexId) const {
+    std::lock_guard<std::mutex> lock(standaloneMutex_);
+    auto it = standaloneProxies_.find(indexId);
+    if (it != standaloneProxies_.end() && it->second.running) {
+        return it->second.socksPort;
+    }
+    return -1;
+}
+
+std::vector<std::string> AppController::getRunningStandaloneIds() const {
+    std::lock_guard<std::mutex> lock(standaloneMutex_);
+    std::vector<std::string> ids;
+    for (const auto& [id, info] : standaloneProxies_) {
+        if (info.running) {
+            ids.push_back(id);
+        }
+    }
+    return ids;
 }
 
 // ---------------------------------------------------------------
@@ -551,7 +712,7 @@ void AppController::doUpdateSubscription(const std::string& subId, wxEvtHandler*
     ResetGuard _rg{isRunning_};
 
     try {
-update::SubitemUpdaterV2 updater(db_, config_.xray_executable, config_, nullptr, "", &cancelRequested_);
+update::SubitemUpdaterV2 updater(db_, config_.xray_executable, config_, nullptr, "", &cancelRequested_, &netMon_);
          bool ok = updater.runSingle(subId);
 
         std::string msg = ok ? "Update completed: " + subId : "Update failed: " + subId;
@@ -573,7 +734,7 @@ void AppController::doUpdateAllSubscriptions(wxEvtHandler* wxHandler) {
     ResetGuard _rg{isRunning_};
 
     try {
-update::SubitemUpdaterV2 updater(db_, config_.xray_executable, config_, nullptr, "", &cancelRequested_);
+update::SubitemUpdaterV2 updater(db_, config_.xray_executable, config_, nullptr, "", &cancelRequested_, &netMon_);
          bool ok = updater.run();
 
         std::string msg = ok ? "All subscriptions updated" : "Update (all) had failures";

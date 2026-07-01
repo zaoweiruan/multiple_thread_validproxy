@@ -77,3 +77,63 @@ TEST(UrlValidationTest, InvalidDotOnly) {
 TEST(UrlValidationTest, InvalidLocalhostNoDot) {
     EXPECT_FALSE(utils::isValidUrlFormat("http://localhost"));
 }
+
+// Port availability tests — requires Winsock
+#include <winsock2.h>
+#include <ws2tcpip.h>
+
+TEST(PortCheckTest, IsPortAvailableReturnsFalseWhenPortOccupied) {
+    WSADATA wsaData;
+    ASSERT_EQ(WSAStartup(MAKEWORD(2, 2), &wsaData), 0);
+
+    // Create a TCP socket and bind to a known port
+    SOCKET sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    ASSERT_NE(sock, INVALID_SOCKET);
+
+    sockaddr_in addr = {};
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    addr.sin_port = htons(19876);
+
+    // Bind + listen to occupy the port
+    int bindResult = bind(sock, reinterpret_cast<sockaddr*>(&addr), sizeof(addr));
+    ASSERT_EQ(bindResult, 0) << "Cannot bind test port 19876";
+    ASSERT_EQ(listen(sock, 1), 0);
+
+    // Now the port should NOT be available
+    EXPECT_FALSE(utils::isPortAvailable(19876));
+
+    closesocket(sock);
+    WSACleanup();
+}
+
+TEST(PortCheckTest, IsPortAvailableReturnsTrueWhenPortFree) {
+    // After the occupied port is released, isPortAvailable should return true
+    // Use a specific port that should be free
+    EXPECT_TRUE(utils::isPortAvailable(19976));
+}
+
+TEST(PortCheckTest, FindAvailablePortReturnsNextFreePort) {
+    // Create a listening socket to block a specific port
+    WSADATA wsaData;
+    ASSERT_EQ(WSAStartup(MAKEWORD(2, 2), &wsaData), 0);
+
+    SOCKET testSock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    ASSERT_NE(testSock, INVALID_SOCKET);
+
+    sockaddr_in addr = {};
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    addr.sin_port = htons(19877);
+
+    ASSERT_EQ(bind(testSock, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)), 0);
+    ASSERT_EQ(listen(testSock, 1), 0);
+
+    // findAvailablePort should skip port 19877 and return 19878 (or higher)
+    int found = utils::findAvailablePort(19877, 10);
+    EXPECT_GT(found, 19877);
+    EXPECT_LE(found, 19887);
+
+    closesocket(testSock);
+    WSACleanup();
+}

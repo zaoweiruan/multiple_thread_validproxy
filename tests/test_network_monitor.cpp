@@ -102,3 +102,34 @@ TEST(NetworkMonitorTest, LoggingOnConnectionLost) {
     }
     EXPECT_TRUE(foundLost);
 }
+
+TEST(NetworkMonitorTest, ProbeThreshold_TriggersCancelAfterNFailures) {
+    LogCapture capture;
+    std::atomic<bool> cancelFlag{false};
+
+    NetworkMonitor nm;
+    nm.setCancelOnDisconnect(&cancelFlag);
+    nm.setProbeOnDisconnect(2);  // Require 2 consecutive failures
+
+    // Use longer interval to ensure multiple check cycles
+    nm.Start(kBadUrls, 100, kShortTimeoutMs);
+    std::this_thread::sleep_for(std::chrono::milliseconds(800));
+    nm.Stop();
+
+    // After threshold reached, cancel flag should be set
+    EXPECT_TRUE(cancelFlag.load());
+}
+
+TEST(NetworkMonitorTest, ConsecutiveFailures_CountsCorrectly) {
+    NetworkMonitor nm;
+    nm.setProbeOnDisconnect(3);
+    nm.resetProbeCount();
+
+    nm.Start(kBadUrls, kShortIntervalMs, kShortTimeoutMs);
+    std::this_thread::sleep_for(std::chrono::milliseconds(kWaitMs * 2));
+    nm.Stop();
+
+    // Should have some consecutive failures recorded
+    int failures = nm.getConsecutiveFailures();
+    EXPECT_GE(failures, 1);
+}

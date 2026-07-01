@@ -82,16 +82,58 @@ void NetworkMonitor::ThreadLoop() {
         bool prev = connected_.exchange(allOk);
         bool afterFirst = firstCheckDone_.exchange(true);
 
-        if (afterFirst && !prev && allOk) {
-            Logger::write("Network connection RESTORED", LogLevel::ERR);
-        } else if (afterFirst && prev && !allOk) {
-            Logger::write("Network connection LOST", LogLevel::ERR);
-            // Setting the external cancel flag will cause any in-flight
-            // ProxyBatchTester workers to abort via isCancelled(), and
-            // ongoing curl perform() calls to abort via the progress callback.
-            if (cancelOnDisconnect_) {
-                cancelOnDisconnect_->store(true);
-                Logger::write("[NetworkMonitor] cancelOnDisconnect triggered", LogLevel::ERR);
+        if (afterFirst && prev && !allOk) {
+            // LOST — increment consecutive failures
+            int fails = consecutiveFailures_.fetch_add(1) + 1;
+
+            if (probeEnabled_ && fails < maxProbes_) {
+                // Within probe window — log but don't cancel
+                Logger::write("Network connection LOST (probe " + std::to_string(fails) +
+                              "/" + std::to_string(maxProbes_) + ")", LogLevel::ERR);
+            } else {
+                // Exceeded max probes or probe disabled — trigger cancel
+                Logger::write("Network connection LOST (probe " + std::to_string(fails) +
+                              "/" + std::to_string(maxProbes_) + ")", LogLevel::ERR);
+                if (cancelOnDisconnect_) {
+                    cancelOnDisconnect_->store(true);
+                    Logger::write("[NetworkMonitor] cancelOnDisconnect triggered after " +
+                                  std::to_string(fails) + " failed probes", LogLevel::ERR);
+                }
+            }
+        } else if (afterFirst && !prev && allOk) {
+            // RESTORED — reset probe counter
+            consecutiveFailures_.store(0);
+            Logger::write("Network connection RESTORED (probes reset)", LogLevel::ERR);
+        } else if (afterFirst && !allOk) {
+            // Already disconnected — continue counting consecutive failures
+            int fails = consecutiveFailures_.fetch_add(1) + 1;
+
+            if (probeEnabled_ && fails < maxProbes_) {
+                Logger::write("Network connection LOST (probe " + std::to_string(fails) +
+                              "/" + std::to_string(maxProbes_) + ")", LogLevel::ERR);
+            } else {
+                Logger::write("Network connection LOST (probe " + std::to_string(fails) +
+                              "/" + std::to_string(maxProbes_) + ")", LogLevel::ERR);
+                if (cancelOnDisconnect_ && !cancelOnDisconnect_->load()) {
+                    cancelOnDisconnect_->store(true);
+                    Logger::write("[NetworkMonitor] cancelOnDisconnect triggered after " +
+                                  std::to_string(fails) + " failed probes", LogLevel::ERR);
+                }
+                // Stop counting after cancel triggered to avoid log spam
+                consecutiveFailures_.store(maxProbes_);
+            }
+        } else if (!afterFirst && !allOk) {
+            // First check failed before any connection was established
+            int fails = consecutiveFailures_.fetch_add(1) + 1;
+            if (probeEnabled_ && fails < maxProbes_) {
+                Logger::write("Network connection check failed (probe " + std::to_string(fails) +
+                              "/" + std::to_string(maxProbes_) + ")", LogLevel::ERR);
+            } else {
+                Logger::write("Network connection check failed (probe " + std::to_string(fails) +
+                              "/" + std::to_string(maxProbes_) + ")", LogLevel::ERR);
+                if (cancelOnDisconnect_) {
+                    cancelOnDisconnect_->store(true);
+                }
             }
         }
 

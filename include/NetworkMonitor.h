@@ -27,6 +27,18 @@ bool IsConnected() const;
     /// to trigger cancellation in dependent operations (e.g. batch testing).
     void setCancelOnDisconnect(std::atomic<bool>* flag) { cancelOnDisconnect_ = flag; }
 
+    /// Configure probe-on-disconnect behavior: wait for N consecutive failed
+    /// checks before setting cancelOnDisconnect_ instead of acting on the first failure.
+    /// If maxProbes > 0: use probe mode (grace window before cancel).
+    /// If maxProbes == 0: immediate cancel on disconnect (legacy behavior).
+    void setProbeOnDisconnect(int maxProbes) {
+        maxProbes_ = maxProbes;
+        probeEnabled_ = (maxProbes > 0);
+    }
+
+    int getConsecutiveFailures() const { return consecutiveFailures_.load(); }
+    void resetProbeCount() { consecutiveFailures_ = 0; }
+
 private:
     void ThreadLoop();
     bool CheckURL(const std::string& url, int timeoutMs);
@@ -40,4 +52,9 @@ private:
     std::atomic<bool> firstCheckDone_{false};
     std::atomic<bool>* cancelOnDisconnect_{nullptr};
     std::thread thread_;
+
+    // Probe-on-disconnect state
+    bool probeEnabled_{true};
+    int  maxProbes_{3};
+    std::atomic<int> consecutiveFailures_{0};
 };

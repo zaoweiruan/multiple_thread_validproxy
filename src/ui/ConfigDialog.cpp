@@ -51,6 +51,22 @@ ConfigDialog::ConfigDialog(wxWindow* parent, const config::AppConfig& cfg)
     propGrid_->Append(new wxIntProperty(L"起始端口", "xray_start_port", cfg.xray_start_port));
     propGrid_->Append(new wxIntProperty(L"API 端口", "xray_api_port", cfg.xray_api_port));
 
+    // --- 代理配置 ---
+    propGrid_->Append(new wxPropertyCategory(L"代理配置"));
+    propGrid_->Append(new wxIntProperty(L"SOCKS 监听端口", "proxy_socks_base_port", cfg.proxy.socks_base_port));
+    {
+        wxFileProperty* assetDirProp = new wxFileProperty(L"XRAY_LOCATION_ASSET 目录", "proxy_xray_asset_dir", cfg.proxy.xray_asset_dir);
+        propGrid_->Append(assetDirProp);
+        propGrid_->SetPropertyAttribute("proxy_xray_asset_dir", wxPG_FILE_SHOW_FULL_PATH, (long)1);
+        propGrid_->SetPropertyAttribute("proxy_xray_asset_dir", wxPG_FILE_DIALOG_TITLE, L"选择 Xray 资源目录");
+    }
+    {
+        wxFileProperty* tmplProp = new wxFileProperty(L"启动配置模板", "proxy_template_config_path", cfg.proxy.template_config_path);
+        propGrid_->Append(tmplProp);
+        propGrid_->SetPropertyAttribute("proxy_template_config_path", wxPG_FILE_SHOW_FULL_PATH, (long)1);
+        propGrid_->SetPropertyAttribute("proxy_template_config_path", wxPG_FILE_DIALOG_TITLE, L"选择 Xray 启动配置模板文件");
+    }
+
     // --- 测试 配置 ---
     propGrid_->Append(new wxPropertyCategory(L"测试"));
     propGrid_->Append(new wxStringProperty(L"测试 URL", "test_url", cfg.test_url));
@@ -72,6 +88,8 @@ ConfigDialog::ConfigDialog(wxWindow* parent, const config::AppConfig& cfg)
     propGrid_->Append(new wxStringProperty(L"检测URL(逗号分隔)", "network_monitor_checkUrls", ""));
     propGrid_->Append(new wxIntProperty(L"检测间隔(毫秒)", "network_monitor_interval", cfg.network_monitor.checkIntervalMs));
     propGrid_->Append(new wxIntProperty(L"检测超时(毫秒)", "network_monitor_timeout", cfg.network_monitor.checkTimeoutMs));
+    propGrid_->Append(new wxIntProperty(L"最大探测次数", "network_monitor_maxProbes", cfg.network_monitor.maxProbes));
+    // Note: maxProbes=0 means immediate cancel (legacy behavior), >0 enables probe grace window
 
     // --- 订阅 配置 ---
     propGrid_->Append(new wxPropertyCategory(L"订阅"));
@@ -169,6 +187,7 @@ void ConfigDialog::loadConfig(const config::AppConfig& cfg) {
     }
     propGrid_->SetPropertyValue("network_monitor_interval", cfg.network_monitor.checkIntervalMs);
     propGrid_->SetPropertyValue("network_monitor_timeout", cfg.network_monitor.checkTimeoutMs);
+    propGrid_->SetPropertyValue("network_monitor_maxProbes", cfg.network_monitor.maxProbes);
     // Set accelerator_url
     propGrid_->SetPropertyValue("accelerator_url", wxString(cfg.accelerator_url));
     // Set update_methods checkboxes
@@ -200,6 +219,10 @@ void ConfigDialog::loadConfig(const config::AppConfig& cfg) {
     stepOrder_ = cfg.auto_task.steps;
     refreshAutoTaskChainDisplay();
 
+    // Proxy fields
+    propGrid_->SetPropertyValue("proxy_socks_base_port", cfg.proxy.socks_base_port);
+    propGrid_->SetPropertyValue("proxy_xray_asset_dir", wxString(cfg.proxy.xray_asset_dir));
+    propGrid_->SetPropertyValue("proxy_template_config_path", wxString(cfg.proxy.template_config_path));
 }
 
 bool ConfigDialog::saveConfig() {
@@ -239,6 +262,9 @@ bool ConfigDialog::saveConfig() {
     }
     editedConfig_.network_monitor.checkIntervalMs = propGrid_->GetPropertyValueAsInt("network_monitor_interval");
     editedConfig_.network_monitor.checkTimeoutMs = propGrid_->GetPropertyValueAsInt("network_monitor_timeout");
+    editedConfig_.network_monitor.maxProbes = propGrid_->GetPropertyValueAsInt("network_monitor_maxProbes");
+    // Clamp maxProbes to valid range
+    if (editedConfig_.network_monitor.maxProbes < 0) editedConfig_.network_monitor.maxProbes = 0;
 
     // Subscription fields
     {
@@ -292,6 +318,11 @@ bool ConfigDialog::saveConfig() {
     editedConfig_.notification_enabled = propGrid_->GetPropertyValueAsBool("notification_enabled");
     editedConfig_.notification_on_update = propGrid_->GetPropertyValueAsBool("notification_on_update");
     editedConfig_.notification_on_test = propGrid_->GetPropertyValueAsBool("notification_on_test");
+
+    // Proxy fields
+    editedConfig_.proxy.socks_base_port = propGrid_->GetPropertyValueAsInt("proxy_socks_base_port");
+    editedConfig_.proxy.xray_asset_dir = propGrid_->GetPropertyValueAsString("proxy_xray_asset_dir").ToStdString();
+    editedConfig_.proxy.template_config_path = propGrid_->GetPropertyValueAsString("proxy_template_config_path").ToStdString();
 
     // AutoTask fields
     editedConfig_.auto_task.steps = stepOrder_;
@@ -390,6 +421,14 @@ bool ConfigDialog::validateConfig() {
         wxMessageBox("Subscription timeout must be between 1000 and 120000 ms", "Validation Error", wxOK | wxICON_ERROR);
         return false;
     }
+    // Validate template config path: must be non-empty and file must exist if configured
+    if (!editedConfig_.proxy.template_config_path.empty() &&
+        !std::filesystem::exists(editedConfig_.proxy.template_config_path)) {
+        wxMessageBox("启动配置模板文件不存在。\n\n路径:\n" + editedConfig_.proxy.template_config_path,
+                     "验证错误", wxOK | wxICON_ERROR);
+        return false;
+    }
+
     // Network monitor validation
     if (editedConfig_.network_monitor.checkIntervalMs < 5000 || editedConfig_.network_monitor.checkIntervalMs > 300000) {
         wxMessageBox("Network monitor interval must be between 5000 and 300000 ms", "Validation Error", wxOK | wxICON_ERROR);

@@ -1,8 +1,7 @@
-updated: 2026-06-25
+updated: 2026-07-01
 title: "docs: project document index"
 type: meta
 status: maintained
-updated: 2026-06-25
 ---
 
 # Project Document Index
@@ -28,10 +27,10 @@ updated: 2026-06-25
 | [设计规范](#5-设计规范) | 9 | `docs/design/` |
 | [需求与脑暴](#6-需求与脑暴) | 4 | `docs/superpowers/brainstorm/` |
 | [技术方案](#7-技术方案) | 6 | `docs/superpowers/specs/` |
-| [规范化设计](#75-规范化设计) | 4 | `docs/specs/` |
+| [规范化设计](#75-规范化设计) | 5 | `docs/specs/` |
 | [实施计划](#8-实施计划) | 54 | `docs/plans/` |
-| [分析报告](#9-分析报告) | 7 | `docs/reports/` |
-| [Bug 修复记录](#91-bug-修复记录) | 14 | `docs/bugfix/` |
+| [分析报告](#9-分析报告) | 8 | `docs/reports/` |
+| [Bug 修复记录](#91-bug-修复记录) | 17 | `docs/bugfix/` |
 | [测试报告](#10-测试报告) | 1 | `docs/test/` |
 | [长期记忆](#13-长期记忆) | 1 | `docs/project-knowledge.md` (6.2 KB) |
 
@@ -152,6 +151,7 @@ updated: 2026-06-25
 |---|------|------|------|
 | 1 | [`docs/specs/2026-06-03-subscription-timeout-config.md`](./specs/2026-06-03-subscription-timeout-config.md) | **订阅超时配置化** — 将连接超时和请求超时纳入 config.json 配置管理 | 78 lines |
 | 2 | [`docs/specs/2026-06-03-network-field-improvements.md`](./specs/2026-06-03-network-field-improvements.md) | **network 字段处理改进** — splithttp→xhttp 映射，无效值默认 tcp | 69 lines |
+| 3 | [`docs/specs/2026-06-25-Spec-NetworkMonitor-ProbeOnDisconnect-v1.0.md`](./specs/2026-06-25-Spec-NetworkMonitor-ProbeOnDisconnect-v1.0.md) | **NetworkMonitor 断连探测机制** — 断连后暂停测试，按配置阈值连续探测 N 次后再决定是否终止 |  |
 | 3 | [`docs/specs/2026-06-03-ui-improvements.md`](./specs/2026-06-03-ui-improvements.md) | **UI 体验改进** — 弹窗居中 + ProxyDetail 可选择拷贝 | 54 lines |
 | 4 | [`docs/specs/2026-06-03-proxy-context-menu-disabled.md`](./specs/2026-06-03-proxy-context-menu-disabled.md) | **批量操作时禁止右键菜单** — 防止干预进行中的操作 | 43 lines |
 | 5 | [`docs/specs/2026-06-11-Spec-ProxyFinder-findWorkingProxy-bug.md`](./specs/2026-06-11-Spec-ProxyFinder-findWorkingProxy-bug.md) | **ProxyFinder::findWorkingProxy Bug Fix** — 返回端口时未重新注入代理导致代理不可用 | draft |
@@ -159,6 +159,7 @@ updated: 2026-06-25
 | 7 | [`docs/specs/2026-06-17-Spec-Code-Refactoring-Review-v1.0.md`](./specs/2026-06-17-Spec-Code-Refactoring-Review-v1.0.md) | **Code Refactoring Phase 1** — Dead code removal, redundant includes cleanup, duplicated logic merging | draft |
 | 8 | [`docs/specs/2026-06-18-Spec-SubitemUpdaterV2-Decomposition-v1.0.md`](./specs/2026-06-18-Spec-SubitemUpdaterV2-Decomposition-v1.0.md) | **SubitemUpdaterV2 分解** — 提取 SubscriptionParser/Deduplicator/Importer/SubscriptionUpdater 四个类 | completed |
 | 9 | [`docs/specs/2026-06-18-Spec-Responsibility-Decomposition-v1.0.md`](./specs/2026-06-18-Spec-Responsibility-Decomposition-v1.0.md) | **过度职责分解方案** — ProxyBatchTester/AppController/ShareLink/ConfigGenerator/ConfigReader 的五阶段拆分方案 | ✅ completed |
+| 10 | [`docs/specs/2026-07-01-Spec-PortDetectionRefactor-v1.0.md`](./specs/2026-07-01-Spec-PortDetectionRefactor-v1.0.md) | **端口探测重构方案** — 消除 `PortManager::isInUse()` 与 `utils::isPortAvailable()` 的重复，修复 `bind()` 假阳性，统一使用 connect+select 检测 | draft |
 
 ---
 
@@ -181,7 +182,8 @@ updated: 2026-06-25
 
 | 日期 | 编号 | 文件 | 类型 | 说明 |
 |------|------|------|------|------|
-| 2026-06-18 |  | [`./plans/2026-06-18-Plan-Decomposition-Five-Phase-Implementation-v1.0.md`](./plans/2026-06-18-Plan-Decomposition-Five-Phase-Implementation-v1.0.md) | refactor ✅ | **五阶段职责分解实施计划** — 70+ 新文件，逐任务拆解 ConfigReader/ShareLink/ConfigGenerator/ProxyBatchTester/AppController — ✅ ALL COMPLETED (2026-06-22) |
+| 2026-06-26 |  | [`./superpowers/plans/2026-06-26-batch-write-transaction-fix.md`](./superpowers/plans/2026-06-26-batch-write-transaction-fix.md) | fix | **批量写入事务安全修复** — syncDatabases()/deleteBySubId()/updateTestResultBatch() 事务包装，防止部分写入导致数据不一致 |
+|| 2026-06-18 |  | [`./plans/2026-06-18-Plan-Decomposition-Five-Phase-Implementation-v1.0.md`](./plans/2026-06-18-Plan-Decomposition-Five-Phase-Implementation-v1.0.md) | refactor ✅ | **五阶段职责分解实施计划** — 70+ 新文件，逐任务拆解 ConfigReader/ShareLink/ConfigGenerator/ProxyBatchTester/AppController — ✅ ALL COMPLETED (2026-06-22) |
 | 2026-06-15 |  | [`./superpowers/plans/2026-06-15-NetworkMonitor-batch-network-abort-on-disconnect.md`](./superpowers/plans/2026-06-15-NetworkMonitor-batch-network-abort-on-disconnect.md) | feat draft | **NetworkMonitor 批量网络中断中止** — 12 tasks: NetworkMonitor class, ConfigReader, ProxyBatchTester/SubitemUpdaterV2/AutoTaskManager/AppController integration, MainFrame UI, unit tests |
 | 2026-06-16 |  | [`./superpowers/plans/2026-06-16-Plan-NetworkMonitor-enabled-toggle-v1.0.md`](./superpowers/plans/2026-06-16-Plan-NetworkMonitor-enabled-toggle-v1.0.md) | feat draft | **NetworkMonitor 启用开关** — 5 tasks: enabled flag, IsConnected logic, AppController, MainFrame status bar, ConfigDialog |
 | In Progress | 14-002 | [`2026-05-14-002-ui-implementation-plan.md`](./plans/2026-05-14-002-ui-implementation-plan.md) | feat | **UI 完整实现** — 11 个 U# 单元含 wxWidgets 集成、事件系统、AppController、MainFrame、6 个面板(XAUI)、AUI 布局；分 4 Phase 执行 |
@@ -278,6 +280,7 @@ updated: 2026-06-25
  | 5 | [`docs/reports/2026-05-19-ui-close-hang-fix-report.md`](./reports/2026-05-19-ui-close-hang-fix-report.md) | **UI 关闭挂起修复报告** — AppController/XrayInstance 析构竞态条件 + 进程句柄 BUG | 3.2 KB |
 | 6 | [`docs/reports/2026-06-01-diag-log-level-adjustment.md`](./reports/2026-06-01-diag-log-level-adjustment.md) | **诊断日志级别调整报告** — 10 处 `[DIAG]` 日志从 `INFO`/`DEBUG` 降为 `TRACE` | 0.7 KB |
 | 7 | [`docs/reports/2026-06-11-Debug-Tools-Assessment.md`](./reports/2026-06-11-Debug-Tools-Assessment.md) | **C++ 调试工具评估报告** — 日志系统、单元测试现状分析，AddressSanitizer/静态分析缺失评估 | 2.1 KB |
+| 8 | [`docs/reports/2026-06-26-Report-NetworkMonitorProbeFlow.md`](./reports/2026-06-26-Report-NetworkMonitorProbeFlow.md) | **网络探测逻辑分析报告** — NetworkMonitor + ProxyBatchTester 生产者-消费者双线程协作机制、ThreadLoop 探测流程、状态机、通信机制 | 5.2 KB |
 
 ---
 
@@ -300,6 +303,8 @@ updated: 2026-06-25
 | 13 | [`docs/bugfix/2026-06-16-Bugfix-Review-AutoTask-CLI-StateFile-v1.0.md`](./bugfix/2026-06-16-Bugfix-Review-AutoTask-CLI-StateFile-v1.0.md) | **AutoTask CLI cancel, state file path, config SQL threshold** — CLI Ctrl+C silent ignore, double-nested worker/worker/ path, SQL 99% proxy pool reduction, unused icons | 177 lines |
 | 14 | [`docs/bugfix/2026-06-16-Bugfix-Dedup-NestedTransaction-v1.0.md`](./bugfix/2026-06-16-Bugfix-Dedup-NestedTransaction-v1.0.md) | **Nested SQLite transaction error in deduplicateConfigErrorPhase** — deduplicate() starts transaction, deleteByIndexId() tried nested BEGIN, added deleteByIndexIdNoTx() | 24 lines |
 | 15 | [`docs/bugfix/2026-06-25-Bugfix-NetworkDisconnect-CancelChain-v1.0.md`](./bugfix/2026-06-25-Bugfix-NetworkDisconnect-CancelChain-v1.0.md) | **Network disconnect does not stop batch testing** — NetworkMonitor detects LOST but has no way to signal ProxyBatchTester; added setCancelOnDisconnect() to wire cancellation chain | 65 lines |
+| 16 | [`docs/bugfix/2026-06-26-Bugfix-SubitemUpdaterV2-MissingNetMon-v1.0.md`](./bugfix/2026-06-26-Bugfix-SubitemUpdaterV2-MissingNetMon-v1.0.md) | **SubitemUpdaterV2 未传入 netMon_ 导致网络断开时静默绕过** — doUpdateSubscription/doUpdateAllSubscriptions 构建 SubitemUpdaterV2 时未传第7参数 netMon，6处 IsConnected() 空指针短路永不触发 | — |
+| 17 | [`docs/bugfix/2026-07-01-Bugfix-isPortAvailable-WildcardListener-v1.0.md`](./bugfix/2026-07-01-Bugfix-isPortAvailable-WildcardListener-v1.0.md) | **isPortAvailable() 对 0.0.0.0 通配监听者返回假阳性** — bind(INADDR_LOOPBACK) 在 Windows 下与已有 0.0.0.0:port 监听共存，改为非阻塞 connect(127.0.0.1:port) + select(200ms) | — |
 
 ---
 
@@ -368,3 +373,4 @@ updated: 2026-06-25
 ---
 
 *最后更新: 2026-06-18 (v2) | 维护者: Kilo AI*
+

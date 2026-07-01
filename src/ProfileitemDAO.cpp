@@ -181,19 +181,42 @@ bool ProfileitemDAO::deleteByIndexIdNoTx(const std::string& indexId) {
 }
 
 bool ProfileitemDAO::deleteBySubId(const std::string& subId) {
+    char* errMsg = nullptr;
+    
+    if (sqlite3_exec(db_, "BEGIN TRANSACTION;", nullptr, nullptr, &errMsg) != SQLITE_OK) {
+        Logger::write("deleteBySubId: BEGIN failed: " + std::string(errMsg ? errMsg : "unknown"), LogLevel::ERR);
+        sqlite3_free(errMsg);
+        return false;
+    }
+    
+    bool ok = true;
     const char* sql = "DELETE FROM ProfileItem WHERE Subid = ?;";
     sqlite3_stmt* stmt = nullptr;
     if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
-        Logger::write("deleteBySubId prepare error: " + std::string(sqlite3_errmsg(db_)), LogLevel::ERR);
+        Logger::write("deleteBySubId: prepare error: " + std::string(sqlite3_errmsg(db_)), LogLevel::ERR);
+        ok = false;
+    } else {
+        sqlite3_bind_text(stmt, 1, subId.c_str(), -1, SQLITE_TRANSIENT);
+        int rc = sqlite3_step(stmt);
+        sqlite3_finalize(stmt);
+        if (rc != SQLITE_DONE) {
+            Logger::write("deleteBySubId: step error: " + std::string(sqlite3_errmsg(db_)), LogLevel::ERR);
+            ok = false;
+        }
+    }
+    
+    if (!ok) {
+        sqlite3_exec(db_, "ROLLBACK;", nullptr, nullptr, nullptr);
         return false;
     }
-    sqlite3_bind_text(stmt, 1, subId.c_str(), -1, SQLITE_TRANSIENT);
-    int rc = sqlite3_step(stmt);
-    sqlite3_finalize(stmt);
-    if (rc != SQLITE_DONE) {
-        Logger::write("deleteBySubId step error: " + std::string(sqlite3_errmsg(db_)), LogLevel::ERR);
+    
+    if (sqlite3_exec(db_, "COMMIT;", nullptr, nullptr, &errMsg) != SQLITE_OK) {
+        Logger::write("deleteBySubId: COMMIT failed: " + std::string(errMsg ? errMsg : "unknown"), LogLevel::ERR);
+        sqlite3_free(errMsg);
+        sqlite3_exec(db_, "ROLLBACK;", nullptr, nullptr, nullptr);
         return false;
     }
+    
     return sqlite3_changes(db_) > 0;
   }
 

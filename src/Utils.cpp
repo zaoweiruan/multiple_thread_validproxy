@@ -1,3 +1,5 @@
+#include <winsock2.h>
+#include <ws2tcpip.h>
 #include "Utils.h"
 #include <windows.h>
 #include <filesystem>
@@ -145,6 +147,94 @@ bool isValidUrlFormat(const std::string& url) {
                  return true;
              }
          }
-         return valid.count(lower) > 0;
-     }
+        return valid.count(lower) > 0;
+    }
+
+    bool isPortAvailable(int port) {
+        static bool wsaStarted = false;
+        if (!wsaStarted) {
+            WSADATA wsaData;
+            if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
+                return false;
+            }
+            wsaStarted = true;
+        }
+
+        // Use connect() instead of bind() because Windows allows overlapping address
+        // bindings (e.g., xray on 0.0.0.0:10808 vs our check on 127.0.0.1:10808).
+        // connect() to 127.0.0.1 detects any listener on that port regardless of
+        // the address the server bound to.
+        SOCKET sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+        if (sock == INVALID_SOCKET) {
+            return false;
+        }
+
+        // Non-blocking so we can control connect() timeout
+        u_long nonblocking = 1;
+        ioctlsocket(sock, FIONBIO, &nonblocking);
+
+        sockaddr_in addr = {};
+        addr.sin_family = AF_INET;
+        addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        addr.sin_port = htons(static_cast<u_short>(port));
+
+        int result = connect(sock, reinterpret_cast<sockaddr*>(&addr), sizeof(addr));
+
+        // Connected immediately — port is occupied
+        if (result == 0) {
+            closesocket(sock);
+            return false;
+        }
+
+        int err = WSAGetLastError();
+
+        // Immediately refused — nothing is listening
+        if (err == WSAECONNREFUSED) {
+            closesocket(sock);
+            return true;
+        }
+
+        // Connection in progress — wait with short timeout
+        if (err == WSAEWOULDBLOCK) {
+            fd_set writeSet;
+            FD_ZERO(&writeSet);
+            FD_SET(sock, &writeSet);
+
+            timeval tv;
+            tv.tv_sec = 0;
+            tv.tv_usec = 200000;  // 200 ms
+
+            int selResult = select(0, nullptr, &writeSet, nullptr, &tv);
+
+            if (selResult == 1) {
+                // Socket became writable — check if connected or refused
+                int optval = 0;
+                socklen_t optlen = sizeof(optval);
+                getsockopt(sock, SOL_SOCKET, SO_ERROR,
+                           reinterpret_cast<char*>(&optval), &optlen);
+                bool occupied = (optval == 0);
+                closesocket(sock);
+                return !occupied;
+            }
+
+            // Timeout or error — assume free
+            closesocket(sock);
+            return true;
+        }
+
+        // Any other error — assume available
+        closesocket(sock);
+        return true;
+    }
+
+    int findAvailablePort(int startPort, int maxAttempts) {
+        for (int i = 0; i < maxAttempts; ++i) {
+            int port = startPort + i;
+            if (port > 65535) break;
+            if (isPortAvailable(port)) {
+                return port;
+            }
+        }
+        return -1;
+    }
  }

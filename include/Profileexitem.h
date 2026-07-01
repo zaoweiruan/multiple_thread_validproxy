@@ -79,6 +79,7 @@ public:
   static void migrateTable(sqlite3* db);
   std::vector<ProfileExItem> getAll();
   bool updateTestResult(const std::string& indexid, long latencyMs, bool success, const std::string& curlMsg, sqlite3* db = nullptr);
+  bool updateTestResultBatch(const std::vector<std::tuple<std::string, long, bool, std::string>>& results, sqlite3* db = nullptr);
 };
 
 } // namespace models

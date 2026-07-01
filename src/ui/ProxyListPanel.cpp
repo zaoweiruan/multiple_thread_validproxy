@@ -2,6 +2,7 @@
 #include "AppController.h"
 #include "Events.h"
 #include "Logger.h"
+#include "Utils.h"
 
 #include <wx/sizer.h>
 #include <wx/dataview.h>
@@ -10,8 +11,9 @@
 
 // Context menu command IDs — must be unique to avoid wxID_ANY collisions
 enum {
-    ID_CONTEXT_TEST_PROXY   = wxID_HIGHEST + 400,
-    ID_CONTEXT_EXPORT_SHARE = wxID_HIGHEST + 401,
+    ID_CONTEXT_TEST_PROXY    = wxID_HIGHEST + 400,
+    ID_CONTEXT_EXPORT_SHARE  = wxID_HIGHEST + 401,
+    ID_CONTEXT_START_PROXY   = wxID_HIGHEST + 402,
 };
 
 // -------------------------------------------------------------------
@@ -19,6 +21,7 @@ wxBEGIN_EVENT_TABLE(ProxyListPanel, wxPanel)
     EVT_DATAVIEW_ITEM_CONTEXT_MENU(wxID_ANY, ProxyListPanel::onContextMenu)
     EVT_MENU(ID_CONTEXT_TEST_PROXY, ProxyListPanel::onTestProxy)
     EVT_MENU(ID_CONTEXT_EXPORT_SHARE, ProxyListPanel::onExportShareLink)
+    EVT_MENU(ID_CONTEXT_START_PROXY, ProxyListPanel::onStartProxy)
     EVT_DATAVIEW_SELECTION_CHANGED(wxID_ANY, ProxyListPanel::onSelectionChanged)
 wxEND_EVENT_TABLE()
 
@@ -58,6 +61,7 @@ ProxyListPanel::ProxyListPanel(wxWindow* parent, AppController* controller,
 
     // Bind custom events for completion handling
     Bind(wxEVT_PROXY_TEST_PROGRESS, &ProxyListPanel::onProxyTestProgress, this);
+    Bind(wxEVT_STANDALONE_PROXY, &ProxyListPanel::onStandaloneProxyEvent, this);
     Bind(wxEVT_DATAVIEW_COLUMN_HEADER_CLICK, &ProxyListPanel::onColumnHeaderClick, this);
 }
 
@@ -204,9 +208,20 @@ void ProxyListPanel::onContextMenu(wxDataViewEvent& event) {
         return;
     }
 
+    // Determine if selected proxy already has a standalone instance running
+    wxDataViewItem selItem = listCtrl_->GetSelection();
+    std::string selIndexId;
+    if (selItem.IsOk()) {
+        unsigned int viewRow = model_->GetRow(selItem);
+        if (viewRow != static_cast<unsigned int>(-1)) {
+            selIndexId = model_->getIndexIdAtRow(viewRow);
+        }
+    }
+
     wxMenu menu;
     menu.Append(ID_CONTEXT_TEST_PROXY, "测试此代理");
     menu.Append(ID_CONTEXT_EXPORT_SHARE, "有效代理分享");
+    menu.Append(ID_CONTEXT_START_PROXY, "开启代理");
     PopupMenu(&menu);
     event.Skip();
 }
@@ -259,6 +274,73 @@ void ProxyListPanel::onExportShareLink(wxCommandEvent& event) {
     }
     wxMessageBox(msg, "有效代理分享", wxOK | (ok ? wxICON_INFORMATION : wxICON_WARNING));
     (void)event;
+}
+
+// -------------------------------------------------------------------
+void ProxyListPanel::onStartProxy(wxCommandEvent& event) {
+    wxDataViewItem item = listCtrl_->GetSelection();
+    if (!item.IsOk()) return;
+
+    unsigned int viewRow = model_->GetRow(item);
+    if (viewRow == static_cast<unsigned int>(-1)) return;
+
+    std::string indexId = model_->getIndexIdAtRow(viewRow);
+    if (indexId.empty()) return;
+
+    if (!controller_) return;
+
+    // Check if the configured SOCKS port is available
+    config::AppConfig cfg = controller_->getConfig();
+    int desiredPort = cfg.proxy.socks_base_port;
+    Logger::write("[UI] onStartProxy: checking desiredPort=" + std::to_string(desiredPort)
+                  + " isPortAvailable=" + (utils::isPortAvailable(desiredPort) ? "true" : "false"),
+                  LogLevel::INFO);
+    int actualPort = desiredPort;
+
+    if (!utils::isPortAvailable(desiredPort)) {
+        // Port occupied — find the next free port
+        int freePort = utils::findAvailablePort(desiredPort + 1);
+        if (freePort < 0) {
+            wxMessageBox(wxString::Format("端口 %d 已被占用，且无法找到其他空闲端口。", desiredPort),
+                         "端口检查", wxOK | wxICON_WARNING);
+            Logger::write("[UI] No free port found for standalone proxy (base port " + std::to_string(desiredPort)
+                          + " occupied)", LogLevel::ERR);
+            return;
+        }
+        // Ask user whether to use the alternate port
+        wxString msg = wxString::Format("端口 %d 已被占用，是否使用端口 %d 开启代理？", desiredPort, freePort);
+        int answer = wxMessageBox(msg, "端口占用提示", wxYES_NO | wxICON_QUESTION | wxNO_DEFAULT);
+        if (answer != wxYES) {
+            Logger::write("[UI] User declined alternate port " + std::to_string(freePort)
+                          + " for standalone proxy", LogLevel::INFO);
+            return;
+        }
+        actualPort = freePort;
+        Logger::write("[UI] Port " + std::to_string(desiredPort) + " occupied, using alternate port "
+                      + std::to_string(freePort) + " for standalone proxy", LogLevel::INFO);
+    }
+
+    // Start the standalone proxy with the resolved port
+    bool ok = controller_->startStandaloneProxy(indexId, actualPort);
+    if (ok) {
+        Logger::write("[UI] Standalone proxy started: " + indexId
+                      + " on SOCKS5 127.0.0.1:" + std::to_string(actualPort),
+                      LogLevel::REPORT);
+    } else {
+        Logger::write("[UI] Failed to start standalone proxy: " + indexId, LogLevel::ERR);
+    }
+    (void)event;
+}
+
+// -------------------------------------------------------------------
+void ProxyListPanel::onStandaloneProxyEvent(StandaloneProxyEvent& event) {
+    if (event.isStarted()) {
+        Logger::write("[UI] Standalone proxy started: " + event.getIndexId()
+                      + " on port " + std::to_string(event.getSocksPort()), LogLevel::REPORT);
+    } else {
+        Logger::write("[UI] Standalone proxy stopped: " + event.getIndexId(), LogLevel::REPORT);
+    }
+    event.Skip();
 }
 
 // -------------------------------------------------------------------
