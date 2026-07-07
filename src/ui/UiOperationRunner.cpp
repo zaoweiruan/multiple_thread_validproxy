@@ -1,4 +1,5 @@
 #include "ui/UiOperationRunner.h"
+#include "ui/ScopeGuard.h"
 #include "Logger.h"
 #include <future>
 #include <chrono>
@@ -32,8 +33,7 @@ bool UiOperationRunner::runAsync(std::function<void()> func) {
     cancelRequested_ = false;
     isRunning_ = true;
     workerThread_ = std::thread([this, func]() {
-        struct ResetGuard { std::atomic<bool>& f; ~ResetGuard() { f = false; } };
-        ResetGuard _rg{isRunning_};
+        ScopeGuard<std::atomic<bool>> _guard{isRunning_};
         func();
     });
     return true;

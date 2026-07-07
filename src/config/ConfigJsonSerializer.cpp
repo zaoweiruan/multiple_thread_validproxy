@@ -12,9 +12,8 @@ boost::json::object ConfigJsonSerializer::serialize(const AppConfig& config) con
     if (!config.sql_by_subid.empty()) dbObj["sql_by_subid"] = config.sql_by_subid;
     root["database"] = dbObj;
 
-    // xray
+    // xray (worker thread config - executable moved to proxy section)
     boost::json::object xrayObj;
-    xrayObj["executable"] = config.xray_executable;
     xrayObj["workers"] = config.xray_workers;
     xrayObj["start_port"] = config.xray_start_port;
     xrayObj["api_port"] = config.xray_api_port;
@@ -99,11 +98,24 @@ boost::json::object ConfigJsonSerializer::serialize(const AppConfig& config) con
     // proxy
     boost::json::object proxyObj;
     proxyObj["socks_base_port"] = config.proxy.socks_base_port;
+    if (!config.proxy.xray_executable.empty()) {
+        proxyObj["xray_executable"] = config.proxy.xray_executable;
+    }
+    proxyObj["use_singbox"] = config.proxy.use_singbox;
     if (!config.proxy.xray_asset_dir.empty()) {
         proxyObj["xray_asset_dir"] = config.proxy.xray_asset_dir;
     }
     if (!config.proxy.template_config_path.empty()) {
         proxyObj["template_config_path"] = config.proxy.template_config_path;
+    }
+    if (!config.proxy.singbox_executable.empty()) {
+        proxyObj["singbox_executable"] = config.proxy.singbox_executable;
+    }
+    if (!config.proxy.singbox_asset_dir.empty()) {
+        proxyObj["singbox_asset_dir"] = config.proxy.singbox_asset_dir;
+    }
+    if (!config.proxy.singbox_template_config_path.empty()) {
+        proxyObj["singbox_template_config_path"] = config.proxy.singbox_template_config_path;
     }
     root["proxy"] = proxyObj;
 

@@ -47,3 +47,5 @@
 | 2026-07-01 | **Sync 目标库新订阅 enabled 默认 0** — migrateSubscription() 直接复制源库 enabled 状态，目标库新订阅应默认禁用 | `docs/bugfix/2026-07-01-Bugfix-Sync-Subscription-EnabledDefault-v1.0.md` |
 | 2026-07-01 | **SubscriptionPanel/ProxyListPanel 双击无反应** — MSW wxDataViewMainWindow 缺失 CS_DBLCLKS，使用 selection-change-based 双击检测绕过限制 | `docs/bugfix/2026-07-01-Bugfix-DoubleClick-V1.0.md` |
 | 2026-07-01 | **对话框屏幕居中** — 6 处 wxDialog/wxMessageDialog 添加 CentreOnScreen() 调用 | `docs/specs/2026-07-01-Spec-DialogCentering-v1.0.md` |
+| 2026-07-02 | **Sing-box Support Implementation** — Design spec created; add sing-box as alternative proxy core to Xray with config fields, UI integration, outbound format mapping | `docs/specs/2026-07-02-Spec-Singbox-Support-v1.0.md` |
+| 2026-07-03 | **echconfiglist 双格式解析** — 区分 Base64 ECH 配置与 DNS URL 格式，生成正确 sing-box ech.config；计划文档已创建 | `docs/superpowers/plans/2026-07-03-echconfiglist-dual-format-support.md` |

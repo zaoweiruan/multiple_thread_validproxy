@@ -28,7 +28,7 @@ bool ProxyTestService::runAllProxies(std::atomic<bool>* cancel) {
 }
 
 TestResult ProxyTestService::findFirstProxy(std::atomic<bool>* cancel) {
-    std::string xrayPath = config_.xray_executable;
+    std::string xrayPath = config_.proxy.xray_executable;
     std::string configDir = utils::getExecutableDir() + "/config";
     XrayManager* manager = XrayManager::getInstance(xrayPath, configDir, config_.xray_workers);
     ProxyFinder finder(db_, manager, xrayPath, config_.test_url, "", config_.test_timeout_ms);
@@ -37,7 +37,7 @@ TestResult ProxyTestService::findFirstProxy(std::atomic<bool>* cancel) {
 }
 
 TestResult ProxyTestService::findBestProxy(std::atomic<bool>* cancel) {
-    std::string xrayPath = config_.xray_executable;
+    std::string xrayPath = config_.proxy.xray_executable;
     std::string configDir = utils::getExecutableDir() + "/config";
     XrayManager* manager = XrayManager::getInstance(xrayPath, configDir, config_.xray_workers);
     ProxyFinder finder(db_, manager, xrayPath, config_.test_url, "", config_.test_timeout_ms);

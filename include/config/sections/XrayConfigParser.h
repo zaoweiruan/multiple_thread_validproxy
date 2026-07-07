@@ -19,14 +19,6 @@ inline void XrayConfigParser::parse(const boost::json::value& root, AppConfig& c
     const boost::json::object& obj = root.as_object();
     if (obj.contains("xray") && obj.at("xray").is_object()) {
         const boost::json::object& xray = obj.at("xray").as_object();
-        if (xray.contains("executable") && xray.at("executable").is_string()) {
-            std::string rawPath = xray.at("executable").as_string().c_str();
-            std::filesystem::path p(rawPath);
-            if (!p.is_absolute()) p = std::filesystem::path(exeDir) / p;
-            config.xray_executable = p.string();
-        } else if (xray.contains("executable")) {
-            Logger::write("WARNING: config.xray.executable has wrong type (expected string), using default", LogLevel::WARN);
-        }
         if (xray.contains("workers") && xray.at("workers").is_int64()) {
             config.xray_workers = static_cast<int>(xray.at("workers").as_int64());
             if (config.xray_workers <= 0) config.xray_workers = 1;

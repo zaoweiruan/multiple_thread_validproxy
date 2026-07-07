@@ -42,30 +42,45 @@ ConfigDialog::ConfigDialog(wxWindow* parent, const config::AppConfig& cfg)
     propGrid_->Append(new wxStringProperty(L"SQL 查询", "sql_query", cfg.sql_query));
     propGrid_->Append(new wxStringProperty(L"按 SubId 查询", "sql_by_subid", cfg.sql_by_subid));
 
-    // --- Xray 配置 ---
-    propGrid_->Append(new wxPropertyCategory(L"Xray"));
-    wxFileProperty* xrayExecProp = new wxFileProperty(L"执行文件", "xray_executable", cfg.xray_executable);
-    propGrid_->Append(xrayExecProp);
-    propGrid_->SetPropertyAttribute("xray_executable", wxPG_FILE_SHOW_FULL_PATH, (long)1);
+    // --- 工作线程配置 (原 Xray) ---
+    propGrid_->Append(new wxPropertyCategory(L"工作线程配置"));
     propGrid_->Append(new wxIntProperty(L"工作数", "xray_workers", cfg.xray_workers));
     propGrid_->Append(new wxIntProperty(L"起始端口", "xray_start_port", cfg.xray_start_port));
     propGrid_->Append(new wxIntProperty(L"API 端口", "xray_api_port", cfg.xray_api_port));
 
     // --- 代理配置 ---
     propGrid_->Append(new wxPropertyCategory(L"代理配置"));
-    propGrid_->Append(new wxIntProperty(L"SOCKS 监听端口", "proxy_socks_base_port", cfg.proxy.socks_base_port));
     {
-        wxFileProperty* assetDirProp = new wxFileProperty(L"XRAY_LOCATION_ASSET 目录", "proxy_xray_asset_dir", cfg.proxy.xray_asset_dir);
+        wxFileProperty* xrayExecProp = new wxFileProperty(L"xray执行文件", "proxy_xray_executable", cfg.proxy.xray_executable);
+        propGrid_->Append(xrayExecProp);
+        propGrid_->SetPropertyAttribute("proxy_xray_executable", wxPG_FILE_SHOW_FULL_PATH, (long)1);
+    }
+    {
+        wxFileProperty* assetDirProp = new wxFileProperty(L"xray_location_asset 目录", "proxy_xray_asset_dir", cfg.proxy.xray_asset_dir);
         propGrid_->Append(assetDirProp);
         propGrid_->SetPropertyAttribute("proxy_xray_asset_dir", wxPG_FILE_SHOW_FULL_PATH, (long)1);
         propGrid_->SetPropertyAttribute("proxy_xray_asset_dir", wxPG_FILE_DIALOG_TITLE, L"选择 Xray 资源目录");
     }
     {
-        wxFileProperty* tmplProp = new wxFileProperty(L"启动配置模板", "proxy_template_config_path", cfg.proxy.template_config_path);
+        wxFileProperty* tmplProp = new wxFileProperty(L"xray配置模板", "proxy_template_config_path", cfg.proxy.template_config_path);
         propGrid_->Append(tmplProp);
         propGrid_->SetPropertyAttribute("proxy_template_config_path", wxPG_FILE_SHOW_FULL_PATH, (long)1);
         propGrid_->SetPropertyAttribute("proxy_template_config_path", wxPG_FILE_DIALOG_TITLE, L"选择 Xray 启动配置模板文件");
     }
+    {
+        wxFileProperty* sbExecProp = new wxFileProperty(L"Sing-box执行文件", "proxy_singbox_executable", cfg.proxy.singbox_executable);
+        propGrid_->Append(sbExecProp);
+        propGrid_->SetPropertyAttribute("proxy_singbox_executable", wxPG_FILE_SHOW_FULL_PATH, (long)1);
+        propGrid_->SetPropertyAttribute("proxy_singbox_executable", wxPG_FILE_DIALOG_TITLE, L"选择 Sing-box 可执行文件");
+    }
+    {
+        wxFileProperty* sbTmplProp = new wxFileProperty(L"Sing-box配置模板", "proxy_singbox_template_config_path", cfg.proxy.singbox_template_config_path);
+        propGrid_->Append(sbTmplProp);
+        propGrid_->SetPropertyAttribute("proxy_singbox_template_config_path", wxPG_FILE_SHOW_FULL_PATH, (long)1);
+        propGrid_->SetPropertyAttribute("proxy_singbox_template_config_path", wxPG_FILE_DIALOG_TITLE, L"选择 Sing-box 启动配置模板文件");
+    }
+    propGrid_->Append(new wxBoolProperty(L"使用sing-box为代理终端", "proxy_use_singbox", cfg.proxy.use_singbox));
+    propGrid_->Append(new wxIntProperty(L"SOCKS 监听端口", "proxy_socks_base_port", cfg.proxy.socks_base_port));
 
     // --- 测试 配置 ---
     propGrid_->Append(new wxPropertyCategory(L"测试"));
@@ -220,9 +235,14 @@ void ConfigDialog::loadConfig(const config::AppConfig& cfg) {
     refreshAutoTaskChainDisplay();
 
     // Proxy fields
+    propGrid_->SetPropertyValue("proxy_xray_executable", wxString(cfg.proxy.xray_executable));
+    propGrid_->SetPropertyValue("proxy_use_singbox", cfg.proxy.use_singbox);
     propGrid_->SetPropertyValue("proxy_socks_base_port", cfg.proxy.socks_base_port);
     propGrid_->SetPropertyValue("proxy_xray_asset_dir", wxString(cfg.proxy.xray_asset_dir));
     propGrid_->SetPropertyValue("proxy_template_config_path", wxString(cfg.proxy.template_config_path));
+    propGrid_->SetPropertyValue("proxy_singbox_executable", wxString(cfg.proxy.singbox_executable));
+
+    propGrid_->SetPropertyValue("proxy_singbox_template_config_path", wxString(cfg.proxy.singbox_template_config_path));
 }
 
 bool ConfigDialog::saveConfig() {
@@ -231,8 +251,7 @@ bool ConfigDialog::saveConfig() {
     editedConfig_.sql_query = propGrid_->GetPropertyValueAsString("sql_query").ToStdString();
     editedConfig_.sql_by_subid = propGrid_->GetPropertyValueAsString("sql_by_subid").ToStdString();
 
-    // Xray fields
-    editedConfig_.xray_executable = propGrid_->GetPropertyValueAsString("xray_executable").ToStdString();
+    // Xray (worker thread) fields - executable moved to proxy section
     editedConfig_.xray_workers = propGrid_->GetPropertyValueAsInt("xray_workers");
     editedConfig_.xray_start_port = propGrid_->GetPropertyValueAsInt("xray_start_port");
     editedConfig_.xray_api_port = propGrid_->GetPropertyValueAsInt("xray_api_port");
@@ -320,9 +339,14 @@ bool ConfigDialog::saveConfig() {
     editedConfig_.notification_on_test = propGrid_->GetPropertyValueAsBool("notification_on_test");
 
     // Proxy fields
+    editedConfig_.proxy.xray_executable = propGrid_->GetPropertyValueAsString("proxy_xray_executable").ToStdString();
+    editedConfig_.proxy.use_singbox = propGrid_->GetPropertyValueAsBool("proxy_use_singbox");
     editedConfig_.proxy.socks_base_port = propGrid_->GetPropertyValueAsInt("proxy_socks_base_port");
     editedConfig_.proxy.xray_asset_dir = propGrid_->GetPropertyValueAsString("proxy_xray_asset_dir").ToStdString();
     editedConfig_.proxy.template_config_path = propGrid_->GetPropertyValueAsString("proxy_template_config_path").ToStdString();
+    editedConfig_.proxy.singbox_executable = propGrid_->GetPropertyValueAsString("proxy_singbox_executable").ToStdString();
+
+    editedConfig_.proxy.singbox_template_config_path = propGrid_->GetPropertyValueAsString("proxy_singbox_template_config_path").ToStdString();
 
     // AutoTask fields
     editedConfig_.auto_task.steps = stepOrder_;
@@ -383,20 +407,20 @@ bool ConfigDialog::validateConfig() {
         wxMessageBox("Database path cannot be empty", "Validation Error", wxOK | wxICON_ERROR);
         return false;
     }
-    if (editedConfig_.xray_executable.empty()) {
+    if (!editedConfig_.proxy.use_singbox && editedConfig_.proxy.xray_executable.empty()) {
         wxMessageBox("Xray executable path cannot be empty", "Validation Error", wxOK | wxICON_ERROR);
         return false;
     }
-    if (!std::filesystem::exists(editedConfig_.xray_executable)) {
-        wxMessageBox("Xray executable file not found.\n\nPath:\n" + editedConfig_.xray_executable,
+    if (!editedConfig_.proxy.use_singbox && !std::filesystem::exists(editedConfig_.proxy.xray_executable)) {
+        wxMessageBox("Xray executable file not found.\n\nPath:\n" + editedConfig_.proxy.xray_executable,
                      "Validation Error", wxOK | wxICON_ERROR);
         return false;
     }
-    {
-        std::filesystem::path xrayPath(editedConfig_.xray_executable);
+    if (!editedConfig_.proxy.use_singbox) {
+        std::filesystem::path xrayPath(editedConfig_.proxy.xray_executable);
         std::string ext = xrayPath.extension().string();
         if (!ext.empty() && ext != ".exe") {
-            wxMessageBox("Xray executable should have .exe extension.\n\nCurrent:\n" + editedConfig_.xray_executable,
+            wxMessageBox("Xray executable should have .exe extension.\n\nCurrent:\n" + editedConfig_.proxy.xray_executable,
                          "Validation Warning", wxOK | wxICON_WARNING);
             // Continue — allow non-standard extensions
         }
@@ -425,6 +449,13 @@ bool ConfigDialog::validateConfig() {
     if (!editedConfig_.proxy.template_config_path.empty() &&
         !std::filesystem::exists(editedConfig_.proxy.template_config_path)) {
         wxMessageBox("启动配置模板文件不存在。\n\n路径:\n" + editedConfig_.proxy.template_config_path,
+                     "验证错误", wxOK | wxICON_ERROR);
+        return false;
+    }
+    // Validate sing-box template config path (only if Xray template is empty - sing-box mode)
+    if (editedConfig_.proxy.singbox_executable.empty() && !editedConfig_.proxy.singbox_template_config_path.empty() &&
+        !std::filesystem::exists(editedConfig_.proxy.singbox_template_config_path)) {
+        wxMessageBox("Sing-box 配置模板文件不存在。\n\n路径:\n" + editedConfig_.proxy.singbox_template_config_path,
                      "验证错误", wxOK | wxICON_ERROR);
         return false;
     }

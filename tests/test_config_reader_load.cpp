@@ -95,7 +95,6 @@ TEST_F(ConfigReaderLoadTest, FullConfigRoundTrip) {
     writeConfig("full.json", R"({
         "database": ")" + dbPath + R"(",
         "xray": {
-            "executable": ")" + xrayExe + R"(",
             "workers": 4,
             "start_port": 2080,
             "api_port": 2081
@@ -133,12 +132,15 @@ TEST_F(ConfigReaderLoadTest, FullConfigRoundTrip) {
             "source_db": ")" + srcDb + R"(",
             "target_db": ")" + dstDb + R"(",
             "sync_skip_subids": true
+        },
+        "proxy": {
+            "xray_executable": ")" + xrayExe + R"("
         }
     })");
     std::optional<AppConfig> result = ConfigReader::load(configPath("full.json"));
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result->database_path, dbPath);
-    EXPECT_EQ(result->xray_executable, xrayExe);
+    EXPECT_EQ(result->proxy.xray_executable, xrayExe);
     EXPECT_EQ(result->xray_workers, 4);
     EXPECT_EQ(result->xray_start_port, 2080);
     EXPECT_EQ(result->xray_api_port, 2081);
@@ -352,15 +354,17 @@ TEST_F(ConfigReaderLoadTest, SectionDefaults_Xray) {
 
     writeConfig("sec_xray.json", R"({
         "xray": {
-            "executable": ")" + xrayPath + R"(",
             "workers": 4,
             "start_port": 2080,
             "api_port": 2081
+        },
+        "proxy": {
+            "xray_executable": ")" + xrayPath + R"("
         }
     })");
     std::optional<AppConfig> result = ConfigReader::load(configPath("sec_xray.json"));
     ASSERT_TRUE(result.has_value());
-    EXPECT_EQ(result->xray_executable, xrayPath);
+    EXPECT_EQ(result->proxy.xray_executable, xrayPath);
     EXPECT_EQ(result->xray_workers, 4);
     EXPECT_EQ(result->xray_start_port, 2080);
     EXPECT_EQ(result->xray_api_port, 2081);
@@ -524,15 +528,17 @@ TEST_F(ConfigReaderLoadTest, PathResolution_Relative) {
     writeConfig("subdir/config.json", R"({
         "database": ")" + dbPath + R"(",
         "xray": {
-            "executable": ")" + xrayPath + R"(",
             "workers": 2,
             "start_port": 2085
+        },
+        "proxy": {
+            "xray_executable": ")" + xrayPath + R"("
         }
     })");
     std::optional<AppConfig> result = ConfigReader::load(configPath("subdir/config.json"));
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result->database_path, dbPath);
-    EXPECT_EQ(result->xray_executable, xrayPath);
+    EXPECT_EQ(result->proxy.xray_executable, xrayPath);
 }
 
 // ============================================================
@@ -604,7 +610,7 @@ TEST_F(ConfigReaderLoadTest, SaveRoundTripInLoad) {
     EXPECT_EQ(reloaded->database_path, original->database_path);
     EXPECT_EQ(reloaded->sql_query, original->sql_query);
     EXPECT_EQ(reloaded->sql_by_subid, original->sql_by_subid);
-    EXPECT_EQ(reloaded->xray_executable, original->xray_executable);
+    EXPECT_EQ(reloaded->proxy.xray_executable, original->proxy.xray_executable);
     EXPECT_EQ(reloaded->xray_workers, original->xray_workers);
     EXPECT_EQ(reloaded->xray_start_port, original->xray_start_port);
     EXPECT_EQ(reloaded->xray_api_port, original->xray_api_port);

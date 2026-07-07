@@ -25,6 +25,19 @@ inline void ProxyConfigParser::parse(const boost::json::value& root, AppConfig& 
         } else if (proxy.contains("socks_base_port")) {
             Logger::write("WARNING: config.proxy.socks_base_port has wrong type (expected int64), using default", LogLevel::WARN);
         }
+        if (proxy.contains("xray_executable") && proxy.at("xray_executable").is_string()) {
+            std::string rawPath = proxy.at("xray_executable").as_string().c_str();
+            std::filesystem::path p(rawPath);
+            if (!p.is_absolute()) p = std::filesystem::path(exeDir) / p;
+            config.proxy.xray_executable = p.string();
+        } else if (proxy.contains("xray_executable")) {
+            Logger::write("WARNING: config.proxy.xray_executable has wrong type (expected string), using default", LogLevel::WARN);
+        }
+        if (proxy.contains("use_singbox") && proxy.at("use_singbox").is_bool()) {
+            config.proxy.use_singbox = proxy.at("use_singbox").as_bool();
+        } else if (proxy.contains("use_singbox")) {
+            Logger::write("WARNING: config.proxy.use_singbox has wrong type (expected bool), using default", LogLevel::WARN);
+        }
         if (proxy.contains("xray_asset_dir") && proxy.at("xray_asset_dir").is_string()) {
             std::string rawPath = proxy.at("xray_asset_dir").as_string().c_str();
             std::filesystem::path p(rawPath);
@@ -40,6 +53,31 @@ inline void ProxyConfigParser::parse(const boost::json::value& root, AppConfig& 
             config.proxy.template_config_path = p.string();
         } else if (proxy.contains("template_config_path")) {
             Logger::write("WARNING: config.proxy.template_config_path has wrong type (expected string), using default", LogLevel::WARN);
+        }
+        // sing-box configuration
+        if (proxy.contains("singbox_executable") && proxy.at("singbox_executable").is_string()) {
+            std::string rawPath = proxy.at("singbox_executable").as_string().c_str();
+            std::filesystem::path p(rawPath);
+            if (!p.is_absolute()) p = std::filesystem::path(exeDir) / p;
+            config.proxy.singbox_executable = p.string();
+        } else if (proxy.contains("singbox_executable")) {
+            Logger::write("WARNING: config.proxy.singbox_executable has wrong type (expected string), using default", LogLevel::WARN);
+        }
+        if (proxy.contains("singbox_asset_dir") && proxy.at("singbox_asset_dir").is_string()) {
+            std::string rawPath = proxy.at("singbox_asset_dir").as_string().c_str();
+            std::filesystem::path p(rawPath);
+            if (!p.is_absolute()) p = std::filesystem::path(exeDir) / p;
+            config.proxy.singbox_asset_dir = p.string();
+        } else if (proxy.contains("singbox_asset_dir")) {
+            Logger::write("WARNING: config.proxy.singbox_asset_dir has wrong type (expected string), using default", LogLevel::WARN);
+        }
+        if (proxy.contains("singbox_template_config_path") && proxy.at("singbox_template_config_path").is_string()) {
+            std::string rawPath = proxy.at("singbox_template_config_path").as_string().c_str();
+            std::filesystem::path p(rawPath);
+            if (!p.is_absolute()) p = std::filesystem::path(exeDir) / p;
+            config.proxy.singbox_template_config_path = p.string();
+        } else if (proxy.contains("singbox_template_config_path")) {
+            Logger::write("WARNING: config.proxy.singbox_template_config_path has wrong type (expected string), using default", LogLevel::WARN);
         }
     } else if (obj.contains("proxy")) {
         Logger::write("WARNING: config.proxy has wrong type (expected object), using default", LogLevel::WARN);

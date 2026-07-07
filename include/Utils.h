@@ -15,6 +15,11 @@ namespace utils {
     bool isValidNetwork(const std::string& network);
     bool isPortAvailable(int port);
     int findAvailablePort(int startPort, int maxAttempts = 100);
+
+    // Process management utilities
+    bool isProcessRunning(const std::string& processName);
+    void killProcessByName(const std::string& processName);
+    std::string getProcessNameFromPath(const std::string& fullPath);
 }
 
 #endif // UTILS_H

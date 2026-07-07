@@ -211,7 +211,7 @@ bool AutoTaskManager::executeStep(const AutoTaskStepInfo& step, int /*stepIndex*
 
 bool AutoTaskManager::stepUpdateAll() {
     std::atomic<bool>* cancelPtr = externalCancel_ ? externalCancel_ : &cancelRequested_;
-    update::SubitemUpdaterV2 updater(db_, config_.xray_executable, config_, nullptr, baseDir_, cancelPtr, netMon_);
+    update::SubitemUpdaterV2 updater(db_, config_.proxy.xray_executable, config_, nullptr, baseDir_, cancelPtr, netMon_);
     bool result = updater.run();
     if (isCancelled() && !result) {
         Logger::write("AutoTask: update step was cancelled", LogLevel::REPORT);
@@ -231,7 +231,7 @@ bool AutoTaskManager::stepTestAll() {
 
 bool AutoTaskManager::stepDedup() {
     std::atomic<bool>* cancelPtr = externalCancel_ ? externalCancel_ : &cancelRequested_;
-    update::SubitemUpdaterV2 updater(db_, config_.xray_executable, config_, nullptr, baseDir_, cancelPtr, netMon_);
+    update::SubitemUpdaterV2 updater(db_, config_.proxy.xray_executable, config_, nullptr, baseDir_, cancelPtr, netMon_);
     bool result = updater.deduplicate();
     if (isCancelled() && !result) {
         Logger::write("AutoTask: dedup step was cancelled", LogLevel::REPORT);
