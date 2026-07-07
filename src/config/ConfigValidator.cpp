@@ -43,15 +43,15 @@ ConfigValidator::ValidationResult ConfigValidator::validate(const AppConfig& con
         }
     }
 
-    if (!config.xray_executable.empty()) {
-        std::filesystem::path xrayPath(config.xray_executable);
+    if (!config.proxy.xray_executable.empty()) {
+        std::filesystem::path xrayPath(config.proxy.xray_executable);
         if (!std::filesystem::exists(xrayPath)) {
-            result.warnings.push_back("Xray executable not found: " + config.xray_executable);
+            result.warnings.push_back("Xray executable not found: " + config.proxy.xray_executable);
         }
 
         std::string ext = xrayPath.extension().string();
         if (!ext.empty() && ext != ".exe") {
-            result.warnings.push_back("xray executable should have .exe extension: " + config.xray_executable);
+            result.warnings.push_back("xray executable should have .exe extension: " + config.proxy.xray_executable);
         }
     }
 

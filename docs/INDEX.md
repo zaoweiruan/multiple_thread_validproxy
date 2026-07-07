@@ -1,4 +1,4 @@
-updated: 2026-07-01
+updated: 2026-07-03
 title: "docs: project document index"
 type: meta
 status: maintained
@@ -163,6 +163,8 @@ status: maintained
 | 11 | [`docs/specs/2026-07-01-Spec-DialogCentering-v1.0.md`](./specs/2026-07-01-Spec-DialogCentering-v1.0.md) | **对话框屏幕居中** — SubscriptionPanel/ProxyListPanel 中 6 处 wxDialog/wxMessageDialog 添加 CentreOnScreen() 调用 | completed |
 | 12 | [`docs/specs/2026-07-01-Reference-wxwidgets-datavgen-analysis.md`](./specs/2026-07-01-Reference-wxwidgets-datavgen-analysis.md) | **wxWidgets datavgen 双击事件分析** — MSW 平台 wxDataViewMainWindow 缺失 CS_DBLCLKS，selection-change-based Workaround 引用 | reference |
 | 13 | [`docs/specs/2026-07-01-Spec-AppController-Responsibility-Decomposition-v1.0.md`](./specs/2026-07-01-Spec-AppController-Responsibility-Decomposition-v1.0.md) | **AppController 职责边界重构** — 5 个服务化分解方案 (SubscriptionOrchestrator/ProxyOrchestrator/StandaloneProxyManager/DatabaseCoordinator/NetworkMonitorCoordinator) | draft |
+| 14 | [`docs/specs/2026-07-02-Spec-Singbox-Support-v1.0.md`](./specs/2026-07-02-Spec-Singbox-Support-v1.0.md) | **Sing-box Support Implementation** — Add sing-box as alternative proxy core to Xray; config fields, UI integration, outbound format mapping, REST/API differences | draft |
+| 15 | [`docs/specs/2026-07-03-Spec-Echconfiglist-DualFormat-Support-v1.0.md`](./specs/2026-07-03-Spec-Echconfiglist-DualFormat-Support-v1.0.md) | **echconfiglist 双格式解析** — 区分 Base64 ECH 配置与 DNS URL 格式，Base64 → ech.config 数组，DNS URL → ech.enabled:true | ✅ completed |
 
 ---
 

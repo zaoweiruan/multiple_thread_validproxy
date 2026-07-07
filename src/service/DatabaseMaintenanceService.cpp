@@ -9,12 +9,12 @@ DatabaseMaintenanceService::DatabaseMaintenanceService(sqlite3* db, const config
 }
 
 bool DatabaseMaintenanceService::deduplicate() {
-    update::SubitemUpdaterV2 updater(db_, config_.xray_executable, config_);
+    update::SubitemUpdaterV2 updater(db_, config_.proxy.xray_executable, config_);
     return updater.deduplicate();
 }
 
 bool DatabaseMaintenanceService::syncDatabases(const std::string& src, const std::string& dst) {
-    update::SubitemUpdaterV2 updater(db_, config_.xray_executable, config_);
+    update::SubitemUpdaterV2 updater(db_, config_.proxy.xray_executable, config_);
     return updater.syncDatabases(src.empty() ? config_.sync.source_db : src,
                                  dst.empty() ? config_.sync.target_db : dst);
 }

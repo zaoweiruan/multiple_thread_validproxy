@@ -2,6 +2,7 @@
 #include <ws2tcpip.h>
 #include "Utils.h"
 #include <windows.h>
+#include <tlhelp32.h>
 #include <filesystem>
 #include <random>
 #include <sstream>
@@ -236,5 +237,63 @@ bool isValidUrlFormat(const std::string& url) {
             }
         }
         return -1;
+    }
+
+    // Helper: convert narrow string to wide string
+    static std::wstring toWide(const std::string& s) {
+        int len = MultiByteToWideChar(CP_UTF8, 0, s.c_str(), -1, nullptr, 0);
+        if (len <= 0) return L"";
+        std::wstring wstr(static_cast<size_t>(len) - 1, L'\0');
+        MultiByteToWideChar(CP_UTF8, 0, s.c_str(), -1, &wstr[0], len);
+        return wstr;
+    }
+
+    bool isProcessRunning(const std::string& processName) {
+        std::wstring wName = toWide(processName);
+        HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+        if (snapshot == INVALID_HANDLE_VALUE) {
+            return false;
+        }
+
+        PROCESSENTRY32W pe = { sizeof(PROCESSENTRY32W) };
+        if (Process32FirstW(snapshot, &pe)) {
+            do {
+                if (wcsicmp(wName.c_str(), pe.szExeFile) == 0) {
+                    CloseHandle(snapshot);
+                    return true;
+                }
+            } while (Process32NextW(snapshot, &pe));
+        }
+
+        CloseHandle(snapshot);
+        return false;
+    }
+
+    void killProcessByName(const std::string& processName) {
+        std::wstring wName = toWide(processName);
+        HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+        if (snapshot == INVALID_HANDLE_VALUE) {
+            return;
+        }
+
+        PROCESSENTRY32W pe = { sizeof(PROCESSENTRY32W) };
+        if (Process32FirstW(snapshot, &pe)) {
+            do {
+                if (wcsicmp(wName.c_str(), pe.szExeFile) == 0) {
+                    HANDLE hProcess = OpenProcess(PROCESS_TERMINATE, FALSE, pe.th32ProcessID);
+                    if (hProcess) {
+                        TerminateProcess(hProcess, 1);
+                        CloseHandle(hProcess);
+                    }
+                }
+            } while (Process32NextW(snapshot, &pe));
+        }
+
+        CloseHandle(snapshot);
+    }
+
+    std::string getProcessNameFromPath(const std::string& fullPath) {
+        std::filesystem::path p(fullPath);
+        return p.filename().string();
     }
  }

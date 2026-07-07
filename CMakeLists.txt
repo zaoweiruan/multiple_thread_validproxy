@@ -97,6 +97,7 @@ set(CORE_SOURCES
     src/update/Importer.cpp
     src/UrlFetcher.cpp
     src/Utils.cpp
+    src/utils/Base64Utils.cpp
     src/XrayApi.cpp
     src/XrayInstance.cpp
     src/XrayManager.cpp
@@ -130,6 +131,13 @@ set(CORE_SOURCES
     src/config/outbound/Hysteria2OutboundBuilder.cpp
     src/config/outbound/TUICOutboundBuilder.cpp
     src/config/outbound/WireGuardOutboundBuilder.cpp
+    src/config/SingBoxOutboundBuilderFactory.cpp
+    src/config/outbound/SingBoxVLESSOutboundBuilder.cpp
+    src/config/outbound/SingBoxVMessOutboundBuilder.cpp
+    src/config/outbound/SingBoxSSOutboundBuilder.cpp
+    src/config/outbound/SingBoxTrojanOutboundBuilder.cpp
+    src/config/outbound/SingBoxHysteria2OutboundBuilder.cpp
+    src/config/outbound/SingBoxTUICOutboundBuilder.cpp
     src/test/ProxyBatchQuery.cpp
     src/test/XrayWorkerPool.cpp
     src/test/ProxyTestCounters.cpp
@@ -629,5 +637,22 @@ set_target_properties(test_sharelink_factory PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
 )
 add_test(NAME ShareLinkFactoryTest COMMAND test_sharelink_factory)
+
+# -- Sing-box VLESS outbound builder unit tests --
+add_executable(test_singbox_vless_builder
+    tests/test_singbox_vless_builder.cpp
+    src/config/outbound/SingBoxVLESSOutboundBuilder.cpp
+    src/utils/Base64Utils.cpp
+)
+target_include_directories(test_singbox_vless_builder PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(test_singbox_vless_builder PRIVATE gtest_main gtest
+    ${BOOST_ROOT}/lib/libboost_json-mgw14-mt-x64-1_88.a
+)
+set_target_properties(test_singbox_vless_builder PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+)
+add_test(NAME SingBoxVLESSBuilderTest COMMAND test_singbox_vless_builder)
 
 install(TARGETS validproxy validproxy-cli DESTINATION bin)

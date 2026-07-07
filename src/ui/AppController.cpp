@@ -1,10 +1,16 @@
 #include "AppController.h"
 #include "Events.h"
+#include "ui/AsyncOperationGuard.h"
+#include "ui/ScopeGuard.h"
+
+using ui::AsyncOperationGuard;
+using ui::ScopeGuard;
 
 #include "SubitemUpdaterV2.h"
 #include "ProxyBatchTester.h"
 #include "ConfigGenerator.h"
 #include "config/OutboundBuilderFactory.h"
+#include "config/SingBoxOutboundBuilderFactory.h"
 #include "ShareLink.h"
 #include "AutoTaskManager.h"
 #include "Utils.h"
@@ -15,6 +21,7 @@
 #include <wx/window.h>
 
 #include <algorithm>
+#include <cctype>
 #include <filesystem>
 #include <fstream>
 #include <ctime>
@@ -194,40 +201,20 @@ bool AppController::deleteSubscription(const std::string& subId) {
 }
 
 void AppController::updateSubscriptionAsync(const std::string& subId, wxEvtHandler* wxHandler) {
-    if (workerThread_.joinable()) {
-        if (isRunning_) {
-            if (wxHandler) {
-                wxQueueEvent(wxHandler, new StatusUpdateEvent(0,
-                    "REJECT:Another operation is already in progress. Please wait or cancel it first."));
-            }
-            return;
-        }
-        workerThread_.join();
-    }
-    cancelRequested_ = false;
-    isRunning_ = true;
+        AsyncOperationGuard guard{workerThread_, isRunning_, cancelRequested_, wxHandler};
+        if (!guard.isAllowed()) return;
     workerThread_ = std::thread(&AppController::doUpdateSubscription, this, subId, wxHandler);
 }
 
 void AppController::updateAllSubscriptionsAsync(wxEvtHandler* wxHandler) {
-    if (workerThread_.joinable()) {
-        if (isRunning_) {
-            if (wxHandler) {
-                wxQueueEvent(wxHandler, new StatusUpdateEvent(0,
-                    "REJECT:Another operation is already in progress. Please wait or cancel it first."));
-            }
-            return;
-        }
-        workerThread_.join();
-    }
-    cancelRequested_ = false;
-    isRunning_ = true;
+        AsyncOperationGuard guard{workerThread_, isRunning_, cancelRequested_, wxHandler};
+        if (!guard.isAllowed()) return;
     workerThread_ = std::thread(&AppController::doUpdateAllSubscriptions, this, wxHandler);
 }
 
 bool AppController::importSubscription(const std::string& url) {
     try {
-        update::SubitemUpdaterV2 updater(db_, config_.xray_executable, config_, nullptr, "");
+        update::SubitemUpdaterV2 updater(db_, config_.proxy.xray_executable, config_, nullptr, "");
         return updater.importSingleUrl(url);
     } catch (const std::exception& e) {
         Logger::write(std::string("Import error: ") + e.what(), LogLevel::ERR);
@@ -322,50 +309,20 @@ std::vector<db::models::ProfileExItem> AppController::loadProxyResults() {
 // Testing / Cancellation
 // ---------------------------------------------------------------
 void AppController::testSubscriptionAsync(const std::string& subId, wxEvtHandler* wxHandler) {
-    if (workerThread_.joinable()) {
-        if (isRunning_) {
-            if (wxHandler) {
-                wxQueueEvent(wxHandler, new StatusUpdateEvent(0,
-                    "REJECT:Another operation is already in progress. Please wait or cancel it first."));
-            }
-            return;
-        }
-        workerThread_.join();
-    }
-    cancelRequested_ = false;
-    isRunning_ = true;
+        AsyncOperationGuard guard{workerThread_, isRunning_, cancelRequested_, wxHandler};
+        if (!guard.isAllowed()) return;
     workerThread_ = std::thread(&AppController::doTestSubscription, this, subId, wxHandler);
 }
 
 void AppController::testSingleProxyAsync(const std::string& indexId, wxEvtHandler* wxHandler) {
-    if (workerThread_.joinable()) {
-        if (isRunning_) {
-            if (wxHandler) {
-                wxQueueEvent(wxHandler, new StatusUpdateEvent(0,
-                    "REJECT:Another operation is already in progress. Please wait or cancel it first."));
-            }
-            return;
-        }
-        workerThread_.join();
-    }
-    cancelRequested_ = false;
-    isRunning_ = true;
+        AsyncOperationGuard guard{workerThread_, isRunning_, cancelRequested_, wxHandler};
+        if (!guard.isAllowed()) return;
     workerThread_ = std::thread(&AppController::doTestSingleProxy, this, indexId, wxHandler);
 }
 
 void AppController::testAllProxiesAsync(wxEvtHandler* wxHandler) {
-    if (workerThread_.joinable()) {
-        if (isRunning_) {
-            if (wxHandler) {
-                wxQueueEvent(wxHandler, new StatusUpdateEvent(0,
-                    "REJECT:Another operation is already in progress. Please wait or cancel it first."));
-            }
-            return;
-        }
-        workerThread_.join();
-    }
-    cancelRequested_ = false;
-    isRunning_ = true;
+        AsyncOperationGuard guard{workerThread_, isRunning_, cancelRequested_, wxHandler};
+        if (!guard.isAllowed()) return;
     workerThread_ = std::thread(&AppController::doTestAllProxies, this, wxHandler);
 }
 
@@ -384,7 +341,7 @@ bool AppController::isTestCancelled() const {
 // Find operations  (sync — kept for CLI path in main.cpp)
 // ---------------------------------------------------------------
 TestResult AppController::findFirstProxy() {
-    std::string xrayPath = config_.xray_executable;
+    std::string xrayPath = config_.proxy.xray_executable;
     std::string configDir = utils::getExecutableDir() + "/config";
     XrayManager* manager = XrayManager::getInstance(xrayPath, configDir, config_.xray_workers);
     ProxyFinder finder(db_, manager, xrayPath, config_.test_url, "", config_.test_timeout_ms);
@@ -393,7 +350,7 @@ TestResult AppController::findFirstProxy() {
 }
 
 TestResult AppController::findBestProxy() {
-    std::string xrayPath = config_.xray_executable;
+    std::string xrayPath = config_.proxy.xray_executable;
     std::string configDir = utils::getExecutableDir() + "/config";
     XrayManager* manager = XrayManager::getInstance(xrayPath, configDir, config_.xray_workers);
     ProxyFinder finder(db_, manager, xrayPath, config_.test_url, "", config_.test_timeout_ms);
@@ -405,34 +362,14 @@ TestResult AppController::findBestProxy() {
 // Find operations  (async — used by GUI MainFrame)
 // ---------------------------------------------------------------
 void AppController::findFirstProxyAsync(wxEvtHandler* wxHandler) {
-    if (workerThread_.joinable()) {
-        if (isRunning_) {
-            if (wxHandler) {
-                wxQueueEvent(wxHandler, new StatusUpdateEvent(0,
-                    "REJECT:Another operation is already in progress. Please wait or cancel it first."));
-            }
-            return;
-        }
-        workerThread_.join();
-    }
-    cancelRequested_ = false;
-    isRunning_ = true;
+        AsyncOperationGuard guard{workerThread_, isRunning_, cancelRequested_, wxHandler};
+        if (!guard.isAllowed()) return;
     workerThread_ = std::thread(&AppController::doFindFirstProxy, this, wxHandler);
 }
 
 void AppController::findBestProxyAsync(wxEvtHandler* wxHandler) {
-    if (workerThread_.joinable()) {
-        if (isRunning_) {
-            if (wxHandler) {
-                wxQueueEvent(wxHandler, new StatusUpdateEvent(0,
-                    "REJECT:Another operation is already in progress. Please wait or cancel it first."));
-            }
-            return;
-        }
-        workerThread_.join();
-    }
-    cancelRequested_ = false;
-    isRunning_ = true;
+        AsyncOperationGuard guard{workerThread_, isRunning_, cancelRequested_, wxHandler};
+        if (!guard.isAllowed()) return;
     workerThread_ = std::thread(&AppController::doFindBestProxy, this, wxHandler);
 }
 
@@ -503,12 +440,12 @@ std::tuple<bool, int, std::string> AppController::exportShareLinks() {
 }
 
 bool AppController::deduplicate() {
-    update::SubitemUpdaterV2 updater(db_, config_.xray_executable, config_, nullptr, "");
+    update::SubitemUpdaterV2 updater(db_, config_.proxy.xray_executable, config_, nullptr, "");
     return updater.deduplicate();
 }
 
 bool AppController::syncDatabases(const std::string& src, const std::string& dst) {
-    update::SubitemUpdaterV2 updater(db_, config_.xray_executable, config_, nullptr, "");
+    update::SubitemUpdaterV2 updater(db_, config_.proxy.xray_executable, config_, nullptr, "");
     return updater.syncDatabases(src.empty() ? config_.sync.source_db : src,
                                   dst.empty() ? config_.sync.target_db : dst);
 }
@@ -573,30 +510,97 @@ bool AppController::startStandaloneProxy(const std::string& indexId, int overrid
     // Use override port if provided, otherwise use configured SOCKS port
     int socksPort = (overridePort > 0) ? overridePort : config_.proxy.socks_base_port;
 
-    // Generate proxy outbound JSON using the same builder as ConfigGenerator
-    config::OutboundBuilderFactory factory;
-    boost::json::object proxyOutbound = factory.create(profile, "proxy");
+    // Determine which proxy backend to use based on use_singbox toggle
+    bool useSingBox = config_.proxy.use_singbox;
 
-    // Build outbounds array: proxy + freedom + blackhole
+    // Generate proxy outbound JSON using appropriate builder
+    boost::json::object proxyOutbound;
+    if (useSingBox) {
+        config::SingBoxOutboundBuilderFactory factory;
+        proxyOutbound = factory.create(profile, "proxy");
+    } else {
+        config::OutboundBuilderFactory factory;
+        proxyOutbound = factory.create(profile, "proxy");
+    }
+
+    // Build outbounds array based on backend
     boost::json::array outboundsArr;
     outboundsArr.push_back(proxyOutbound);
 
-    boost::json::object freedomOutbound;
-    freedomOutbound["tag"] = "direct";
-    freedomOutbound["protocol"] = "freedom";
-    outboundsArr.push_back(freedomOutbound);
+    if (useSingBox) {
+        // Sing-box: use "direct" and "block" tag types
+        boost::json::object directOutbound;
+        directOutbound["type"] = "direct";
+        directOutbound["tag"] = "direct";
+        outboundsArr.push_back(directOutbound);
 
-    boost::json::object blackholeOutbound;
-    blackholeOutbound["tag"] = "block";
-    blackholeOutbound["protocol"] = "blackhole";
-    outboundsArr.push_back(blackholeOutbound);
+        boost::json::object blockOutbound;
+        blockOutbound["type"] = "block";
+        blockOutbound["tag"] = "block";
+        outboundsArr.push_back(blockOutbound);
+    } else {
+        // Xray: use "freedom" and "blackhole" protocols
+        boost::json::object freedomOutbound;
+        freedomOutbound["tag"] = "direct";
+        freedomOutbound["protocol"] = "freedom";
+        outboundsArr.push_back(freedomOutbound);
+
+        boost::json::object blackholeOutbound;
+        blackholeOutbound["tag"] = "block";
+        blackholeOutbound["protocol"] = "blackhole";
+        outboundsArr.push_back(blackholeOutbound);
+    }
 
     // Read the full config template
     std::string exeDir = utils::getExecutableDir();
-    std::string templatePath = config_.proxy.template_config_path;
-    if (templatePath.empty()) {
-        templatePath = exeDir + "\\xray-config-template.json";
+    std::string templatePath;
+    std::string executable;
+    std::string assetDir;
+    std::string envVarName;
+
+    if (useSingBox) {
+        templatePath = config_.proxy.singbox_template_config_path;
+        if (templatePath.empty()) {
+            templatePath = exeDir + "\\singbox-config-template.json";
+        }
+        executable = config_.proxy.singbox_executable;
+        assetDir = config_.proxy.singbox_asset_dir;
+        envVarName = "SING_BOX_LOCATION_ASSET";
+    } else {
+        templatePath = config_.proxy.template_config_path;
+        if (templatePath.empty()) {
+            templatePath = exeDir + "\\xray-config-template.json";
+        }
+        executable = config_.proxy.xray_executable;
+        assetDir = config_.proxy.xray_asset_dir;
+        envVarName = "XRAY_LOCATION_ASSET";
     }
+
+    // Check for existing sing-box process before starting
+    if (useSingBox) {
+        std::string exeName = utils::getProcessNameFromPath(executable);
+        if (exeName.empty()) {
+            exeName = "sing-box.exe";
+        }
+
+        if (utils::isProcessRunning(exeName)) {
+            std::string msg = "发现正在运行的 " + exeName + " 进程。\n是否结束已有进程并启动新代理？";
+            int result = MessageBoxA(nullptr, msg.c_str(), "Sing-box 进程提示",
+                                     MB_YESNO | MB_ICONQUESTION | MB_DEFBUTTON2);
+            if (result == IDNO) {
+                Logger::write("[StandaloneProxy] User declined to kill existing "
+                              + exeName + " process", LogLevel::INFO);
+                return false;
+            }
+
+            Logger::write("[StandaloneProxy] Killing existing " + exeName + " processes...",
+                          LogLevel::INFO);
+            utils::killProcessByName(exeName);
+            // Wait briefly for process resources to be released
+            std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        }
+    }
+
     std::ifstream templateFile(templatePath);
     if (!templateFile.is_open()) {
         Logger::write("[StandaloneProxy] Cannot open template: " + templatePath, LogLevel::ERR);
@@ -611,12 +615,47 @@ bool AppController::startStandaloneProxy(const std::string& indexId, int overrid
     boost::json::object configObj = templateVal.as_object();
 
     // Replace the SOCKS inbound port with the dynamically allocated port
+    // Xray uses "inbounds[].port", sing-box uses "inbounds[].listen_port"
     if (configObj.contains("inbounds") && !configObj["inbounds"].as_array().empty()) {
-        configObj["inbounds"].as_array()[0].as_object()["port"] = socksPort;
+        boost::json::object& inbound = configObj["inbounds"].as_array()[0].as_object();
+        if (inbound.contains("listen_port")) {
+            inbound["listen_port"] = socksPort;  // sing-box format
+        } else if (inbound.contains("port")) {
+            inbound["port"] = socksPort;  // Xray format
+        }
     }
 
     // Replace the outbounds array with our generated one
     configObj["outbounds"] = outboundsArr;
+
+    // For sing-box: inject DNS rule to prevent bootstrap loop.
+    // The proxy server's own domain must resolve via local DNS, not through
+    // the proxy (remote_dns has detour "proxy"), otherwise DNS resolution
+    // would need the proxy before the proxy can connect.
+    if (useSingBox) {
+        // Check if address looks like a domain name (contains at least one letter and a dot)
+        bool isDomain = false;
+        for (char c : profile.address) {
+            if (std::isalpha(static_cast<unsigned char>(c))) {
+                isDomain = true;
+                break;
+            }
+        }
+        if (isDomain && profile.address.find('.') != std::string::npos) {
+            // Insert DNS rule at the beginning of the rules array
+            if (configObj.contains("dns")) {
+                boost::json::object& dnsObj = configObj["dns"].as_object();
+                if (dnsObj.contains("rules")) {
+                    boost::json::array& rules = dnsObj["rules"].as_array();
+                    boost::json::object proxyDnsRule;
+                    proxyDnsRule["domain"] = boost::json::array{profile.address};
+                    proxyDnsRule["server"] = "local_local";
+                    rules.insert(rules.begin(), proxyDnsRule);
+                    Logger::write("[StandaloneProxy] DNS bootstrap rule added for: " + profile.address, LogLevel::DEBUG);
+                }
+            }
+        }
+    }
 
     // Ensure config subdirectory exists
     std::string configDir = exeDir + "\\config";
@@ -627,7 +666,7 @@ bool AppController::startStandaloneProxy(const std::string& indexId, int overrid
     }
 
     // Write the final config file
-    std::string configPath = configDir + "\\standalone_" + indexId + ".json";
+    std::string configPath = configDir + "\\standalone_" + indexId + (useSingBox ? "-singbox.json" : "-xray.json");
     {
         std::ofstream configFile(configPath);
         if (!configFile.is_open()) {
@@ -638,14 +677,18 @@ bool AppController::startStandaloneProxy(const std::string& indexId, int overrid
         configFile.close();
     }
 
-    // Determine XRAY_LOCATION_ASSET from config or derive from xray path
-    std::string assetDir = config_.proxy.xray_asset_dir;
+    // Determine asset directory
     if (assetDir.empty()) {
-        assetDir = std::filesystem::path(config_.xray_executable).parent_path().parent_path().string();
+        assetDir = std::filesystem::path(executable).parent_path().parent_path().string();
     }
 
-    // Build command line: "xray.exe run -c <configPath>"
-    std::string cmd = "\"" + config_.xray_executable + "\" run -c \"" + configPath + "\"";
+    // Build command line
+    std::string cmd;
+    if (useSingBox) {
+        cmd = "\"" + executable + "\" run -c \"" + configPath + "\"";
+    } else {
+        cmd = "\"" + executable + "\" run -c \"" + configPath + "\"";
+    }
     Logger::write("[StandaloneProxy] Executing: " + cmd, LogLevel::INFO);
 
     STARTUPINFOA si = {};
@@ -655,11 +698,11 @@ bool AppController::startStandaloneProxy(const std::string& indexId, int overrid
     std::vector<char> cmdBuf(cmd.begin(), cmd.end());
     cmdBuf.push_back('\0');
 
-    // Set XRAY_LOCATION_ASSET environment variable (inherited by child)
-    SetEnvironmentVariableA("XRAY_LOCATION_ASSET", assetDir.c_str());
+    // Set environment variable (inherited by child)
+    SetEnvironmentVariableA(envVarName.c_str(), assetDir.c_str());
 
     BOOL created = CreateProcessA(nullptr, cmdBuf.data(), nullptr, nullptr, FALSE,
-                                   CREATE_NEW_CONSOLE,
+                                   CREATE_NEW_CONSOLE,  // Show proxy process in its own console window
                                    nullptr, nullptr, &si, &pi);
     if (!created) {
         DWORD err = GetLastError();
@@ -708,11 +751,10 @@ std::vector<std::string> AppController::getRunningStandaloneIds() const {
 // ---------------------------------------------------------------
 void AppController::doUpdateSubscription(const std::string& subId, wxEvtHandler* wxHandler) {
     // Scope guard: reset isRunning_ on every exit path (including early returns and exceptions)
-    struct ResetGuard { std::atomic<bool>& flag; ~ResetGuard() { flag = false; } };
-    ResetGuard _rg{isRunning_};
+    ScopeGuard<std::atomic<bool>> _guard{isRunning_};
 
     try {
-update::SubitemUpdaterV2 updater(db_, config_.xray_executable, config_, nullptr, "", &cancelRequested_, &netMon_);
+update::SubitemUpdaterV2 updater(db_, config_.proxy.xray_executable, config_, nullptr, "", &cancelRequested_, &netMon_);
          bool ok = updater.runSingle(subId);
 
         std::string msg = ok ? "Update completed: " + subId : "Update failed: " + subId;
@@ -730,11 +772,10 @@ update::SubitemUpdaterV2 updater(db_, config_.xray_executable, config_, nullptr,
 
 void AppController::doUpdateAllSubscriptions(wxEvtHandler* wxHandler) {
     // Scope guard: reset isRunning_ on every exit path (including early returns and exceptions)
-    struct ResetGuard { std::atomic<bool>& flag; ~ResetGuard() { flag = false; } };
-    ResetGuard _rg{isRunning_};
+    ScopeGuard<std::atomic<bool>> _guard{isRunning_};
 
     try {
-update::SubitemUpdaterV2 updater(db_, config_.xray_executable, config_, nullptr, "", &cancelRequested_, &netMon_);
+update::SubitemUpdaterV2 updater(db_, config_.proxy.xray_executable, config_, nullptr, "", &cancelRequested_, &netMon_);
          bool ok = updater.run();
 
         std::string msg = ok ? "All subscriptions updated" : "Update (all) had failures";
@@ -753,8 +794,7 @@ update::SubitemUpdaterV2 updater(db_, config_.xray_executable, config_, nullptr,
 
 void AppController::doTestSubscription(const std::string& subId, wxEvtHandler* wxHandler) {
     // Scope guard: reset isRunning_ on every exit path (including early returns and exceptions)
-    struct ResetGuard { std::atomic<bool>& flag; ~ResetGuard() { flag = false; } };
-    ResetGuard _rg{isRunning_};
+    ScopeGuard<std::atomic<bool>> _guard{isRunning_};
 
     try {
         ProxyBatchTester tester(db_, config_, "", &cancelRequested_, &netMon_);
@@ -790,8 +830,7 @@ void AppController::doTestSubscription(const std::string& subId, wxEvtHandler* w
 
 void AppController::doTestSingleProxy(const std::string& indexId, wxEvtHandler* wxHandler) {
     // Scope guard: reset isRunning_ on every exit path (including early returns and exceptions)
-    struct ResetGuard { std::atomic<bool>& flag; ~ResetGuard() { flag = false; } };
-    ResetGuard _rg{isRunning_};
+    ScopeGuard<std::atomic<bool>> _guard{isRunning_};
 
     try {
         ProxyBatchTester tester(db_, config_, "", &cancelRequested_, &netMon_);
@@ -826,8 +865,7 @@ void AppController::doTestSingleProxy(const std::string& indexId, wxEvtHandler* 
 
 void AppController::doTestAllProxies(wxEvtHandler* wxHandler) {
     // Scope guard: reset isRunning_ on every exit path (including early returns and exceptions)
-    struct ResetGuard { std::atomic<bool>& flag; ~ResetGuard() { flag = false; } };
-    ResetGuard _rg{isRunning_};
+    ScopeGuard<std::atomic<bool>> _guard{isRunning_};
 
     try {
         ProxyBatchTester tester(db_, config_, "", &cancelRequested_, &netMon_);
@@ -870,8 +908,7 @@ void AppController::doTestAllProxies(wxEvtHandler* wxHandler) {
 // ---------------------------------------------------------------
 void AppController::doFindFirstProxy(wxEvtHandler* wxHandler) {
     // Scope guard: reset isRunning_ on every exit path (including early returns and exceptions)
-    struct ResetGuard { std::atomic<bool>& flag; ~ResetGuard() { flag = false; } };
-    ResetGuard _rg{isRunning_};
+    ScopeGuard<std::atomic<bool>> _guard{isRunning_};
 
     try {
         if (isTestCancelled()) {
@@ -880,7 +917,7 @@ void AppController::doFindFirstProxy(wxEvtHandler* wxHandler) {
             }
             return;
         }
-        std::string xrayPath = config_.xray_executable;
+        std::string xrayPath = config_.proxy.xray_executable;
         std::string configDir = utils::getExecutableDir() + "/config";
         XrayManager* manager = XrayManager::getInstance(xrayPath, configDir, config_.xray_workers);
         if (!manager) {
@@ -935,8 +972,7 @@ void AppController::doFindFirstProxy(wxEvtHandler* wxHandler) {
 
 void AppController::doFindBestProxy(wxEvtHandler* wxHandler) {
     // Scope guard: reset isRunning_ on every exit path (including early returns and exceptions)
-    struct ResetGuard { std::atomic<bool>& flag; ~ResetGuard() { flag = false; } };
-    ResetGuard _rg{isRunning_};
+    ScopeGuard<std::atomic<bool>> _guard{isRunning_};
 
     try {
         if (isTestCancelled()) {
@@ -945,7 +981,7 @@ void AppController::doFindBestProxy(wxEvtHandler* wxHandler) {
             }
             return;
         }
-        std::string xrayPath = config_.xray_executable;
+        std::string xrayPath = config_.proxy.xray_executable;
         std::string configDir = utils::getExecutableDir() + "/config";
         XrayManager* manager = XrayManager::getInstance(xrayPath, configDir, config_.xray_workers);
         if (!manager) {
@@ -1000,11 +1036,10 @@ void AppController::doFindBestProxy(wxEvtHandler* wxHandler) {
 
 void AppController::doSyncDatabases(wxEvtHandler* wxHandler) {
     // Scope guard: reset isRunning_ on every exit path (including early returns and exceptions)
-    struct ResetGuard { std::atomic<bool>& flag; ~ResetGuard() { flag = false; } };
-    ResetGuard _rg{isRunning_};
+    ScopeGuard<std::atomic<bool>> _guard{isRunning_};
 
     try {
-        update::SubitemUpdaterV2 updater(db_, config_.xray_executable, config_, nullptr, "", &cancelRequested_);
+        update::SubitemUpdaterV2 updater(db_, config_.proxy.xray_executable, config_, nullptr, "", &cancelRequested_);
         bool ok = updater.syncDatabases(config_.sync.source_db, config_.sync.target_db);
         std::string msg = ok ? "数据库同步完成" : "数据库同步失败，请查看日志";
         if (wxHandler) {
@@ -1020,19 +1055,10 @@ void AppController::doSyncDatabases(wxEvtHandler* wxHandler) {
 }
 
 void AppController::findProxyByIndexIdAsync(const std::string& indexId, wxEvtHandler* wxHandler) {
-    if (workerThread_.joinable()) {
-        if (isRunning_) {
-            if (wxHandler) {
-                wxQueueEvent(wxHandler, new StatusUpdateEvent(0,
-                    "REJECT:Another operation is already in progress. Please wait or cancel it first."));
-            }
-            return;
-        }
-        workerThread_.join();
-    }
-    cancelRequested_ = false;
-    isRunning_ = true;
+        AsyncOperationGuard guard{workerThread_, isRunning_, cancelRequested_, wxHandler};
+        if (!guard.isAllowed()) return;
     workerThread_ = std::thread([this, indexId, wxHandler]() {
+        ScopeGuard<std::atomic<bool>> _guard{isRunning_};
         try {
             std::vector<db::models::Profileitem> proxies = loadProxies();
             // Try exact indexId match first
@@ -1073,23 +1099,12 @@ void AppController::findProxyByIndexIdAsync(const std::string& indexId, wxEvtHan
                 wxQueueEvent(wxHandler, new StatusUpdateEvent(0, std::string("ERR:") + e.what()));
             }
         }
-        isRunning_ = false;
     });
 }
 
 void AppController::syncDatabasesAsync(wxEvtHandler* wxHandler) {
-    if (workerThread_.joinable()) {
-        if (isRunning_) {
-            if (wxHandler) {
-                wxQueueEvent(wxHandler, new StatusUpdateEvent(0,
-                    "REJECT:Another operation is already in progress. Please wait or cancel it first."));
-            }
-            return;
-        }
-        workerThread_.join();
-    }
-    cancelRequested_ = false;
-    isRunning_ = true;
+        AsyncOperationGuard guard{workerThread_, isRunning_, cancelRequested_, wxHandler};
+        if (!guard.isAllowed()) return;
     workerThread_ = std::thread(&AppController::doSyncDatabases, this, wxHandler);
 }
 
@@ -1097,40 +1112,19 @@ void AppController::syncDatabasesAsync(wxEvtHandler* wxHandler) {
 // AutoTask
 // ---------------------------------------------------------------
 void AppController::runAutoTaskAsync(wxEvtHandler* wxHandler) {
-    if (workerThread_.joinable()) {
-        if (isRunning_) {
-            if (wxHandler) {
-                wxQueueEvent(wxHandler, new StatusUpdateEvent(0,
-                    "REJECT:Another operation is already in progress. Please wait or cancel it first."));
-            }
-            return;
-        }
-        workerThread_.join();
-    }
-    cancelRequested_ = false;
-    isRunning_ = true;
+        AsyncOperationGuard guard{workerThread_, isRunning_, cancelRequested_, wxHandler};
+        if (!guard.isAllowed()) return;
     workerThread_ = std::thread(&AppController::doRunAutoTask, this, wxHandler);
 }
 
 void AppController::resumeAutoTaskAsync(wxEvtHandler* wxHandler) {
-    if (workerThread_.joinable()) {
-        if (isRunning_) {
-            if (wxHandler) {
-                wxQueueEvent(wxHandler, new StatusUpdateEvent(0,
-                    "REJECT:Another operation is already in progress. Please wait or cancel it first."));
-            }
-            return;
-        }
-        workerThread_.join();
-    }
-    cancelRequested_ = false;
-    isRunning_ = true;
+        AsyncOperationGuard guard{workerThread_, isRunning_, cancelRequested_, wxHandler};
+        if (!guard.isAllowed()) return;
     workerThread_ = std::thread(&AppController::doResumeAutoTask, this, wxHandler);
 }
 
 void AppController::doAutoTaskImpl(wxEvtHandler* wxHandler, bool resume) {
-    struct ResetGuard { std::atomic<bool>& flag; ~ResetGuard() { flag = false; } };
-    ResetGuard _rg{isRunning_};
+    ScopeGuard<std::atomic<bool>> _guard{isRunning_};
 
     try {
         std::string baseDir = std::filesystem::path(config_.database_path).parent_path().string();

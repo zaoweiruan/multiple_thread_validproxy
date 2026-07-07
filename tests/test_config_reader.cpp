@@ -30,7 +30,7 @@ protected:
 TEST_F(ConfigReaderTest, SaveRoundTrip) {
     AppConfig original;
     original.database_path = "mydb.db";
-    original.xray_executable = "myxray.exe";
+    original.proxy.xray_executable = "myxray.exe";
     original.xray_workers = 8;
     original.xray_start_port = 2080;
     original.xray_api_port = 2081;
@@ -80,7 +80,7 @@ TEST_F(ConfigReaderTest, SaveRoundTrip_FieldCompleteness) {
     original.database_path = tmpDirGeneric + "/fc_db.db";
     original.sql_query = "SELECT * FROM profiles";
     original.sql_by_subid = "SELECT * FROM profiles WHERE subid = '{subid}'";
-    original.xray_executable = tmpDirGeneric + "/fc_xray.exe";
+    original.proxy.xray_executable = tmpDirGeneric + "/fc_xray.exe";
     original.xray_workers = 4;
     original.xray_start_port = 2080;
     original.xray_api_port = 2081;
@@ -117,7 +117,7 @@ TEST_F(ConfigReaderTest, SaveRoundTrip_FieldCompleteness) {
 
     // Create files needed by load validation
     touchFile(original.database_path);
-    touchFile(original.xray_executable);
+    touchFile(original.proxy.xray_executable);
 
     ASSERT_TRUE(ConfigReader::save(configPath("fc_roundtrip.json"), original));
 
@@ -127,7 +127,7 @@ TEST_F(ConfigReaderTest, SaveRoundTrip_FieldCompleteness) {
     EXPECT_EQ(loaded->database_path, original.database_path);
     EXPECT_EQ(loaded->sql_query, original.sql_query);
     EXPECT_EQ(loaded->sql_by_subid, original.sql_by_subid);
-    EXPECT_EQ(loaded->xray_executable, original.xray_executable);
+    EXPECT_EQ(loaded->proxy.xray_executable, original.proxy.xray_executable);
     EXPECT_EQ(loaded->xray_workers, original.xray_workers);
     EXPECT_EQ(loaded->xray_start_port, original.xray_start_port);
     EXPECT_EQ(loaded->xray_api_port, original.xray_api_port);

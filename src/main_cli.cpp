@@ -489,7 +489,7 @@ int main(int argc, char* argv[]) {
         std::filesystem::path configDirFs = std::filesystem::path(exeBaseDir) / "config";
         std::string configDirStr = configDirFs.string();
         
-        XrayManager* xrayMgr = XrayManager::getInstance(appConfig->xray_executable, configDirStr, appConfig->xray_workers);
+        XrayManager* xrayMgr = XrayManager::getInstance(appConfig->proxy.xray_executable, configDirStr, appConfig->xray_workers);
         int started = xrayMgr->start(1, appConfig->xray_start_port, appConfig->xray_api_port);
         
         if (started == 0) {
@@ -499,7 +499,7 @@ int main(int argc, char* argv[]) {
             return 1;
         }
         
-        ProxyFinder finder(db, xrayMgr, appConfig->xray_executable, appConfig->test_url, "", appConfig->test_timeout_ms);
+        ProxyFinder finder(db, xrayMgr, appConfig->proxy.xray_executable, appConfig->test_url, "", appConfig->test_timeout_ms);
         
         std::pair<int, int> ports;
         if (commandMode == "find-proxy") {
@@ -679,7 +679,7 @@ int main(int argc, char* argv[]) {
             return 1;
         }
         
-        update::SubitemUpdaterV2 updater(db, appConfig->xray_executable, *appConfig, 
+        update::SubitemUpdaterV2 updater(db, appConfig->proxy.xray_executable, *appConfig, 
                                                           nullptr, exeDir);
         
         bool result = false;
@@ -866,7 +866,7 @@ int main(int argc, char* argv[]) {
         }
         
         update::SubitemUpdaterV2 subUpdaterV2(db,
-                                              appConfig->xray_executable,
+                                              appConfig->proxy.xray_executable,
                                               *appConfig,
                                               nullptr,
                                               exeDir);
@@ -915,7 +915,7 @@ if (commandMode == "test-sub") {
         } 
         else if (commandMode == "update") {
              update::SubitemUpdaterV2 subUpdaterV2(db,
-                                                    appConfig->xray_executable,
+                                                    appConfig->proxy.xray_executable,
                                                     *appConfig,
                                                     nullptr,
                                                     exeDir);
