@@ -26,6 +26,8 @@ public:
                            const std::unordered_map<std::string, int>& proxyCounts);
     std::string getSelectedSubId() const;
     const std::vector<db::models::Subitem>& getSubscriptions() const { return subs_; }
+    void RefreshContextMenu();
+    void filterBySearch(const wxString& query);
 
 private:
     void onSelectionChanged(wxDataViewEvent& event);
@@ -52,6 +54,11 @@ private:
     std::vector<db::models::Subitem> subs_;
     std::unordered_map<std::string, int> proxyCounts_;
     std::unordered_map<std::string, int> validProxyCounts_;
+
+    // Unfiltered originals for search filtering
+    std::vector<db::models::Subitem> allSubs_;
+    std::unordered_map<std::string, int> allProxyCounts_;
+    std::unordered_map<std::string, int> allValidProxyCounts_;
     SortState sortState_;
 
     // Double-click detection (MSW wxDataViewMainWindow lacks CS_DBLCLKS)

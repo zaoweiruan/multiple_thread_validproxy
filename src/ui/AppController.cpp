@@ -15,6 +15,7 @@ using ui::ScopeGuard;
 #include "AutoTaskManager.h"
 #include "Utils.h"
 #include "Logger.h"
+#include "RegionBatchResolver.h"
 
 #include <wx/app.h>
 #include <wx/event.h>
@@ -29,6 +30,7 @@ using ui::ScopeGuard;
 #include <chrono>
 #include <thread>
 #include <atomic>
+#include <boost/json.hpp>
 
 // ---------------------------------------------------------------
 // AppController implementation
@@ -800,6 +802,11 @@ void AppController::doTestSubscription(const std::string& subId, wxEvtHandler* w
         ProxyBatchTester tester(db_, config_, "", &cancelRequested_, &netMon_);
         bool ok = tester.runWithSubId(subId);
 
+        // Batch resolve regions for valid proxies only when actual tests were performed
+        if (tester.getTotalProxies() > 0) {
+            resolveRegionsForValidProxies(subId);
+        }
+
         if (wxHandler) {
             wxQueueEvent(wxHandler, new StatusUpdateEvent(2, ok ? "Test completed" : "Test failed"));
         }
@@ -870,6 +877,11 @@ void AppController::doTestAllProxies(wxEvtHandler* wxHandler) {
     try {
         ProxyBatchTester tester(db_, config_, "", &cancelRequested_, &netMon_);
         bool ok = tester.run();
+
+        // Batch resolve regions for all valid proxies only when actual tests were performed
+        if (tester.getTotalProxies() > 0) {
+            resolveRegionsForValidProxies();
+        }
 
         if (wxHandler) {
             wxQueueEvent(wxHandler, new StatusUpdateEvent(2, ok ? "All proxies test completed" : "All proxies test had failures"));
@@ -1106,6 +1118,189 @@ void AppController::syncDatabasesAsync(wxEvtHandler* wxHandler) {
         AsyncOperationGuard guard{workerThread_, isRunning_, cancelRequested_, wxHandler};
         if (!guard.isAllowed()) return;
     workerThread_ = std::thread(&AppController::doSyncDatabases, this, wxHandler);
+}
+
+// ---------------------------------------------------------------
+// Batch Region Resolution
+// ---------------------------------------------------------------
+int AppController::resolveRegionsForValidProxies(const std::string& subId) {
+    RegionBatchResolver resolver(db_, config_);
+    return resolver.run(subId);
+}
+
+// ---------------------------------------------------------------
+// Async Batch Region Resolution (standalone, triggered from UI)
+// ---------------------------------------------------------------
+void AppController::resolveRegionsBatchAsync(wxEvtHandler* handler, const std::string& subId) {
+    AsyncOperationGuard guard{workerThread_, isRunning_, cancelRequested_, handler};
+    if (!guard.isAllowed()) return;
+    workerThread_ = std::thread(&AppController::doResolveRegionsBatch, this, handler, subId);
+}
+
+void AppController::doResolveRegionsBatch(wxEvtHandler* handler, const std::string& subId) {
+    ScopeGuard<std::atomic<bool>> _guard{isRunning_};
+
+    try {
+        if (isTestCancelled()) {
+            if (handler) {
+                wxQueueEvent(handler, new StatusUpdateEvent(0, "CANCELLED"));
+            }
+            return;
+        }
+
+        if (handler) {
+            wxQueueEvent(handler, new StatusUpdateEvent(0, "RESOLVE_REGION_START"));
+            // Also notify the top-level MainFrame window so the cancel button
+            // gets enabled.  Custom wxEvent types do NOT propagate up the
+            // window hierarchy (unlike wxCommandEvent).
+            if (wxWindow* win = dynamic_cast<wxWindow*>(handler)) {
+                if (wxWindow* topLevel = wxGetTopLevelParent(win)) {
+                    if (topLevel != win) {
+                        wxQueueEvent(topLevel, new StatusUpdateEvent(0, "RESOLVE_REGION_START"));
+                    }
+                }
+            }
+        }
+
+        RegionBatchResolver resolver(db_, config_, &cancelRequested_);
+        resolver.setProgressCallback([handler](const std::string& indexId, const std::string& region, int processed, int total) {
+            if (handler) {
+                std::string msg = "地区解析: " + indexId;
+                if (!region.empty()) {
+                    msg += " -> " + region;
+                }
+                msg += " (" + std::to_string(processed) + "/" + std::to_string(total) + ")";
+                wxQueueEvent(handler, new ProxyTestProgressEvent(processed, total, "", "", "", msg, false));
+            }
+        });
+        int resolved = resolver.run(subId);
+
+        std::string msg;
+        if (resolved > 0) {
+            msg = "批量地区解析完成: " + std::to_string(resolved) + " 个代理";
+        } else {
+            msg = "地区解析完成（无新结果）";
+        }
+
+        if (handler) {
+            wxQueueEvent(handler, new StatusUpdateEvent(0, msg));
+            // Send completion event to restore UI state and trigger refresh
+            wxQueueEvent(handler, new ProxyTestProgressEvent(0, 0, "", "", "", msg, true));
+        }
+
+        // Also broadcast to top-level window for proxy list refresh
+        if (wxWindow* win = dynamic_cast<wxWindow*>(handler)) {
+            if (wxWindow* topLevel = wxGetTopLevelParent(win)) {
+                if (topLevel != win) {
+                    wxQueueEvent(topLevel, new ProxyTestProgressEvent(0, 0, "", "", "", msg, true));
+                }
+            }
+        }
+
+        Logger::write("resolveRegionsBatch: " + msg, LogLevel::REPORT);
+    } catch (const std::exception& e) {
+        if (handler) {
+            wxQueueEvent(handler, new StatusUpdateEvent(0, std::string("地区解析错误: ") + e.what()));
+}
+        Logger::write(std::string("resolveRegionsBatch error: ") + e.what(), LogLevel::ERR);
+     }
+ }
+
+// ---------------------------------------------------------------
+// Single proxy region resolution (uses RegionBatchResolver pattern)
+// ---------------------------------------------------------------
+void AppController::resolveSingleProxyRegionAsync(const std::string& indexId, wxEvtHandler* handler) {
+    AsyncOperationGuard guard{workerThread_, isRunning_, cancelRequested_, handler};
+    if (!guard.isAllowed()) return;
+    workerThread_ = std::thread(&AppController::doResolveSingleProxyRegion, this, indexId, handler);
+}
+
+void AppController::doResolveSingleProxyRegion(const std::string& indexId, wxEvtHandler* handler) {
+    ScopeGuard<std::atomic<bool>> _guard{isRunning_};
+
+    try {
+        if (isTestCancelled()) {
+            if (handler) {
+                wxQueueEvent(handler, new StatusUpdateEvent(0, "CANCELLED"));
+            }
+            return;
+        }
+
+        if (handler) {
+            wxQueueEvent(handler, new StatusUpdateEvent(0, "正在解析单个代理地区..."));
+        }
+
+        // Query the specific proxy by indexId
+        std::string sql = "SELECT p.IndexId, p.Address, p.Remarks"
+                          " FROM ProfileItem p"
+                          " INNER JOIN ProfileExItem e ON p.IndexId = e.IndexId"
+                          " WHERE p.IndexId = ? AND CAST(e.delay AS INTEGER) > 0 LIMIT 1;";
+        sqlite3_stmt* stmt = nullptr;
+        if (sqlite3_prepare_v2(db_, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
+            Logger::write("resolveSingleRegion: SQL error: " + std::string(sqlite3_errmsg(db_)), LogLevel::ERR);
+            if (handler) {
+                wxQueueEvent(handler, new StatusUpdateEvent(0, "查询代理失败"));
+            }
+            return;
+        }
+        sqlite3_bind_text(stmt, 1, indexId.c_str(), -1, SQLITE_TRANSIENT);
+
+        std::string proxyIndexId, proxyAddress, proxyRemarks;
+        if (sqlite3_step(stmt) == SQLITE_ROW) {
+            proxyIndexId = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+            proxyAddress = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+            proxyRemarks = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
+        }
+        sqlite3_finalize(stmt);
+
+        if (proxyIndexId.empty()) {
+            Logger::write("resolveSingleRegion: proxy not found or invalid: " + indexId, LogLevel::INFO);
+            if (handler) {
+                wxQueueEvent(handler, new StatusUpdateEvent(0, "代理未找到或无效"));
+            }
+            return;
+        }
+
+        Logger::write("[RegionBatchResolver] Resolving region for " + proxyAddress + " (" + proxyIndexId + ")", LogLevel::INFO);
+
+        // Reuse shared ipinfo.io resolution logic from RegionBatchResolver
+        std::string response = RegionBatchResolver::fetchRegionFromIpInfo(proxyAddress, config_.ipinfo_token);
+        if (response.empty()) {
+            if (handler)
+                wxQueueEvent(handler, new StatusUpdateEvent(0, "API请求失败"));
+            return;
+        }
+
+        std::string region = RegionBatchResolver::parseRegionFromJson(response);
+        if (region.empty()) {
+            if (handler)
+                wxQueueEvent(handler, new StatusUpdateEvent(0, "无法解析地区"));
+            return;
+        }
+
+        // Update database
+        const char* updateSql = "UPDATE ProfileItem SET Region = ? WHERE IndexId = ?;";
+        sqlite3_stmt* updateStmt = nullptr;
+        if (sqlite3_prepare_v2(db_, updateSql, -1, &updateStmt, nullptr) == SQLITE_OK) {
+            sqlite3_bind_text(updateStmt, 1, region.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(updateStmt, 2, proxyIndexId.c_str(), -1, SQLITE_TRANSIENT);
+            if (sqlite3_step(updateStmt) == SQLITE_DONE) {
+                Logger::write("[UI] Resolved region for " + proxyIndexId + ": " + region, LogLevel::INFO);
+            }
+            sqlite3_finalize(updateStmt);
+        }
+
+        std::string msg = "解析成功: " + region;
+        if (handler) {
+            wxQueueEvent(handler, new StatusUpdateEvent(0, msg));
+            wxQueueEvent(handler, new ProxyTestProgressEvent(0, 0, proxyIndexId, "", "", msg, true));
+        }
+    } catch (const std::exception& e) {
+        if (handler) {
+            wxQueueEvent(handler, new StatusUpdateEvent(0, std::string("解析错误: ") + e.what()));
+        }
+        Logger::write(std::string("resolveSingleProxyRegion error: ") + e.what(), LogLevel::ERR);
+    }
 }
 
 // ---------------------------------------------------------------

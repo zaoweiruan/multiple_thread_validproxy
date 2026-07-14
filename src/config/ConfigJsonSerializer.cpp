@@ -23,6 +23,9 @@ boost::json::object ConfigJsonSerializer::serialize(const AppConfig& config) con
     boost::json::object testObj;
     testObj["url"] = config.test_url;
     testObj["timeout_ms"] = config.test_timeout_ms;
+    if (!config.ipinfo_token.empty()) {
+        testObj["ipinfo_token"] = config.ipinfo_token;
+    }
     root["test"] = testObj;
 
     // log

@@ -54,6 +54,7 @@ struct Profileitem {
   std::string certsha;         // 32: CertSha
   std::string echconfiglist;   // 33: EchConfigList
   std::string echforcequery;   // 34: EchForceQuery
+  std::string region;          // 35: Region
   
   // 非数据库字段
   int grpcMultiMode = 0;
@@ -97,7 +98,7 @@ struct Profileitem {
   static Profileitem fromStmt(sqlite3_stmt* stmt) {
     Profileitem obj;
     const char* text;
-    // SQL字段顺序（必须和结构体字段顺序一致）: IndexId(0), ConfigType(1), ConfigVersion(2), Address(3), Port(4), Ports(5), Id(6), AlterId(7), Security(8), Network(9), Remarks(10), HeaderType(11), RequestHost(12), Path(13), StreamSecurity(14), AllowInsecure(15), Subid(16), IsSub(17), Flow(18), Sni(19), Alpn(20), CoreType(21), PreSocksPort(22), Fingerprint(23), DisplayLog(24), PublicKey(25), ShortId(26), SpiderX(27), Mldsa65Verify(28), Extra(29), MuxEnabled(30), Cert(31), CertSha(32), EchConfigList(33), EchForceQuery(34)
+    // SQL字段顺序（必须和结构体字段顺序一致）: IndexId(0), ConfigType(1), ConfigVersion(2), Address(3), Port(4), Ports(5), Id(6), AlterId(7), Security(8), Network(9), Remarks(10), HeaderType(11), RequestHost(12), Path(13), StreamSecurity(14), AllowInsecure(15), Subid(16), IsSub(17), Flow(18), Sni(19), Alpn(20), CoreType(21), PreSocksPort(22), Fingerprint(23), DisplayLog(24), PublicKey(25), ShortId(26), SpiderX(27), Mldsa65Verify(28), Extra(29), MuxEnabled(30), Cert(31), CertSha(32), EchConfigList(33), EchForceQuery(34), Region(35)
     
     // IndexId(0)
     text = (const char*)sqlite3_column_text(stmt, 0);
@@ -204,6 +205,13 @@ struct Profileitem {
     // EchForceQuery(34)
     text = (const char*)sqlite3_column_text(stmt, 34);
     obj.echforcequery = text ? text : "";
+    // Region(35) - backward compatible: only read if column exists
+    if (sqlite3_column_count(stmt) > 35) {
+        text = (const char*)sqlite3_column_text(stmt, 35);
+        obj.region = text ? text : "";
+    } else {
+        obj.region = "";
+    }
     
     return obj;
   }
@@ -306,6 +314,9 @@ struct Profileitem {
     oss << ", ";
     oss << "\"Cert\": ";
     oss << cert;  // 简化输出
+    oss << ", ";
+    oss << "\"Region\": ";
+    oss << region;  // 简化输出
     oss << "}";
     return oss.str();
   }

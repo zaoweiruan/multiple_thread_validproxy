@@ -30,6 +30,8 @@ public:
     XrayManager* getXrayManager() { return xrayManager_; }
     TestResult getLastResult() const { return lastResult_; }
 
+    int getTotalProxies() const { return totalProxies_; }
+
     // Cancel support
     void cancel() { cancelRequested_ = true; }
     bool isCancelled() const {

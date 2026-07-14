@@ -3,6 +3,7 @@
 #include "Events.h"
 #include "Logger.h"
 #include "Utils.h"
+#include "MainFrame.h"
 
 #include <wx/sizer.h>
 #include <wx/dataview.h>
@@ -21,9 +22,12 @@ static const long DBLCLICK_TIMEOUT_MS = 500;
 
 // Context menu command IDs — must be unique to avoid wxID_ANY collisions
 enum {
-    ID_CONTEXT_TEST_PROXY    = wxID_HIGHEST + 400,
-    ID_CONTEXT_EXPORT_SHARE  = wxID_HIGHEST + 401,
-    ID_CONTEXT_START_PROXY   = wxID_HIGHEST + 402,
+    ID_CONTEXT_TEST_PROXY     = wxID_HIGHEST + 400,
+    ID_CONTEXT_EXPORT_SHARE   = wxID_HIGHEST + 401,
+    ID_CONTEXT_START_PROXY    = wxID_HIGHEST + 402,
+    ID_CONTEXT_RESOLVE_REGION = wxID_HIGHEST + 403,
+    ID_CONTEXT_BATCH_RESOLVE_REGION = wxID_HIGHEST + 404,
+    ID_CONTEXT_REFRESH        = wxID_HIGHEST + 405,
 };
 
 // -------------------------------------------------------------------
@@ -32,6 +36,9 @@ wxBEGIN_EVENT_TABLE(ProxyListPanel, wxPanel)
     EVT_MENU(ID_CONTEXT_TEST_PROXY, ProxyListPanel::onTestProxy)
     EVT_MENU(ID_CONTEXT_EXPORT_SHARE, ProxyListPanel::onExportShareLink)
     EVT_MENU(ID_CONTEXT_START_PROXY, ProxyListPanel::onStartProxy)
+    EVT_MENU(ID_CONTEXT_RESOLVE_REGION, ProxyListPanel::onResolveRegion)
+    EVT_MENU(ID_CONTEXT_BATCH_RESOLVE_REGION, ProxyListPanel::onBatchResolveRegion)
+    EVT_MENU(ID_CONTEXT_REFRESH, ProxyListPanel::onRefreshProxyList)
     EVT_DATAVIEW_SELECTION_CHANGED(wxID_ANY, ProxyListPanel::onSelectionChanged)
 wxEND_EVENT_TABLE()
 
@@ -54,13 +61,14 @@ ProxyListPanel::ProxyListPanel(wxWindow* parent, AppController* controller,
     listCtrl_->AssociateModel(model_);
     model_->DecRef();  // AssociateModel took ownership
 
-    // Columns matching main-layout.svg: Row# | IndexId (hidden) | Host (100) |
-    // Port (70) | Latency (80) | Failures (80) | Remarks (160) | Message (160)
+    // Columns: Row# | Region | Latency ↕ | Type | Host ↕ | Port | Failures ↕ |
+    // Remarks | Message | IndexId
     listCtrl_->AppendTextColumn("#",        COL_ROWNUM,   wxDATAVIEW_CELL_INERT,  40);
+    listCtrl_->AppendTextColumn("Region",   COL_REGION,   wxDATAVIEW_CELL_INERT,  90);
+    listCtrl_->AppendTextColumn("Latency ↕", COL_DELAY,  wxDATAVIEW_CELL_INERT,  80);
     listCtrl_->AppendTextColumn("Type",     COL_TYPE,     wxDATAVIEW_CELL_INERT,  80);
     listCtrl_->AppendTextColumn("Host ↕",   COL_ADDRESS,  wxDATAVIEW_CELL_INERT, 100);
     listCtrl_->AppendTextColumn("Port",     COL_PORT,     wxDATAVIEW_CELL_INERT,  70);
-    listCtrl_->AppendTextColumn("Latency ↕", COL_DELAY,  wxDATAVIEW_CELL_INERT,  80);
     listCtrl_->AppendTextColumn("Failures ↕", COL_FAILURES, wxDATAVIEW_CELL_INERT, 80);
     listCtrl_->AppendTextColumn("Remarks",  COL_REMARKS,  wxDATAVIEW_CELL_EDITABLE, 160);
     listCtrl_->AppendTextColumn("Message",  COL_MESSAGE,  wxDATAVIEW_CELL_INERT, 160);
@@ -237,6 +245,12 @@ void ProxyListPanel::onContextMenu(wxDataViewEvent& event) {
     wxMenu menu;
     menu.Append(ID_CONTEXT_TEST_PROXY, "测试此代理");
     menu.Append(ID_CONTEXT_EXPORT_SHARE, "有效代理分享");
+    menu.AppendSeparator();
+    menu.Append(ID_CONTEXT_RESOLVE_REGION, "解析地区");
+    menu.Append(ID_CONTEXT_BATCH_RESOLVE_REGION, "批量解析地区");
+    menu.AppendSeparator();
+    menu.Append(ID_CONTEXT_REFRESH, "刷新");
+    menu.AppendSeparator();
     menu.Append(ID_CONTEXT_START_PROXY, "开启代理");
     PopupMenu(&menu);
     event.Skip();
@@ -244,6 +258,13 @@ void ProxyListPanel::onContextMenu(wxDataViewEvent& event) {
 
 // -------------------------------------------------------------------
 void ProxyListPanel::onTestProxy(wxCommandEvent& event) {
+    // Sync toolbar Cancel button state from controller before re-entry check
+    {
+        wxWindow* topLevel = wxGetTopLevelParent(this);
+        if (topLevel && topLevel != this) {
+            static_cast<MainFrame*>(topLevel)->syncToolbarState();
+        }
+    }
     // Prevent testing during active operations
     if (controller_ && controller_->isRunning()) {
         wxMessageBox(L"操作进行中，请等待完成后再试", L"操作进行中", wxOK | wxICON_WARNING);
@@ -270,7 +291,21 @@ void ProxyListPanel::onTestProxy(wxCommandEvent& event) {
 }
 
 // -------------------------------------------------------------------
+void ProxyListPanel::onRefreshProxyList(wxCommandEvent& event) {
+    // Refresh proxy list from database, preserving current subscription filter
+    loadProxies(currentSubId_);
+    (void)event;
+}
+
+// -------------------------------------------------------------------
 void ProxyListPanel::onExportShareLink(wxCommandEvent& event) {
+    // Sync toolbar Cancel button state from controller before re-entry check
+    {
+        wxWindow* topLevel = wxGetTopLevelParent(this);
+        if (topLevel && topLevel != this) {
+            static_cast<MainFrame*>(topLevel)->syncToolbarState();
+        }
+    }
     // Prevent export during active operations
     if (controller_ && controller_->isRunning()) {
         wxMessageBox(L"操作进行中，请等待完成后再试", L"操作进行中", wxOK | wxICON_WARNING);
@@ -289,6 +324,56 @@ void ProxyListPanel::onExportShareLink(wxCommandEvent& event) {
         msg = "导出分享链接失败。";
     }
     wxMessageBox(msg, "有效代理分享", wxOK | (ok ? wxICON_INFORMATION : wxICON_WARNING));
+    (void)event;
+}
+
+// -------------------------------------------------------------------
+void ProxyListPanel::onResolveRegion(wxCommandEvent& event) {
+    // Sync toolbar Cancel button state from controller before re-entry check
+    {
+        wxWindow* topLevel = wxGetTopLevelParent(this);
+        if (topLevel && topLevel != this) {
+            static_cast<MainFrame*>(topLevel)->syncToolbarState();
+        }
+    }
+
+    wxDataViewItem item = listCtrl_->GetSelection();
+    if (!item.IsOk()) return;
+
+    if (controller_ && controller_->isRunning()) {
+        wxMessageBox(L"操作进行中，请等待完成后再试", L"操作进行中", wxOK | wxICON_WARNING);
+        return;
+    }
+
+    unsigned int viewRow = model_->GetRow(item);
+    if (viewRow == static_cast<unsigned int>(-1)) return;
+
+    std::string indexId = model_->getIndexIdAtRow(viewRow);
+    if (indexId.empty()) return;
+
+    // Use batch resolver async method (online via api.ipinfo.io/lite)
+    controller_->resolveSingleProxyRegionAsync(indexId, this);
+    (void)event;
+}
+
+// -------------------------------------------------------------------
+void ProxyListPanel::onBatchResolveRegion(wxCommandEvent& event) {
+    if (!controller_) return;
+
+    // Sync toolbar Cancel button state from controller before re-entry check
+    {
+        wxWindow* topLevel = wxGetTopLevelParent(this);
+        if (topLevel && topLevel != this) {
+            static_cast<MainFrame*>(topLevel)->syncToolbarState();
+        }
+    }
+
+    if (controller_->isRunning()) {
+        wxMessageBox(L"操作进行中，请等待完成后再试", L"操作进行中", wxOK | wxICON_WARNING);
+        return;
+    }
+
+    controller_->resolveRegionsBatchAsync(this, currentSubId_);
     (void)event;
 }
 
@@ -431,6 +516,7 @@ void ProxyListPanel::filterBySearch(const wxString& query) {
         for (const db::models::Profileitem& p : allProxies_) {
             if (p.address.find(q) != std::string::npos ||
                 p.remarks.find(q) != std::string::npos ||
+                p.region.find(q) != std::string::npos ||
                 p.indexid.find(q) != std::string::npos) {
                 proxies_.push_back(p);
             }
@@ -456,6 +542,21 @@ void ProxyListPanel::filterBySearch(const wxString& query) {
         model_->Reset(static_cast<unsigned int>(proxies_.size()));
         model_->detectIdOffset();
     }
+}
+
+// -------------------------------------------------------------------
+bool ProxyListPanel::HasSelection() const {
+    return listCtrl_->GetSelection().IsOk();
+}
+
+// -------------------------------------------------------------------
+// RefreshContextMenu — re-evaluate context menu state.
+// Currently a no-op because the context menu is created on-demand
+// in onContextMenu(). Retained as an extension point for when
+// persistent menu state is added.
+// -------------------------------------------------------------------
+void ProxyListPanel::RefreshContextMenu() {
+    // Context menu is created dynamically; no persistent state to refresh.
 }
 
 // -------------------------------------------------------------------

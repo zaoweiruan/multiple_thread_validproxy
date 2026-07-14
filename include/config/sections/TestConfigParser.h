@@ -32,6 +32,11 @@ inline void TestConfigParser::parse(const boost::json::value& root, AppConfig& c
         } else {
             config.test_timeout_ms = 5000;
         }
+        if (test.contains("ipinfo_token") && test.at("ipinfo_token").is_string()) {
+            config.ipinfo_token = test.at("ipinfo_token").as_string().c_str();
+        } else if (test.contains("ipinfo_token")) {
+            Logger::write("WARNING: config.test.ipinfo_token has wrong type (expected string)", LogLevel::WARN);
+        }
     } else if (obj.contains("test")) {
         Logger::write("WARNING: config.test has wrong type (expected object), using default", LogLevel::WARN);
     }

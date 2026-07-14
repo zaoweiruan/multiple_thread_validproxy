@@ -56,6 +56,7 @@ enum {
     ID_TOOL_AUTOTASK      = wxID_HIGHEST + 210,
     ID_TOOL_CLEAR         = wxID_HIGHEST + 207,
     ID_SEARCH_BOX         = wxID_HIGHEST + 206,
+    ID_SEARCH_TARGET      = wxID_HIGHEST + 300,
     ID_TOOL_DETAIL_TOGGLE = wxID_HIGHEST + 302,
 };
 
@@ -151,6 +152,8 @@ MainFrame::MainFrame(const config::AppConfig& cfg, sqlite3* db)
         } else if (payload.StartsWith("REJECT:")) {
             wxMessageBox(payload.Mid(7), "Operation Busy",
                          wxOK | wxICON_INFORMATION, this);
+        } else if (payload.StartsWith("RESOLVE_REGION_START")) {
+            setOperationState(OperationType::RESOLVE_REGION);
         } else {
             // Auto-refresh the subscription panel when an update completes,
             // so the user sees updated proxy counts without manual "刷新".
@@ -182,15 +185,18 @@ MainFrame::MainFrame(const config::AppConfig& cfg, sqlite3* db)
 
     // ── Test completion → refresh Delay column and restore UI state ──
     Bind(wxEVT_PROXY_TEST_PROGRESS, [this](ProxyTestProgressEvent& evt) {
-        if (evt.isCompleted() && proxyPanel_) {
-            proxyPanel_->refreshResults();
-        }
-        if (evt.isCompleted() && subPanel_) {
-            subPanel_->loadSubscriptions();
-        }
         if (evt.isCompleted()) {
+            if (proxyPanel_) {
+                proxyPanel_->refreshResults();
+            }
+            if (subPanel_) {
+                subPanel_->loadSubscriptions();
+            }
             setOperationState(OperationType::NONE);
             setStatusText(0, "Test completed");
+        } else {
+            // Show per-proxy progress in status bar (e.g. region resolution)
+            setStatusText(0, evt.getMessage());
         }
     });
 
@@ -245,7 +251,7 @@ Bind(wxEVT_SUB_LIST_LOADED, [this](SubListLoadedEvent& evt) {
     }
 });
       
-// Bind proxy selection to update detail panel
+// Bind proxy selection to update detail panel and button/menu states
        Bind(wxEVT_PROXY_SELECTION, [this](ProxySelectionEvent& evt) {
            if (detailPanel_ && controller_) {
                // Get full proxy data from controller for advanced fields
@@ -256,6 +262,9 @@ Bind(wxEVT_SUB_LIST_LOADED, [this](SubListLoadedEvent& evt) {
                    evt.getIndexId(), evt.getHost(), evt.getPort(), evt.getDelay(),
                    evt.getMessage(), evt.getFailures(), evt.getRemarks(), proxy);
            }
+           // Update toolbar and menu states based on new selection
+           UpdateButtonStates();
+           UpdateMenuStates();
        });
      
     initTrayIcon();
@@ -405,10 +414,35 @@ void MainFrame::setOperationState(OperationType op) {
             case OperationType::AUTOTASK:
                 tb->SetToolShortHelp(ID_TOOL_CANCEL, "停止自动任务");
                 break;
+            case OperationType::RESOLVE_REGION:
+                tb->SetToolShortHelp(ID_TOOL_CANCEL, "取消地区解析");
+                break;
             default:
                 break;
         }
     }
+}
+
+void MainFrame::syncToolbarState() {
+    if (!m_toolbar || !controller_) return;
+    wxAuiToolBar* tb = m_toolbar;
+    tb->EnableTool(ID_TOOL_CANCEL, controller_->isRunning());
+}
+
+void MainFrame::UpdateButtonStates() {
+    // Update toolbar button states based on current selection and operation state.
+    // Currently, only the Cancel button is state-dependent (managed by setOperationState).
+    // This method serves as an extension point for future selection-dependent buttons.
+    if (!m_toolbar) return;
+    syncToolbarState();
+}
+
+void MainFrame::UpdateMenuStates() {
+    // Update main menu item states based on current selection and operation state.
+    // Currently, no menu items are selection-dependent.
+    // This method serves as an extension point for future selection-dependent menu items.
+    if (!menuBar_) return;
+    // Future: enable/disable menu items depending on selection state
 }
 
 // -------------------------------------------------------------------
@@ -487,6 +521,16 @@ void MainFrame::initToolBar() {
 
     // ── Search box: left-shifted by 150px from center ──
     m_toolbar->AddSpacer(70);  // small gap after tools, then search (shifted ~150px left)
+
+    // Search target toggle: "代理" (search proxy list) or "订阅" (search subscriptions)
+    wxString searchTargets[] = { "代理", "订阅" };
+    m_searchTargetChoice = new wxChoice(m_toolbar, ID_SEARCH_TARGET,
+                                        wxDefaultPosition, wxSize(60, 25));
+    m_searchTargetChoice->Append("代理");
+    m_searchTargetChoice->Append("订阅");
+    m_searchTargetChoice->SetSelection(0);
+    m_toolbar->AddControl(m_searchTargetChoice);
+
     m_searchBox = new wxSearchCtrl(m_toolbar, ID_SEARCH_BOX, wxEmptyString,
                                    wxDefaultPosition, wxSize(200, 25),
                                    wxTE_PROCESS_ENTER);
@@ -678,6 +722,7 @@ void MainFrame::onMenuExit(wxCommandEvent&) {
 }
 
 void MainFrame::onMenuUpdateAll(wxCommandEvent&) {
+    syncToolbarState();
     if (controller_ && controller_->isRunning()) {
         wxMessageBox(L"操作进行中，请等待完成后再试", L"操作进行中", wxOK | wxICON_WARNING, this);
         return;
@@ -834,6 +879,7 @@ void MainFrame::onMenuConfig(wxCommandEvent&) {
 }
 
 void MainFrame::onMenuAutoTask(wxCommandEvent&) {
+    syncToolbarState();
     if (controller_ && controller_->isRunning()) {
         wxMessageBox(L"操作进行中，请等待完成后再试", L"操作进行中", wxOK | wxICON_WARNING, this);
         return;
@@ -844,6 +890,7 @@ void MainFrame::onMenuAutoTask(wxCommandEvent&) {
 }
 
 void MainFrame::onMenuAutoTaskResume(wxCommandEvent&) {
+    syncToolbarState();
     if (controller_ && controller_->isRunning()) {
         wxMessageBox(L"操作进行中，请等待完成后再试", L"操作进行中", wxOK | wxICON_WARNING, this);
         return;
@@ -866,6 +913,7 @@ void MainFrame::onToolUpdateAll(wxCommandEvent& event) {
 }
 
 void MainFrame::onTestSubscription(SubscriptionTestEvent& evt) {
+    syncToolbarState();
     if (controller_ && controller_->isRunning()) {
         wxMessageBox(L"操作进行中，请等待完成后再试", L"操作进行中", wxOK | wxICON_WARNING, this);
         return;
@@ -876,6 +924,7 @@ void MainFrame::onTestSubscription(SubscriptionTestEvent& evt) {
 }
 
 void MainFrame::onToolTest(wxCommandEvent& event) {
+    syncToolbarState();
     if (controller_ && controller_->isRunning()) {
         wxMessageBox(L"操作进行中，请等待完成后再试", L"操作进行中", wxOK | wxICON_WARNING, this);
         return;
@@ -934,23 +983,39 @@ void MainFrame::onResize(wxSizeEvent& event) {
 void MainFrame::onSearchBoxEnter(wxCommandEvent& event) {
     wxString query = m_searchBox->GetValue();
     setStatusText(0, "Search: " + query);
-    if (proxyPanel_) {
-        proxyPanel_->filterBySearch(query);
+    if (m_searchTargetChoice->GetSelection() == 0) {
+        if (proxyPanel_) {
+            proxyPanel_->filterBySearch(query);
+        }
+    } else {
+        if (subPanel_) {
+            subPanel_->filterBySearch(query);
+        }
     }
     (void)event;
 }
 
 void MainFrame::onSearchTextChanged(wxCommandEvent& event) {
-    if (proxyPanel_) {
-        proxyPanel_->filterBySearch(m_searchBox->GetValue());
+    if (m_searchTargetChoice->GetSelection() == 0) {
+        if (proxyPanel_) {
+            proxyPanel_->filterBySearch(m_searchBox->GetValue());
+        }
+    } else {
+        if (subPanel_) {
+            subPanel_->filterBySearch(m_searchBox->GetValue());
+        }
     }
     (void)event;
 }
 
 void MainFrame::onSearchClear(wxCommandEvent& event) {
     m_searchBox->SetValue("");
+    // Clear both panels regardless of toggle
     if (proxyPanel_) {
         proxyPanel_->filterBySearch("");
+    }
+    if (subPanel_) {
+        subPanel_->filterBySearch("");
     }
     (void)event;
 }

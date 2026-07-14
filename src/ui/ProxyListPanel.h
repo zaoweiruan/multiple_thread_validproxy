@@ -37,13 +37,18 @@ public:
     void refreshResults();
     void selectProxyByIndexId(const std::string& indexId);
     void filterBySearch(const wxString& query);
+    bool HasSelection() const;
+    void RefreshContextMenu();
 
 private:
     enum class SortDirection { None, Asc, Desc };
 
     void onContextMenu(wxDataViewEvent& event);
     void onTestProxy(wxCommandEvent& event);
+    void onRefreshProxyList(wxCommandEvent& event);
     void onExportShareLink(wxCommandEvent& event);
+    void onResolveRegion(wxCommandEvent& event);
+    void onBatchResolveRegion(wxCommandEvent& event);
     void onStartProxy(wxCommandEvent& event);
     void onProxyTestProgress(ProxyTestProgressEvent& event);
     void onColumnHeaderClick(wxDataViewEvent& event);

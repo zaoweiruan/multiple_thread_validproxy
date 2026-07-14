@@ -98,9 +98,12 @@ set(CORE_SOURCES
     src/UrlFetcher.cpp
     src/Utils.cpp
     src/utils/Base64Utils.cpp
+    src/utils/DnsCache.cpp
+
     src/XrayApi.cpp
     src/XrayInstance.cpp
     src/XrayManager.cpp
+    src/RegionBatchResolver.cpp
     src/AutoTaskManager.cpp
     src/NetworkMonitor.cpp
     src/config/ConfigFileStore.cpp
@@ -320,14 +323,6 @@ if(wxWidgets_FOUND)
 
     copy_wx_dlls(validproxy)
 
-    # Copy validproxy.exe to bin/worker/ (runtime worker directory)
-    add_custom_command(TARGET validproxy POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${CMAKE_SOURCE_DIR}/bin/validproxy.exe"
-            "${CMAKE_SOURCE_DIR}/bin/worker/validproxy.exe"
-        COMMENT "Copying validproxy.exe to bin/worker/"
-    )
-
     # WIN32_EXECUTABLE creates GUI subsystem executable (no console window)
     set_target_properties(validproxy PROPERTIES
         WIN32_EXECUTABLE TRUE
@@ -474,6 +469,8 @@ add_executable(test_config_generator
     tests/test_config_generator.cpp
     src/ConfigGenerator.cpp
     src/ProfileitemDAO.cpp
+
+    src/utils/DnsCache.cpp
     src/ProfileExItemDAO.cpp
     src/Logger.cpp
     src/LoggerInstance.cpp
@@ -507,10 +504,14 @@ set_target_properties(test_config_generator PROPERTIES
 add_test(NAME ConfigGeneratorTest COMMAND test_config_generator)
 
 # -- Delete Subscription tests --
-add_executable(test_delete_subscription tests/test_delete_subscription.cpp src/ProfileitemDAO.cpp src/SubitemDAO.cpp src/Logger.cpp src/LoggerInstance.cpp)
+add_executable(test_delete_subscription tests/test_delete_subscription.cpp     src/ProfileitemDAO.cpp
+
+    src/utils/DnsCache.cpp
+    src/SubitemDAO.cpp src/Logger.cpp src/LoggerInstance.cpp)
 target_include_directories(test_delete_subscription PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(test_delete_subscription PRIVATE gtest_main gtest
     ${VCPKG_ROOT}/installed/x64-mingw-static/lib/libsqlite3.a
+    -lws2_32
 )
 set_target_properties(test_delete_subscription PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
@@ -543,7 +544,7 @@ add_test(NAME ProxyBatchComponentsTest COMMAND test_proxy_batch_components)
 
 # -- ProxyBatchQuery integration tests (uses test DB) --
 add_executable(test_proxy_batch_query tests/test_proxy_batch_query.cpp src/test/ProxyBatchQuery.cpp
-    src/ConfigGenerator.cpp src/ProfileitemDAO.cpp src/ProfileExItemDAO.cpp
+    src/ConfigGenerator.cpp src/ProfileitemDAO.cpp src/utils/DnsCache.cpp src/ProfileExItemDAO.cpp
     src/Logger.cpp src/LoggerInstance.cpp src/Utils.cpp
     src/config/ProfileConfigRepository.cpp src/config/ProfileNormalizer.cpp
     src/config/StreamSettingsBuilder.cpp src/config/OutboundBuilderFactory.cpp

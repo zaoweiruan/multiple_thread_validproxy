@@ -17,15 +17,16 @@
 // -------------------------------------------------------------------
 enum {
     COL_ROWNUM   = 0,
-    COL_TYPE     = 1,
-    COL_ADDRESS  = 2,
-    COL_PORT     = 3,
-    COL_DELAY    = 4,
-    COL_FAILURES = 5,
-    COL_REMARKS  = 6,
-    COL_MESSAGE  = 7,
-    COL_INDEXID  = 8,
-    COL_COUNT    = 9,
+    COL_REGION   = 1,
+    COL_DELAY    = 2,
+    COL_TYPE     = 3,
+    COL_ADDRESS  = 4,
+    COL_PORT     = 5,
+    COL_FAILURES = 6,
+    COL_REMARKS  = 7,
+    COL_MESSAGE  = 8,
+    COL_INDEXID  = 9,
+    COL_COUNT    = 10,
 };
 
 // -------------------------------------------------------------------
