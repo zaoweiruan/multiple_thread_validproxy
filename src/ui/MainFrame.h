@@ -19,6 +19,7 @@ class ProxyListPanel;
 class ProxyDetailPanel;
 class LogPanel;
 class wxSearchCtrl;
+class wxChoice;
 class ConfigDialog;
 class TrayIcon;
 
@@ -28,7 +29,8 @@ enum class OperationType {
     UPDATE,
     FIND,
     SYNC,
-    AUTOTASK
+    AUTOTASK,
+    RESOLVE_REGION
 };
 
 // ---------------------------------------------------------------
@@ -49,6 +51,9 @@ public:
     void setStatusText(int field, const wxString& text);
     void showBalloon(const wxString& title, const wxString& msg);
     void setOperationState(OperationType op);
+    void syncToolbarState();
+    void UpdateButtonStates();
+    void UpdateMenuStates();
 
 private:
     // Initialization
@@ -109,6 +114,7 @@ private:
     sqlite3* db_;
     wxStatusBar* statusBar_{nullptr};
     wxSearchCtrl* m_searchBox{nullptr};
+    wxChoice* m_searchTargetChoice{nullptr};
     wxAuiToolBarItem* m_toggleDetailItem{nullptr};  // Toggle detail panel button
     bool detailPaneVisible_{false};
     config::AppConfig config_;

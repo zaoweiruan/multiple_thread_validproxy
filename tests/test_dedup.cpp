@@ -27,7 +27,8 @@ protected:
             "Flow TEXT, Sni TEXT, Alpn TEXT, CoreType TEXT, PreSocksPort TEXT,"
             "Fingerprint TEXT, DisplayLog TEXT, PublicKey TEXT, ShortId TEXT,"
             "SpiderX TEXT, Mldsa65Verify TEXT, Extra TEXT, MuxEnabled TEXT,"
-            "Cert TEXT, CertSha TEXT, EchConfigList TEXT, EchForceQuery TEXT"
+            "Cert TEXT, CertSha TEXT, EchConfigList TEXT, EchForceQuery TEXT,"
+            "Region TEXT"
         ")");
         exec("CREATE TABLE ProfileExItem ("
             "IndexId TEXT PRIMARY KEY,"

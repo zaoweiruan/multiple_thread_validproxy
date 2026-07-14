@@ -121,6 +121,7 @@ std::string utils::generateUniqueId();  // 19 位数字, 4|5 开头
 | 2026-04-16 | XrayManager 改为单例模式 | ProxyFinder/AppController 复用同一实例 |
 | 2026-04-28 | CoreType NULL 处理：空值时 `sqlite3_bind_null()` | v2rayN 兼容性 |
 | 2026-05-06 | 废弃 `update_subscription` 和 `check_auto_update_interval` 字段 | ConfigReader 清理 |
+| 2026-07-07 | **构建规范: 禁止 POST_BUILD 写入 `bin/worker/`** — `bin/worker/` 是运行时工作目录，构建时自动复制 validproxy.exe 会因文件锁定导致失败。CMakeLists.txt 中已移除该 POST_BUILD 命令 | 构建可靠性提升 |
 
 ---
 

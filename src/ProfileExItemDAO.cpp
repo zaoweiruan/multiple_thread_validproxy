@@ -12,11 +12,22 @@ ProfileExItemDAO::ProfileExItemDAO(sqlite3* db) : db_(db) {
   }
 
 void ProfileExItemDAO::migrateTable(sqlite3* db) {
+    // Add columns to ProfileExItem (existing migrations)
     const char* addCols[] = {
         "ALTER TABLE ProfileExItem ADD COLUMN consecutive_failures INTEGER DEFAULT 0"
     };
     for (const char* sql : addCols) {
         sqlite3_exec(db, sql, nullptr, nullptr, nullptr);
+    }
+
+    // Add Region column to ProfileItem (idempotent - column already exists is OK)
+    {
+        const char* sql = "ALTER TABLE ProfileItem ADD COLUMN Region TEXT;";
+        char* errMsg = nullptr;
+        if (sqlite3_exec(db, sql, nullptr, nullptr, &errMsg) != SQLITE_OK) {
+            // Column already exists - this is normal
+            sqlite3_free(errMsg);
+        }
     }
   }
 

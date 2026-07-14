@@ -34,6 +34,8 @@ updated: 2026-06-15
 | 2026-06-18 | spec | `docs/specs/2026-06-18-Spec-SubitemUpdaterV2-Decomposition-v1.0.md` | SubitemUpdaterV2 分解已完成 — 提取 SubscriptionParser/Deduplicator/Importer/SubscriptionUpdater 四个类 |
 | 2026-06-18 | plan | `docs/plans/2026-06-18-Plan-Decomposition-Five-Phase-Implementation-v1.0.md` | 五阶段实施计划 — 逐任务拆解 ConfigReader → ShareLink → ConfigGenerator → ProxyBatchTester → AppController |
 | 2026-05-19 | — | 批量状态更新 | P4→❌ cancelled; 003->completed; DLL fix->completed |
+| 2026-07-09 | spec | `docs/specs/2026-07-09-Spec-DnsCache-v1.0.md` | DNS 缓存解析模块 — DnsCache 类 getaddrinfo + 惰性 WSAStartup + 互斥锁缓存 | ✅ completed |
+| 2026-07-09 | bugfix | `docs/bugfix/2026-07-09-Bugfix-RegionResolver-Hang-v1.0.md` | RegionResolver 假死修复 — DNS 超时(std::async+10s) + 缓冲互斥锁解耦 + Worker 退出日志 | ✅ completed |
 
 ---
 

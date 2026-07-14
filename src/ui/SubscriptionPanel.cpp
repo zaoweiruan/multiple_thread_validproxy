@@ -1,6 +1,7 @@
 #include "SubscriptionPanel.h"
 #include "AppController.h"
 #include "Events.h"
+#include "MainFrame.h"
 
 #include <wx/sizer.h>
 #include <wx/dataview.h>
@@ -9,6 +10,8 @@
 #include <wx/textdlg.h>
 #include <wx/checkbox.h>
 #include <ctime>
+#include <algorithm>
+#include <cctype>
 #include <iomanip>
 #include <sstream>
 #include "Utils.h"
@@ -115,6 +118,10 @@ void SubscriptionPanel::updateSubscriptionList(const std::vector<db::models::Sub
     subs_ = subs;
     proxyCounts_ = proxyCounts;
     validProxyCounts_ = validProxyCounts_;
+    // Save unfiltered originals for search reset
+    allSubs_ = subs;
+    allProxyCounts_ = proxyCounts;
+    allValidProxyCounts_ = validProxyCounts_;
 
     std::vector<db::models::Subitem> displaySubs;
     std::unordered_map<std::string, int> displayProxyCounts;
@@ -142,6 +149,75 @@ void SubscriptionPanel::updateSubscriptionList(const std::vector<db::models::Sub
         displaySubs.push_back(sub);
         displayProxyCounts[sub.id] = proxyCounts_.count(sub.id) ? proxyCounts_[sub.id] : 0;
         displayValidCounts[sub.id] = validProxyCounts_.count(sub.id) ? validProxyCounts_[sub.id] : 0;
+    }
+
+    subs_ = displaySubs;
+    proxyCounts_ = displayProxyCounts;
+    validProxyCounts_ = displayValidCounts;
+    model_->setData(&subs_, &proxyCounts_, &validProxyCounts_);
+    model_->Reset(0);
+    model_->Reset(static_cast<unsigned int>(subs_.size()));
+    model_->detectIdOffset();
+}
+
+void SubscriptionPanel::filterBySearch(const wxString& query) {
+    // Determine the filtered set of subscriptions
+    std::vector<db::models::Subitem> filtered;
+    std::unordered_map<std::string, int> culledProxyCounts;
+    std::unordered_map<std::string, int> culledValidCounts;
+
+    if (query.IsEmpty()) {
+        // No filter → use all originals
+        filtered = allSubs_;
+        culledProxyCounts = allProxyCounts_;
+        culledValidCounts = allValidProxyCounts_;
+    } else {
+        std::string q = query.Lower().ToStdString();
+        for (const db::models::Subitem& sub : allSubs_) {
+            // Search in remarks, id, or url (case-insensitive)
+            std::string remarks = sub.remarks;
+            std::string id = sub.id;
+            std::string url = sub.url;
+            for (auto& s : { &remarks, &id, &url }) {
+                std::transform(s->begin(), s->end(), s->begin(), ::tolower);
+            }
+            if (remarks.find(q) != std::string::npos ||
+                id.find(q) != std::string::npos ||
+                url.find(q) != std::string::npos) {
+                filtered.push_back(sub);
+                culledProxyCounts[sub.id] = allProxyCounts_.count(sub.id) ? allProxyCounts_.at(sub.id) : 0;
+                culledValidCounts[sub.id] = allValidProxyCounts_.count(sub.id) ? allValidProxyCounts_.at(sub.id) : 0;
+            }
+        }
+    }
+
+    // Rebuild display list with "全部" header
+    std::vector<db::models::Subitem> displaySubs;
+    std::unordered_map<std::string, int> displayProxyCounts;
+    std::unordered_map<std::string, int> displayValidCounts;
+
+    db::models::Subitem allItem;
+    allItem.id = ALL_SUBSCRIPTION_ID;
+    allItem.remarks = "全部";
+    allItem.enabled = "1";
+    allItem.url = "";
+    allItem.updatetime = "";
+    displaySubs.push_back(allItem);
+
+    int totalProxies = 0;
+    int totalValid = 0;
+    for (const std::pair<const std::string, int>& kv : culledProxyCounts) {
+        totalProxies += kv.second;
+    }
+    for (const std::pair<const std::string, int>& kv : culledValidCounts) {
+        totalValid += kv.second;
+    }
+    displayProxyCounts[ALL_SUBSCRIPTION_ID] = totalProxies;
+    displayValidCounts[ALL_SUBSCRIPTION_ID] = totalValid;
+    for (const db::models::Subitem& sub : filtered) {
+        displaySubs.push_back(sub);
+        displayProxyCounts[sub.id] = culledProxyCounts.count(sub.id) ? culledProxyCounts.at(sub.id) : 0;
+        displayValidCounts[sub.id] = culledValidCounts.count(sub.id) ? culledValidCounts.at(sub.id) : 0;
     }
 
     subs_ = displaySubs;
@@ -264,6 +340,13 @@ void SubscriptionPanel::onRefreshSubscription(wxCommandEvent&) {
 }
 
 void SubscriptionPanel::onEditSubscription(wxCommandEvent&) {
+    // Sync toolbar Cancel button state from controller before re-entry check
+    {
+        wxWindow* topLevel = wxGetTopLevelParent(this);
+        if (topLevel && topLevel != this) {
+            static_cast<MainFrame*>(topLevel)->syncToolbarState();
+        }
+    }
     if (controller_ && controller_->isRunning()) {
         wxMessageBox(L"操作进行中，请等待完成后再试", L"操作进行中", wxOK | wxICON_WARNING);
         return;
@@ -279,6 +362,13 @@ void SubscriptionPanel::onEditSubscription(wxCommandEvent&) {
 }
 
 void SubscriptionPanel::onDeleteSubscription(wxCommandEvent&) {
+    // Sync toolbar Cancel button state from controller before re-entry check
+    {
+        wxWindow* topLevel = wxGetTopLevelParent(this);
+        if (topLevel && topLevel != this) {
+            static_cast<MainFrame*>(topLevel)->syncToolbarState();
+        }
+    }
     if (controller_ && controller_->isRunning()) {
         wxMessageBox(L"操作进行中，请等待完成后再试", L"操作进行中", wxOK | wxICON_WARNING);
         return;
@@ -294,10 +384,18 @@ void SubscriptionPanel::onDeleteSubscription(wxCommandEvent&) {
             controller_->deleteSubscription(subId);
         }
         loadSubscriptions();
+        RefreshContextMenu();
     }
 }
 
 void SubscriptionPanel::onUpdateSubscription(wxCommandEvent&) {
+    // Sync toolbar Cancel button state from controller before re-entry check
+    {
+        wxWindow* topLevel = wxGetTopLevelParent(this);
+        if (topLevel && topLevel != this) {
+            static_cast<MainFrame*>(topLevel)->syncToolbarState();
+        }
+    }
     if (controller_ && controller_->isRunning()) {
         wxMessageBox(L"操作进行中，请等待完成后再试", L"操作进行中", wxOK | wxICON_WARNING);
         return;
@@ -310,6 +408,13 @@ void SubscriptionPanel::onUpdateSubscription(wxCommandEvent&) {
 }
 
 void SubscriptionPanel::onTestSubscription(wxCommandEvent&) {
+    // Sync toolbar Cancel button state from controller before re-entry check
+    {
+        wxWindow* topLevel = wxGetTopLevelParent(this);
+        if (topLevel && topLevel != this) {
+            static_cast<MainFrame*>(topLevel)->syncToolbarState();
+        }
+    }
     if (controller_ && controller_->isRunning()) {
         wxMessageBox(L"操作进行中，请等待完成后再试", L"操作进行中", wxOK | wxICON_WARNING);
         return;
@@ -324,6 +429,13 @@ void SubscriptionPanel::onTestSubscription(wxCommandEvent&) {
 }
 
 void SubscriptionPanel::onDeleteProxies(wxCommandEvent&) {
+    // Sync toolbar Cancel button state from controller before re-entry check
+    {
+        wxWindow* topLevel = wxGetTopLevelParent(this);
+        if (topLevel && topLevel != this) {
+            static_cast<MainFrame*>(topLevel)->syncToolbarState();
+        }
+    }
     if (controller_ && controller_->isRunning()) {
         wxMessageBox(L"操作进行中，请等待完成后再试", L"操作进行中", wxOK | wxICON_WARNING);
         return;
@@ -342,7 +454,15 @@ void SubscriptionPanel::onDeleteProxies(wxCommandEvent&) {
             controller_->deleteProxiesBySubId(subId);
         }
         loadSubscriptions();
+        RefreshContextMenu();
     }
+}
+
+// -------------------------------------------------------------------
+void SubscriptionPanel::RefreshContextMenu() {
+    // Context menu is created dynamically; no persistent state to refresh.
+    // This method exists as an extension point for future persistent
+    // menu state or as a hook for MainFrame to re-evaluate after deletes.
 }
 
 void SubscriptionPanel::onImportSubscription(wxCommandEvent&) {

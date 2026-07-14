@@ -86,6 +86,7 @@ ConfigDialog::ConfigDialog(wxWindow* parent, const config::AppConfig& cfg)
     propGrid_->Append(new wxPropertyCategory(L"测试"));
     propGrid_->Append(new wxStringProperty(L"测试 URL", "test_url", cfg.test_url));
     propGrid_->Append(new wxIntProperty(L"超时(毫秒)", "test_timeout_ms", cfg.test_timeout_ms));
+    propGrid_->Append(new wxStringProperty(L"ipinfo.io Token", "ipinfo_token", cfg.ipinfo_token));
 
     // --- 日志 配置 ---
     propGrid_->Append(new wxPropertyCategory(L"日志"));
@@ -205,6 +206,8 @@ void ConfigDialog::loadConfig(const config::AppConfig& cfg) {
     propGrid_->SetPropertyValue("network_monitor_maxProbes", cfg.network_monitor.maxProbes);
     // Set accelerator_url
     propGrid_->SetPropertyValue("accelerator_url", wxString(cfg.accelerator_url));
+    // Set ipinfo_token
+    propGrid_->SetPropertyValue("ipinfo_token", wxString(cfg.ipinfo_token));
     // Set update_methods checkboxes
     bool hasAccel = false, hasProxy = false, hasDirect = false;
     for (const std::string& m : cfg.update_methods) {
@@ -259,6 +262,7 @@ bool ConfigDialog::saveConfig() {
     // Test fields
     editedConfig_.test_url = propGrid_->GetPropertyValueAsString("test_url").ToStdString();
     editedConfig_.test_timeout_ms = propGrid_->GetPropertyValueAsInt("test_timeout_ms");
+    editedConfig_.ipinfo_token = propGrid_->GetPropertyValueAsString("ipinfo_token").ToStdString();
 
     // Log fields - log_enabled always true (removed from UI)
     editedConfig_.log_enabled = true;

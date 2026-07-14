@@ -24,23 +24,23 @@ bool Deduplicator::deduplicate() {
         return false;
     }
     
-    Logger::write("Phase 1/5 - Marking working proxies with protected subid", LogLevel::REPORT);
+    Logger::write("Phase 1/6 - Marking working proxies with protected subid", LogLevel::REPORT);
     protectedCount_ = deduplicatePhase0();
     Logger::write("Phase 1 completed: " + std::to_string(protectedCount_) + " proxies marked", LogLevel::REPORT);
     
-    Logger::write("Phase 2/5 - Moving blacklisted proxies to blacklist subid", LogLevel::REPORT);
+    Logger::write("Phase 2/6 - Moving blacklisted proxies to blacklist subid", LogLevel::REPORT);
     blacklistedCount_ = deduplicateBlacklistPhase();
     Logger::write("Phase 2 completed: moved " + std::to_string(blacklistedCount_) + " proxies to blacklist", LogLevel::REPORT);
     
-    Logger::write("Phase 3/5 - Removing invalid addresses (private IPs)", LogLevel::REPORT);
+    Logger::write("Phase 3/6 - Removing invalid addresses (private IPs)", LogLevel::REPORT);
     invalidCount_ = deduplicatePhase1();
     Logger::write("Phase 3 completed: removed " + std::to_string(invalidCount_) + " proxies", LogLevel::REPORT);
     
-    Logger::write("Phase 4/5 - Removing config-invalid proxies (checkRequired)", LogLevel::REPORT);
+    Logger::write("Phase 4/6 - Removing config-invalid proxies (checkRequired)", LogLevel::REPORT);
     configErrorCount_ = deduplicateConfigErrorPhase();
     Logger::write("Phase 4 completed: removed " + std::to_string(configErrorCount_) + " proxies", LogLevel::REPORT);
     
-    Logger::write("Phase 5/5 - Removing duplicates (merged CTE)", LogLevel::REPORT);
+    Logger::write("Phase 5/6 - Removing duplicates (merged CTE)", LogLevel::REPORT);
     mergedCount_ = deduplicateMergedPhase();
     Logger::write("Phase 5 completed: removed " + std::to_string(mergedCount_) + " proxies", LogLevel::REPORT);
     

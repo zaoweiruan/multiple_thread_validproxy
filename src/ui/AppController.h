@@ -102,6 +102,15 @@ bool isTestCancelled() const;
     int getStandaloneSocksPort(const std::string& indexId) const;
     std::vector<std::string> getRunningStandaloneIds() const;
 
+    // Batch region resolution (after testing)
+    int resolveRegionsForValidProxies(const std::string& subId = "");
+
+    // Async batch region resolution (standalone, via UI menu)
+    void resolveRegionsBatchAsync(wxEvtHandler* handler, const std::string& subId = "");
+
+    // Async single proxy region resolution (via UI menu - uses batch resolver internally)
+    void resolveSingleProxyRegionAsync(const std::string& indexId, wxEvtHandler* handler);
+
 private:
   void doUpdateSubscription(const std::string& subId, wxEvtHandler* wxHandler);
   void doUpdateAllSubscriptions(wxEvtHandler* wxHandler);
@@ -114,6 +123,8 @@ private:
     void doAutoTaskImpl(wxEvtHandler* wxHandler, bool resume);
     void doRunAutoTask(wxEvtHandler* wxHandler);
     void doResumeAutoTask(wxEvtHandler* wxHandler);
+    void doResolveRegionsBatch(wxEvtHandler* handler, const std::string& subId);
+    void doResolveSingleProxyRegion(const std::string& indexId, wxEvtHandler* handler);
 
   sqlite3* db_;
   config::AppConfig config_;

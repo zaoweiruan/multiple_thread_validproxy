@@ -16,6 +16,7 @@ struct AppConfig {
     int xray_api_port = 0;
     std::string test_url;
     int test_timeout_ms = 5000;
+    std::string ipinfo_token;         // ipinfo.io API token for region resolution
     bool log_enabled = true;
     bool log_network_failures = false;
     std::string log_console_level;

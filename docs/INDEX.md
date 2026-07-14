@@ -1,4 +1,4 @@
-updated: 2026-07-03
+updated: 2026-07-07
 title: "docs: project document index"
 type: meta
 status: maintained
@@ -27,7 +27,7 @@ status: maintained
 | [设计规范](#5-设计规范) | 9 | `docs/design/` |
 | [需求与脑暴](#6-需求与脑暴) | 4 | `docs/superpowers/brainstorm/` |
 | [技术方案](#7-技术方案) | 6 | `docs/superpowers/specs/` |
-| [规范化设计](#75-规范化设计) | 7 | `docs/specs/` |
+| [规范化设计](#75-规范化设计) | 9 | `docs/specs/` |
 | [实施计划](#8-实施计划) | 54 | `docs/plans/` |
 | [分析报告](#9-分析报告) | 8 | `docs/reports/` |
 | [Bug 修复记录](#91-bug-修复记录) | 19 | `docs/bugfix/` |
@@ -165,6 +165,9 @@ status: maintained
 | 13 | [`docs/specs/2026-07-01-Spec-AppController-Responsibility-Decomposition-v1.0.md`](./specs/2026-07-01-Spec-AppController-Responsibility-Decomposition-v1.0.md) | **AppController 职责边界重构** — 5 个服务化分解方案 (SubscriptionOrchestrator/ProxyOrchestrator/StandaloneProxyManager/DatabaseCoordinator/NetworkMonitorCoordinator) | draft |
 | 14 | [`docs/specs/2026-07-02-Spec-Singbox-Support-v1.0.md`](./specs/2026-07-02-Spec-Singbox-Support-v1.0.md) | **Sing-box Support Implementation** — Add sing-box as alternative proxy core to Xray; config fields, UI integration, outbound format mapping, REST/API differences | draft |
 | 15 | [`docs/specs/2026-07-03-Spec-Echconfiglist-DualFormat-Support-v1.0.md`](./specs/2026-07-03-Spec-Echconfiglist-DualFormat-Support-v1.0.md) | **echconfiglist 双格式解析** — 区分 Base64 ECH 配置与 DNS URL 格式，Base64 → ech.config 数组，DNS URL → ech.enabled:true | ✅ completed |
+| 16 | [`docs/specs/2026-07-06-Spec-RegionDetection-v1.0.md`](./specs/2026-07-06-Spec-RegionDetection-v1.0.md) | **代理地域检测 Phase 1** — RegionDetector 类 TLD/域名后缀/备注关键词检测，Profileitem region 字段，DB 列数保护 | ✅ completed |
+| 17 | [`docs/specs/2026-07-07-Spec-RegionDetection-Phase2-v2.0.md`](./specs/2026-07-07-Spec-RegionDetection-Phase2-v2.0.md) | **代理地域检测 Phase 2** — 去重阶段地域富化（Deduplicator），DB 迁移（Region 列），ProxyListPanel Region 列显示 | draft |
+| 18 | [`docs/specs/2026-07-09-Spec-DnsCache-v1.0.md`](./specs/2026-07-09-Spec-DnsCache-v1.0.md) | **DNS 缓存解析模块** — DnsCache 类，静态 resolve()，getaddrinfo IPv4 + 惰性 WSAStartup + 互斥锁保护的 unordered_map 缓存，解析失败空字符串缓存（防重试风暴） | ✅ completed |
 
 ---
 

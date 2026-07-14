@@ -164,6 +164,9 @@ void ProxyListModel::GetValueByRow(wxVariant& variant, unsigned int row,
             variant = wxVariant(it != messageMap_.end() ? it->second : "");
             break;
         }
+        case COL_REGION:
+            variant = wxVariant(p.region);
+            break;
         case COL_INDEXID:
             variant = wxVariant(idx);
             break;
@@ -260,6 +263,9 @@ int ProxyListModel::Compare(const wxDataViewItem& item1,
         }
         case COL_REMARKS:
             cmp = a.remarks.compare(b.remarks);
+            break;
+        case COL_REGION:
+            cmp = a.region.compare(b.region);
             break;
         case COL_INDEXID:
             cmp = a.indexid.compare(b.indexid);

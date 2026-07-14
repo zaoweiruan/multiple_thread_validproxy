@@ -19,7 +19,8 @@ std::vector<Profileitem> ProfileitemDAO::getAll(const std::string& sql) {
     }
 
     while (sqlite3_step(stmt) == SQLITE_ROW) {
-      result.push_back(Profileitem::fromStmt(stmt));
+      Profileitem item = Profileitem::fromStmt(stmt);
+      result.push_back(std::move(item));
     }
 
     sqlite3_finalize(stmt);
