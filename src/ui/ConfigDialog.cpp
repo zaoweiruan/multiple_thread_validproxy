@@ -156,6 +156,7 @@ ConfigDialog::ConfigDialog(wxWindow* parent, const config::AppConfig& cfg)
     propGrid_->Append(new wxBoolProperty(L"去重", "autotask_step_dedup", false));
     propGrid_->Append(new wxBoolProperty(L"同步", "autotask_step_sync", false));
     propGrid_->Append(new wxBoolProperty(L"导出", "autotask_step_export", false));
+    propGrid_->Append(new wxBoolProperty(L"解析地区", "autotask_step_resolve_region", false));
     propGrid_->Append(new wxStringProperty(L"任务链", "autotask_chain_display", L""));
     propGrid_->SetPropertyReadOnly("autotask_chain_display");
     // --- 通知 配置 ---
@@ -221,19 +222,21 @@ void ConfigDialog::loadConfig(const config::AppConfig& cfg) {
     refreshUpdateMethodDisplay();
 
     // AutoTask step checkboxes
-    bool hasUpdate = false, hasTest = false, hasDedup = false, hasSync = false, hasExport = false;
+    bool hasUpdate = false, hasTest = false, hasDedup = false, hasSync = false, hasExport = false, hasResolveRegion = false;
     for (const std::string& s : cfg.auto_task.steps) {
         if (s == "update_all") hasUpdate = true;
         else if (s == "test_all") hasTest = true;
         else if (s == "dedup") hasDedup = true;
         else if (s == "sync") hasSync = true;
         else if (s == "export") hasExport = true;
+        else if (s == "resolve_region") hasResolveRegion = true;
     }
     propGrid_->SetPropertyValue("autotask_step_update_all", hasUpdate);
     propGrid_->SetPropertyValue("autotask_step_test_all", hasTest);
     propGrid_->SetPropertyValue("autotask_step_dedup", hasDedup);
     propGrid_->SetPropertyValue("autotask_step_sync", hasSync);
     propGrid_->SetPropertyValue("autotask_step_export", hasExport);
+    propGrid_->SetPropertyValue("autotask_step_resolve_region", hasResolveRegion);
     stepOrder_ = cfg.auto_task.steps;
     refreshAutoTaskChainDisplay();
 
@@ -364,7 +367,8 @@ static const char* stepNameForProp(const wxString& propName) {
     if (propName == "autotask_step_test_all")  return "test_all";
     if (propName == "autotask_step_dedup")     return "dedup";
     if (propName == "autotask_step_sync")      return "sync";
-    if (propName == "autotask_step_export")    return "export";
+    if (propName == "autotask_step_export")          return "export";
+    if (propName == "autotask_step_resolve_region")  return "resolve_region";
     return "";
 }
 
@@ -373,7 +377,8 @@ static const wchar_t* stepDisplayName(const std::string& step) {
     if (step == "test_all")   return L"全部测试";
     if (step == "dedup")      return L"去重";
     if (step == "sync")       return L"同步";
-    if (step == "export")     return L"导出";
+    if (step == "export")            return L"导出";
+    if (step == "resolve_region")    return L"解析地区";
     return L"";
 }
 

@@ -151,6 +151,7 @@ std::string xrayApiAddr = "127.0.0.1:" + std::to_string(apiPort);
             std::string errorDetail = profile.address + ":" + profile.port + " (" + profile.configtype + ") - " + e.what();
             Logger::write("CONFIG_ERROR: " + profile.indexid + " - " + errorDetail, LogLevel::INFO);
             {
+                std::lock_guard<std::mutex> lock(dbMutex_);
                 db::models::ProfileitemDAO dao(db_);
                 dao.deleteByIndexId(profile.indexid);
             }
@@ -210,7 +211,10 @@ std::string xrayApiAddr = "127.0.0.1:" + std::to_string(apiPort);
                     failedCount_++;
                     processedCount_++;
                 }
-                exItemDao.updateTestResult(profile.indexid, -1, false, "XRAY_ERROR");
+                {
+                    std::lock_guard<std::mutex> lock(dbMutex_);
+                    exItemDao.updateTestResult(profile.indexid, -1, false, "XRAY_ERROR");
+                }
                 lastResult_ = TestResult{};
                 lastResult_.errorMsg = "XRAY_ERROR";
                 continue;
@@ -257,7 +261,10 @@ std::string xrayApiAddr = "127.0.0.1:" + std::to_string(apiPort);
                           " (" + utils::getProtocolName(profile.configtype) + ") FAIL " + result.errorMsg, LogLevel::INFO);
             }
             
-            exItemDao.updateTestResult(profile.indexid, result.latencyMs, result.success, result.errorMsg);
+            {
+                std::lock_guard<std::mutex> lock(dbMutex_);
+                exItemDao.updateTestResult(profile.indexid, result.latencyMs, result.success, result.errorMsg);
+            }
             
             // Store result for callers of runWithIndexId() to read after this worker finishes
             lastResult_ = result;
@@ -271,7 +278,10 @@ std::string xrayApiAddr = "127.0.0.1:" + std::to_string(apiPort);
                 failedCount_++;
                 processedCount_++;
             }
-            exItemDao.updateTestResult(profile.indexid, -1, false, e.what());
+            {
+                std::lock_guard<std::mutex> lock(dbMutex_);
+                exItemDao.updateTestResult(profile.indexid, -1, false, e.what());
+            }
             lastResult_ = TestResult{};
             lastResult_.errorMsg = e.what();
         }

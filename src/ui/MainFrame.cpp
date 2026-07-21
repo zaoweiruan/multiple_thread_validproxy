@@ -12,6 +12,7 @@
 #include "Profileitem.h"
 #include "ToolbarIcons.h"
 #include "NetworkMonitor.h"
+#include "version.h"
 
 #include <wx/sizer.h>
 #include <wx/splitter.h>
@@ -901,8 +902,30 @@ void MainFrame::onMenuAutoTaskResume(wxCommandEvent&) {
 }
 
 void MainFrame::onMenuAbout(wxCommandEvent&) {
-    wxMessageBox("validproxy v1.0\nManage and test your proxy subscriptions.",
-                 "About", wxOK | wxICON_INFORMATION, this);
+    wxString info;
+    info.Printf(
+        L"%hs v%hs\n\n"
+        L"\u7248\u672C: %hs\n"
+        L"Git Tag: %hs\n"
+        L"Git Commit: %hs\n"
+        L"\u6784\u5EFA\u7C7B\u578B: %hs\n"
+        L"\u6784\u5EFA\u65F6\u95F4: %hs\n"
+        L"\u7F16\u8BD1\u5668: %hs\n\n"
+        L"\u7BA1\u7406\u5E76\u6D4B\u8BD5\u60A8\u7684\u4EE3\u7406\u8BA2\u9605\u3002",
+        APP_NAME,
+        APP_VERSION,
+        APP_VERSION_FULL,
+        APP_GIT_TAG,
+        APP_GIT_COMMIT,
+        APP_BUILD_TYPE,
+        APP_BUILD_TIME,
+        __VERSION__
+    );
+
+    wxMessageBox(info,
+                 L"\u5173\u4E8E validproxy",
+                 wxOK | wxICON_INFORMATION,
+                 this);
 }
 
 // -------------------------------------------------------------------

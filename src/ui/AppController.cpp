@@ -120,7 +120,7 @@ sqlite3* AppController::switchDatabase(const std::string& newPath) {
 
     // Open the new database into a local variable first
     sqlite3* newDb = nullptr;
-    int rc = sqlite3_open(newPath.c_str(), &newDb);
+    int rc = sqlite3_open_v2(newPath.c_str(), &newDb, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX, nullptr);
     if (rc != SQLITE_OK) {
         Logger::write("Failed to switch database: " + std::string(sqlite3_errmsg(newDb)), LogLevel::ERR);
         if (newDb) sqlite3_close(newDb);
@@ -1247,9 +1247,12 @@ void AppController::doResolveSingleProxyRegion(const std::string& indexId, wxEvt
 
         std::string proxyIndexId, proxyAddress, proxyRemarks;
         if (sqlite3_step(stmt) == SQLITE_ROW) {
-            proxyIndexId = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
-            proxyAddress = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
-            proxyRemarks = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
+            const unsigned char* rawIdx = sqlite3_column_text(stmt, 0);
+            if (rawIdx) proxyIndexId = reinterpret_cast<const char*>(rawIdx);
+            const unsigned char* rawAddr = sqlite3_column_text(stmt, 1);
+            if (rawAddr) proxyAddress = reinterpret_cast<const char*>(rawAddr);
+            const unsigned char* rawRem = sqlite3_column_text(stmt, 2);
+            if (rawRem) proxyRemarks = reinterpret_cast<const char*>(rawRem);
         }
         sqlite3_finalize(stmt);
 

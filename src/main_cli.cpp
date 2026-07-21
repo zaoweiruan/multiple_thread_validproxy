@@ -29,7 +29,7 @@
 #include "ProxyBatchTester.h"
 #include "Utils.h"
 #include "Logger.h"
-
+#include "version.h"
 
 
 namespace {
@@ -59,7 +59,7 @@ void logError(const std::string& msg, LogLevel level = LogLevel::ERR) {
 }
 
 static bool openDatabase(const config::AppConfig& config, sqlite3*& db, const std::string& context) {
-    if (sqlite3_open(config.database_path.c_str(), &db) != SQLITE_OK) {
+    if (sqlite3_open_v2(config.database_path.c_str(), &db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX, nullptr) != SQLITE_OK) {
         Logger::write(context + " - Failed to open database: " + std::string(sqlite3_errmsg(db)), LogLevel::ERR);
         Logger::write(context + " - Database path from config: " + config.database_path, LogLevel::ERR);
         std::cerr << context << " - Failed to open database: " << sqlite3_errmsg(db) << std::endl;
@@ -121,6 +121,12 @@ static int runDefaultTest(const std::string& configPath, const std::string& exeD
     Logger::setFileEnabled(appConfig->log_enabled);
     Logger::setFileLevel(Logger::stringToLevel(appConfig->log_file_level));
     Logger::setConsoleLevel(Logger::stringToLevel(appConfig->log_console_level));
+
+    // Log version info
+    Logger::write(std::string(APP_NAME) + " v" + APP_VERSION + " (" + APP_GIT_TAG + ")", LogLevel::REPORT);
+    Logger::write(std::string("Build: ") + APP_BUILD_TYPE + " | " + APP_BUILD_TIME, LogLevel::REPORT);
+    Logger::write(std::string("Compiler: ") + __VERSION__, LogLevel::REPORT);
+
     logInfo("validproxy starting...");
     logInfo("Config loaded from: " + configPath);
     logInfo("Database path: " + appConfig->database_path);
@@ -217,6 +223,12 @@ int main(int argc, char* argv[]) {
             std::cerr << "Error: GUI mode not available in CLI build.\n"
                       << "Use validproxy.exe for GUI mode.\n";
             return 1;
+        } else if (arg == "-v" || arg == "--version") {
+            std::cout << APP_NAME << " " << APP_VERSION << "\n"
+                      << "Git tag: " << APP_GIT_TAG << "\n"
+                      << "Git commit: " << APP_GIT_COMMIT << "\n"
+                      << "Build: " << APP_BUILD_TYPE << " " << APP_BUILD_TIME << "\n";
+            return 0;
         } else if (arg == "-show-sub" || arg == "--show-sub") {
             commandMode = "show-sub";
         } else if (arg == "-G" || arg == "-generator" || arg == "--generator") {

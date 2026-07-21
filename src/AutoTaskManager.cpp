@@ -2,6 +2,7 @@
 #include "NetworkMonitor.h"
 #include "SubitemUpdaterV2.h"
 #include "ProxyBatchTester.h"
+#include "RegionBatchResolver.h"
 #include "Logger.h"
 #include "ShareLink.h"
 #include "Profileitem.h"
@@ -205,6 +206,7 @@ bool AutoTaskManager::executeStep(const AutoTaskStepInfo& step, int /*stepIndex*
         case AutoTaskStepType::DEDUP:      return stepDedup();
         case AutoTaskStepType::SYNC:       return stepSync();
         case AutoTaskStepType::EXPORT:     return stepExport();
+        case AutoTaskStepType::RESOLVE_REGION: return stepResolveRegions();
     }
     return false;
 }
@@ -311,6 +313,34 @@ bool AutoTaskManager::stepExport() {
     return true;
 }
 
+bool AutoTaskManager::stepResolveRegions() {
+    std::atomic<bool>* cancelPtr = externalCancel_ ? externalCancel_ : &cancelRequested_;
+    RegionBatchResolver resolver(db_, config_, cancelPtr);
+
+    // Set progress callback to update AutoTask state
+    resolver.setProgressCallback([this](const std::string& indexId, const std::string& region, int processed, int total) {
+        if (progressCb_) {
+            AutoTaskProgress p;
+            p.current_step = state_.current_step_index;
+            p.total_steps = static_cast<int>(state_.steps.size());
+            p.step_name = "resolve_region";
+            p.step_status = StepStatus::RUNNING;
+            p.percent = total > 0 ? (processed * 100) / total : 0;
+            p.message = "解析地区: " + region + " (" + std::to_string(processed) + "/" + std::to_string(total) + ")";
+            progressCb_(p);
+        }
+    });
+
+    int resolved = resolver.run("");
+    if (isCancelled()) {
+        Logger::write("AutoTask: resolve region step was cancelled", LogLevel::REPORT);
+        return false;
+    }
+
+    Logger::write("AutoTask: resolved regions for " + std::to_string(resolved) + " proxies", LogLevel::REPORT);
+    return resolved >= 0;
+}
+
 void AutoTaskManager::cancel() {
     cancelRequested_ = true;
 }
@@ -342,8 +372,9 @@ AutoTaskStepType AutoTaskManager::stepNameToType(const std::string& name) {
     if (name == "update" || name == "update_all") return AutoTaskStepType::UPDATE_ALL;
     if (name == "test" || name == "test_all")   return AutoTaskStepType::TEST_ALL;
     if (name == "dedup")  return AutoTaskStepType::DEDUP;
-    if (name == "sync")   return AutoTaskStepType::SYNC;
-    if (name == "export") return AutoTaskStepType::EXPORT;
+    if (name == "sync")            return AutoTaskStepType::SYNC;
+    if (name == "export")          return AutoTaskStepType::EXPORT;
+    if (name == "resolve_region")  return AutoTaskStepType::RESOLVE_REGION;
     return AutoTaskStepType::UPDATE_ALL;
 }
 
@@ -353,7 +384,8 @@ std::string AutoTaskManager::stepTypeToName(AutoTaskStepType type) {
         case AutoTaskStepType::TEST_ALL:   return "test";
         case AutoTaskStepType::DEDUP:      return "dedup";
         case AutoTaskStepType::SYNC:       return "sync";
-        case AutoTaskStepType::EXPORT:     return "export";
+        case AutoTaskStepType::EXPORT:         return "export";
+        case AutoTaskStepType::RESOLVE_REGION: return "resolve_region";
     }
     return "unknown";
 }

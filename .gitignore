@@ -17,7 +17,9 @@
 !/include/**
 !/docs/**
 !/tests/**
-# 5. 去除特定目录、文件
+# 5. 重新忽略自动生成的文件
+/include/version.h
+# 6. 去除特定目录、文件
 /Testing/
 /bin/
 /scripts/

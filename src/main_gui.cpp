@@ -7,13 +7,24 @@
 #include "ConfigReader.h"
 #include "CrashHandler.h"
 #include "XrayManager.h"
+#include "version.h"
 
 #include <sqlite3.h>
 #include <windows.h>
+#include <curl/curl.h>
 #include <string>
 #include <vector>
 #include <filesystem>
 #include <iostream>
+
+// RAII guard for curl_global_init/cleanup — required before any libcurl function.
+class CurlGlobalGuard {
+public:
+    CurlGlobalGuard() { curl_global_init(CURL_GLOBAL_ALL); }
+    ~CurlGlobalGuard() { curl_global_cleanup(); }
+    CurlGlobalGuard(const CurlGlobalGuard&) = delete;
+    CurlGlobalGuard& operator=(const CurlGlobalGuard&) = delete;
+};
 
 int main(int argc, char* argv[]) {
     crash::installHandler();
@@ -32,6 +43,8 @@ int main(int argc, char* argv[]) {
             }
         }
     }
+
+    CurlGlobalGuard curlGuard;  // RAII guard — curl_global_init before any libcurl call
 
     // Create log directory
     std::filesystem::path logDir = std::filesystem::path(exeDir) / "log";
@@ -57,6 +70,11 @@ int main(int argc, char* argv[]) {
     Logger::setFileEnabled(appConfig->log_enabled);
     Logger::setFileLevel(Logger::stringToLevel(appConfig->log_file_level));
 
+    // Log version info
+    Logger::write(std::string(APP_NAME) + " v" + APP_VERSION + " (" + APP_GIT_TAG + ")", LogLevel::REPORT);
+    Logger::write(std::string("Build: ") + APP_BUILD_TYPE + " | " + APP_BUILD_TIME, LogLevel::REPORT);
+    Logger::write(std::string("Compiler: ") + __VERSION__, LogLevel::REPORT);
+
     // Open database
     sqlite3* db = nullptr;
     if (appConfig->database_path.empty()) {
@@ -66,7 +84,7 @@ int main(int argc, char* argv[]) {
                     MB_ICONERROR | MB_OK);
         return 1;
     }
-    if (sqlite3_open(appConfig->database_path.c_str(), &db) != SQLITE_OK) {
+    if (sqlite3_open_v2(appConfig->database_path.c_str(), &db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX, nullptr) != SQLITE_OK) {
         std::string errMsg = "Failed to open database.\n\n";
         errMsg += "Error: " + std::string(sqlite3_errmsg(db)) + "\n\n";
         errMsg += "Database path from config:\n" + appConfig->database_path;

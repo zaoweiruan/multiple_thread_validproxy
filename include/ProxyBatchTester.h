@@ -73,6 +73,8 @@ public:
     std::vector<std::thread> workerThreads_;
     std::vector<int> workerCurrentProxyIndex_;
     std::mutex workerStateMutex_;
+    // Serialize all SQLite operations on shared db_ handle
+    std::mutex dbMutex_;
     const NetworkMonitor* netMon_{nullptr};
 };
 

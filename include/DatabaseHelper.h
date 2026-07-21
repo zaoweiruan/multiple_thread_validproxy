@@ -27,7 +27,7 @@ public:
     if (db_) {
       close();
     }
-    if (sqlite3_open(db_path_.c_str(), &db_) != SQLITE_OK) {
+    if (sqlite3_open_v2(db_path_.c_str(), &db_, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX, nullptr) != SQLITE_OK) {
       std::string errMsg = db_ ? sqlite3_errmsg(db_) : "database handle is null or invalid";
       Logger::write("无法打开数据库: " + errMsg, LogLevel::ERR);
       return false;
