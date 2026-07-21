@@ -27,6 +27,8 @@ int RegionBatchResolver::calculateWorkerCount(int proxyCount) const {
 
 // ---------------------------------------------------------------
 std::vector<RegionBatchResolver::ResolveTarget> RegionBatchResolver::loadTargets(const std::string& subId) {
+    std::lock_guard<std::mutex> lock(dbMutex_);
+
     std::vector<ResolveTarget> targets;
 
     // Load full profiles via ConfigGenerator::loadProfiles with filtered query
@@ -362,6 +364,8 @@ void RegionBatchResolver::flushRegionBuffer() {
     }
 
     if (batch.empty()) return;
+
+    std::lock_guard<std::mutex> lock(dbMutex_);
 
     const char* updateSql = "UPDATE ProfileItem SET Region = ? WHERE IndexId = ?";
     sqlite3_stmt* stmt = nullptr;

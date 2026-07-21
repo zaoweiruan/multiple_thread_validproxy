@@ -73,7 +73,7 @@ bool UIApp::OnInit()
         }
 
         // Open database
-        int rc = sqlite3_open(cfg_.database_path.c_str(), &db_);
+        int rc = sqlite3_open_v2(cfg_.database_path.c_str(), &db_, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX, nullptr);
         if (rc != SQLITE_OK) {
             wxMessageBox("Failed to open database.\n\nConfig path:\n" + effectiveConfigPath + "\nDatabase path:\n" + cfg_.database_path + "\nError: " + std::string(sqlite3_errmsg(db_)),
                          "Database Error", wxOK | wxICON_ERROR);

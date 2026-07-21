@@ -8,6 +8,7 @@ TEST(AutoTaskStepNameTest, stepNameToType) {
     EXPECT_EQ(AutoTaskManager::stepNameToType("dedup"),  AutoTaskStepType::DEDUP);
     EXPECT_EQ(AutoTaskManager::stepNameToType("sync"),   AutoTaskStepType::SYNC);
     EXPECT_EQ(AutoTaskManager::stepNameToType("export"), AutoTaskStepType::EXPORT);
+    EXPECT_EQ(AutoTaskManager::stepNameToType("resolve_region"), AutoTaskStepType::RESOLVE_REGION);
     EXPECT_EQ(AutoTaskManager::stepNameToType("unknown"), AutoTaskStepType::UPDATE_ALL);
 }
 
@@ -16,7 +17,8 @@ TEST(AutoTaskStepNameTest, stepTypeToName) {
     EXPECT_EQ(AutoTaskManager::stepTypeToName(AutoTaskStepType::TEST_ALL),   "test");
     EXPECT_EQ(AutoTaskManager::stepTypeToName(AutoTaskStepType::DEDUP),      "dedup");
     EXPECT_EQ(AutoTaskManager::stepTypeToName(AutoTaskStepType::SYNC),       "sync");
-    EXPECT_EQ(AutoTaskManager::stepTypeToName(AutoTaskStepType::EXPORT),     "export");
+    EXPECT_EQ(AutoTaskManager::stepTypeToName(AutoTaskStepType::EXPORT), "export");
+    EXPECT_EQ(AutoTaskManager::stepTypeToName(AutoTaskStepType::RESOLVE_REGION), "resolve_region");
 }
 
 TEST(AutoTaskCreateStepListTest, createsCorrectSteps) {

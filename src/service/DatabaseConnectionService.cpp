@@ -8,7 +8,7 @@ DatabaseConnectionService::DatabaseConnectionService() {
 
 sqlite3* DatabaseConnectionService::open(const std::string& path) {
     sqlite3* db = nullptr;
-    int rc = sqlite3_open(path.c_str(), &db);
+    int rc = sqlite3_open_v2(path.c_str(), &db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX, nullptr);
     if (rc != SQLITE_OK) {
         Logger::write("Failed to open database: " + std::string(sqlite3_errmsg(db)), LogLevel::ERR);
         if (db) sqlite3_close(db);

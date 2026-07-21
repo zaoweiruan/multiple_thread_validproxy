@@ -74,6 +74,9 @@ private:
     std::vector<std::pair<std::string, std::string>> regionBuffer_;
     std::mutex bufferMutex_;
     static constexpr int BATCH_FLUSH_SIZE = 50;
+
+    // Serialize all SQLite operations on shared db_ handle
+    std::mutex dbMutex_;
 };
 
 #endif // REGION_BATCH_RESOLVER_H

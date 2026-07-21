@@ -1,0 +1,30 @@
+// include/version.h.in
+// 自动生成 — 请勿手动编辑
+// 源文件: version.h.in
+// 生成时间: @BUILD_TIMESTAMP@
+
+#ifndef VALIDPROXY_VERSION_H
+#define VALIDPROXY_VERSION_H
+
+// 版本号组件（整数，可用于编译时条件判断）
+#define APP_VERSION_MAJOR   @VERSION_MAJOR@
+#define APP_VERSION_MINOR   @VERSION_MINOR@
+#define APP_VERSION_PATCH   @VERSION_PATCH@
+
+// 版本号字符串（显示用）
+#define APP_VERSION         "@VERSION_MAJOR@.@VERSION_MINOR@.@VERSION_PATCH@"
+#define APP_VERSION_FULL    "v@VERSION_MAJOR@.@VERSION_MINOR@.@VERSION_PATCH@"
+
+// Git 元信息
+#define APP_GIT_TAG         "@VERSION_TAG@"
+#define APP_GIT_COMMIT      "@VERSION_COMMIT@"
+#define APP_GIT_DIRTY       @VERSION_DIRTY@
+
+// 构建信息
+#define APP_BUILD_TYPE      "@CMAKE_BUILD_TYPE@"
+#define APP_BUILD_TIME      "@BUILD_TIMESTAMP@"
+
+// 项目名称
+#define APP_NAME            "validproxy"
+
+#endif // VALIDPROXY_VERSION_H

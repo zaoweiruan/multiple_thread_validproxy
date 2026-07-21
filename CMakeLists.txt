@@ -1,6 +1,28 @@
 cmake_minimum_required(VERSION 3.20)
 project(multiple_thread_validproxy VERSION 1.0.3 LANGUAGES CXX)
 
+# ===== Git tag version detection (overrides project() VERSION) =====
+include(cmake/GetGitVersion.cmake)
+get_git_version()
+
+if(DEFINED VERSION_MAJOR)
+    set(PROJECT_VERSION_MAJOR "${VERSION_MAJOR}")
+    set(PROJECT_VERSION_MINOR "${VERSION_MINOR}")
+    set(PROJECT_VERSION_PATCH "${VERSION_PATCH}")
+    set(PROJECT_VERSION "${VERSION_MAJOR}.${VERSION_MINOR}.${VERSION_PATCH}")
+    message(STATUS "Git version: ${PROJECT_VERSION} (tag: ${VERSION_TAG})")
+endif()
+
+# 生成版本头文件 (auto-generated, .gitignored)
+string(TIMESTAMP BUILD_TIMESTAMP "%Y-%m-%d %H:%M:%S")
+# 预创建构建树下的 include 目录
+file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/include)
+configure_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/version.h.in
+    ${CMAKE_BINARY_DIR}/include/version.h
+    @ONLY
+)
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -62,6 +84,7 @@ if(NOT GTEST_ROOT)
 endif()
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
+include_directories(${CMAKE_BINARY_DIR}/include)
 include_directories(${BOOST_ROOT}/include)
 include_directories(${VCPKG_ROOT}/installed/x64-mingw-static/include)
 link_directories(${BOOST_ROOT}/lib)

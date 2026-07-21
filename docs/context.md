@@ -50,3 +50,4 @@
 | 2026-07-02 | **Sing-box Support Implementation** — Design spec created; add sing-box as alternative proxy core to Xray with config fields, UI integration, outbound format mapping | `docs/specs/2026-07-02-Spec-Singbox-Support-v1.0.md` |
 | 2026-07-03 | **echconfiglist 双格式解析** — 区分 Base64 ECH 配置与 DNS URL 格式，生成正确 sing-box ech.config；计划文档已创建 | `docs/superpowers/plans/2026-07-03-echconfiglist-dual-format-support.md` |
 | 2026-07-09 | **DNS 缓存解析模块 DnsCache** — DnsCache 类，静态 resolve()，getaddrinfo IPv4 + 惰性 WSAStartup + 互斥锁保护的 unordered_map 缓存；集成至 RegionDetector Strategy 3；18/18 ctest 通过 | `docs/specs/2026-07-09-Spec-DnsCache-v1.0.md` |
+| 2026-07-20 | **GUI 入口缺失 curl_global_init() 崩溃** — main_gui.cpp 未调用 curl_global_init()，右键解析代理地区时线程内 curl_easy_perform 访问违例崩溃 | `docs/bugfix/2026-07-20-Bugfix-CurlGlobalInit-GUI-v1.0.md` |

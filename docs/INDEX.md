@@ -1,4 +1,4 @@
-updated: 2026-07-07
+updated: 2026-07-15
 title: "docs: project document index"
 type: meta
 status: maintained
@@ -168,6 +168,7 @@ status: maintained
 | 16 | [`docs/specs/2026-07-06-Spec-RegionDetection-v1.0.md`](./specs/2026-07-06-Spec-RegionDetection-v1.0.md) | **代理地域检测 Phase 1** — RegionDetector 类 TLD/域名后缀/备注关键词检测，Profileitem region 字段，DB 列数保护 | ✅ completed |
 | 17 | [`docs/specs/2026-07-07-Spec-RegionDetection-Phase2-v2.0.md`](./specs/2026-07-07-Spec-RegionDetection-Phase2-v2.0.md) | **代理地域检测 Phase 2** — 去重阶段地域富化（Deduplicator），DB 迁移（Region 列），ProxyListPanel Region 列显示 | draft |
 | 18 | [`docs/specs/2026-07-09-Spec-DnsCache-v1.0.md`](./specs/2026-07-09-Spec-DnsCache-v1.0.md) | **DNS 缓存解析模块** — DnsCache 类，静态 resolve()，getaddrinfo IPv4 + 惰性 WSAStartup + 互斥锁保护的 unordered_map 缓存，解析失败空字符串缓存（防重试风暴） | ✅ completed |
+| 19 | [`docs/specs/2026-07-15-Spec-GitTagVersioning-v1.0.md`](./specs/2026-07-15-Spec-GitTagVersioning-v1.0.md) | **Git Tag Versioning** — 以 Git tag 为编译/发布版本唯一来源，`cmake/GetGitVersion.cmake` 检测 tag → `configure_file()` 生成 `include/version.h` → About 窗口消费 | draft |
 
 ---
 
@@ -315,6 +316,7 @@ status: maintained
 | 17 | [`docs/bugfix/2026-07-01-Bugfix-isPortAvailable-WildcardListener-v1.0.md`](./bugfix/2026-07-01-Bugfix-isPortAvailable-WildcardListener-v1.0.md) | **isPortAvailable() 对 0.0.0.0 通配监听者返回假阳性** — bind(INADDR_LOOPBACK) 在 Windows 下与已有 0.0.0.0:port 监听共存，改为非阻塞 connect(127.0.0.1:port) + select(200ms) | — |
 | 18 | [`docs/bugfix/2026-07-01-Bugfix-Sync-Subscription-EnabledDefault-v1.0.md`](./bugfix/2026-07-01-Bugfix-Sync-Subscription-EnabledDefault-v1.0.md) | **Sync 目标库新订阅 enabled 默认值为 0** — migrateSubscription() 直接复制源库 enabled 状态，目标库新订阅应默认禁用，与 Importer 行为一致 | — |
 | 19 | [`docs/bugfix/2026-07-01-Bugfix-DoubleClick-V1.0.md`](./bugfix/2026-07-01-Bugfix-DoubleClick-V1.0.md) | **SubscriptionPanel / ProxyListPanel 双击无反应** — MSW wxDataViewMainWindow 缺失 CS_DBLCLKS，使用 selection-change-based 双击检测绕过限制 | — |
+| 20 | [`docs/bugfix/2026-07-20-Bugfix-CurlGlobalInit-GUI-v1.0.md`](./bugfix/2026-07-20-Bugfix-CurlGlobalInit-GUI-v1.0.md) | **GUI 入口缺失 curl_global_init() 导致右键解析地区崩溃** — main_gui.cpp 未调用 curl_global_init，线程中 curl_easy_perform 访问违例 | — |
 
 ---
 

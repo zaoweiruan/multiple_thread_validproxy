@@ -15,7 +15,8 @@ enum class AutoTaskStepType {
     TEST_ALL,
     DEDUP,
     SYNC,
-    EXPORT
+    EXPORT,
+    RESOLVE_REGION
 };
 
 enum class StepStatus {
@@ -50,6 +51,7 @@ struct AutoTaskProgress {
     std::string step_name;
     StepStatus step_status;
     int percent;
+    std::string message;
 };
 
 class AutoTaskManager {
@@ -93,6 +95,7 @@ private:
     bool stepDedup();
     bool stepSync();
     bool stepExport();
+    bool stepResolveRegions();
 
     void writeState();
     std::string getCurrentTimestamp();
