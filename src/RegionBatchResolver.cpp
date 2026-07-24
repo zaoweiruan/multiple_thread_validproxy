@@ -42,7 +42,8 @@ std::vector<RegionBatchResolver::ResolveTarget> RegionBatchResolver::loadTargets
     std::string sql =
         "SELECT DISTINCT p.* FROM ProfileItem p"
         " INNER JOIN ProfileExItem e ON p.IndexId = e.IndexId"
-        " WHERE CAST(e.delay AS INTEGER) > 0" + subFilter;
+        " WHERE CAST(e.delay AS INTEGER) > 0"
+        " AND (p.Region IS NULL OR p.Region = '')" + subFilter;
 
     std::vector<db::models::Profileitem> profiles = configGen.loadProfiles(sql);
 
