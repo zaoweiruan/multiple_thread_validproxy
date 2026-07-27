@@ -27,7 +27,7 @@ status: maintained
 | [设计规范](#5-设计规范) | 9 | `docs/design/` |
 | [需求与脑暴](#6-需求与脑暴) | 4 | `docs/superpowers/brainstorm/` |
 | [技术方案](#7-技术方案) | 6 | `docs/superpowers/specs/` |
-| [规范化设计](#75-规范化设计) | 9 | `docs/specs/` |
+| [规范化设计](#75-规范化设计) | 10 | `docs/specs/` |
 | [实施计划](#8-实施计划) | 54 | `docs/plans/` |
 | [分析报告](#9-分析报告) | 8 | `docs/reports/` |
 | [Bug 修复记录](#91-bug-修复记录) | 19 | `docs/bugfix/` |
@@ -169,6 +169,7 @@ status: maintained
 | 17 | [`docs/specs/2026-07-07-Spec-RegionDetection-Phase2-v2.0.md`](./specs/2026-07-07-Spec-RegionDetection-Phase2-v2.0.md) | **代理地域检测 Phase 2** — 去重阶段地域富化（Deduplicator），DB 迁移（Region 列），ProxyListPanel Region 列显示 | draft |
 | 18 | [`docs/specs/2026-07-09-Spec-DnsCache-v1.0.md`](./specs/2026-07-09-Spec-DnsCache-v1.0.md) | **DNS 缓存解析模块** — DnsCache 类，静态 resolve()，getaddrinfo IPv4 + 惰性 WSAStartup + 互斥锁保护的 unordered_map 缓存，解析失败空字符串缓存（防重试风暴） | ✅ completed |
 | 19 | [`docs/specs/2026-07-15-Spec-GitTagVersioning-v1.0.md`](./specs/2026-07-15-Spec-GitTagVersioning-v1.0.md) | **Git Tag Versioning** — 以 Git tag 为编译/发布版本唯一来源，`cmake/GetGitVersion.cmake` 检测 tag → `configure_file()` 生成 `include/version.h` → About 窗口消费 | draft |
+| 20 | [`docs/specs/2026-07-24-Spec-SubscriptionWritePerformance-v1.0.md`](./specs/2026-07-24-Spec-SubscriptionWritePerformance-v1.0.md) | **订阅写入性能优化** — Pragma 调优(2-5x)、批量 INSERT + 内存哈希去重(10-50x)、复合索引 + 分阶段去重(50-100x)，4 阶段实施方案 | draft |
 
 ---
 
@@ -384,5 +385,5 @@ status: maintained
 
 ---
 
-*最后更新: 2026-06-18 (v2) | 维护者: Kilo AI*
+*最后更新: 2026-07-24 (v3) | 维护者: Kilo AI*
 
