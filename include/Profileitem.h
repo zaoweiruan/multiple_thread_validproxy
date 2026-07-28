@@ -336,6 +336,7 @@ public:
   bool deleteBySubId(const std::string& subId);
   bool deleteByIndexId(const std::string& indexId);
    bool deleteByIndexIdNoTx(const std::string& indexId);
+   bool deleteByIndexIdsNoTx(const std::vector<std::string>& indexIds);
 };
 
 } // namespace models
