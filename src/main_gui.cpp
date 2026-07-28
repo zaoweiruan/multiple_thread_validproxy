@@ -8,6 +8,7 @@
 #include "CrashHandler.h"
 #include "XrayManager.h"
 #include "version.h"
+#include "service/DatabaseConnectionService.h"
 
 #include <sqlite3.h>
 #include <windows.h>
@@ -84,9 +85,10 @@ int main(int argc, char* argv[]) {
                     MB_ICONERROR | MB_OK);
         return 1;
     }
-    if (sqlite3_open_v2(appConfig->database_path.c_str(), &db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX, nullptr) != SQLITE_OK) {
+    service::DatabaseConnectionService dbService;
+    db = dbService.open(appConfig->database_path);
+    if (!db) {
         std::string errMsg = "Failed to open database.\n\n";
-        errMsg += "Error: " + std::string(sqlite3_errmsg(db)) + "\n\n";
         errMsg += "Database path from config:\n" + appConfig->database_path;
         MessageBoxA(NULL, errMsg.c_str(), "Database Error", MB_ICONERROR | MB_OK);
         Logger::close();

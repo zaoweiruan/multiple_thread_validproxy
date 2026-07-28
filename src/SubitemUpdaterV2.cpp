@@ -9,6 +9,7 @@
 #include "Logger.h"
 #include "CurlEasyHandle.h"
 #include "NetworkMonitor.h"
+#include "service/DatabaseConnectionService.h"
 
 #include <curl/curl.h>
 #include <chrono>
@@ -1105,18 +1106,20 @@ bool SubitemUpdaterV2::syncDatabases(const std::string& sourceDbPath,
     }
     
     // 1. Open source database
-    if (sqlite3_open(sourceDbPath.c_str(), &srcDb) != SQLITE_OK) {
+    if (sqlite3_open_v2(sourceDbPath.c_str(), &srcDb, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX, nullptr) != SQLITE_OK) {
         Logger::write("Failed to open source database: " + std::string(sqlite3_errmsg(srcDb)) + " Path: " + sourceDbPath, LogLevel::ERR);
         return false;
     }
+    service::DatabaseConnectionService::applyPragmas(srcDb);
     Logger::write("Source database opened", LogLevel::DEBUG);
     
     // 2. Open target database
-    if (sqlite3_open(targetDbPath.c_str(), &dstDb) != SQLITE_OK) {
+    if (sqlite3_open_v2(targetDbPath.c_str(), &dstDb, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX, nullptr) != SQLITE_OK) {
         Logger::write("Failed to open target database: " + std::string(sqlite3_errmsg(dstDb)) + " Path: " + targetDbPath, LogLevel::ERR);
         sqlite3_close(srcDb);
         return false;
     }
+    service::DatabaseConnectionService::applyPragmas(dstDb);
     Logger::write("Target database opened", LogLevel::DEBUG);
     
     // 3. Query valid proxies from source (delay > 0)
