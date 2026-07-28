@@ -15,7 +15,12 @@
 ProxyBatchTester::ProxyBatchTester(sqlite3* db, const config::AppConfig& config, const std::string& baseDir,
                                     std::atomic<bool>* externalCancel, const NetworkMonitor* netMon)
     : db_(db), config_(config), totalProxies_(0), successCount_(0), failedCount_(0), processedCount_(0)
-    , externalCancel_(externalCancel), netMon_(netMon) {
+    , externalCancel_(externalCancel), netMon_(netMon)
+    , resultQueue_([this](const std::vector<TestResultQueue::ResultTuple>& batch) -> bool {
+          std::lock_guard<std::mutex> lock(dbMutex_);
+          db::models::ProfileExItemDAO dao(db_);
+          return dao.updateTestResultBatch(batch);
+      }) {
     
     std::string exeBaseDir = baseDir.empty() ? utils::getExecutableDir() : baseDir;
     std::string configDir = exeBaseDir + "/config";
@@ -104,8 +109,6 @@ bool ProxyBatchTester::startXrayInstances(int count) {
 void ProxyBatchTester::workerThreadFunc(int workerId, int socksPort, int apiPort) {
 std::string xrayApiAddr = "127.0.0.1:" + std::to_string(apiPort);
     xray::XrayApi xrayApi(config_.proxy.xray_executable, xrayApiAddr);
-    db::models::ProfileExItemDAO exItemDao(db_);
-    config::ConfigGenerator configGen(db_);
     
     while (true) {
         // Check for cancellation
@@ -166,17 +169,11 @@ std::string xrayApiAddr = "127.0.0.1:" + std::to_string(apiPort);
         }
         
         try {
-            config::XrayConfig config = configGen.generateConfig(profile);
+            const config::XrayConfig& config = preGenConfigs_[profileIdx];
             std::string tag = "proxy";
             
             xrayApi.removeOutbound(tag);
-            for (int i = 0; i < 10; ++i) {  // 10 * 10ms = 100ms total
-                if (isCancelled()) return;
-                if (netMon_ && !netMon_->IsConnected()) { if (!waitForNetworkRecovery()) return; }
-                std::this_thread::sleep_for(std::chrono::milliseconds(10));
-            }
-            xrayApi.removeOutbound(tag);
-            for (int i = 0; i < 40; ++i) {  // 40 * 10ms = 400ms total
+            for (int i = 0; i < 2; ++i) {  // 2 * 10ms = 20ms total
                 if (isCancelled()) return;
                 if (netMon_ && !netMon_->IsConnected()) { if (!waitForNetworkRecovery()) return; }
                 std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -193,7 +190,7 @@ std::string xrayApiAddr = "127.0.0.1:" + std::to_string(apiPort);
                 retryCount++;
                 if (retryCount < 3) {
                     xrayApi.removeOutbound(tag);
-                    for (int i = 0; i < 20; ++i) {  // 20 * 10ms = 200ms total
+                    for (int i = 0; i < 5; ++i) {  // 5 * 10ms = 50ms total
                         if (isCancelled()) return;
                         if (netMon_ && !netMon_->IsConnected()) { if (!waitForNetworkRecovery()) return; }
                         std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -211,17 +208,14 @@ std::string xrayApiAddr = "127.0.0.1:" + std::to_string(apiPort);
                     failedCount_++;
                     processedCount_++;
                 }
-                {
-                    std::lock_guard<std::mutex> lock(dbMutex_);
-                    exItemDao.updateTestResult(profile.indexid, -1, false, "XRAY_ERROR");
-                }
+                resultQueue_.enqueue(profile.indexid, -1, false, "XRAY_ERROR");
                 lastResult_ = TestResult{};
                 lastResult_.errorMsg = "XRAY_ERROR";
                 continue;
             }
             
             // sleep in 10ms increments for cancellation responsiveness
-            for (int i = 0; i < 30; ++i) {  // 30 * 10ms = 300ms total
+            for (int i = 0; i < 10; ++i) {  // 10 * 10ms = 100ms total
                 if (isCancelled()) return;
                 if (netMon_ && !netMon_->IsConnected()) { if (!waitForNetworkRecovery()) return; }
                 std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -261,10 +255,7 @@ std::string xrayApiAddr = "127.0.0.1:" + std::to_string(apiPort);
                           " (" + utils::getProtocolName(profile.configtype) + ") FAIL " + result.errorMsg, LogLevel::INFO);
             }
             
-            {
-                std::lock_guard<std::mutex> lock(dbMutex_);
-                exItemDao.updateTestResult(profile.indexid, result.latencyMs, result.success, result.errorMsg);
-            }
+            resultQueue_.enqueue(profile.indexid, result.latencyMs, result.success, result.errorMsg);
             
             // Store result for callers of runWithIndexId() to read after this worker finishes
             lastResult_ = result;
@@ -278,10 +269,7 @@ std::string xrayApiAddr = "127.0.0.1:" + std::to_string(apiPort);
                 failedCount_++;
                 processedCount_++;
             }
-            {
-                std::lock_guard<std::mutex> lock(dbMutex_);
-                exItemDao.updateTestResult(profile.indexid, -1, false, e.what());
-            }
+            resultQueue_.enqueue(profile.indexid, -1, false, e.what());
             lastResult_ = TestResult{};
             lastResult_.errorMsg = e.what();
         }
@@ -300,6 +288,9 @@ void ProxyBatchTester::testProxiesMultiThreaded() {
         proxiesQueue_.push(i);
     }
     
+    // Phase D: Start flush thread for batched DB writes
+    resultQueue_.start();
+
     std::vector<std::thread> threads;
     for (int i = 0; i < numWorkers; ++i) {
         int socksPort = portPairs[i].first;
@@ -352,6 +343,9 @@ void ProxyBatchTester::testProxiesMultiThreaded() {
         }
     }
     workerThreads_.clear();
+
+    // Phase D: Stop flush thread, drain any remaining queued results
+    resultQueue_.stop();
 }
 
 void ProxyBatchTester::printSummary() {
@@ -397,6 +391,25 @@ bool ProxyBatchTester::run() {
         Logger::write("Started " + std::to_string(instanceCount) + " xray instances", LogLevel::INFO);
     }
 
+    // Phase F: Pre-generate all XrayConfigs before workers start
+    {
+        std::chrono::steady_clock::time_point preGenStart = std::chrono::steady_clock::now();
+        preGenConfigs_.clear();
+        preGenConfigs_.reserve(totalProxies_);
+        config::ConfigGenerator configGen(db_);
+        for (int i = 0; i < totalProxies_; ++i) {
+            try {
+                preGenConfigs_.push_back(configGen.generateConfig(proxies_[i]));
+            } catch (const std::exception& e) {
+                Logger::write("[ProxyBatchTester] Pre-gen config failed for " + proxies_[i].indexid + ": " + e.what(), LogLevel::WARN);
+                preGenConfigs_.push_back(config::XrayConfig{});
+            }
+        }
+        std::chrono::steady_clock::time_point preGenEnd = std::chrono::steady_clock::now();
+        int preGenMs = static_cast<int>(std::chrono::duration_cast<std::chrono::milliseconds>(preGenEnd - preGenStart).count());
+        Logger::write("Pre-generated " + std::to_string(totalProxies_) + " configs in " + std::to_string(preGenMs) + "ms", LogLevel::INFO);
+    }
+
     testProxiesMultiThreaded();
     printSummary();
 
@@ -428,6 +441,25 @@ bool ProxyBatchTester::runWithSubId(const std::string& subId) {
     
     if (config_.log_network_failures) {
         Logger::write("Started " + std::to_string(instanceCount) + " xray instances", LogLevel::INFO);
+    }
+    
+    // Phase F: Pre-generate all XrayConfigs before workers start
+    {
+        std::chrono::steady_clock::time_point preGenStart = std::chrono::steady_clock::now();
+        preGenConfigs_.clear();
+        preGenConfigs_.reserve(totalProxies_);
+        config::ConfigGenerator configGen(db_);
+        for (int i = 0; i < totalProxies_; ++i) {
+            try {
+                preGenConfigs_.push_back(configGen.generateConfig(proxies_[i]));
+            } catch (const std::exception& e) {
+                Logger::write("[ProxyBatchTester] Pre-gen config failed for " + proxies_[i].indexid + ": " + e.what(), LogLevel::WARN);
+                preGenConfigs_.push_back(config::XrayConfig{});
+            }
+        }
+        std::chrono::steady_clock::time_point preGenEnd = std::chrono::steady_clock::now();
+        int preGenMs = static_cast<int>(std::chrono::duration_cast<std::chrono::milliseconds>(preGenEnd - preGenStart).count());
+        Logger::write("Pre-generated " + std::to_string(totalProxies_) + " configs in " + std::to_string(preGenMs) + "ms", LogLevel::INFO);
     }
     
     testProxiesMultiThreaded();
@@ -463,6 +495,25 @@ bool ProxyBatchTester::runWithIndexId(const std::string& indexId) {
     if (!startXrayInstances(1)) {
         Logger::write("Failed to start xray instance", LogLevel::WARN);
         return false;
+    }
+    
+    // Phase F: Pre-generate configs before workers start
+    {
+        std::chrono::steady_clock::time_point preGenStart = std::chrono::steady_clock::now();
+        preGenConfigs_.clear();
+        preGenConfigs_.reserve(totalProxies_);
+        config::ConfigGenerator configGen(db_);
+        for (int i = 0; i < totalProxies_; ++i) {
+            try {
+                preGenConfigs_.push_back(configGen.generateConfig(proxies_[i]));
+            } catch (const std::exception& e) {
+                Logger::write("[ProxyBatchTester] Pre-gen config failed for " + proxies_[i].indexid + ": " + e.what(), LogLevel::WARN);
+                preGenConfigs_.push_back(config::XrayConfig{});
+            }
+        }
+        std::chrono::steady_clock::time_point preGenEnd = std::chrono::steady_clock::now();
+        int preGenMs = static_cast<int>(std::chrono::duration_cast<std::chrono::milliseconds>(preGenEnd - preGenStart).count());
+        Logger::write("Pre-generated " + std::to_string(totalProxies_) + " configs in " + std::to_string(preGenMs) + "ms", LogLevel::INFO);
     }
     
     testProxiesMultiThreaded();
