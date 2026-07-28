@@ -18,9 +18,17 @@ sqlite3* DatabaseConnectionService::open(const std::string& path) {
     return db;
 }
 
-void DatabaseConnectionService::applyPragmas(sqlite3* db) const {
+void DatabaseConnectionService::applyPragmas(sqlite3* db) {
     sqlite3_busy_timeout(db, 5000);
     sqlite3_exec(db, "PRAGMA journal_mode=WAL", nullptr, nullptr, nullptr);
+    sqlite3_exec(db, "PRAGMA cache_size=-8000", nullptr, nullptr, nullptr);      // 8MB page cache
+    sqlite3_exec(db, "PRAGMA synchronous=NORMAL", nullptr, nullptr, nullptr);     // WAL + NORMAL = fast + safe
+    sqlite3_exec(db, "PRAGMA temp_store=MEMORY", nullptr, nullptr, nullptr);      // temp tables in RAM
+    sqlite3_exec(db, "PRAGMA mmap_size=268435456", nullptr, nullptr, nullptr);    // 256MB memory-mapped I/O
+    sqlite3_exec(db, "PRAGMA journal_size_limit=67108864", nullptr, nullptr, nullptr); // 64MB journal cap
+
+    // Composite index for dedup phases: covers dedup key (Address, Port, ConfigType, Id, Network)
+    sqlite3_exec(db, "CREATE INDEX IF NOT EXISTS idx_profile_dedup ON ProfileItem(LOWER(Address), Port, ConfigType, LOWER(Id), LOWER(Network))", nullptr, nullptr, nullptr);
 }
 
 bool DatabaseConnectionService::close(sqlite3* db) {
