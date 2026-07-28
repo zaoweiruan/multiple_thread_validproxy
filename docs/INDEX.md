@@ -318,6 +318,7 @@ status: maintained
 | 18 | [`docs/bugfix/2026-07-01-Bugfix-Sync-Subscription-EnabledDefault-v1.0.md`](./bugfix/2026-07-01-Bugfix-Sync-Subscription-EnabledDefault-v1.0.md) | **Sync 目标库新订阅 enabled 默认值为 0** — migrateSubscription() 直接复制源库 enabled 状态，目标库新订阅应默认禁用，与 Importer 行为一致 | — |
 | 19 | [`docs/bugfix/2026-07-01-Bugfix-DoubleClick-V1.0.md`](./bugfix/2026-07-01-Bugfix-DoubleClick-V1.0.md) | **SubscriptionPanel / ProxyListPanel 双击无反应** — MSW wxDataViewMainWindow 缺失 CS_DBLCLKS，使用 selection-change-based 双击检测绕过限制 | — |
 | 20 | [`docs/bugfix/2026-07-20-Bugfix-CurlGlobalInit-GUI-v1.0.md`](./bugfix/2026-07-20-Bugfix-CurlGlobalInit-GUI-v1.0.md) | **GUI 入口缺失 curl_global_init() 导致右键解析地区崩溃** — main_gui.cpp 未调用 curl_global_init，线程中 curl_easy_perform 访问违例 | — |
+| 21 | [`docs/bugfix/2026-07-28-Bugfix-DatabaseIndex-applyPragmas-v1.0.md`](./bugfix/2026-07-28-Bugfix-DatabaseIndex-applyPragmas-v1.0.md) | **新建数据库缺失 idx_profile_dedup 索引** — main_gui/UIApp detached/main_cli 三处数据库打开路径未调用 applyPragmas()，统一接入 DatabaseConnectionService | — |
 
 ---
 
@@ -385,5 +386,5 @@ status: maintained
 
 ---
 
-*最后更新: 2026-07-24 (v3) | 维护者: Kilo AI*
+*最后更新: 2026-07-28 (v4) | 维护者: Kilo AI*
 
