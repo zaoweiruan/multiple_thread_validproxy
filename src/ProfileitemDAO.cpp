@@ -3,6 +3,7 @@
 #include <sqlite3.h>
 #include <string>
 #include <vector>
+#include <algorithm>
 #include <unordered_map>
 #include <optional>
 
@@ -220,6 +221,67 @@ bool ProfileitemDAO::deleteBySubId(const std::string& subId) {
     
     return sqlite3_changes(db_) > 0;
   }
+
+bool ProfileitemDAO::deleteByIndexIdsNoTx(const std::vector<std::string>& indexIds) {
+    if (indexIds.empty()) {
+        return true;
+    }
+
+    const int CHUNK_SIZE = 500;
+    bool allOk = true;
+
+    for (int offset = 0; offset < static_cast<int>(indexIds.size()); offset += CHUNK_SIZE) {
+        int end = std::min(offset + CHUNK_SIZE, static_cast<int>(indexIds.size()));
+        int chunkLen = end - offset;
+
+        // Build "?,?,?..." placeholder string
+        std::string placeholders;
+        for (int i = 0; i < chunkLen; ++i) {
+            if (i > 0) placeholders += ",";
+            placeholders += "?";
+        }
+
+        // Delete from ProfileExItem first
+        {
+            std::string sql = "DELETE FROM ProfileExItem WHERE IndexId IN (" + placeholders + ")";
+            sqlite3_stmt* stmt = nullptr;
+            if (sqlite3_prepare_v2(db_, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
+                Logger::write("deleteByIndexIdsNoTx ex prepare error: " + std::string(sqlite3_errmsg(db_)), LogLevel::ERR);
+                allOk = false;
+                continue;
+            }
+            for (int i = 0; i < chunkLen; ++i) {
+                sqlite3_bind_text(stmt, i + 1, indexIds[offset + i].c_str(), -1, SQLITE_TRANSIENT);
+            }
+            if (sqlite3_step(stmt) != SQLITE_DONE) {
+                Logger::write("deleteByIndexIdsNoTx ex step error: " + std::string(sqlite3_errmsg(db_)), LogLevel::ERR);
+                allOk = false;
+            }
+            sqlite3_finalize(stmt);
+        }
+
+        // Delete from ProfileItem
+        {
+            std::string sql = "DELETE FROM ProfileItem WHERE IndexId IN (" + placeholders + ")";
+            sqlite3_stmt* stmt = nullptr;
+            if (sqlite3_prepare_v2(db_, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
+                Logger::write("deleteByIndexIdsNoTx item prepare error: " + std::string(sqlite3_errmsg(db_)), LogLevel::ERR);
+                allOk = false;
+                continue;
+            }
+            for (int i = 0; i < chunkLen; ++i) {
+                sqlite3_bind_text(stmt, i + 1, indexIds[offset + i].c_str(), -1, SQLITE_TRANSIENT);
+            }
+            if (sqlite3_step(stmt) != SQLITE_DONE) {
+                Logger::write("deleteByIndexIdsNoTx item step error: " + std::string(sqlite3_errmsg(db_)), LogLevel::ERR);
+                allOk = false;
+            }
+            sqlite3_finalize(stmt);
+        }
+    }
+
+    return allOk;
+}
 
 } // namespace models
 } // namespace db

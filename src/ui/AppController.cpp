@@ -2,6 +2,7 @@
 #include "Events.h"
 #include "ui/AsyncOperationGuard.h"
 #include "ui/ScopeGuard.h"
+#include "service/DatabaseConnectionService.h"
 
 using ui::AsyncOperationGuard;
 using ui::ScopeGuard;
@@ -135,8 +136,7 @@ sqlite3* AppController::switchDatabase(const std::string& newPath) {
     }
     db_ = newDb;
 
-    sqlite3_busy_timeout(db_, 5000);
-    sqlite3_exec(db_, "PRAGMA journal_mode=WAL", nullptr, nullptr, nullptr);
+    service::DatabaseConnectionService::applyPragmas(db_);
     config_.database_path = newPath;
     return db_;
 }
@@ -164,6 +164,11 @@ void AppController::loadSubscriptionsAsync(wxEvtHandler* handler) {
             Logger::write("PRAGMA journal_mode=WAL failed for async reader: " + dbPath, LogLevel::WARN);
         }
         sqlite3_busy_timeout(readerDb, 5000);
+        sqlite3_exec(readerDb, "PRAGMA cache_size=-8000;", nullptr, nullptr, nullptr);
+        sqlite3_exec(readerDb, "PRAGMA synchronous=NORMAL;", nullptr, nullptr, nullptr);
+        sqlite3_exec(readerDb, "PRAGMA temp_store=MEMORY;", nullptr, nullptr, nullptr);
+        sqlite3_exec(readerDb, "PRAGMA mmap_size=268435456;", nullptr, nullptr, nullptr);
+        sqlite3_exec(readerDb, "PRAGMA journal_size_LIMIT=1073741824;", nullptr, nullptr, nullptr);
 
         db::models::SubitemDAO subDao(readerDb);
         std::vector<db::models::Subitem> subs = subDao.getAll();
@@ -275,6 +280,11 @@ void AppController::loadProxiesAsync(const std::string& subId, wxEvtHandler* han
             Logger::write("PRAGMA journal_mode=WAL failed for async reader: " + dbPath, LogLevel::WARN);
         }
         sqlite3_busy_timeout(readerDb, 5000);
+        sqlite3_exec(readerDb, "PRAGMA cache_size=-8000;", nullptr, nullptr, nullptr);
+        sqlite3_exec(readerDb, "PRAGMA synchronous=NORMAL;", nullptr, nullptr, nullptr);
+        sqlite3_exec(readerDb, "PRAGMA temp_store=MEMORY;", nullptr, nullptr, nullptr);
+        sqlite3_exec(readerDb, "PRAGMA mmap_size=268435456;", nullptr, nullptr, nullptr);
+        sqlite3_exec(readerDb, "PRAGMA journal_size_LIMIT=1073741824;", nullptr, nullptr, nullptr);
 
         db::models::ProfileitemDAO dao(readerDb);
         std::vector<db::models::Profileitem> allProxies = dao.getAll();

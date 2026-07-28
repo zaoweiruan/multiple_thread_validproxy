@@ -183,16 +183,16 @@ int Deduplicator::deduplicateMergedPhase() {
         if (i > 0) subidsList += ", ";
         subidsList += "'" + config_.dedup_subids[i] + "'";
     }
-    
-    std::string sql = "DELETE FROM ProfileItem WHERE IndexId IN ("
-        "SELECT IndexId FROM ("
+
+    std::string sql = "WITH ranked AS ("
         "SELECT pi.IndexId, ROW_NUMBER() OVER ("
-        "PARTITION BY lower(pi.Address), pi.Port, pi.ConfigType, lower(pi.Id), lower(pi.Network) "
+        "PARTITION BY LOWER(pi.Address), pi.Port, pi.ConfigType, LOWER(pi.Id), LOWER(pi.Network) "
         "ORDER BY CASE WHEN pi.SubId IN (" + subidsList + ") THEN 0 ELSE 1 END, "
         "CAST(COALESCE(pe.Delay, 0) AS INTEGER) DESC"
-        ") as rn FROM ProfileItem pi "
+        ") AS rn FROM ProfileItem pi "
         "LEFT JOIN ProfileExItem pe ON pi.IndexId = pe.IndexId"
-        ") WHERE rn > 1"
+        ") DELETE FROM ProfileItem WHERE IndexId IN ("
+        "SELECT IndexId FROM ranked WHERE rn > 1"
         ")";
     
     char* errMsg = nullptr;
@@ -239,18 +239,24 @@ int Deduplicator::deduplicateBlacklistPhase() {
 int Deduplicator::deduplicateConfigErrorPhase() {
     db::models::ProfileitemDAO dao(db_);
     std::vector<db::models::Profileitem> all = dao.getAll("SELECT * FROM ProfileItem;");
-    int deleted = 0;
+    std::vector<std::string> failedIds;
+    failedIds.reserve(all.size() / 10);
+
     for (const db::models::Profileitem& p : all) {
         try {
             p.checkRequired();
         } catch (const std::exception& e) {
             Logger::write("CONFIG_ERROR: " + p.indexid + " - " + p.address + ":" + p.port + " - " + e.what(), LogLevel::WARN);
-            dao.deleteByIndexIdNoTx(p.indexid);
-            deleted++;
+            failedIds.push_back(p.indexid);
         }
     }
-    Logger::write("INFO: Phase ConfigError deleted: " + std::to_string(deleted) + " (checkRequired failed)", LogLevel::INFO);
-    return deleted;
+
+    if (!failedIds.empty()) {
+        dao.deleteByIndexIdsNoTx(failedIds);
+    }
+
+    Logger::write("INFO: Phase ConfigError deleted: " + std::to_string(failedIds.size()) + " (checkRequired failed)", LogLevel::INFO);
+    return static_cast<int>(failedIds.size());
 }
 
 void Deduplicator::cleanupProfileExItem() {

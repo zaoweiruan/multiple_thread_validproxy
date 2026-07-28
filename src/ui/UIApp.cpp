@@ -1,5 +1,6 @@
 #include "UIApp.h"
 #include "MainFrame.h"
+#include "service/DatabaseConnectionService.h"
 
 #include <wx/image.h>
 #include <wx/msgdlg.h>
@@ -73,12 +74,11 @@ bool UIApp::OnInit()
         }
 
         // Open database
-        int rc = sqlite3_open_v2(cfg_.database_path.c_str(), &db_, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX, nullptr);
-        if (rc != SQLITE_OK) {
-            wxMessageBox("Failed to open database.\n\nConfig path:\n" + effectiveConfigPath + "\nDatabase path:\n" + cfg_.database_path + "\nError: " + std::string(sqlite3_errmsg(db_)),
+        service::DatabaseConnectionService dbService;
+        db_ = dbService.open(cfg_.database_path);
+        if (!db_) {
+            wxMessageBox("Failed to open database.\n\nConfig path:\n" + effectiveConfigPath + "\nDatabase path:\n" + cfg_.database_path,
                          "Database Error", wxOK | wxICON_ERROR);
-            sqlite3_close(db_);
-            db_ = nullptr;
             return false;
         }
     }

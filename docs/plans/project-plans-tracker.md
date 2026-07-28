@@ -36,6 +36,8 @@ updated: 2026-06-15
 | 2026-05-19 | — | 批量状态更新 | P4→❌ cancelled; 003->completed; DLL fix->completed |
 | 2026-07-09 | spec | `docs/specs/2026-07-09-Spec-DnsCache-v1.0.md` | DNS 缓存解析模块 — DnsCache 类 getaddrinfo + 惰性 WSAStartup + 互斥锁缓存 | ✅ completed |
 | 2026-07-09 | bugfix | `docs/bugfix/2026-07-09-Bugfix-RegionResolver-Hang-v1.0.md` | RegionResolver 假死修复 — DNS 超时(std::async+10s) + 缓冲互斥锁解耦 + Worker 退出日志 | ✅ completed |
+| 2026-07-24 | spec | `docs/specs/2026-07-24-Spec-SubscriptionWritePerformance-v1.0.md` | 订阅写入性能优化 — PrAGMA 调优(2-5x) + 批量INSERT + 内存哈希去重(10-50x) + 复合索引(50-100x)，4阶段实施方案 | 📝 draft |
+| 2026-07-24 | plan | `docs/superpowers/plans/2026-07-24-SubscriptionWritePerformance-Optimization-v1.0.md` | 订阅写入性能优化实施计划——Phase A Pragma调优 / Phase B 批量INSERT+哈希去重 / Phase C 复合索引+Dedupulator优化，含完整代码变更步骤和验收标准 | 📝 draft |
 
 ---
 
