@@ -30,6 +30,7 @@
 #include "Utils.h"
 #include "Logger.h"
 #include "version.h"
+#include "service/DatabaseConnectionService.h"
 
 
 namespace {
@@ -66,6 +67,8 @@ static bool openDatabase(const config::AppConfig& config, sqlite3*& db, const st
         std::cerr << context << " - Database path from config: " << config.database_path << std::endl;
         return false;
     }
+    // Apply performance pragmas (WAL, cache, sync, etc.) and composite dedup index
+    service::DatabaseConnectionService::applyPragmas(db);
     return true;
 }
 
@@ -154,6 +157,12 @@ static int runDefaultTest(const std::string& configPath, const std::string& exeD
     }
     sqlite3_busy_timeout(db, 5000);
     sqlite3_exec(db, "PRAGMA journal_mode=WAL", nullptr, nullptr, nullptr);
+    // Additional pragmas for performance and data integrity (matching DatabaseConnectionService::applyPragmas)
+    sqlite3_exec(db, "PRAGMA cache_size=-8000", nullptr, nullptr, nullptr);
+    sqlite3_exec(db, "PRAGMA synchronous=NORMAL", nullptr, nullptr, nullptr);
+    sqlite3_exec(db, "PRAGMA temp_store=MEMORY", nullptr, nullptr, nullptr);
+    sqlite3_exec(db, "PRAGMA mmap_size=268435456", nullptr, nullptr, nullptr);
+    sqlite3_exec(db, "PRAGMA journal_size_limit=67108864", nullptr, nullptr, nullptr);
     std::cout << "Database opened: " << appConfig->database_path << std::endl;
 
 ProxyBatchTester tester(db, *appConfig, exeDir, &g_cancelRequested);
@@ -348,6 +357,14 @@ int main(int argc, char* argv[]) {
             Logger::close();
             return 1;
         }
+        sqlite3_busy_timeout(db, 5000);
+        sqlite3_exec(db, "PRAGMA journal_mode=WAL", nullptr, nullptr, nullptr);
+        // Additional pragmas for performance and data integrity (matching DatabaseConnectionService::applyPragmas)
+        sqlite3_exec(db, "PRAGMA cache_size=-8000", nullptr, nullptr, nullptr);
+        sqlite3_exec(db, "PRAGMA synchronous=NORMAL", nullptr, nullptr, nullptr);
+        sqlite3_exec(db, "PRAGMA temp_store=MEMORY", nullptr, nullptr, nullptr);
+        sqlite3_exec(db, "PRAGMA mmap_size=268435456", nullptr, nullptr, nullptr);
+        sqlite3_exec(db, "PRAGMA journal_size_limit=67108864", nullptr, nullptr, nullptr);
 
         db::models::ProfileitemDAO profileDao(db);
         std::optional<db::models::Profileitem> profileOpt = profileDao.getByIndexId(generatorIndexId);
@@ -401,6 +418,14 @@ int main(int argc, char* argv[]) {
             Logger::close();
             return 1;
         }
+        sqlite3_busy_timeout(db, 5000);
+        sqlite3_exec(db, "PRAGMA journal_mode=WAL", nullptr, nullptr, nullptr);
+        // Additional pragmas for performance and data integrity (matching DatabaseConnectionService::applyPragmas)
+        sqlite3_exec(db, "PRAGMA cache_size=-8000", nullptr, nullptr, nullptr);
+        sqlite3_exec(db, "PRAGMA synchronous=NORMAL", nullptr, nullptr, nullptr);
+        sqlite3_exec(db, "PRAGMA temp_store=MEMORY", nullptr, nullptr, nullptr);
+        sqlite3_exec(db, "PRAGMA mmap_size=268435456", nullptr, nullptr, nullptr);
+        sqlite3_exec(db, "PRAGMA journal_size_limit=67108864", nullptr, nullptr, nullptr);
         
         db::models::SubitemDAO subDao(db);
         std::vector<db::models::Subitem> subs = subDao.getAll();
@@ -496,6 +521,14 @@ int main(int argc, char* argv[]) {
             Logger::close();
             return 1;
         }
+        sqlite3_busy_timeout(db, 5000);
+        sqlite3_exec(db, "PRAGMA journal_mode=WAL", nullptr, nullptr, nullptr);
+        // Additional pragmas for performance and data integrity (matching DatabaseConnectionService::applyPragmas)
+        sqlite3_exec(db, "PRAGMA cache_size=-8000", nullptr, nullptr, nullptr);
+        sqlite3_exec(db, "PRAGMA synchronous=NORMAL", nullptr, nullptr, nullptr);
+        sqlite3_exec(db, "PRAGMA temp_store=MEMORY", nullptr, nullptr, nullptr);
+        sqlite3_exec(db, "PRAGMA mmap_size=268435456", nullptr, nullptr, nullptr);
+        sqlite3_exec(db, "PRAGMA journal_size_limit=67108864", nullptr, nullptr, nullptr);
         
         std::string exeBaseDir = exeDir;
         std::filesystem::path configDirFs = std::filesystem::path(exeBaseDir) / "config";
@@ -561,6 +594,14 @@ int main(int argc, char* argv[]) {
             Logger::close();
             return 1;
         }
+        sqlite3_busy_timeout(db, 5000);
+        sqlite3_exec(db, "PRAGMA journal_mode=WAL", nullptr, nullptr, nullptr);
+        // Additional pragmas for performance and data integrity (matching DatabaseConnectionService::applyPragmas)
+        sqlite3_exec(db, "PRAGMA cache_size=-8000", nullptr, nullptr, nullptr);
+        sqlite3_exec(db, "PRAGMA synchronous=NORMAL", nullptr, nullptr, nullptr);
+        sqlite3_exec(db, "PRAGMA temp_store=MEMORY", nullptr, nullptr, nullptr);
+        sqlite3_exec(db, "PRAGMA mmap_size=268435456", nullptr, nullptr, nullptr);
+        sqlite3_exec(db, "PRAGMA journal_size_limit=67108864", nullptr, nullptr, nullptr);
         
         db::models::ProfileitemDAO profileDao(db);
         db::models::ProfileExItemDAO exDao(db);
@@ -690,6 +731,14 @@ int main(int argc, char* argv[]) {
             Logger::close();
             return 1;
         }
+        sqlite3_busy_timeout(db, 5000);
+        sqlite3_exec(db, "PRAGMA journal_mode=WAL", nullptr, nullptr, nullptr);
+        // Additional pragmas for performance and data integrity (matching DatabaseConnectionService::applyPragmas)
+        sqlite3_exec(db, "PRAGMA cache_size=-8000", nullptr, nullptr, nullptr);
+        sqlite3_exec(db, "PRAGMA synchronous=NORMAL", nullptr, nullptr, nullptr);
+        sqlite3_exec(db, "PRAGMA temp_store=MEMORY", nullptr, nullptr, nullptr);
+        sqlite3_exec(db, "PRAGMA mmap_size=268435456", nullptr, nullptr, nullptr);
+        sqlite3_exec(db, "PRAGMA journal_size_limit=67108864", nullptr, nullptr, nullptr);
         
         update::SubitemUpdaterV2 updater(db, appConfig->proxy.xray_executable, *appConfig, 
                                                           nullptr, exeDir);
@@ -735,6 +784,14 @@ int main(int argc, char* argv[]) {
             Logger::close();
             return 1;
         }
+        sqlite3_busy_timeout(db, 5000);
+        sqlite3_exec(db, "PRAGMA journal_mode=WAL", nullptr, nullptr, nullptr);
+        // Additional pragmas for performance and data integrity (matching DatabaseConnectionService::applyPragmas)
+        sqlite3_exec(db, "PRAGMA cache_size=-8000", nullptr, nullptr, nullptr);
+        sqlite3_exec(db, "PRAGMA synchronous=NORMAL", nullptr, nullptr, nullptr);
+        sqlite3_exec(db, "PRAGMA temp_store=MEMORY", nullptr, nullptr, nullptr);
+        sqlite3_exec(db, "PRAGMA mmap_size=268435456", nullptr, nullptr, nullptr);
+        sqlite3_exec(db, "PRAGMA journal_size_limit=67108864", nullptr, nullptr, nullptr);
 
         std::vector<std::string> steps;
         if (!appConfig->auto_task.steps.empty()) {
@@ -837,6 +894,14 @@ int main(int argc, char* argv[]) {
             Logger::close();
             return 1;
         }
+        sqlite3_busy_timeout(db, 5000);
+        sqlite3_exec(db, "PRAGMA journal_mode=WAL", nullptr, nullptr, nullptr);
+        // Additional pragmas for performance and data integrity (matching DatabaseConnectionService::applyPragmas)
+        sqlite3_exec(db, "PRAGMA cache_size=-8000", nullptr, nullptr, nullptr);
+        sqlite3_exec(db, "PRAGMA synchronous=NORMAL", nullptr, nullptr, nullptr);
+        sqlite3_exec(db, "PRAGMA temp_store=MEMORY", nullptr, nullptr, nullptr);
+        sqlite3_exec(db, "PRAGMA mmap_size=268435456", nullptr, nullptr, nullptr);
+        sqlite3_exec(db, "PRAGMA journal_size_limit=67108864", nullptr, nullptr, nullptr);
 
         AutoTaskManager manager(db, *appConfig, exeDir, &g_cancelRequested);
         manager.setProgressCallback([](const AutoTaskProgress& p) {

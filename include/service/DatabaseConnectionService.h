@@ -14,8 +14,7 @@ public:
     bool close(sqlite3* db);
     bool isValid(sqlite3* db) const;
 
-private:
-    void applyPragmas(sqlite3* db) const;
+    static void applyPragmas(sqlite3* db);
 };
 
 } // namespace service
