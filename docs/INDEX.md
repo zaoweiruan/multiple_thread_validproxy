@@ -1,4 +1,4 @@
-updated: 2026-07-15
+updated: 2026-07-28
 title: "docs: project document index"
 type: meta
 status: maintained
@@ -170,6 +170,7 @@ status: maintained
 | 18 | [`docs/specs/2026-07-09-Spec-DnsCache-v1.0.md`](./specs/2026-07-09-Spec-DnsCache-v1.0.md) | **DNS 缓存解析模块** — DnsCache 类，静态 resolve()，getaddrinfo IPv4 + 惰性 WSAStartup + 互斥锁保护的 unordered_map 缓存，解析失败空字符串缓存（防重试风暴） | ✅ completed |
 | 19 | [`docs/specs/2026-07-15-Spec-GitTagVersioning-v1.0.md`](./specs/2026-07-15-Spec-GitTagVersioning-v1.0.md) | **Git Tag Versioning** — 以 Git tag 为编译/发布版本唯一来源，`cmake/GetGitVersion.cmake` 检测 tag → `configure_file()` 生成 `include/version.h` → About 窗口消费 | draft |
 | 20 | [`docs/specs/2026-07-24-Spec-SubscriptionWritePerformance-v1.0.md`](./specs/2026-07-24-Spec-SubscriptionWritePerformance-v1.0.md) | **订阅写入性能优化** — Pragma 调优(2-5x)、批量 INSERT + 内存哈希去重(10-50x)、复合索引 + 分阶段去重(50-100x)，4 阶段实施方案 | draft |
+| 21 | [`docs/specs/2026-07-28-Spec-BatchTestingEfficiency-v1.0.md`](./specs/2026-07-28-Spec-BatchTestingEfficiency-v1.0.md) | **批量测试效率优化** — gRPC 直连替代子进程 API、去冗余 removeOutbound、睡眠减量、批量 DB 写入、动态 Worker 数，预估 8.5× 提速 | draft |
 
 ---
 

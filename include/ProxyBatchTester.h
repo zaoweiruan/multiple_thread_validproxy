@@ -15,6 +15,7 @@
 #include "ProxyTester.h"
 #include "XrayApi.h"
 #include "ConfigGenerator.h"
+#include "TestResultQueue.h"
 
 class NetworkMonitor;
 
@@ -76,6 +77,10 @@ public:
     // Serialize all SQLite operations on shared db_ handle
     std::mutex dbMutex_;
     const NetworkMonitor* netMon_{nullptr};
+    // Phase F: pre-generated XrayConfig per proxy (indexed by proxy index)
+    std::vector<config::XrayConfig> preGenConfigs_;
+    // Phase D: thread-safe result queue with flush thread for batched DB writes
+    TestResultQueue resultQueue_;
 };
 
 #endif // PROXY_BATCH_TESTER_H
