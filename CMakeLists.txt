@@ -43,6 +43,7 @@ endif()
 
 # ===== Sanitizer options (Debug) =====
 option(ENABLE_SANITIZERS "Enable AddressSanitizer and UBSan" OFF)
+option(USE_GRPC_API "Use direct gRPC API without Xray process" OFF)
 if(ENABLE_SANITIZERS AND NOT MSVC)
     message(STATUS "Sanitizers enabled: AddressSanitizer, UndefinedBehaviorSanitizer")
     add_compile_options(-fsanitize=address,undefined -fno-omit-frame-pointer)
@@ -201,6 +202,10 @@ set_target_properties(validproxy-cli PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/bin
 )
 
+if(USE_GRPC_API)
+    target_compile_definitions(validproxy-cli PRIVATE USE_GRPC_API=1)
+endif()
+
 # -- wxWidgets (GUI mode) --
 # Find wxWidgets as a CMake CONFIG package from vcpkg (dynamic variant, which has proper cmake config)
 # Pre-find NanoSVG dependency so wxWidgets config can find it
@@ -356,6 +361,11 @@ if(wxWidgets_FOUND)
     target_compile_definitions(validproxy PRIVATE HAS_WXWIDGETS=1)
 else()
     message(STATUS "wxWidgets not found - GUI mode (-ui) will not be available")
+endif()
+
+if(USE_GRPC_API)
+    target_compile_definitions(validproxy PRIVATE USE_GRPC_API=1)
+    message(STATUS "USE_GRPC_API enabled - using direct gRPC API instead of Xray process")
 endif()
 
 enable_testing()
@@ -678,5 +688,27 @@ set_target_properties(test_singbox_vless_builder PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
 )
 add_test(NAME SingBoxVLESSBuilderTest COMMAND test_singbox_vless_builder)
+
+# -- XrayApi Direct gRPC helpers unit tests (requires USE_GRPC_API=1) --
+if(USE_GRPC_API)
+    add_executable(test_xray_api_direct
+        tests/test_xray_api_direct.cpp
+        src/XrayApi.cpp
+        src/Logger.cpp
+        src/LoggerInstance.cpp
+    )
+    target_include_directories(test_xray_api_direct PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+    target_compile_definitions(test_xray_api_direct PRIVATE USE_GRPC_API=1 TEST_BUILD=1)
+    target_link_libraries(test_xray_api_direct PRIVATE gtest_main gtest
+        ${BOOST_ROOT}/lib/libboost_json-mgw14-mt-x64-1_88.a
+        -lws2_32
+    )
+    set_target_properties(test_xray_api_direct PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
+        RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
+        RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+    )
+    add_test(NAME XrayApiDirectTest COMMAND test_xray_api_direct)
+endif()
 
 install(TARGETS validproxy validproxy-cli DESTINATION bin)

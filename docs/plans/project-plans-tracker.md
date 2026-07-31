@@ -38,6 +38,8 @@ updated: 2026-06-15
 | 2026-07-09 | bugfix | `docs/bugfix/2026-07-09-Bugfix-RegionResolver-Hang-v1.0.md` | RegionResolver 假死修复 — DNS 超时(std::async+10s) + 缓冲互斥锁解耦 + Worker 退出日志 | ✅ completed |
 | 2026-07-24 | spec | `docs/specs/2026-07-24-Spec-SubscriptionWritePerformance-v1.0.md` | 订阅写入性能优化 — PrAGMA 调优(2-5x) + 批量INSERT + 内存哈希去重(10-50x) + 复合索引(50-100x)，4阶段实施方案 | 📝 draft |
 | 2026-07-24 | plan | `docs/superpowers/plans/2026-07-24-SubscriptionWritePerformance-Optimization-v1.0.md` | 订阅写入性能优化实施计划——Phase A Pragma调优 / Phase B 批量INSERT+哈希去重 / Phase C 复合索引+Dedupulator优化，含完整代码变更步骤和验收标准 | 📝 draft |
+| 2026-07-29 | bugfix | `docs/bugfix/2026-07-29-Bugfix-XrayApi-gRPC-AddOutboundDirect-Fields-v1.0.md` | addOutboundDirect TypedMessage field 2→3 (proxy_settings) + 两处 gRPC 路径 CommandService→HandlerService 修复，4 新增单元测试，23/23 tests pass | ✅ completed |
+| 2026-07-29 | bugfix | `docs/bugfix/2026-07-29-Bugfix-XrayApi-gRPC-AddOutboundDirect-Fields-v1.0.md` | addOutboundDirect JSON parse 回退修复 — read `outbounds[]` 数组而非 `outbound` 单对象，parseOutboundJson 静态提取，10 协议映射，33/33 tests pass | ✅ completed |
 
 ---
 
