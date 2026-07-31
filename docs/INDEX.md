@@ -30,7 +30,7 @@ status: maintained
 | [规范化设计](#75-规范化设计) | 10 | `docs/specs/` |
 | [实施计划](#8-实施计划) | 54 | `docs/plans/` |
 | [分析报告](#9-分析报告) | 8 | `docs/reports/` |
-| [Bug 修复记录](#91-bug-修复记录) | 19 | `docs/bugfix/` |
+| [Bug 修复记录](#91-bug-修复记录) | 22 | `docs/bugfix/` |
 | [测试报告](#10-测试报告) | 1 | `docs/test/` |
 | [长期记忆](#13-长期记忆) | 1 | `docs/project-knowledge.md` (6.2 KB) |
 
@@ -320,6 +320,7 @@ status: maintained
 | 19 | [`docs/bugfix/2026-07-01-Bugfix-DoubleClick-V1.0.md`](./bugfix/2026-07-01-Bugfix-DoubleClick-V1.0.md) | **SubscriptionPanel / ProxyListPanel 双击无反应** — MSW wxDataViewMainWindow 缺失 CS_DBLCLKS，使用 selection-change-based 双击检测绕过限制 | — |
 | 20 | [`docs/bugfix/2026-07-20-Bugfix-CurlGlobalInit-GUI-v1.0.md`](./bugfix/2026-07-20-Bugfix-CurlGlobalInit-GUI-v1.0.md) | **GUI 入口缺失 curl_global_init() 导致右键解析地区崩溃** — main_gui.cpp 未调用 curl_global_init，线程中 curl_easy_perform 访问违例 | — |
 | 21 | [`docs/bugfix/2026-07-28-Bugfix-DatabaseIndex-applyPragmas-v1.0.md`](./bugfix/2026-07-28-Bugfix-DatabaseIndex-applyPragmas-v1.0.md) | **新建数据库缺失 idx_profile_dedup 索引** — main_gui/UIApp detached/main_cli 三处数据库打开路径未调用 applyPragmas()，统一接入 DatabaseConnectionService | — |
+| 22 | [`docs/bugfix/2026-07-29-Bugfix-XrayApi-gRPC-AddOutboundDirect-Fields-v1.0.md`](./bugfix/2026-07-29-Bugfix-XrayApi-gRPC-AddOutboundDirect-Fields-v1.0.md) | **gRPC addOutboundDirect 修复 (2026-07-29/31)** — (1) TypedMessage field 2→3 (proxy_settings) (2) gRPC path CommandService→HandlerService (3) outbound JSON parse 回退：`{"outbounds":[...]}` 代码误读 rootObj["outbound"]，提取 parseOutboundJson 与 protocol→typeUrl 映射 (4) [07-31] protocol 原值被忽略(恒0)改用配置原值 (5) [07-31] SenderConfig 字段号 1/3→2/4 (6) [07-31] encodeStreamConfig port int64 被 is_uint64 守卫静默丢弃已修复；XrayApiDirectTest 54/54 pass | — |
 
 ---
 

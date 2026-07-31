@@ -85,8 +85,12 @@ std::vector<db::models::Profileitem> ProxyBatchTester::loadProxies(const std::st
 }
 
 int ProxyBatchTester::calculateXrayInstanceCount(int proxyCount) {
-    int maxWorkers = config_.xray_workers;
-    return std::min(proxyCount, maxWorkers);
+    int hardwareCores = static_cast<int>(std::thread::hardware_concurrency());
+    if (hardwareCores < 1) hardwareCores = 1;
+    int configMaxWorkers = config_.xray_workers;
+    const int HARD_CAP = 16;
+    int maxWorkers = std::min({proxyCount, hardwareCores, configMaxWorkers, HARD_CAP});
+    return maxWorkers;
 }
 
 bool ProxyBatchTester::startXrayInstances(int count) {
@@ -171,8 +175,36 @@ std::string xrayApiAddr = "127.0.0.1:" + std::to_string(apiPort);
         try {
             const config::XrayConfig& config = preGenConfigs_[profileIdx];
             std::string tag = "proxy";
-            
+
+            // TRACE: generated config for this proxy
+            Logger::write("[TRACE] Worker-" + std::to_string(workerId) +
+                          "] Generated config for " + profile.indexid + ": " +
+                          config.outbound_json, LogLevel::TRACE);
+
+#ifdef USE_GRPC_API
+            xrayApi.removeOutboundDirect(tag);
+#else
             xrayApi.removeOutbound(tag);
+#endif
+
+            // TRACE: removeOutbound result
+            Logger::write("[TRACE] Worker-" + std::to_string(workerId) +
+                          "] removeOutbound completed for tag=" + tag +
+                          " (profile=" + profile.indexid + ")", LogLevel::TRACE);
+            // TRACE: list outbounds after remove
+            {
+                std::string outboundList;
+#ifdef USE_GRPC_API
+                if (xrayApi.listOutboundsDirect(outboundList)) {
+#else
+                if (xrayApi.listOutboundsResult(outboundList)) {
+#endif
+                    Logger::write("[TRACE] Worker-" + std::to_string(workerId) +
+                                  "] Outbounds after remove:\n" + outboundList,
+                                  LogLevel::TRACE);
+                }
+            }
+
             for (int i = 0; i < 2; ++i) {  // 2 * 10ms = 20ms total
                 if (isCancelled()) return;
                 if (netMon_ && !netMon_->IsConnected()) { if (!waitForNetworkRecovery()) return; }
@@ -183,18 +215,45 @@ std::string xrayApiAddr = "127.0.0.1:" + std::to_string(apiPort);
             int retryCount = 0;
             bool addSuccess = false;
             while (retryCount < 3) {
+#ifdef USE_GRPC_API
+                if (xrayApi.addOutboundDirect(config.outbound_json, tag, addResult)) {
+#else
                 if (xrayApi.addOutbound(config.outbound_json, tag, addResult)) {
+#endif
                     addSuccess = true;
                     break;
                 }
                 retryCount++;
                 if (retryCount < 3) {
+#ifdef USE_GRPC_API
+                    xrayApi.removeOutboundDirect(tag);
+#else
                     xrayApi.removeOutbound(tag);
+#endif
                     for (int i = 0; i < 5; ++i) {  // 5 * 10ms = 50ms total
                         if (isCancelled()) return;
                         if (netMon_ && !netMon_->IsConnected()) { if (!waitForNetworkRecovery()) return; }
                         std::this_thread::sleep_for(std::chrono::milliseconds(10));
                     }
+                }
+            }
+
+            // TRACE: addOutbound result
+            Logger::write("[TRACE] Worker-" + std::to_string(workerId) +
+                          "] addOutbound result for " + profile.indexid +
+                          " (tag=" + tag + "): " + addResult,
+                          LogLevel::TRACE);
+            // TRACE: list outbounds after add
+            {
+                std::string outboundList;
+#ifdef USE_GRPC_API
+                if (xrayApi.listOutboundsDirect(outboundList)) {
+#else
+                if (xrayApi.listOutboundsResult(outboundList)) {
+#endif
+                    Logger::write("[TRACE] Worker-" + std::to_string(workerId) +
+                                  "] Outbounds after add:\n" + outboundList,
+                                  LogLevel::TRACE);
                 }
             }
             
