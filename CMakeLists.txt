@@ -43,7 +43,7 @@ endif()
 
 # ===== Sanitizer options (Debug) =====
 option(ENABLE_SANITIZERS "Enable AddressSanitizer and UBSan" OFF)
-option(USE_GRPC_API "Use direct gRPC API without Xray process" OFF)
+option(USE_GRPC_API "Use direct gRPC API without Xray process" ON)
 if(ENABLE_SANITIZERS AND NOT MSVC)
     message(STATUS "Sanitizers enabled: AddressSanitizer, UndefinedBehaviorSanitizer")
     add_compile_options(-fsanitize=address,undefined -fno-omit-frame-pointer)

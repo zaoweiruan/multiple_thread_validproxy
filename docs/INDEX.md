@@ -1,4 +1,4 @@
-updated: 2026-07-28
+updated: 2026-08-03
 title: "docs: project document index"
 type: meta
 status: maintained
@@ -29,7 +29,7 @@ status: maintained
 | [技术方案](#7-技术方案) | 6 | `docs/superpowers/specs/` |
 | [规范化设计](#75-规范化设计) | 10 | `docs/specs/` |
 | [实施计划](#8-实施计划) | 54 | `docs/plans/` |
-| [分析报告](#9-分析报告) | 8 | `docs/reports/` |
+| [分析报告](#9-分析报告) | 10 | `docs/reports/` |
 | [Bug 修复记录](#91-bug-修复记录) | 22 | `docs/bugfix/` |
 | [测试报告](#10-测试报告) | 1 | `docs/test/` |
 | [长期记忆](#13-长期记忆) | 1 | `docs/project-knowledge.md` (6.2 KB) |
@@ -170,7 +170,7 @@ status: maintained
 | 18 | [`docs/specs/2026-07-09-Spec-DnsCache-v1.0.md`](./specs/2026-07-09-Spec-DnsCache-v1.0.md) | **DNS 缓存解析模块** — DnsCache 类，静态 resolve()，getaddrinfo IPv4 + 惰性 WSAStartup + 互斥锁保护的 unordered_map 缓存，解析失败空字符串缓存（防重试风暴） | ✅ completed |
 | 19 | [`docs/specs/2026-07-15-Spec-GitTagVersioning-v1.0.md`](./specs/2026-07-15-Spec-GitTagVersioning-v1.0.md) | **Git Tag Versioning** — 以 Git tag 为编译/发布版本唯一来源，`cmake/GetGitVersion.cmake` 检测 tag → `configure_file()` 生成 `include/version.h` → About 窗口消费 | draft |
 | 20 | [`docs/specs/2026-07-24-Spec-SubscriptionWritePerformance-v1.0.md`](./specs/2026-07-24-Spec-SubscriptionWritePerformance-v1.0.md) | **订阅写入性能优化** — Pragma 调优(2-5x)、批量 INSERT + 内存哈希去重(10-50x)、复合索引 + 分阶段去重(50-100x)，4 阶段实施方案 | draft |
-| 21 | [`docs/specs/2026-07-28-Spec-BatchTestingEfficiency-v1.0.md`](./specs/2026-07-28-Spec-BatchTestingEfficiency-v1.0.md) | **批量测试效率优化** — gRPC 直连替代子进程 API、去冗余 removeOutbound、睡眠减量、批量 DB 写入、动态 Worker 数，预估 8.5× 提速 | draft |
+| 21 | [`docs/specs/2026-07-28-Spec-BatchTestingEfficiency-v1.0.md`](./specs/2026-07-28-Spec-BatchTestingEfficiency-v1.0.md) | **批量测试效率优化** — gRPC 直连替代子进程 API、去冗余 removeOutbound、睡眠减量、批量 DB 写入、动态 Worker 数，预估 8.5× 提速；**A-F 六阶段全部实现**，实测墙钟快 2.23×（见 §9 报告 #9） | completed |
 
 ---
 
@@ -292,6 +292,8 @@ status: maintained
 | 6 | [`docs/reports/2026-06-01-diag-log-level-adjustment.md`](./reports/2026-06-01-diag-log-level-adjustment.md) | **诊断日志级别调整报告** — 10 处 `[DIAG]` 日志从 `INFO`/`DEBUG` 降为 `TRACE` | 0.7 KB |
 | 7 | [`docs/reports/2026-06-11-Debug-Tools-Assessment.md`](./reports/2026-06-11-Debug-Tools-Assessment.md) | **C++ 调试工具评估报告** — 日志系统、单元测试现状分析，AddressSanitizer/静态分析缺失评估 | 2.1 KB |
 | 8 | [`docs/reports/2026-06-26-Report-NetworkMonitorProbeFlow.md`](./reports/2026-06-26-Report-NetworkMonitorProbeFlow.md) | **网络探测逻辑分析报告** — NetworkMonitor + ProxyBatchTester 生产者-消费者双线程协作机制、ThreadLoop 探测流程、状态机、通信机制 | 5.2 KB |
+| 9 | [`docs/reports/2026-07-31-Report-XrayApi-gRPC-vs-Subprocess-Performance-v1.0.md`](./reports/2026-07-31-Report-XrayApi-gRPC-vs-Subprocess-Performance-v1.0.md) | **实测量化报告: XrayApi gRPC vs subprocess 性能** — 同一订阅 178 代理实测 gRPC 路径 88s vs subprocess 196s（快 2.23 倍）；每代理注入开销 ~6s→~130ms（约 45 倍理论提升）；机制对比、日志实证、证据留存 | — |
+| 10 | [`docs/reports/2026-08-03-Report-CodeAudit-Optimization-v1.0.md`](./reports/2026-08-03-Report-CodeAudit-Optimization-v1.0.md) | **代码审查优化方案报告** — XrayApi/ProxyBatchTester/支撑模块三路并行审计：6 HIGH（detach UAF、gRPC status 不解析、protobuf 编码错位、XrayInstance 孤儿进程、PortManager 无锁、lastResult_ 数据竞争）+ 14 MED 正确性 + 14 性能 + 14 错误处理空洞；含分四批实施顺序与测试期望同步提示 | — |
 
 ---
 
@@ -388,5 +390,5 @@ status: maintained
 
 ---
 
-*最后更新: 2026-07-28 (v4) | 维护者: Kilo AI*
+*最后更新: 2026-08-03 (v6) | 维护者: Kilo AI*
 
