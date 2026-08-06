@@ -1,4 +1,4 @@
-updated: 2026-08-03
+updated: 2026-08-06
 title: "docs: project document index"
 type: meta
 status: maintained
@@ -30,7 +30,7 @@ status: maintained
 | [规范化设计](#75-规范化设计) | 10 | `docs/specs/` |
 | [实施计划](#8-实施计划) | 54 | `docs/plans/` |
 | [分析报告](#9-分析报告) | 10 | `docs/reports/` |
-| [Bug 修复记录](#91-bug-修复记录) | 22 | `docs/bugfix/` |
+| [Bug 修复记录](#91-bug-修复记录) | 27 | `docs/bugfix/` |
 | [测试报告](#10-测试报告) | 1 | `docs/test/` |
 | [长期记忆](#13-长期记忆) | 1 | `docs/project-knowledge.md` (6.2 KB) |
 
@@ -171,6 +171,8 @@ status: maintained
 | 19 | [`docs/specs/2026-07-15-Spec-GitTagVersioning-v1.0.md`](./specs/2026-07-15-Spec-GitTagVersioning-v1.0.md) | **Git Tag Versioning** — 以 Git tag 为编译/发布版本唯一来源，`cmake/GetGitVersion.cmake` 检测 tag → `configure_file()` 生成 `include/version.h` → About 窗口消费 | draft |
 | 20 | [`docs/specs/2026-07-24-Spec-SubscriptionWritePerformance-v1.0.md`](./specs/2026-07-24-Spec-SubscriptionWritePerformance-v1.0.md) | **订阅写入性能优化** — Pragma 调优(2-5x)、批量 INSERT + 内存哈希去重(10-50x)、复合索引 + 分阶段去重(50-100x)，4 阶段实施方案 | draft |
 | 21 | [`docs/specs/2026-07-28-Spec-BatchTestingEfficiency-v1.0.md`](./specs/2026-07-28-Spec-BatchTestingEfficiency-v1.0.md) | **批量测试效率优化** — gRPC 直连替代子进程 API、去冗余 removeOutbound、睡眠减量、批量 DB 写入、动态 Worker 数，预估 8.5× 提速；**A-F 六阶段全部实现**，实测墙钟快 2.23×（见 §9 报告 #9） | completed |
+| 22 | [`docs/specs/2026-08-05-Spec-DnsCache-Permanent-v1.0.md`](./specs/2026-08-05-Spec-DnsCache-Permanent-v1.0.md) | **DNS 解析结果永久缓存** — DnsShareCache 程序级共享（CURLSH + CURLOPT_DNS_CACHE_TIMEOUT=-1，7 模块复用，进程生命周期）+ NetworkMonitor dnsCache_ 整体删除（只写不读死代码）；NetworkMonitorTest 11 用例通过 | ✅ completed |
+| 23 | [`docs/specs/2026-08-05-Spec-ImportProxyValidation-v1.0.md`](./specs/2026-08-05-Spec-ImportProxyValidation-v1.0.md) | **导入订阅稽核：去除无法正确生成配置的代理** — utils::isPrintableAscii 提取统一 + isValidProxy 增加 Security/Id 可打印 ASCII 稽核（与去重阶段判定一致）；trojan/hy2 不误杀 | ✅ completed |
 
 ---
 
@@ -193,6 +195,7 @@ status: maintained
 
 | 日期 | 编号 | 文件 | 类型 | 说明 |
 |------|------|------|------|------|
+| 2026-08-03 | refactor | [`2026-08-03-Plan-CodeAudit-Optimization-Implementation-v1.0.md`](./plans/2026-08-03-Plan-CodeAudit-Optimization-Implementation-v1.0.md) | refactor ✅ | **代码审查优化实施计划** — 26 任务 5 阶段：Phase1 崩溃/UB(A1-A6) → Phase2 正确性(B+E1/E2) → Phase3 性能(D) → Phase4 低危收尾(C/E) → Phase5 规范清理(auto)；每任务含位置/变更/验收，A3 测试期望同步修正。Phase 1-4 全部落地：A1-A6 / B1-B14 / C1-C9 / D1-D8 / E1-E14（C2/C5/C8/C9/E3/E4/E8/E9b 验证为已实现），21/21 ctest 通过 | ✅ completed |
 | 2026-06-26 |  | [`./superpowers/plans/2026-06-26-batch-write-transaction-fix.md`](./superpowers/plans/2026-06-26-batch-write-transaction-fix.md) | fix | **批量写入事务安全修复** — syncDatabases()/deleteBySubId()/updateTestResultBatch() 事务包装，防止部分写入导致数据不一致 |
 || 2026-06-18 |  | [`./plans/2026-06-18-Plan-Decomposition-Five-Phase-Implementation-v1.0.md`](./plans/2026-06-18-Plan-Decomposition-Five-Phase-Implementation-v1.0.md) | refactor ✅ | **五阶段职责分解实施计划** — 70+ 新文件，逐任务拆解 ConfigReader/ShareLink/ConfigGenerator/ProxyBatchTester/AppController — ✅ ALL COMPLETED (2026-06-22) |
 | 2026-06-15 |  | [`./superpowers/plans/2026-06-15-NetworkMonitor-batch-network-abort-on-disconnect.md`](./superpowers/plans/2026-06-15-NetworkMonitor-batch-network-abort-on-disconnect.md) | feat draft | **NetworkMonitor 批量网络中断中止** — 12 tasks: NetworkMonitor class, ConfigReader, ProxyBatchTester/SubitemUpdaterV2/AutoTaskManager/AppController integration, MainFrame UI, unit tests |
@@ -294,6 +297,8 @@ status: maintained
 | 8 | [`docs/reports/2026-06-26-Report-NetworkMonitorProbeFlow.md`](./reports/2026-06-26-Report-NetworkMonitorProbeFlow.md) | **网络探测逻辑分析报告** — NetworkMonitor + ProxyBatchTester 生产者-消费者双线程协作机制、ThreadLoop 探测流程、状态机、通信机制 | 5.2 KB |
 | 9 | [`docs/reports/2026-07-31-Report-XrayApi-gRPC-vs-Subprocess-Performance-v1.0.md`](./reports/2026-07-31-Report-XrayApi-gRPC-vs-Subprocess-Performance-v1.0.md) | **实测量化报告: XrayApi gRPC vs subprocess 性能** — 同一订阅 178 代理实测 gRPC 路径 88s vs subprocess 196s（快 2.23 倍）；每代理注入开销 ~6s→~130ms（约 45 倍理论提升）；机制对比、日志实证、证据留存 | — |
 | 10 | [`docs/reports/2026-08-03-Report-CodeAudit-Optimization-v1.0.md`](./reports/2026-08-03-Report-CodeAudit-Optimization-v1.0.md) | **代码审查优化方案报告** — XrayApi/ProxyBatchTester/支撑模块三路并行审计：6 HIGH（detach UAF、gRPC status 不解析、protobuf 编码错位、XrayInstance 孤儿进程、PortManager 无锁、lastResult_ 数据竞争）+ 14 MED 正确性 + 14 性能 + 14 错误处理空洞；含分四批实施顺序与测试期望同步提示 | — |
+| 11 | [`docs/reports/2026-08-04-Report-CurlEasyHandle-Audit-Fixes-v1.0.md`](./reports/2026-08-04-Report-CurlEasyHandle-Audit-Fixes-v1.0.md) | **CurlEasyHandle 审计修复报告** — C6 移动语义补全 cancelFlag_/secondaryCancelFlag_、E3 超时下限（仅 0/负值兜底 1000ms，修复误伤 NetworkMonitor 快速探测）、E4c 二级取消标志支持；21/21 测试通过 | — |
+| 12 | [`docs/reports/2026-08-05-Report-v148-vs-Current-ProxyTest-v1.0.md`](./reports/2026-08-05-Report-v148-vs-Current-ProxyTest-v1.0.md) | **v1.4.8 vs 当前版批量测试对比报告** — 同一订阅 5544（207 代理）同配置公平对比：OK 73 vs 69（16 个差异节点全为 5s 超时边界抖动）；两版均零 parse error/WARN/ERR；测试窗口 4:41→2:05（快 2.24×，DnsCache/预生成/E7/端口管理优化成果）；FAIL 均记录 Delay=-1 无遗漏 | — |
 
 ---
 
@@ -323,6 +328,11 @@ status: maintained
 | 20 | [`docs/bugfix/2026-07-20-Bugfix-CurlGlobalInit-GUI-v1.0.md`](./bugfix/2026-07-20-Bugfix-CurlGlobalInit-GUI-v1.0.md) | **GUI 入口缺失 curl_global_init() 导致右键解析地区崩溃** — main_gui.cpp 未调用 curl_global_init，线程中 curl_easy_perform 访问违例 | — |
 | 21 | [`docs/bugfix/2026-07-28-Bugfix-DatabaseIndex-applyPragmas-v1.0.md`](./bugfix/2026-07-28-Bugfix-DatabaseIndex-applyPragmas-v1.0.md) | **新建数据库缺失 idx_profile_dedup 索引** — main_gui/UIApp detached/main_cli 三处数据库打开路径未调用 applyPragmas()，统一接入 DatabaseConnectionService | — |
 | 22 | [`docs/bugfix/2026-07-29-Bugfix-XrayApi-gRPC-AddOutboundDirect-Fields-v1.0.md`](./bugfix/2026-07-29-Bugfix-XrayApi-gRPC-AddOutboundDirect-Fields-v1.0.md) | **gRPC addOutboundDirect 修复 (2026-07-29/31)** — (1) TypedMessage field 2→3 (proxy_settings) (2) gRPC path CommandService→HandlerService (3) outbound JSON parse 回退：`{"outbounds":[...]}` 代码误读 rootObj["outbound"]，提取 parseOutboundJson 与 protocol→typeUrl 映射 (4) [07-31] protocol 原值被忽略(恒0)改用配置原值 (5) [07-31] SenderConfig 字段号 1/3→2/4 (6) [07-31] encodeStreamConfig port int64 被 is_uint64 守卫静默丢弃已修复；XrayApiDirectTest 54/54 pass | — |
+| 23 | [`docs/bugfix/2026-08-04-Bugfix-SubscriptionParser-GarbageSS-v1.0.md`](./bugfix/2026-08-04-Bugfix-SubscriptionParser-GarbageSS-v1.0.md) | **订阅解析乱码 Shadowsocks 节点致批量测试全失败** — Argh94-ShadowSocks 订阅 malformed ss:// 链接 + decodeBase64 非 base64 字符误解码为索引 0 → 29811 个乱码代理（Security/Id 二进制垃圾）；修复 decodeBase64 跳过非法字符 + ss:// method/password 可打印 ASCII 校验丢弃节点 + 代理配置错误日志降级 DEBUG（去完整 outbound JSON 防密码泄露，ensureWinsock 保留 ERR）；21/21 通过 | — |
+| 24 | [`docs/bugfix/2026-08-04-Bugfix-XrayApi-XHTTP-SplitHTTP-Mapping-v1.0.md`](./bugfix/2026-08-04-Bugfix-XrayApi-XHTTP-SplitHTTP-Mapping-v1.0.md) | **gRPC xhttp 传输编码与 Xray v26.2.4 兼容修复** — 新构建首次真正编码 xhttp（protocolName="xhttp" + `xray.transport.internet.xhttp.Config`）但 v26.2.4 已移除 xhttp 协议、该消息类型未注册 → AddOutbound `proto: not found`（旧构建是静默退化裸 TCP 的假成功，非代码回退）；修复 network=="xhttp" 统一按 splithttp 编码（protocolName="splithttp" + `xray.transport.internet.splithttp.Config`，与 v26.2.4 JSON 适配器 xhttp→splithttp 重映射一致）；单元测试 3/3 + 真实 v26.2.4 端到端 xhttp OK=true 验证 | — |
+| 25 | [`docs/bugfix/2026-08-05-Bugfix-NetworkMonitor-StaleObj-LayoutMismatch-v1.0.md`](./bugfix/2026-08-05-Bugfix-NetworkMonitor-StaleObj-LayoutMismatch-v1.0.md) | **NetworkMonitor 陈旧 .obj 布局不匹配（ODR 违例）致启动期崩溃** — NetworkMonitor.h 8/4 新增 dnsCache_/dnsCacheMutex_ 成员后仅 NetworkMonitor.cpp 重编，AppController.cpp.obj 仍为 9:05 旧布局（.ninja_deps 依赖缺失），监控线程首轮 dnsCache_.find() 访问未初始化 _M_buckets 读地址 0 确定性崩溃；修复=全量重建 399/399（顺带解决 clang 抢占编译器/CMAKE_CXX_FLAGS_DEBUG 污染/oldnames 空库/windres -O coff 四环境障碍）+ 同步 worker；验证 NetworkMonitorTest 8.07s Passed + GUI 前台启动存活 + 日志完整走到 Constructor end | — |
+| 26 | [`docs/bugfix/2026-08-05-Bugfix-ProxyBatchTester-PreGenParseError-v1.0.md`](./bugfix/2026-08-05-Bugfix-ProxyBatchTester-PreGenParseError-v1.0.md) | **批量测试 PreGen 失败节点触发 boost.json 解析错误刷屏与卡顿** — preGenerateConfigs 对垃圾节点抛异常后 push 空 outbound_json，worker 对空串调 addOutboundDirect → parseOutboundJson 用 boost.json 解析空串抛 `syntax error ... parse_string`，3 次重试×5s 超时放大卡顿（12:31 日志 13:25 起刷屏）；修复 E7 skip：pregenFailedFlags_ 标记 + worker 循环入口跳过（不再进入 addOutboundDirect，杜绝 boost.json 空串解析）+ DIAG 防御输出坏 config 前 80 字节 hex；新增 PreGenFailedSkipTest 7 用例；21/21 通过 | — |
+| 27 | [`docs/bugfix/2026-08-06-Bugfix-NetworkMonitorProbeCounterOverflow-v1.0.md`](./bugfix/2026-08-06-Bugfix-NetworkMonitorProbeCounterOverflow-v1.0.md) | **NetworkMonitor 探针计数器溢出致误触发** — ThreadLoop 第一、三分支无条件 store maxProbes_ 至 consecutiveFailures_（即使 probeEnabled_=false），1 次网络失败即可达到探针阈值并误判断网；修复=两处条件化写入（仅当 probeEnabled_ 且 fails≥maxProbes_ 时 store）；NetworkMonitorTest 11/11 通过 | — |
 
 ---
 
@@ -390,5 +400,5 @@ status: maintained
 
 ---
 
-*最后更新: 2026-08-03 (v6) | 维护者: Kilo AI*
+*最后更新: 2026-08-05 (v9) | 维护者: Kilo AI*
 
