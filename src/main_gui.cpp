@@ -70,6 +70,7 @@ int main(int argc, char* argv[]) {
     // Apply config-specified log levels
     Logger::setFileEnabled(appConfig->log_enabled);
     Logger::setFileLevel(Logger::stringToLevel(appConfig->log_file_level));
+    Logger::setConsoleLevel(Logger::stringToLevel(appConfig->log_console_level));
 
     // Log version info
     Logger::write(std::string(APP_NAME) + " v" + APP_VERSION + " (" + APP_GIT_TAG + ")", LogLevel::REPORT);
