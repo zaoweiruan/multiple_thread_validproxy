@@ -30,7 +30,7 @@ status: maintained
 | [规范化设计](#75-规范化设计) | 10 | `docs/specs/` |
 | [实施计划](#8-实施计划) | 54 | `docs/plans/` |
 | [分析报告](#9-分析报告) | 10 | `docs/reports/` |
-| [Bug 修复记录](#91-bug-修复记录) | 27 | `docs/bugfix/` |
+| [Bug 修复记录](#91-bug-修复记录) | 28 | `docs/bugfix/` |
 | [测试报告](#10-测试报告) | 1 | `docs/test/` |
 | [长期记忆](#13-长期记忆) | 1 | `docs/project-knowledge.md` (6.2 KB) |
 
@@ -333,6 +333,7 @@ status: maintained
 | 25 | [`docs/bugfix/2026-08-05-Bugfix-NetworkMonitor-StaleObj-LayoutMismatch-v1.0.md`](./bugfix/2026-08-05-Bugfix-NetworkMonitor-StaleObj-LayoutMismatch-v1.0.md) | **NetworkMonitor 陈旧 .obj 布局不匹配（ODR 违例）致启动期崩溃** — NetworkMonitor.h 8/4 新增 dnsCache_/dnsCacheMutex_ 成员后仅 NetworkMonitor.cpp 重编，AppController.cpp.obj 仍为 9:05 旧布局（.ninja_deps 依赖缺失），监控线程首轮 dnsCache_.find() 访问未初始化 _M_buckets 读地址 0 确定性崩溃；修复=全量重建 399/399（顺带解决 clang 抢占编译器/CMAKE_CXX_FLAGS_DEBUG 污染/oldnames 空库/windres -O coff 四环境障碍）+ 同步 worker；验证 NetworkMonitorTest 8.07s Passed + GUI 前台启动存活 + 日志完整走到 Constructor end | — |
 | 26 | [`docs/bugfix/2026-08-05-Bugfix-ProxyBatchTester-PreGenParseError-v1.0.md`](./bugfix/2026-08-05-Bugfix-ProxyBatchTester-PreGenParseError-v1.0.md) | **批量测试 PreGen 失败节点触发 boost.json 解析错误刷屏与卡顿** — preGenerateConfigs 对垃圾节点抛异常后 push 空 outbound_json，worker 对空串调 addOutboundDirect → parseOutboundJson 用 boost.json 解析空串抛 `syntax error ... parse_string`，3 次重试×5s 超时放大卡顿（12:31 日志 13:25 起刷屏）；修复 E7 skip：pregenFailedFlags_ 标记 + worker 循环入口跳过（不再进入 addOutboundDirect，杜绝 boost.json 空串解析）+ DIAG 防御输出坏 config 前 80 字节 hex；新增 PreGenFailedSkipTest 7 用例；21/21 通过 | — |
 | 27 | [`docs/bugfix/2026-08-06-Bugfix-NetworkMonitorProbeCounterOverflow-v1.0.md`](./bugfix/2026-08-06-Bugfix-NetworkMonitorProbeCounterOverflow-v1.0.md) | **NetworkMonitor 探针计数器溢出致误触发** — ThreadLoop 第一、三分支无条件 store maxProbes_ 至 consecutiveFailures_（即使 probeEnabled_=false），1 次网络失败即可达到探针阈值并误判断网；修复=两处条件化写入（仅当 probeEnabled_ 且 fails≥maxProbes_ 时 store）；NetworkMonitorTest 11/11 通过 | — |
+| 28 | [`docs/bugfix/2026-08-06-Bugfix-Logger-GUI-ConsoleLevel-v1.0.md`](./bugfix/2026-08-06-Bugfix-Logger-GUI-ConsoleLevel-v1.0.md) | **GUI 入口 Logger 启动级别遗漏 console_level 配置** — main_gui.cpp 仅调用 setFileLevel 未调用 setConsoleLevel，CLI 入口已正确应用两个级别；修复=添加一行 setConsoleLevel 调用；21/21 测试通过 | — |
 
 ---
 
