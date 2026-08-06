@@ -41,10 +41,18 @@ bool NetworkMonitor::IsEnabled() const {
     return enabled_;
 }
 
-bool NetworkMonitor::CheckURL(const std::string& url, int timeoutMs) {
+/// Check whether a failed probe was due to DNS resolution.
+/// Returns true if the curl error is a DNS-related code.
+static bool isDnsError(CURLcode code) {
+    return (code == CURLE_COULDNT_RESOLVE_HOST ||
+            code == CURLE_COULDNT_RESOLVE_PROXY);
+}
+
+NetworkMonitor::ProbeResult NetworkMonitor::CheckURLWithDnsFlag(const std::string& url, int timeoutMs) {
+    NetworkMonitor::ProbeResult result{false, false};
     try {
         CurlEasyHandle curl;
-        if (!curl.valid()) return false;
+        if (!curl.valid()) return result;
 
         curl.setUrl(url)
             .setNoBody(true)
@@ -53,12 +61,34 @@ bool NetworkMonitor::CheckURL(const std::string& url, int timeoutMs) {
             .setFollowLocation(true);
 
         CURLcode res = curl_easy_perform(curl.get());
-        if (res != CURLE_OK) return false;
+        if (res != CURLE_OK) {
+            result.isDnsError = isDnsError(res);
+            if (!result.isDnsError) {
+                Logger::write("NetworkMonitor: probe failed url=" + url +
+                                  " curl_error=" + std::to_string(static_cast<int>(res)) +
+                                  " (" + curl_easy_strerror(res) + ")",
+                              LogLevel::DEBUG);
+            } else {
+                Logger::write("NetworkMonitor: DNS error url=" + url +
+                                  " curl_error=" + std::to_string(static_cast<int>(res)) +
+                                  " (" + curl_easy_strerror(res) + ")",
+                              LogLevel::TRACE);
+            }
+            return result;
+        }
 
         long httpCode = curl.getResponseCode();
-        return (httpCode >= 200 && httpCode < 400);
+        if (httpCode >= 200 && httpCode < 400) {
+            result.success = true;
+        } else {
+            Logger::write("NetworkMonitor: probe url=" + url +
+                              " http_code=" + std::to_string(httpCode),
+                          LogLevel::DEBUG);
+        }
+        return result;
     } catch (...) {
-        return false;
+        Logger::write("NetworkMonitor: probe exception url=" + url, LogLevel::DEBUG);
+        return result;
     }
 }
 
@@ -69,7 +99,16 @@ void NetworkMonitor::ThreadLoop() {
         for (size_t i = 0; i < urls_.size(); ++i) {
             if (stopRequested_) break;
 
-            if (!CheckURL(urls_[i], checkTimeoutMs_)) {
+            const std::string& url = urls_[i];
+
+            ProbeResult pr = CheckURLWithDnsFlag(url, checkTimeoutMs_);
+            if (!pr.success) {
+                if (pr.isDnsError) {
+                    // DNS error: do NOT increment consecutiveFailures_,
+                    // but count dnsFailures separately for diagnostics
+                    dnsFailures_.fetch_add(1);
+                    continue;
+                }
                 allOk = false;
                 break;
             }
@@ -83,15 +122,13 @@ void NetworkMonitor::ThreadLoop() {
         bool afterFirst = firstCheckDone_.exchange(true);
 
         if (afterFirst && prev && !allOk) {
-            // LOST — increment consecutive failures
-            int fails = consecutiveFailures_.fetch_add(1) + 1;
+            // LOST — increment consecutive failures (DNS errors are excluded above)
+            int fails = (consecutiveFailures_.load() < maxProbes_) ? consecutiveFailures_.fetch_add(1) + 1 : maxProbes_;
 
             if (probeEnabled_ && fails < maxProbes_) {
-                // Within probe window — log but don't cancel
                 Logger::write("Network connection LOST (probe " + std::to_string(fails) +
                               "/" + std::to_string(maxProbes_) + ")", LogLevel::ERR);
             } else {
-                // Exceeded max probes or probe disabled — trigger cancel
                 Logger::write("Network connection LOST (probe " + std::to_string(fails) +
                               "/" + std::to_string(maxProbes_) + ")", LogLevel::ERR);
                 if (cancelOnDisconnect_) {
@@ -99,14 +136,20 @@ void NetworkMonitor::ThreadLoop() {
                     Logger::write("[NetworkMonitor] cancelOnDisconnect triggered after " +
                                   std::to_string(fails) + " failed probes", LogLevel::ERR);
                 }
+                consecutiveFailures_.store(maxProbes_);
             }
         } else if (afterFirst && !prev && allOk) {
-            // RESTORED — reset probe counter
+            // RESTORED — reset probe counter and DNS failure counter.
+            // DNS resolution deduplication is handled entirely by the
+            // program-wide DnsShareCache in CurlEasyHandle (CURLOPT_SHARE
+            // + CURLOPT_DNS_CACHE_TIMEOUT=-1), so there is no per-monitor
+            // cache to clear here.
             consecutiveFailures_.store(0);
+            dnsFailures_.store(0);
             Logger::write("Network connection RESTORED (probes reset)", LogLevel::ERR);
         } else if (afterFirst && !allOk) {
             // Already disconnected — continue counting consecutive failures
-            int fails = consecutiveFailures_.fetch_add(1) + 1;
+            int fails = (consecutiveFailures_.load() < maxProbes_) ? consecutiveFailures_.fetch_add(1) + 1 : maxProbes_;
 
             if (probeEnabled_ && fails < maxProbes_) {
                 Logger::write("Network connection LOST (probe " + std::to_string(fails) +
@@ -119,12 +162,11 @@ void NetworkMonitor::ThreadLoop() {
                     Logger::write("[NetworkMonitor] cancelOnDisconnect triggered after " +
                                   std::to_string(fails) + " failed probes", LogLevel::ERR);
                 }
-                // Stop counting after cancel triggered to avoid log spam
                 consecutiveFailures_.store(maxProbes_);
             }
         } else if (!afterFirst && !allOk) {
             // First check failed before any connection was established
-            int fails = consecutiveFailures_.fetch_add(1) + 1;
+            int fails = (consecutiveFailures_.load() < maxProbes_) ? consecutiveFailures_.fetch_add(1) + 1 : maxProbes_;
             if (probeEnabled_ && fails < maxProbes_) {
                 Logger::write("Network connection check failed (probe " + std::to_string(fails) +
                               "/" + std::to_string(maxProbes_) + ")", LogLevel::ERR);
