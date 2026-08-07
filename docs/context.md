@@ -29,6 +29,7 @@
 
 | 日期 | 条目 | 文档 |
 |------|------|------|
+| 2026-08-07 | git-master 技能安装 — AGENTS.md §6.2 路由引用但环境缺失；GitHub 直连不通致 npx skills add 失败，配置 git 全局代理 socks5://127.0.0.1:10808 后手动 clone josiahsiegel/claude-plugin-marketplace 复制至全局技能目录（10 文件），重启 Kilo 后生效 | `docs/reports/2026-08-07-Report-GitMasterSkill-Install-v1.0.md` |
 | 2026-08-07 | About 窗口编译时间不准确 — version.h 生成依赖 build.ninja 致仅 configure 时刷新（增量构建 APP_BUILD_TIME 停留上次 configure 时刻），改 add_custom_target(update_version_h ALL) 每次构建重生成；配置窗口保存 console 日志级别未同步 LogPanel 下拉框过滤，保存回调补 setInitialLogLevel | `docs/bugfix/2026-08-07-Bugfix-GUI-AboutBuildTime-LogLevelSync-v1.0.md` |
 | 2026-08-07 | 订阅更新跳过提示误报 ERROR — updateAll() 全部订阅因更新间隔被跳过时以 ERR 输出 "All subscriptions skipped by update interval - nothing to update"（非错误，随后 return true 正常完成）；修复=ERR→REPORT；真正失败的 "failed to update" 保持 ERR | `docs/bugfix/2026-08-07-Bugfix-SubitemUpdater-SkipLogLevel-v1.0.md` |
 | 2026-08-07 | 网络监控探测错误详情日志级别过低 — CheckURLWithDnsFlag 内 probe failed/DNS error/http_code 从 DEBUG/TRACE 提升为 WARN（生产 console_level=WARN 下故障可见）；ThreadLoop 状态机日志保持 ERR | `docs/bugfix/2026-08-07-Bugfix-NetworkMonitor-ProbeLogLevel-Warn-v1.0.md` |

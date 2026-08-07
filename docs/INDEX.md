@@ -29,7 +29,7 @@ status: maintained
 | [技术方案](#7-技术方案) | 6 | `docs/superpowers/specs/` |
 | [规范化设计](#75-规范化设计) | 10 | `docs/specs/` |
 | [实施计划](#8-实施计划) | 54 | `docs/plans/` |
-| [分析报告](#9-分析报告) | 10 | `docs/reports/` |
+| [分析报告](#9-分析报告) | 13 | `docs/reports/` |
 | [Bug 修复记录](#91-bug-修复记录) | 33 | `docs/bugfix/` |
 | [测试报告](#10-测试报告) | 1 | `docs/test/` |
 | [长期记忆](#13-长期记忆) | 1 | `docs/project-knowledge.md` (6.2 KB) |
@@ -299,6 +299,7 @@ status: maintained
 | 10 | [`docs/reports/2026-08-03-Report-CodeAudit-Optimization-v1.0.md`](./reports/2026-08-03-Report-CodeAudit-Optimization-v1.0.md) | **代码审查优化方案报告** — XrayApi/ProxyBatchTester/支撑模块三路并行审计：6 HIGH（detach UAF、gRPC status 不解析、protobuf 编码错位、XrayInstance 孤儿进程、PortManager 无锁、lastResult_ 数据竞争）+ 14 MED 正确性 + 14 性能 + 14 错误处理空洞；含分四批实施顺序与测试期望同步提示 | — |
 | 11 | [`docs/reports/2026-08-04-Report-CurlEasyHandle-Audit-Fixes-v1.0.md`](./reports/2026-08-04-Report-CurlEasyHandle-Audit-Fixes-v1.0.md) | **CurlEasyHandle 审计修复报告** — C6 移动语义补全 cancelFlag_/secondaryCancelFlag_、E3 超时下限（仅 0/负值兜底 1000ms，修复误伤 NetworkMonitor 快速探测）、E4c 二级取消标志支持；21/21 测试通过 | — |
 | 12 | [`docs/reports/2026-08-05-Report-v148-vs-Current-ProxyTest-v1.0.md`](./reports/2026-08-05-Report-v148-vs-Current-ProxyTest-v1.0.md) | **v1.4.8 vs 当前版批量测试对比报告** — 同一订阅 5544（207 代理）同配置公平对比：OK 73 vs 69（16 个差异节点全为 5s 超时边界抖动）；两版均零 parse error/WARN/ERR；测试窗口 4:41→2:05（快 2.24×，DnsCache/预生成/E7/端口管理优化成果）；FAIL 均记录 Delay=-1 无遗漏 | — |
+| 13 | [`docs/reports/2026-08-07-Report-GitMasterSkill-Install-v1.0.md`](./reports/2026-08-07-Report-GitMasterSkill-Install-v1.0.md) | **git-master 技能安装报告** — AGENTS.md §6.2 路由表引用 `skill(name="git-master")` 但环境缺失；`npx skills add` 因 GitHub 直连不通失败（镜像 ghfast.top/gh-proxy.com 403、gitclone.com 404、github.moeyy.xyz 不存在）；配置 git 全局代理 `socks5://127.0.0.1:10808` 后手动 `git clone --depth 1` josiahsiegel/claude-plugin-marketplace（563 安装量）→ 复制 `plugins\git-master\skills\git-master\` 至全局技能目录（10 文件：SKILL.md 149 行 + references/ 9 文档）；当前会话不可用需重启 Kilo 生效；附代理移除命令 | — |
 
 ---
 

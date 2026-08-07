@@ -17,6 +17,7 @@ updated: 2026-08-07
 
 | 日期 | 类型 | 文档路径 | 说明 |
 |------|------|----------|------|
+| 2026-08-07 | report | `docs/reports/2026-08-07-Report-GitMasterSkill-Install-v1.0.md` | git-master 技能安装记录 — AGENTS.md §6.2 路由引用的 skill(name="git-master") 环境缺失；GitHub 直连不通致 npx skills add 失败（各镜像 403/404），配置 git 全局代理 socks5://127.0.0.1:10808 后手动 clone josiahsiegel/claude-plugin-marketplace 并复制 skills\git-master\ 至全局技能目录（10 文件）；重启 Kilo 后生效 | ✅ completed |
 | 2026-08-07 | bugfix | `docs/bugfix/2026-08-07-Bugfix-GUI-AboutBuildTime-LogLevelSync-v1.0.md` | About 窗口编译时间不准确 — version.h 生成依赖 build.ninja 致仅 configure 时刷新，改 add_custom_target(update_version_h ALL) 每次构建重生成 APP_BUILD_TIME；二次修复：Ninja _unscanned 规则无 depfile 致未改源码 TU 保留旧时间戳，OBJECT_DEPENDS 钉死 version.h 到 main_gui/main_cli/MainFrame 3 个 TU；配置窗口保存 console 日志级别未同步 LogPanel 界面过滤，保存回调补 setInitialLogLevel(cfg.log_console_level) | ✅ completed |
 | 2026-08-07 | plan | `docs/plans/2026-08-03-Plan-CodeAudit-Optimization-Implementation-v1.0.md` | 状态变更：draft → ❌ terminated（2026-08-07 终止）— Phase 1-4 全部落地（A1-A6/B1-B14/C1-C9/D1-D8/E1-E14，21/21 ctest）；Phase 5 尾项未完成：T5.1 全仓 auto 残留 15 处（触碰文件 XrayApi.cpp 10 处 + CurlEasyHandle.h L149 已清）、T5.2 无记录，按 §2 边界顺延单独立项 | ❌ terminated |
 | 2026-08-07 | plan | `docs/plans/feature-status.md` §7 | 计划文档落地核验（源码 grep 证据）— Sing-box 全链路（Spec 2026-07-02）✅ / GitTag 版本头（Spec 2026-07-15）✅ / Region 列迁移（Spec 2026-07-07 Phase 2 之迁移部分）✅ / 批量 INSERT Phase B（Spec 2026-07-24）❌ / 去重阶段分区富化 deduplicateRegionPhase（Spec 2026-07-07 Phase 2）❌ | 📝 核验记录 |
