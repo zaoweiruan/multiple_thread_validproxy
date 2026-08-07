@@ -20,6 +20,13 @@ XrayInstance::~XrayInstance() {
 }
 
 bool XrayInstance::start() {
+    std::lock_guard<std::mutex> lock(stateMutex_);
+    if (running_) {
+        Logger::write("[XrayInstance] start() called while already running, socks="
+                      + std::to_string(socksPort_), LogLevel::WARN);
+        return true;
+    }
+
     Logger::write("[XrayInstance] Creating config: " + configPath_, LogLevel::INFO);
     if (!createConfigFile()) {
         Logger::write("[XrayInstance] Failed to create config file", LogLevel::ERR);
@@ -44,18 +51,26 @@ bool XrayInstance::start() {
         // Note: AssignProcessToJobObject with non-kill-on-close job will survive CloseHandle.
     }
     
-    std::string cmd = "\"" + xrayPath_ + "\" run -c \"" + configPath_ + "\"";
-    Logger::write("[XrayInstance] Executing: " + cmd, LogLevel::INFO);
-    
-    STARTUPINFOA si = {};
+    // Use CreateProcessW to avoid CreateProcessA's command-line parsing issues
+    // with embedded quotes in exe paths. Convert ANSI paths to UTF-16 wide strings.
+    int exeWLen = static_cast<int>(MultiByteToWideChar(CP_UTF8, 0, xrayPath_.c_str(), -1, nullptr, 0));
+    std::vector<wchar_t> exeW(exeWLen);
+    MultiByteToWideChar(CP_UTF8, 0, xrayPath_.c_str(), -1, exeW.data(), exeWLen);
+
+    int cmdWLen = static_cast<int>(MultiByteToWideChar(CP_UTF8, 0,
+        ("run -c \"" + configPath_ + "\"").c_str(), -1, nullptr, 0));
+    std::vector<wchar_t> cmdW(cmdWLen);
+    MultiByteToWideChar(CP_UTF8, 0,
+        ("run -c \"" + configPath_ + "\"").c_str(), -1, cmdW.data(), cmdWLen);
+
+    Logger::write("[XrayInstance] Executing: " + xrayPath_ + " run -c " + configPath_, LogLevel::INFO);
+
+    STARTUPINFOW si = {};
     si.cb = sizeof(si);
     PROCESS_INFORMATION pi = {};
-    
-    // CreateProcessA modifies the command line buffer
-    std::vector<char> cmdBuf(cmd.begin(), cmd.end());
-    cmdBuf.push_back('\0');
 
-    BOOL created = CreateProcessA(nullptr, cmdBuf.data(), nullptr, nullptr, FALSE, CREATE_SUSPENDED | CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi);
+    BOOL created = CreateProcessW(exeW.data(), cmdW.data(), nullptr, nullptr, FALSE,
+        CREATE_SUSPENDED | CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi);
     if (!created) {
         DWORD err = GetLastError();
         Logger::write("[XrayInstance] Failed to create process: " + std::to_string(err), LogLevel::ERR);
@@ -65,45 +80,109 @@ bool XrayInstance::start() {
     }
     
     if (!AssignProcessToJobObject(jobObject_, pi.hProcess)) {
-        Logger::write("[XrayInstance] Failed to assign to job: " + std::to_string(GetLastError()), LogLevel::ERR);
-        // Do NOT resume the suspended process — it would become an unmanaged orphan.
-        // Caller will check start() return value and handle cleanup.
-        CloseHandle(pi.hProcess);
+        DWORD err = GetLastError();
+        Logger::write("[XrayInstance] Failed to assign to job: " + std::to_string(err), LogLevel::ERR);
+        // The child was created with CREATE_SUSPENDED and never resumed: terminate it now,
+        // otherwise it would remain a permanently suspended orphan outside job management.
+        TerminateProcess(pi.hProcess, 1);
         CloseHandle(pi.hThread);
+        CloseHandle(pi.hProcess);
+        CloseHandle(jobObject_);
+        jobObject_ = nullptr;
         return false;
     }
     
     ResumeThread(pi.hThread);
     processHandle_ = pi.hProcess;
     CloseHandle(pi.hThread);
-    std::this_thread::sleep_for(std::chrono::seconds(2));
-    running_ = true;
+
+    // Bounded liveness poll: verify the process survived for at least a few hundred ms
+    // rather than blindly waiting 2s then unconditionally declaring success.
+    const int LIVENESS_POLL_MS = 5000;
+    const int LIVENESS_STEP_MS = 100;
+    for (int elapsed = 0; elapsed < LIVENESS_POLL_MS; elapsed += LIVENESS_STEP_MS) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(LIVENESS_STEP_MS));
+        DWORD exitCode = 0;
+        if (!GetExitCodeProcess(processHandle_, &exitCode) || exitCode != STILL_ACTIVE) {
+            Logger::write("[XrayInstance] Process died during startup (exitCode="
+                          + std::to_string(exitCode) + "), socks="
+                          + std::to_string(socksPort_), LogLevel::ERR);
+            TerminateProcess(processHandle_, 1);
+            WaitForSingleObject(processHandle_, 2000);
+            CloseHandle(processHandle_);
+            processHandle_ = nullptr;
+            CloseHandle(jobObject_);
+            jobObject_ = nullptr;
+            running_.store(false);
+            return false;
+        }
+    }
+
+    // Final confirmation: process is alive after the poll window
+    DWORD finalExitCode = 0;
+    if (!GetExitCodeProcess(processHandle_, &finalExitCode) || finalExitCode != STILL_ACTIVE) {
+        Logger::write("[XrayInstance] Process not alive after poll, socks="
+                      + std::to_string(socksPort_), LogLevel::ERR);
+        TerminateProcess(processHandle_, 1);
+        WaitForSingleObject(processHandle_, 2000);
+        CloseHandle(processHandle_);
+        processHandle_ = nullptr;
+        CloseHandle(jobObject_);
+        jobObject_ = nullptr;
+        running_.store(false);
+        return false;
+    }
+
+    running_.store(true);
     Logger::write("[XrayInstance] Started successfully, socks=" + std::to_string(socksPort_) + ", api=" + std::to_string(apiPort_), LogLevel::INFO);
     return true;
 }
 
 void XrayInstance::stop() {
+    HANDLE job = nullptr;
+    HANDLE proc = nullptr;
+    {
+        std::lock_guard<std::mutex> lock(stateMutex_);
+        if (jobObject_ == nullptr && processHandle_ == nullptr) {
+            Logger::write("[XrayInstance][stop] no process handle (already stopped?)", LogLevel::INFO);
+            return;
+        }
+        // Detach handles under the lock so repeated/concurrent stop() can never
+        // double-CloseHandle; the blocking termination runs outside the lock.
+        running_.store(false);
+        job = jobObject_;
+        jobObject_ = nullptr;
+        proc = processHandle_;
+        processHandle_ = nullptr;
+    }
+
     // Force kill the process tree using the job object
-    if (jobObject_) {
+    if (job) {
         Logger::write("[XrayInstance][stop] TerminateJobObject, socks="
                       + std::to_string(socksPort_) + " api="
                       + std::to_string(apiPort_), LogLevel::INFO);
-        TerminateJobObject(jobObject_, 1);
+        TerminateJobObject(job, 1);
         // Graceful wait: give processes up to GRACEFUL_SHUTDOWN_MS to drain before Job close
         std::this_thread::sleep_for(std::chrono::milliseconds(GRACEFUL_SHUTDOWN_MS));
-        CloseHandle(jobObject_);
-        jobObject_ = nullptr;
     }
-    if (processHandle_) {
+    if (proc) {
         // Wait synchronously: process may have already exited or been killed by the Job above.
         // WAIT_TIMEOUT here does NOT necessarily mean the process is alive — it only means
         // GRACEFUL_SHUTDOWN_MS elapsed; the exit will be confirmed by GetExitCodeProcess below.
-        DWORD waitResult = WaitForSingleObject(processHandle_, GRACEFUL_SHUTDOWN_MS);
+        DWORD waitResult = WaitForSingleObject(proc, GRACEFUL_SHUTDOWN_MS);
         DWORD exitCode = 0;
-        GetExitCodeProcess(processHandle_, &exitCode);
+        GetExitCodeProcess(proc, &exitCode);
+        if (exitCode == STILL_ACTIVE) {
+            // Grace window elapsed and the process is still alive: force-kill it so the
+            // process does not survive stop() with ports still bound.
+            Logger::write("[XrayInstance][stop] still active after grace, TerminateProcess, socks="
+                          + std::to_string(socksPort_), LogLevel::ERR);
+            TerminateProcess(proc, 1);
+            WaitForSingleObject(proc, GRACEFUL_SHUTDOWN_MS);
+            GetExitCodeProcess(proc, &exitCode);
+        }
         bool exited = (exitCode != STILL_ACTIVE);
 
-        LogLevel lvl = exited ? LogLevel::INFO : LogLevel::INFO;
         std::string reason = exited
             ? "exit=" + std::to_string(exitCode)
             : "exit, WAIT_TIMEOUT=" + std::to_string(waitResult)
@@ -112,17 +191,17 @@ void XrayInstance::stop() {
         Logger::write("[XrayInstance][stop] "
                       + std::string(exited ? "exited" : "exited by Job") + ", "
                       + reason + ", socks=" + std::to_string(socksPort_),
-                      lvl);
-        CloseHandle(processHandle_);
-        processHandle_ = nullptr;
-    } else {
-        Logger::write("[XrayInstance][stop] no process handle (already stopped?)", LogLevel::INFO);
+                      LogLevel::INFO);
+        CloseHandle(proc);
     }
-    running_ = false;
+    if (job) {
+        CloseHandle(job);
+    }
 }
 
 bool XrayInstance::isRunning() const {
-    return running_;
+    std::lock_guard<std::mutex> lock(stateMutex_);
+    return running_.load();
 }
 
 int XrayInstance::getSocksPort() const {

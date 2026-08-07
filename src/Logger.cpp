@@ -66,6 +66,10 @@ std::ofstream* Logger::getFile() {
     return defaultInstance().getFile();
 }
 
+std::string Logger::getFilePath() {
+    return defaultInstance().getFilePath();
+}
+
 std::string Logger::getLogDir() {
     return defaultInstance().getLogDir();
 }

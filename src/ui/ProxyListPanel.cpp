@@ -101,25 +101,15 @@ void ProxyListPanel::updateProxyList(const std::vector<db::models::Profileitem>&
     currentSubId_ = subId;
     allProxies_ = proxies;
 
-    Logger::write("[DIAG] ProxyListPanel::updateProxyList(subId=" + subId + "): allProxies_="
-                  + std::to_string(allProxies_.size()), LogLevel::TRACE);
-
     sortState_.column = -1;
     sortState_.direction = SortDirection::None;
     proxies_ = proxies;
     exItems_ = exItems;
 
-    Logger::write("[DIAG] ProxyListPanel::updateProxyList: proxies_=" + std::to_string(proxies_.size())
-                  + " exItems_=" + std::to_string(exItems_.size()), LogLevel::TRACE);
-
     model_->setData(&proxies_, &exItems_);
-    Logger::write("[DIAG] ProxyListPanel::updateProxyList: calling model_->Reset("
-                  + std::to_string(proxies_.size()) + ")", LogLevel::TRACE);
     model_->Reset(0);
     model_->Reset(static_cast<unsigned int>(proxies_.size()));
     model_->detectIdOffset();
-    Logger::write("[DIAG] ProxyListPanel::updateProxyList: model_->GetCount()="
-                  + std::to_string(model_->GetCount()), LogLevel::TRACE);
 
     if (!proxies_.empty()) {
         if (!listCtrl_->GetSelection().IsOk()) {

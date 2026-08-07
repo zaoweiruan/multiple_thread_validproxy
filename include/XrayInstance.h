@@ -2,6 +2,8 @@
 #define XRAY_INSTANCE_H
 
 #include <string>
+#include <mutex>
+#include <atomic>
 #include <windows.h>
 
 class XrayInstance {
@@ -23,7 +25,8 @@ private:
     std::string configPath_;
     HANDLE processHandle_;
     HANDLE jobObject_;
-    bool running_;
+    std::atomic<bool> running_;
+    mutable std::mutex stateMutex_;
     
     static constexpr DWORD GRACEFUL_SHUTDOWN_MS = 500;
     

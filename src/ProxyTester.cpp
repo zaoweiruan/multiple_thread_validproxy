@@ -8,7 +8,8 @@ ProxyTester::ProxyTester(XrayManager* manager, const std::string& testUrl, int t
 
 ProxyTester::~ProxyTester() {}
 
-TestResult ProxyTester::test(int socksPort, std::atomic<bool>* cancelFlag) {
+TestResult ProxyTester::test(int socksPort, std::atomic<bool>* cancelFlag,
+                             std::atomic<bool>* externalCancel) {
     TestResult result; // test event bridging via mediator can be emitted from here if needed
     result.success = false;
     result.latencyMs = -1;
@@ -25,8 +26,10 @@ TestResult ProxyTester::test(int socksPort, std::atomic<bool>* cancelFlag) {
             .setTimeoutMs(timeoutMs_)
             .setFollowLocation(true);
 
-        if (cancelFlag) {
-            curl.setCancelFlag(cancelFlag);
+        // Either the internal batch-test cancel flag or the external cancel flag
+        // aborts the blocking curl transfer (checked in the progress callback).
+        if (cancelFlag || externalCancel) {
+            curl.setCancelFlags(cancelFlag, externalCancel);
         }
 
         curl.perform();

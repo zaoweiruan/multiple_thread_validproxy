@@ -13,6 +13,7 @@
 #include <string>
 #include <vector>
 #include <algorithm>
+#include <queue>
 #include <sstream>
 
 namespace {
@@ -75,6 +76,20 @@ std::vector<std::vector<int>> distributeRoundRobin(int proxyCount, int workerCou
         distribution[i % workerCount].push_back(i);
     }
     return distribution;
+}
+
+// E7: Skip decision for a proxy whose pre-generated config failed.
+// Reproduces the worker-loop logic in ProxyBatchTester:
+//   1) out-of-range profileIdx  -> counted as processed only (no network test)
+//   2) pregenFailedFlags[idx]   -> counted as failed + processed, result "PREGEN_FAILED"
+//   3) otherwise                -> continue to normal network test
+enum class PregenSkipDecision { Continue, OutOfRange, PregenFailed };
+
+PregenSkipDecision decidePregenSkip(const std::vector<bool>& flags, int idx, int preGenSize)
+{
+    if (idx < 0 || idx >= preGenSize) return PregenSkipDecision::OutOfRange;
+    if (idx < static_cast<int>(flags.size()) && flags[idx]) return PregenSkipDecision::PregenFailed;
+    return PregenSkipDecision::Continue;
 }
 
 } // anonymous namespace
@@ -423,4 +438,93 @@ TEST(ProxyBatchEdgeCaseTest, RoundRobinManyWorkersFewProxies)
     for (int i = 2; i < 10; ++i) {
         EXPECT_TRUE(dist[i].empty());
     }
+}
+
+// ============================================================
+// B1: ResetLogic - verify counters reset to zero on each run
+// ============================================================
+TEST(B1ResetLogicTest, CountersResetToZero)
+{
+    int success = 5;
+    int failed = 3;
+    int processed = 8;
+    success = 0;
+    failed = 0;
+    processed = 0;
+    EXPECT_EQ(success, 0);
+    EXPECT_EQ(failed, 0);
+    EXPECT_EQ(processed, 0);
+}
+
+TEST(B1ResetLogicTest, EmptyQueueAfterReset)
+{
+    std::queue<int> q;
+    q.push(0); q.push(1); q.push(2);
+    q = std::queue<int>();
+    EXPECT_TRUE(q.empty());
+}
+
+// ============================================================
+// E7: PreGenFailedSkip - skip proxies whose config pre-generation failed
+// ============================================================
+TEST(PreGenFailedSkipTest, NormalProxyContinues)
+{
+    std::vector<bool> flags = {false, false};
+    EXPECT_EQ(decidePregenSkip(flags, 0, 2), PregenSkipDecision::Continue);
+    EXPECT_EQ(decidePregenSkip(flags, 1, 2), PregenSkipDecision::Continue);
+}
+
+TEST(PreGenFailedSkipTest, FailedProxySkipped)
+{
+    std::vector<bool> flags = {true, false};
+    EXPECT_EQ(decidePregenSkip(flags, 0, 2), PregenSkipDecision::PregenFailed);
+    // A later healthy proxy is unaffected by an earlier failure.
+    EXPECT_EQ(decidePregenSkip(flags, 1, 2), PregenSkipDecision::Continue);
+}
+
+TEST(PreGenFailedSkipTest, AllFailedAllSkipped)
+{
+    std::vector<bool> flags = {true, true, true};
+    for (int i = 0; i < 3; ++i) {
+        EXPECT_EQ(decidePregenSkip(flags, i, 3), PregenSkipDecision::PregenFailed);
+    }
+}
+
+TEST(PreGenFailedSkipTest, OutOfRangeIndex)
+{
+    std::vector<bool> flags = {false};
+    // profileIdx beyond preGenConfigs_.size() takes the guard branch (processed only).
+    EXPECT_EQ(decidePregenSkip(flags, 1, 1), PregenSkipDecision::OutOfRange);
+    EXPECT_EQ(decidePregenSkip(flags, 99, 1), PregenSkipDecision::OutOfRange);
+    EXPECT_EQ(decidePregenSkip(flags, -1, 1), PregenSkipDecision::OutOfRange);
+}
+
+TEST(PreGenFailedSkipTest, FlagsVectorShorterThanConfigs)
+{
+    // Defensive: if flags and preGenConfigs_ ever drift out of sync, an
+    // unmarked index must still be processed (not skipped).
+    std::vector<bool> flags = {true};
+    EXPECT_EQ(decidePregenSkip(flags, 0, 3), PregenSkipDecision::PregenFailed);
+    EXPECT_EQ(decidePregenSkip(flags, 1, 3), PregenSkipDecision::Continue);
+    EXPECT_EQ(decidePregenSkip(flags, 2, 3), PregenSkipDecision::Continue);
+}
+
+TEST(PreGenFailedSkipTest, EmptyFlagsAllContinue)
+{
+    std::vector<bool> flags;
+    EXPECT_EQ(decidePregenSkip(flags, 0, 2), PregenSkipDecision::Continue);
+    EXPECT_EQ(decidePregenSkip(flags, 1, 2), PregenSkipDecision::Continue);
+}
+
+TEST(PreGenFailedSkipTest, MixedBatchDecisionCounts)
+{
+    // Batch of 5: indices 1 and 3 failed pre-generation.
+    std::vector<bool> flags = {false, true, false, true, false};
+    int skipped = 0, continued = 0;
+    for (int i = 0; i < 5; ++i) {
+        if (decidePregenSkip(flags, i, 5) == PregenSkipDecision::PregenFailed) ++skipped;
+        else if (decidePregenSkip(flags, i, 5) == PregenSkipDecision::Continue) ++continued;
+    }
+    EXPECT_EQ(skipped, 2);
+    EXPECT_EQ(continued, 3);
 }

@@ -21,6 +21,7 @@
 /include/version.h
 # 6. 去除特定目录、文件
 /Testing/
+/tests/Testing/
 /bin/
 /scripts/
 /skills/

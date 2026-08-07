@@ -54,6 +54,7 @@ public:
     void syncToolbarState();
     void UpdateButtonStates();
     void UpdateMenuStates();
+    void setLogFileLabel(const std::string& filePath);
 
 private:
     // Initialization
@@ -98,6 +99,7 @@ private:
     void onTestSubscription(SubscriptionTestEvent& event);
     void onNetMonTimer(wxTimerEvent& event);
     void repositionNetMonPanel();
+    void onStatusBarDClick(wxMouseEvent& event);
 
 // Members
      wxAuiManager* auiManager_{nullptr};
@@ -121,6 +123,7 @@ private:
     wxTimer* netMonTimer_{nullptr};
     wxPanel* netMonPanel_{nullptr};
     bool netMonConnected_{true};
+    std::string logFilePath_;  // full log file path for status-bar double-click open
 
     wxDECLARE_EVENT_TABLE();
 };

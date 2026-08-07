@@ -112,11 +112,35 @@ private:
     // Encodes a list of header key-value pairs into HPACK format.
     static std::string encodeHpack(const std::vector<std::pair<std::string, std::string>>& headers);
 
+    // ---- Minimal HPACK decoder (RFC 7541) for gRPC response headers ----
+    // Decodes an HPACK header block into name/value pairs. Supports indexed
+    // header fields, literal with/without indexing, literal never indexed,
+    // Huffman-coded strings and integer values with continuation bits.
+    // Returns false on malformed input.
+    static bool grpcDecodeHpackHeaders(
+        const std::string& block,
+        std::vector<std::pair<std::string, std::string>>& headers);
+
+    // ---- RFC 7541 Huffman decoder (MSB-first wire order) ----
+    // Decodes a Huffman-coded string into out. Returns false on invalid
+    // encoding (EOS symbol 256, padding > 7 bits, non-ones padding, or
+    // bit patterns that match no code). Mirrors Go's x/net/http2/hpack.
+    static bool decodeHuffman(const std::string& data, std::string& out);
+
     // ---- Transport (streamSettings) protobuf encoders ----
     // Encode a WebSocketConfig protobuf from the "wsSettings" JSON object.
     static std::string encodeWebSocketConfig(const boost::json::object& ws);
     // Encode a TLS Config protobuf from the "tlsSettings" JSON object.
     static std::string encodeTLSSettings(const boost::json::object& tls);
+    // Decode a base64 (URL-safe or standard, padding optional) string to raw
+    // bytes. Used to convert the "publicKey" JSON value into the 32-byte
+    // X25519 key that reality.Config stores in its bytes field 23. Returns
+    // an empty string on invalid input.
+    static std::string base64Decode(const std::string& input);
+    // Decode a hex string to raw bytes. Used to convert the "shortId" JSON
+    // value into the bytes field 24 of reality.Config. Returns an empty
+    // string on odd-length or non-hex input.
+    static std::string hexDecode(const std::string& input);
     // Encode a RealityConfig protobuf from the "realitySettings" JSON object.
     static std::string encodeRealitySettings(const boost::json::object& reality);
     // Encode a gRPC Config protobuf from the "grpcSettings" JSON object.
@@ -125,6 +149,10 @@ private:
     static std::string encodeKCPSettings(const boost::json::object& kcp);
     // Encode an HTTP/XHTTP Config protobuf from the "httpSettings" JSON object.
     static std::string encodeHTTPSettings(const boost::json::object& http);
+    // Encode an xhttp.Config protobuf from the "xhttpSettings" JSON object.
+    static std::string encodeXHTTPSettings(const boost::json::object& xhttp);
+    // Encode a splithttp.Config protobuf from the "splithttpSettings" JSON object.
+    static std::string encodeSplitHTTPSettings(const boost::json::object& splithttp);
     // Encode a StreamConfig protobuf from the full "streamSettings" JSON object.
     static std::string encodeStreamConfig(const boost::json::object& stream);
     // Encode a MultiplexConfig protobuf from the "mux" JSON object.

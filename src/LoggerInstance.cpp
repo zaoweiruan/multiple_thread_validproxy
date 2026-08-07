@@ -42,6 +42,7 @@ void LoggerInstance::init(const std::string& logDir, const std::string& prefix, 
     strftime(timestamp, sizeof(timestamp), "%Y%m%d_%H%M%S", localtime(&t));
 
     std::string filename = logDir + "/" + prefix + "_" + timestamp + ".log";
+    filePath_ = filename;
     outFile_ = new std::ofstream(filename, std::ios::out | std::ios::trunc);
     enabled_ = outFile_->is_open();
 }
@@ -133,6 +134,10 @@ bool LoggerInstance::isEnabled() const {
 
 std::ofstream* LoggerInstance::getFile() {
     return outFile_;
+}
+
+std::string LoggerInstance::getFilePath() const {
+    return filePath_;
 }
 
 std::string LoggerInstance::getLogDir() const {

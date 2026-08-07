@@ -1,4 +1,4 @@
-updated: 2026-08-06
+updated: 2026-08-07
 title: "docs: project document index"
 type: meta
 status: maintained
@@ -30,7 +30,7 @@ status: maintained
 | [规范化设计](#75-规范化设计) | 10 | `docs/specs/` |
 | [实施计划](#8-实施计划) | 54 | `docs/plans/` |
 | [分析报告](#9-分析报告) | 10 | `docs/reports/` |
-| [Bug 修复记录](#91-bug-修复记录) | 28 | `docs/bugfix/` |
+| [Bug 修复记录](#91-bug-修复记录) | 33 | `docs/bugfix/` |
 | [测试报告](#10-测试报告) | 1 | `docs/test/` |
 | [长期记忆](#13-长期记忆) | 1 | `docs/project-knowledge.md` (6.2 KB) |
 
@@ -333,7 +333,12 @@ status: maintained
 | 25 | [`docs/bugfix/2026-08-05-Bugfix-NetworkMonitor-StaleObj-LayoutMismatch-v1.0.md`](./bugfix/2026-08-05-Bugfix-NetworkMonitor-StaleObj-LayoutMismatch-v1.0.md) | **NetworkMonitor 陈旧 .obj 布局不匹配（ODR 违例）致启动期崩溃** — NetworkMonitor.h 8/4 新增 dnsCache_/dnsCacheMutex_ 成员后仅 NetworkMonitor.cpp 重编，AppController.cpp.obj 仍为 9:05 旧布局（.ninja_deps 依赖缺失），监控线程首轮 dnsCache_.find() 访问未初始化 _M_buckets 读地址 0 确定性崩溃；修复=全量重建 399/399（顺带解决 clang 抢占编译器/CMAKE_CXX_FLAGS_DEBUG 污染/oldnames 空库/windres -O coff 四环境障碍）+ 同步 worker；验证 NetworkMonitorTest 8.07s Passed + GUI 前台启动存活 + 日志完整走到 Constructor end | — |
 | 26 | [`docs/bugfix/2026-08-05-Bugfix-ProxyBatchTester-PreGenParseError-v1.0.md`](./bugfix/2026-08-05-Bugfix-ProxyBatchTester-PreGenParseError-v1.0.md) | **批量测试 PreGen 失败节点触发 boost.json 解析错误刷屏与卡顿** — preGenerateConfigs 对垃圾节点抛异常后 push 空 outbound_json，worker 对空串调 addOutboundDirect → parseOutboundJson 用 boost.json 解析空串抛 `syntax error ... parse_string`，3 次重试×5s 超时放大卡顿（12:31 日志 13:25 起刷屏）；修复 E7 skip：pregenFailedFlags_ 标记 + worker 循环入口跳过（不再进入 addOutboundDirect，杜绝 boost.json 空串解析）+ DIAG 防御输出坏 config 前 80 字节 hex；新增 PreGenFailedSkipTest 7 用例；21/21 通过 | — |
 | 27 | [`docs/bugfix/2026-08-06-Bugfix-NetworkMonitorProbeCounterOverflow-v1.0.md`](./bugfix/2026-08-06-Bugfix-NetworkMonitorProbeCounterOverflow-v1.0.md) | **NetworkMonitor 探针计数器溢出致误触发** — ThreadLoop 第一、三分支无条件 store maxProbes_ 至 consecutiveFailures_（即使 probeEnabled_=false），1 次网络失败即可达到探针阈值并误判断网；修复=两处条件化写入（仅当 probeEnabled_ 且 fails≥maxProbes_ 时 store）；NetworkMonitorTest 11/11 通过 | — |
-| 28 | [`docs/bugfix/2026-08-06-Bugfix-Logger-GUI-ConsoleLevel-v1.0.md`](./bugfix/2026-08-06-Bugfix-Logger-GUI-ConsoleLevel-v1.0.md) | **GUI 入口 Logger 启动级别遗漏 console_level 配置** — main_gui.cpp 仅调用 setFileLevel 未调用 setConsoleLevel，CLI 入口已正确应用两个级别；修复=添加一行 setConsoleLevel 调用；21/21 测试通过 | — |
+| 28 | [`docs/bugfix/2026-08-06-Bugfix-Logger-GUI-ConsoleLevel-v1.0.md`](./bugfix/2026-08-06-Bugfix-Logger-GUI-ConsoleLevel-v1.0.md) | **GUI 入口 Logger 启动级别遗漏 console_level 配置 + LogPanel 筛选器硬编码 INFO** — main_gui.cpp 补全 setConsoleLevel 调用与 CLI 一致；LogPanel 构造函数 setSelection(2)/minLevel_=INFO 硬编码，不读 config.json log_console_level；修复=新增 setInitialLogLevel(LogLevel) 方法，MainFrame 构造后同步配置值至下拉框；21/21 测试通过 | — |
+| 29 | [`docs/bugfix/2026-08-06-Bugfix-MainFrame-StatusBar-LogFile-v1.0.md`](./bugfix/2026-08-06-Bugfix-MainFrame-StatusBar-LogFile-v1.0.md) | **状态栏日志文件名不可见** — repositionNetMonPanel() 用 GetFieldRect(1) 将不透明网络状态面板 netMonPanel_ 铺满 Field1，遮挡已正确设置的日志文件名；修复=状态栏 3→4 字段（Field1 日志文件名 / Field2 网络面板 / Field3 数据库路径）+ SetStatusWidths 显式宽度 + SendSizeEvent + 双击事件改 Bind 到状态栏；UIA 验证 Field1=ui_*.log 正常显示；附带教训：跨进程 SendMessage 带指针调 SB_GETPARTS/SB_GETTEXT 是 GUI 0xC000041D 崩溃源，验证必须用 UIA；[08-06 补充] SetStatusWidths 末字段改 -1（可变宽度）修复状态栏右侧未铺满（固定总和 920 < 逻辑宽 1280，UIA 验证 Field3 右缘=1280 铺满） | — |
+| 30 | [`docs/bugfix/2026-08-07-Bugfix-GuiLogFileLevel-v1.0.md`](./bugfix/2026-08-07-Bugfix-GuiLogFileLevel-v1.0.md) | **GUI 启动日志未按 config.json file_level 过滤写入文件** — main_gui.cpp Logger::init 用默认级别（file=DEBUG）先于配置加载，INFO "gui entry" 与 ConfigReader::load 内部 DEBUG SQL 日志在 file_level=ERROR 时仍写入文件；修复=Logger::init 前用 ConfigFileStore+ConfigJsonParser+LogConfigParser 预解析 log 段并以真实级别初始化（含缺文件/坏 JSON 回退默认级别），load 后 L70-73 应用级别保留为幂等兜底；21/21 测试通过 | — |
+| 31 | [`docs/bugfix/2026-08-07-Bugfix-NetworkMonitor-ProbeLogLevel-Warn-v1.0.md`](./bugfix/2026-08-07-Bugfix-NetworkMonitor-ProbeLogLevel-Warn-v1.0.md) | **网络监控探测错误详情日志级别过低** — CheckURLWithDnsFlag 内探测失败详情（curl 错误 DEBUG / DNS 错误 TRACE / 非 2xx-3xx 状态码 DEBUG）在生产 file_level=ERROR、console_level=WARN 下完全不可见；修复=3 处全部提升为 WARN（probe failed / DNS error / http_code）；ThreadLoop 连接状态机日志（LOST/RESTORED 等）保持 ERR 不变；NetworkMonitorTest 不受影响（仅断言 LOST 的 ERR 级别） | — |
+| 32 | [`docs/bugfix/2026-08-07-Bugfix-SubitemUpdater-SkipLogLevel-v1.0.md`](./bugfix/2026-08-07-Bugfix-SubitemUpdater-SkipLogLevel-v1.0.md) | **订阅更新跳过提示误报 ERROR** — updateAll() 在全部订阅因更新间隔被跳过时（`successCount<=0 && attemptedCount==0`，随后 return true 属正常完成）以 ERR 输出 "All subscriptions skipped by update interval - nothing to update"，非错误却被记入 ERROR 告警；修复=该消息级别 ERR→REPORT；相邻 "All subscriptions failed to update - check network connectivity"（真正失败）保持 ERR；无测试引用该消息文本；历史文档 2026-06-15-Bugfix-AutoTask-SubitemUpdater-logging-and-pipeline.md L37 记载原 ERR 级别不改写 | — |
+| 33 | [`docs/bugfix/2026-08-07-Bugfix-GUI-AboutBuildTime-LogLevelSync-v1.0.md`](./bugfix/2026-08-07-Bugfix-GUI-AboutBuildTime-LogLevelSync-v1.0.md) | **About 窗口编译时间不准确 + 配置窗口 console 日志级别不同步 LogPanel** — CMakeLists add_custom_command 依赖 build.ninja 致 version.h 仅在 configure 时生成（增量构建 APP_BUILD_TIME 停留上次 configure 时刻），改为 add_custom_target(update_version_h ALL) 每次构建重生成；onMenuConfig 保存回调仅更新 Logger 全局级别未同步 logPanel_ 界面过滤，补 setInitialLogLevel(cfg.log_console_level)；21/21 测试通过（CurlEasyHandleTest/NetworkMonitorTest 2 项网络环境性失败除外） | 112 lines |
 
 ---
 
@@ -401,5 +406,5 @@ status: maintained
 
 ---
 
-*最后更新: 2026-08-05 (v9) | 维护者: Kilo AI*
+*最后更新: 2026-08-07 (v9) | 维护者: Kilo AI*
 

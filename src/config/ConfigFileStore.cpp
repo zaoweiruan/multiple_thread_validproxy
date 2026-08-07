@@ -12,7 +12,6 @@ namespace config {
 std::string ConfigFileStore::read(const std::string& path) {
     std::ifstream file(path);
     if (!file.is_open()) {
-        Logger::write("DEBUG: Failed to open file", LogLevel::DEBUG);
         std::string errMsg = "Failed to open configuration file.\n\n";
         errMsg += "Path:\n" + path + "\n\n";
         errMsg += "Check that the file exists and is accessible.";
@@ -22,7 +21,6 @@ std::string ConfigFileStore::read(const std::string& path) {
     std::stringstream buffer;
     buffer << file.rdbuf();
     std::string content = buffer.str();
-    Logger::write("DEBUG: File read successfully, content length: " + std::to_string(content.length()), LogLevel::DEBUG);
     return content;
 }
 

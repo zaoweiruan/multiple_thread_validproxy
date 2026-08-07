@@ -1,44 +1,80 @@
 #include "PortManager.h"
 #include "Utils.h"
 
-std::vector<int> PortManager::usedPorts_;
+std::set<int> PortManager::usedPorts_;
+std::mutex PortManager::mutex_;
 
 int PortManager::findAvailable(int startPort, int maxAttempts) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return findAvailableUnlocked(startPort, maxAttempts);
+}
+
+int PortManager::findAvailableUnlocked(int startPort, int maxAttempts) {
+    // Clamp startPort into the valid range [10000, 65535].
+    int begin = startPort;
+    if (begin < 10000) begin = 10000;
+    if (begin > 65535) begin = 10000;
+
+    // Scan always starts at begin (deterministic: callers pass explicit
+    // start ports and expect ports near them). usedPorts_ gives an O(log n)
+    // check, and the wraparound stop below guarantees each port is visited
+    // at most once per call (no O(n^2) rescanning).
+    int candidate = begin;
+    int stop = begin;  // stop when we loop back to begin (each port checked at most once)
+
     for (int i = 0; i < maxAttempts; ++i) {
-        int port = startPort + i;
-        if (port > 65535) port = 10000 + (port - 10000) % 50000;
-        
-        bool isUsed = false;
-        for (int used : usedPorts_) {
-            if (used == port) {
-                isUsed = true;
-                break;
-            }
+        // Check the physical port availability via connect(); this is the
+        // authoritative check — usedPorts_ only tracks what we allocated,
+        // not what the OS has reserved.
+        bool systemFree = !isInUseUnlocked(candidate);
+        bool oursFree = (usedPorts_.find(candidate) == usedPorts_.end());
+
+        if (systemFree && oursFree) {
+            usedPorts_.insert(candidate);
+            return candidate;
         }
-        
-        if (!isUsed && !isInUse(port)) {
-            usedPorts_.push_back(port);
-            return port;
-        }
+
+        // Advance candidate with wraparound; stop before revisiting begin.
+        ++candidate;
+        if (candidate > 65535) candidate = 10000;
+        if (candidate == stop) break;  // full cycle completed, no port found
     }
     return -1;
 }
 
 bool PortManager::isInUse(int port) {
-    // Delegate to the corrected connect-based detection in Utils
+    std::lock_guard<std::mutex> lock(mutex_);
+    return isInUseUnlocked(port);
+}
+
+bool PortManager::isInUseUnlocked(int port) {
+    // Check both the internal tracking set and the OS-level binding status.
+    if (usedPorts_.find(port) != usedPorts_.end()) return true;
     return !utils::isPortAvailable(port);
 }
 
 std::vector<int> PortManager::allocateRange(int startPort, int count) {
+    std::lock_guard<std::mutex> lock(mutex_);
     std::vector<int> ports;
     for (int i = 0; i < count; ++i) {
-        int port = findAvailable(startPort + i, 100);
+        int port = findAvailableUnlocked(startPort + i, 100);
         if (port > 0) ports.push_back(port);
     }
     return ports;
 }
 
+bool PortManager::freePort(int port) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = usedPorts_.find(port);
+    if (it != usedPorts_.end()) {
+        usedPorts_.erase(it);
+        return true;
+    }
+    return false;
+}
+
 // Clear all tracked ports - call when stopping all Xray instances
 void PortManager::clearPorts() {
+    std::lock_guard<std::mutex> lock(mutex_);
     usedPorts_.clear();
 }

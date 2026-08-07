@@ -41,6 +41,7 @@ public:
 
     static bool isEnabled();
     static std::ofstream* getFile();
+    static std::string getFilePath();
     static std::string getLogDir();
     static std::string getPrefix();
     static void setLevel(LogLevel level);

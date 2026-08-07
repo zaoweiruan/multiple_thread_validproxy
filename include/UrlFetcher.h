@@ -1,6 +1,7 @@
 #ifndef URL_FETCHER_H
 #define URL_FETCHER_H
 
+#include <optional>
 #include <string>
 #include <curl/curl.h>
 
@@ -11,8 +12,8 @@ public:
     UrlFetcher(ProxyTester* tester = nullptr);
     ~UrlFetcher();
     
-    std::string fetch(const std::string& url);
-    std::string fetchViaProxy(const std::string& url, int socksPort);
+    std::optional<std::string> fetch(const std::string& url, int connectTimeoutMs = 10000, int totalTimeoutMs = 10000);
+    std::optional<std::string> fetchViaProxy(const std::string& url, int socksPort, int connectTimeoutMs = 10000, int totalTimeoutMs = 10000);
     
 private:
     ProxyTester* tester_;

@@ -9,6 +9,9 @@
 #include "XrayManager.h"
 #include "version.h"
 #include "service/DatabaseConnectionService.h"
+#include "config/ConfigFileStore.h"
+#include "config/ConfigJsonParser.h"
+#include "config/sections/LogConfigParser.h"
 
 #include <sqlite3.h>
 #include <windows.h>
@@ -53,9 +56,35 @@ int main(int argc, char* argv[]) {
         std::filesystem::create_directory(logDir);
     }
 
+    // Pre-parse the "log" section BEFORE Logger::init so the file level from
+    // config.json takes effect from the very first log write. ConfigReader::load()
+    // itself writes DEBUG SQL diagnostics, so the level must already be applied
+    // before load() runs (otherwise INFO/DEBUG lines below the configured
+    // file_level would be written to the log file).
+    try {
+        config::ConfigFileStore fileStore;
+        std::string jsonStr = fileStore.read(configPath);
+        config::ConfigJsonParser jsonParser;
+        boost::json::value root = jsonParser.parse(jsonStr);
+        if (!root.is_null() && root.is_object()) {
+            config::AppConfig preConfig;
+            config::LogConfigParser logParser;
+            logParser.parse(root, preConfig, exeDir);
+            Logger::init(logDir.string(), "ui",
+                         Logger::stringToLevel(preConfig.log_file_level),
+                         Logger::stringToLevel(preConfig.log_console_level));
+            Logger::setFileEnabled(preConfig.log_enabled);
+        } else {
+            // Empty/invalid JSON: fall back to default levels (file DEBUG / console INFO)
+            Logger::init(logDir.string(), "ui");
+        }
+    } catch (...) {
+        // Config file missing or unreadable: fall back to default levels
+        Logger::init(logDir.string(), "ui");
+    }
+
     // Initialize Logger FIRST (before load / DB open), so ConfigReader::load()
     // can log diagnostics and any early failure is visible in the log file.
-    Logger::init(logDir.string(), "ui");
     Logger::write("gui entry: Logger::init completed", LogLevel::INFO);
     Logger::setConsoleEnabled(false);
 

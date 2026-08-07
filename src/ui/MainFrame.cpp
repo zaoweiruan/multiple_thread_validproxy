@@ -25,6 +25,7 @@
 #include <wx/stdpaths.h>
 #include <wx/srchctrl.h>
 #include <wx/file.h>
+#include <shellapi.h>
 #include <thread>
 #include <fstream>
 
@@ -227,6 +228,12 @@ MainFrame::MainFrame(const config::AppConfig& cfg, sqlite3* db)
         auiManager_->Update();
         Logger::write("[MainFrame] AUI re-layout after SetMenuBar done", LogLevel::DEBUG);
     }
+    // Force a WM_SIZE on the status bar so its part widths are recomputed.
+    // With the default equal-width path the parts can be laid out at width 0
+    // until a real size event arrives, which leaves SetStatusText invisible.
+    if (statusBar_) {
+        statusBar_->SendSizeEvent();
+    }
      
 // Bind subscription selection to filter proxy list
       Bind(wxEVT_SUBSCRIPTION_SELECTED, [this](SubscriptionSelectedEvent& evt) {
@@ -332,6 +339,10 @@ Bind(wxEVT_SUB_LIST_LOADED, [this](SubListLoadedEvent& evt) {
         repositionNetMonPanel();
     });
 
+    // Double-click on the status bar opens the log file (bound to the status
+    // bar itself, NOT the frame event table, to avoid misfires elsewhere).
+    statusBar_->Bind(wxEVT_LEFT_DCLICK, &MainFrame::onStatusBarDClick, this);
+
     Logger::write("[MainFrame] Constructor end", LogLevel::DEBUG);
 }
 
@@ -379,6 +390,20 @@ MainFrame::~MainFrame() {
 // -------------------------------------------------------------------
 void MainFrame::setStatusText(int field, const wxString& text) {
     if (statusBar_) statusBar_->SetStatusText(text, field);
+}
+
+void MainFrame::setLogFileLabel(const std::string& filePath) {
+    logFilePath_ = filePath;
+    if (filePath.empty()) {
+        setStatusText(1, "");
+        return;
+    }
+    std::string basename = filePath;
+    size_t pos = basename.find_last_of("/\\");
+    if (pos != std::string::npos) {
+        basename = basename.substr(pos + 1);
+    }
+    setStatusText(1, wxString(basename));
 }
 
 void MainFrame::showBalloon(const wxString& title, const wxString& msg) {
@@ -549,10 +574,20 @@ void MainFrame::initToolBar() {
 }
 
 void MainFrame::initStatusBar() {
-    statusBar_ = CreateStatusBar(3);
+    statusBar_ = CreateStatusBar(4);
+    // Explicit widths (not equal-width): field0=status msg, field1=log file,
+    // field2=network status, field3=database path.
+    // SetStatusWidths forces SB_SETPARTS with real widths so SetStatusText
+    // actually reaches the native control (equal-width path can leave parts
+    // at width 0 until a WM_SIZE is processed).
+    // -1 = variable-width field: field3 (database path) stretches to fill
+    // the remaining status bar width so the bar spans the whole bottom row.
+    int widths[] = { 250, 250, 120, -1 };
+    statusBar_->SetStatusWidths(4, widths);
     statusBar_->SetStatusText("Ready", 0);
     statusBar_->SetStatusText("", 1);
-    statusBar_->SetStatusText(wxString(getDbPath()), 2);
+    statusBar_->SetStatusText("", 2);
+    statusBar_->SetStatusText(wxString(getDbPath()), 3);
 }
 
 void MainFrame::initAuiManager() {
@@ -585,6 +620,8 @@ void MainFrame::initPanels() {
 
     detailPanel_ = new ProxyDetailPanel(this);  // AUI-managed, parent stays as MainFrame
     logPanel_ = new LogPanel(centerPanel);
+    logPanel_->setInitialLogLevel(Logger::stringToLevel(config_.log_console_level));
+    setLogFileLabel(Logger::getFilePath());
 
     centerSizer->Add(splitter_, 1, wxEXPAND);
 
@@ -646,7 +683,9 @@ void MainFrame::loadSettings() {
 void MainFrame::repositionNetMonPanel() {
     if (!statusBar_ || !netMonPanel_) return;
     wxRect fieldRect;
-    statusBar_->GetFieldRect(1, fieldRect);
+    // Network status panel lives in field 2; field 1 is reserved for the
+    // log file name label.
+    statusBar_->GetFieldRect(2, fieldRect);
     netMonPanel_->SetSize(fieldRect);
     netMonPanel_->Refresh();
 }
@@ -829,6 +868,11 @@ void MainFrame::onMenuConfig(wxCommandEvent&) {
         Logger::setFileLevel(Logger::stringToLevel(cfg.log_file_level));
         Logger::setConsoleLevel(Logger::stringToLevel(cfg.log_console_level));
 
+        // Keep the log panel's visible level filter in sync with the new console level
+        if (logPanel_) {
+            logPanel_->setInitialLogLevel(Logger::stringToLevel(cfg.log_console_level));
+        }
+
         // If database path changed, switch to the new database at runtime
         if (cfg.database_path != oldDbPath && !cfg.database_path.empty()) {
             sqlite3* newDb = controller_->switchDatabase(cfg.database_path);
@@ -844,7 +888,7 @@ void MainFrame::onMenuConfig(wxCommandEvent&) {
                 // Update config path
                 config_.database_path = cfg.database_path;
                 if (statusBar_) {
-                    statusBar_->SetStatusText(wxString(cfg.database_path), 2);
+                    statusBar_->SetStatusText(wxString(cfg.database_path), 3);
                 }
 
                 // Refresh all panels with the new database
@@ -1064,3 +1108,13 @@ void MainFrame::onToggleDetailPane(wxCommandEvent&) {
 void MainFrame::onStatusUpdate(StatusUpdateEvent& event) {
     setStatusText(0, event.getText());
 }
+
+void MainFrame::onStatusBarDClick(wxMouseEvent&) {
+    if (logFilePath_.empty()) return;
+#ifdef __WXMSW__
+    ShellExecuteA(NULL, "open", logFilePath_.c_str(), NULL, NULL, SW_SHOWNORMAL);
+#else
+    wxLaunchDefaultApplication(logFilePath_);
+#endif
+}
+

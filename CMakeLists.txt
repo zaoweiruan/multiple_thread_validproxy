@@ -13,15 +13,38 @@ if(DEFINED VERSION_MAJOR)
     message(STATUS "Git version: ${PROJECT_VERSION} (tag: ${VERSION_TAG})")
 endif()
 
-# 生成版本头文件 (auto-generated, .gitignored)
-string(TIMESTAMP BUILD_TIMESTAMP "%Y-%m-%d %H:%M:%S")
-# 预创建构建树下的 include 目录
-file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/include)
-configure_file(
-    ${CMAKE_CURRENT_SOURCE_DIR}/include/version.h.in
-    ${CMAKE_BINARY_DIR}/include/version.h
-    @ONLY
+set(VERSION_H ${CMAKE_BINARY_DIR}/include/version.h)
+set(VERSION_H_IN ${CMAKE_CURRENT_SOURCE_DIR}/include/version.h.in)
+
+# Build-time version header custom target — an ALL target that runs the
+# generator on every `cmake --build`, so APP_BUILD_TIME reflects the actual
+# build moment instead of the last configure time.
+add_custom_target(update_version_h ALL
+    COMMAND python ${CMAKE_CURRENT_SOURCE_DIR}/scripts/generate_version_h.py
+        ${VERSION_H_IN}
+        ${VERSION_H}
+        ${CMAKE_BUILD_TYPE}
+        ${VERSION_MAJOR}
+        ${VERSION_MINOR}
+        ${VERSION_PATCH}
+        ${VERSION_TAG}
+        ${VERSION_COMMIT}
+        ${VERSION_DIRTY}
+    COMMENT "[version.h] Regenerating build-time version header..."
+    VERBATIM
 )
+
+# version.h is written directly by the script (an ALL custom target declares no
+# output edge), and the Ninja _unscanned compile rules do not track header
+# dependencies, so a regenerated version.h alone would not trigger the TUs that
+# embed APP_BUILD_TIME to rebuild.  Pin the generated header as an explicit
+# OBJECT_DEPENDS on those sources so every build re-embeds the new timestamp.
+file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/include)
+set_property(SOURCE
+    src/main_gui.cpp
+    src/main_cli.cpp
+    src/ui/MainFrame.cpp
+    APPEND PROPERTY OBJECT_DEPENDS ${VERSION_H})
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -194,6 +217,7 @@ target_link_libraries(validproxy-cli PRIVATE
     -ldbghelp
     -lws2_32
 )
+add_dependencies(validproxy-cli update_version_h)
 
 # Force CLI output to bin (override global setting for tests)
 set_target_properties(validproxy-cli PROPERTIES
@@ -272,6 +296,7 @@ if(wxWidgets_FOUND)
         -ldbghelp
         -lws2_32
     )
+add_dependencies(validproxy update_version_h)
 
     # Link wxWidgets imported targets
     target_link_libraries(validproxy PRIVATE
@@ -710,5 +735,28 @@ if(USE_GRPC_API)
     )
     add_test(NAME XrayApiDirectTest COMMAND test_xray_api_direct)
 endif()
+
+# -- TestResultQueue unit tests (retry logic, concurrent enqueue) --
+add_executable(test_result_queue tests/test_result_queue_test.cpp
+    src/Logger.cpp src/LoggerInstance.cpp)
+target_include_directories(test_result_queue PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(test_result_queue PRIVATE gtest_main gtest)
+set_target_properties(test_result_queue PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+)
+add_test(NAME ResultQueueTest COMMAND test_result_queue)
+
+add_executable(test_port_manager tests/test_port_manager.cpp
+    src/PortManager.cpp src/Utils.cpp src/Logger.cpp src/LoggerInstance.cpp)
+target_include_directories(test_port_manager PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(test_port_manager PRIVATE gtest_main gtest -lws2_32)
+set_target_properties(test_port_manager PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+)
+add_test(NAME PortManagerTest COMMAND test_port_manager)
 
 install(TARGETS validproxy validproxy-cli DESTINATION bin)

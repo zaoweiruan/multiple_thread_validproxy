@@ -15,6 +15,7 @@ namespace config {
 struct XrayConfig {
     std::string outbound_json;
     std::string inbound_json;
+    bool configFailed = false;
 };
 
 class ConfigGenerator {
