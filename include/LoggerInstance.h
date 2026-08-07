@@ -31,6 +31,7 @@ public:
 
     bool isEnabled() const;
     std::ofstream* getFile();
+    std::string getFilePath() const;
     std::string getLogDir() const;
     std::string getPrefix() const;
     void setLevel(LogLevel level);
@@ -50,6 +51,7 @@ public:
 private:
     std::string logDir_;
     std::string prefix_;
+    std::string filePath_;
     std::ofstream* outFile_;
     mutable std::mutex mutex_;
     bool enabled_;

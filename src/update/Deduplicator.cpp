@@ -2,6 +2,7 @@
 #include "Profileitem.h"
 #include "Subitem.h"
 #include "Logger.h"
+#include "Utils.h"
 
 namespace update {
 
@@ -36,7 +37,7 @@ bool Deduplicator::deduplicate() {
     invalidCount_ = deduplicatePhase1();
     Logger::write("Phase 3 completed: removed " + std::to_string(invalidCount_) + " proxies", LogLevel::REPORT);
     
-    Logger::write("Phase 4/6 - Removing config-invalid proxies (checkRequired)", LogLevel::REPORT);
+    Logger::write("Phase 4/6 - Removing config-invalid proxies (checkRequired + non-printable Security/Id)", LogLevel::REPORT);
     configErrorCount_ = deduplicateConfigErrorPhase();
     Logger::write("Phase 4 completed: removed " + std::to_string(configErrorCount_) + " proxies", LogLevel::REPORT);
     
@@ -241,12 +242,24 @@ int Deduplicator::deduplicateConfigErrorPhase() {
     std::vector<db::models::Profileitem> all = dao.getAll("SELECT * FROM ProfileItem;");
     std::vector<std::string> failedIds;
     failedIds.reserve(all.size() / 10);
+    size_t garbageCount = 0;
 
     for (const db::models::Profileitem& p : all) {
+        bool bad = false;
         try {
             p.checkRequired();
         } catch (const std::exception& e) {
+            bad = true;
             Logger::write("CONFIG_ERROR: " + p.indexid + " - " + p.address + ":" + p.port + " - " + e.what(), LogLevel::WARN);
+        }
+        if (!bad && (!utils::isPrintableAscii(p.security) || !utils::isPrintableAscii(p.id))) {
+            // Non-printable Security/Id = binary garbage that xray can never
+            // accept (e.g. base64 of a URL-encoded username). Counted in bulk,
+            // no per-row log — there can be tens of thousands of such rows.
+            garbageCount++;
+            bad = true;
+        }
+        if (bad) {
             failedIds.push_back(p.indexid);
         }
     }
@@ -255,7 +268,10 @@ int Deduplicator::deduplicateConfigErrorPhase() {
         dao.deleteByIndexIdsNoTx(failedIds);
     }
 
-    Logger::write("INFO: Phase ConfigError deleted: " + std::to_string(failedIds.size()) + " (checkRequired failed)", LogLevel::INFO);
+    Logger::write("INFO: Phase ConfigError deleted: " + std::to_string(failedIds.size()) +
+                      " (checkRequired failed + non-printable Security/Id: " +
+                      std::to_string(garbageCount) + ")",
+                  LogLevel::INFO);
     return static_cast<int>(failedIds.size());
 }
 

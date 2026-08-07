@@ -6,6 +6,13 @@ int main() {
     std::cout << "Testing CurlEasyHandle basic functionality..." << std::endl;
 
     try {
+        // DnsShareCache: program-wide shared DNS cache must be a single instance.
+        CURLSH* s1 = DnsShareCache::get();
+        assert(s1 != nullptr);
+        CURLSH* s2 = DnsShareCache::get();
+        assert(s1 == s2);
+        std::cout << "  DnsShareCache: single shared instance OK" << std::endl;
+
         CurlEasyHandle curl;
         curl.setUrl("https://www.example.com")
             .setNoBody(true)

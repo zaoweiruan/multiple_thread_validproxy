@@ -67,12 +67,12 @@ NetworkMonitor::ProbeResult NetworkMonitor::CheckURLWithDnsFlag(const std::strin
                 Logger::write("NetworkMonitor: probe failed url=" + url +
                                   " curl_error=" + std::to_string(static_cast<int>(res)) +
                                   " (" + curl_easy_strerror(res) + ")",
-                              LogLevel::DEBUG);
+                              LogLevel::WARN);
             } else {
                 Logger::write("NetworkMonitor: DNS error url=" + url +
                                   " curl_error=" + std::to_string(static_cast<int>(res)) +
                                   " (" + curl_easy_strerror(res) + ")",
-                              LogLevel::TRACE);
+                              LogLevel::WARN);
             }
             return result;
         }
@@ -83,11 +83,10 @@ NetworkMonitor::ProbeResult NetworkMonitor::CheckURLWithDnsFlag(const std::strin
         } else {
             Logger::write("NetworkMonitor: probe url=" + url +
                               " http_code=" + std::to_string(httpCode),
-                          LogLevel::DEBUG);
+                          LogLevel::WARN);
         }
         return result;
     } catch (...) {
-        Logger::write("NetworkMonitor: probe exception url=" + url, LogLevel::DEBUG);
         return result;
     }
 }
@@ -128,8 +127,8 @@ void NetworkMonitor::ThreadLoop() {
             if (probeEnabled_ && fails < maxProbes_) {
                 Logger::write("Network connection LOST (probe " + std::to_string(fails) +
                               "/" + std::to_string(maxProbes_) + ")", LogLevel::ERR);
-            } else {
-                Logger::write("Network connection LOST (probe " + std::to_string(fails) +
+            } else if (fails >= maxProbes_) {
+                Logger::write("Network connection LOST (threshold reached: " + std::to_string(fails) +
                               "/" + std::to_string(maxProbes_) + ")", LogLevel::ERR);
                 if (cancelOnDisconnect_) {
                     cancelOnDisconnect_->store(true);

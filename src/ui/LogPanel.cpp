@@ -5,17 +5,13 @@
 #include <wx/sizer.h>
 #include <wx/choice.h>
 #include <wx/button.h>
+#include <wx/stdpaths.h>
 
-// Event table bindings (non-custom events only)
+// Event table bindings (panel-level only)
 wxBEGIN_EVENT_TABLE(LogPanel, wxPanel)
     EVT_BUTTON(wxID_ANY, LogPanel::onClear)
     EVT_CHOICE(wxID_ANY, LogPanel::onFilterChange)
 wxEND_EVENT_TABLE()
-
-enum {
-    ID_LOG_CLEAR = wxID_HIGHEST + 200,
-    ID_LOG_FILTER,
-};
 
 // -------------------------------------------------------------------
 LogPanel::LogPanel(wxWindow* parent)
@@ -44,7 +40,6 @@ LogPanel::LogPanel(wxWindow* parent)
     clearBtn_ = new wxButton(this, ID_LOG_CLEAR, "Clear");
     toolSizer->Add(clearBtn_, 0);
 
-    toolSizer->AddStretchSpacer();
     topSizer->Add(toolSizer, 0, wxEXPAND | wxALL, 4);
 
     // Log text control
@@ -98,6 +93,19 @@ void LogPanel::onLogMessage(LogMessageEvent& event) {
 
 void LogPanel::onClear(wxCommandEvent&) {
     clearLog();
+}
+
+void LogPanel::setInitialLogLevel(LogLevel level) {
+    minLevel_ = level;
+    // Sync the wxChoice dropdown to match
+    switch (level) {
+        case LogLevel::TRACE: levelFilter_->SetSelection(0); break;
+        case LogLevel::DEBUG: levelFilter_->SetSelection(1); break;
+        case LogLevel::INFO:  levelFilter_->SetSelection(2); break;
+        case LogLevel::REPORT: levelFilter_->SetSelection(3); break;
+        case LogLevel::WARN: levelFilter_->SetSelection(4); break;
+        case LogLevel::ERR:   levelFilter_->SetSelection(5); break;
+    }
 }
 
 void LogPanel::onFilterChange(wxCommandEvent&) {

@@ -48,6 +48,13 @@ namespace {
             Logger::write("SKIP: " + p.address + ":" + p.port + " - invalid network: '" + p.network + "'", LogLevel::WARN);
             return false;
         }
+        if (!utils::isPrintableAscii(p.security) || !utils::isPrintableAscii(p.id)) {
+            // Binary garbage in Security (cipher) / Id (password) can never be
+            // injected into xray - reject before insert, matching the dedup
+            // phase's deduplicateConfigErrorPhase check.
+            Logger::write("SKIP: " + p.address + ":" + p.port + " - non-printable Security/Id (cannot build xray config)", LogLevel::WARN);
+            return false;
+        }
         return true;
     }
 
@@ -309,7 +316,7 @@ bool SubitemUpdaterV2::run() {
 
     if (successCount <= 0) {
         if (!enabledSubs.empty() && attemptedCount == 0) {
-            Logger::write("All subscriptions skipped by update interval - nothing to update", LogLevel::ERR);
+            Logger::write("All subscriptions skipped by update interval - nothing to update", LogLevel::REPORT);
             return true;
         }
         if (!enabledSubs.empty()) {
@@ -503,9 +510,7 @@ std::string SubitemUpdaterV2::fetchUrl(const std::string& url) {
             .setWriteCallback(CurlEasyHandle::writeCallback, &response)
             .setFollowLocation()
             .setConnectTimeoutMs(config_.subscription_connect_timeout_ms)
-            .setTimeoutMs(config_.subscription_timeout_ms)
-            .setSslVerifyPeer(false)
-            .setSslVerifyHost(false);
+            .setTimeoutMs(config_.subscription_timeout_ms);
 
         curl.perform();
         return response;
@@ -528,6 +533,7 @@ std::string SubitemUpdaterV2::fetchUrlViaProxy(const std::string& url, int socks
             .setFollowLocation()
             .setConnectTimeoutMs(config_.subscription_connect_timeout_ms)
             .setTimeoutMs(config_.subscription_timeout_ms)
+            // SSL verification disabled: proxy endpoints may use self-signed certificates
             .setSslVerifyPeer(false)
             .setSslVerifyHost(false);
 

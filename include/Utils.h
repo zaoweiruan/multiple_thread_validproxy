@@ -13,6 +13,10 @@ namespace utils {
     std::string joinUrl(const std::string& base, const std::string& suffix);
     bool isValidUrlFormat(const std::string& url);
     bool isValidNetwork(const std::string& network);
+    // Returns true when every byte of s is a printable ASCII character
+    // (0x20-0x7E). Used to reject binary garbage in Security/Id fields that
+    // can never be injected into xray config.
+    bool isPrintableAscii(const std::string& s);
     bool isPortAvailable(int port);
     int findAvailablePort(int startPort, int maxAttempts = 100);
 

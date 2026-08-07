@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <mutex>
 #include <sstream>
 #include <string>
 #include <thread>
@@ -33,19 +34,22 @@ static std::string normalizePath(const std::string& path) {
 // Returns exit code (negative on creation failure).
 // -------------------------------------------------------------------
 static int runProcess(const std::string& cmd, std::string& output,
-                      const std::string* stdinData = nullptr) {
+                      const std::string* stdinData = nullptr, int* pLastError = nullptr) {
     SECURITY_ATTRIBUTES sa = {sizeof(SECURITY_ATTRIBUTES), nullptr, TRUE};
 
     // Create stdout pipe (child writes, parent reads)
     HANDLE hOutRead = nullptr, hOutWrite = nullptr;
-    if (!CreatePipe(&hOutRead, &hOutWrite, &sa, 0))
+    if (!CreatePipe(&hOutRead, &hOutWrite, &sa, 0)) {
+        if (pLastError) *pLastError = static_cast<int>(GetLastError());
         return -1;
+    }
     SetHandleInformation(hOutRead, HANDLE_FLAG_INHERIT, 0);
 
     // Create stdin pipe only when input is provided
     HANDLE hInRead = nullptr, hInWrite = nullptr;
     if (stdinData) {
         if (!CreatePipe(&hInRead, &hInWrite, &sa, 0)) {
+            if (pLastError) *pLastError = static_cast<int>(GetLastError());
             CloseHandle(hOutRead); CloseHandle(hOutWrite);
             return -1;
         }
@@ -74,6 +78,7 @@ static int runProcess(const std::string& cmd, std::string& output,
     if (hInRead) CloseHandle(hInRead);
 
     if (!created) {
+        if (pLastError) *pLastError = static_cast<int>(GetLastError());
         CloseHandle(hOutRead);
         if (hInWrite) CloseHandle(hInWrite);
         return -1;
@@ -87,14 +92,35 @@ static int runProcess(const std::string& cmd, std::string& output,
         CloseHandle(hInWrite);
     }
 
-    // Read all stdout output
+    // Read all stdout output with a 5-second deadline.
+    // A child that hangs without closing stdout would block forever otherwise.
     char buf[4096];
     DWORD bytesRead = 0;
     output.clear();
-    while (ReadFile(hOutRead, buf, sizeof(buf) - 1, &bytesRead, nullptr) &&
-           bytesRead > 0) {
+    const std::chrono::steady_clock::time_point deadline =
+        std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    while (std::chrono::steady_clock::now() < deadline) {
+        DWORD available = 0;
+        if (!PeekNamedPipe(hOutRead, nullptr, 0, nullptr, &available, nullptr)) {
+            break;
+        }
+        if (available == 0) {
+            DWORD waitRet = WaitForSingleObject(pi.hProcess, 50);
+            if (waitRet == WAIT_OBJECT_0) break;  // child exited
+            continue;
+        }
+        bytesRead = 0;
+        if (!ReadFile(hOutRead, buf, sizeof(buf) - 1, &bytesRead, nullptr) ||
+            bytesRead == 0) {
+            break;
+        }
         buf[bytesRead] = '\0';
         output += buf;
+    }
+
+    if (std::chrono::steady_clock::now() >= deadline) {
+        TerminateProcess(pi.hProcess, 1);
+        return -1;
     }
 
     WaitForSingleObject(pi.hProcess, 5000);
@@ -115,16 +141,16 @@ bool XrayApi::runCommand(const std::string& args, std::string& output) {
     std::string cmd = "\"" + xrayPath_ + "\" " + args;
     int exitCode = runProcess(cmd, output);
     if (exitCode < 0) {
-        lastError_ = "Failed to run command: " + cmd;
+        lastError_ = "Failed to run command: " + cmd + " (GetLastError=" + std::to_string(GetLastError()) + ")";
         return false;
     }
+    lastError_.clear();
     return exitCode == 0;
 }
 
 bool XrayApi::addOutbound(const std::string& outboundJson, const std::string& tag, std::string& resultOutput) {
     Logger::write("[XrayApi] addOutbound called: tag=" + tag + ", xrayPath=" + xrayPath_ + ", serverAddr=" + serverAddr_, LogLevel::DEBUG);
-    Logger::write("[XrayApi] outbound JSON: " + outboundJson, LogLevel::DEBUG);
-    
+
     std::string normalizedXray = xrayPath_;
     for (char& c : normalizedXray) {
         if (c == '/') c = '\\';
@@ -142,39 +168,32 @@ bool XrayApi::addOutbound(const std::string& outboundJson, const std::string& ta
     std::string output;
     int exitCode = runProcess(cmd, output, &outboundJson);
     if (exitCode < 0) {
-        lastError_ = "Failed to run xray api ado command";
+        lastError_ = "Failed to run xray api ado command (GetLastError=" + std::to_string(GetLastError()) + ")";
         return false;
     }
 
     resultOutput = output;
 
-    bool success = (exitCode == 0) || (output.find("adding") != std::string::npos);
-    
+    bool success = (exitCode == 0);
+
     if (!success) {
         lastError_ = "xray api ado failed with code: " + std::to_string(exitCode) + " output: " + output;
-        Logger::write("[XrayApi] addOutbound FAILED: exitCode=" + std::to_string(exitCode) + ", output=" + output, LogLevel::ERR);
-        Logger::write("[XrayApi] addOutbound FAILED error: " + lastError_, LogLevel::ERR);
+        // Per-proxy injection failures are already reported at ERR level by the
+        // batch-test worker (XRAY_ERROR with lastError_). Keep these two lines
+        // at DEBUG to avoid duplicating the flood 3x per proxy (retry loop).
+        Logger::write("[XrayApi] addOutbound FAILED: exitCode=" + std::to_string(exitCode) + ", output=" + output, LogLevel::DEBUG);
+        Logger::write("[XrayApi] addOutbound FAILED error: " + lastError_, LogLevel::DEBUG);
         return false;
     }
 
-    std::this_thread::sleep_for(std::chrono::milliseconds(200));
-
     Logger::write("[XrayApi] addOutbound SUCCESS for tag: " + tag, LogLevel::DEBUG);
-
-    // List outbounds after add to confirm
-    std::string lsoCmd = "\"" + xrayPath_ + "\" api lso --server=" + serverAddr_;
-    std::string lsoOutput;
-    int lsoCode = runProcess(lsoCmd, lsoOutput);
-    if (lsoCode >= 0 && !lsoOutput.empty()) {
-        resultOutput += "\n[Outbounds]:\n" + lsoOutput;
-    }
-
+    lastError_.clear();
     return true;
 }
 
 bool XrayApi::removeOutbound(const std::string& tag) {
     Logger::write("[XrayApi] removeOutbound called: tag=" + tag, LogLevel::DEBUG);
-    
+
     std::string cleanTag;
     for (char c : tag) {
         if (c >= 'a' && c <= 'z') cleanTag += c;
@@ -183,36 +202,33 @@ bool XrayApi::removeOutbound(const std::string& tag) {
         else if (c == '_' || c == '-') cleanTag += c;
     }
     if (cleanTag.empty()) cleanTag = "proxy";
-    
-    Logger::write("[XrayApi] removeOutbound: cleaned tag=" + cleanTag + ", cmd tag=\"" + cleanTag + "\"", LogLevel::DEBUG);
-    
-    std::string cmd = "\"" + xrayPath_ + "\" api rmo --server " + serverAddr_ + " \"" + cleanTag + "\"";
 
-    STARTUPINFOA si = {0};
-    si.cb = sizeof(si);
-    si.dwFlags = STARTF_USESTDHANDLES;
-    PROCESS_INFORMATION pi = {0};
+    std::string cmd = "\"" + xrayPath_ + "\" api rmo --server " + serverAddr_ +
+                      " \"" + cleanTag + "\"";
 
-    // CreateProcessA modifies the command line buffer
-    std::vector<char> cmdBuf(cmd.begin(), cmd.end());
-    cmdBuf.push_back('\0');
-
-    BOOL success = CreateProcessA(nullptr, cmdBuf.data(), nullptr, nullptr, FALSE,
-                                  CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi);
-    
-    if (!success) {
-        lastError_ = "Failed to create process: " + std::to_string(GetLastError());
+    // E10: let child exit code be authoritative; special-case benign "already gone"
+    std::string output;
+    int exitCode = runProcess(cmd, output);
+    if (exitCode < 0) {
+        lastError_ = "Failed to run xray api rmo command: " + cmd + " (GetLastError=" + std::to_string(GetLastError()) + ")";
         return false;
     }
 
-    WaitForSingleObject(pi.hProcess, 5000);
-    CloseHandle(pi.hProcess);
-    CloseHandle(pi.hThread);
+    // xray rmo exits 0 on success or if tag was already absent (no-op).
+    // Treat non-zero as failure unless output signals the tag simply did not exist.
+    if (exitCode != 0 && output.find("already") == std::string::npos &&
+        output.find("not found") == std::string::npos &&
+        output.find("does not exist") == std::string::npos) {
+        lastError_ = "xray api rmo failed: code=" + std::to_string(exitCode) +
+                     " output=" + output;
+        Logger::write("[XrayApi] removeOutbound FAILED: " + lastError_,
+                      LogLevel::DEBUG);
+        return false;
+    }
 
-    std::this_thread::sleep_for(std::chrono::milliseconds(200));
-
-    Logger::write("[XrayApi] removeOutbound SUCCESS for tag: " + tag, LogLevel::DEBUG);
-
+    Logger::write("[XrayApi] removeOutbound SUCCESS for tag: " + tag,
+                  LogLevel::DEBUG);
+    lastError_.clear();
     return true;
 }
 
@@ -234,6 +250,7 @@ bool XrayApi::listOutboundsResult(std::string& output) {
     if (!output.empty())
         Logger::write("[XrayApi] listOutboundsResult:\n" + output, LogLevel::DEBUG);
 
+    lastError_.clear();
     return exitCode == 0;
 }
 
@@ -248,6 +265,7 @@ bool XrayApi::ping(std::string& resultOutput) {
     }
 
     resultOutput = output;
+    lastError_.clear();
     return exitCode == 0;
 }
 
@@ -428,7 +446,7 @@ std::string XrayApi::jsonConfigToProtobuf(const std::string& typeUrl,
 
     // Extract the "settings" sub-object if present
     boost::json::object settings;
-    auto sit = obj.find("settings");
+    boost::json::object::const_iterator sit = obj.find("settings");
     if (sit != obj.end() && sit->value().is_object()) {
         settings = sit->value().as_object();
     }
@@ -441,7 +459,7 @@ std::string XrayApi::jsonConfigToProtobuf(const std::string& typeUrl,
         //   4: user_level (uint32, varint)
         //   6: proxy_protocol (uint32, varint)
 
-        auto it = settings.find("domain_strategy");
+        boost::json::object::iterator it = settings.find("domain_strategy");
         if (it != settings.end() && it->value().is_int64()) {
             int64_t val = it->value().as_int64();
             if (val != 0) {
@@ -479,13 +497,13 @@ std::string XrayApi::jsonConfigToProtobuf(const std::string& typeUrl,
     // ---- Server-based protocols: extract server array from JSON ----
     boost::json::array servers;
     if (isVMess || isVLESS) {
-        auto vit = settings.find("vnext");
+        boost::json::object::iterator vit = settings.find("vnext");
         if (vit != settings.end() && vit->value().is_array() &&
             !vit->value().as_array().empty()) {
             servers = vit->value().as_array();
         }
     } else {
-        auto sit2 = settings.find("servers");
+        boost::json::object::iterator sit2 = settings.find("servers");
         if (sit2 != settings.end() && sit2->value().is_array() &&
             !sit2->value().as_array().empty()) {
             servers = sit2->value().as_array();
@@ -494,6 +512,7 @@ std::string XrayApi::jsonConfigToProtobuf(const std::string& typeUrl,
 
     if (servers.empty()) return {};
 
+    if (!servers[0].is_object()) return {};
     const boost::json::object& srv = servers[0].as_object();
 
     // Extract address and port
@@ -502,7 +521,7 @@ std::string XrayApi::jsonConfigToProtobuf(const std::string& typeUrl,
         addr = srv.at("address").as_string().c_str();
     int port = 0;
     if (srv.contains("port")) {
-        const auto& pv = srv.at("port");
+        const boost::json::value& pv = srv.at("port");
         if (pv.is_int64())
             port = static_cast<int>(pv.as_int64());
         else if (pv.is_uint64())
@@ -518,7 +537,7 @@ std::string XrayApi::jsonConfigToProtobuf(const std::string& typeUrl,
         accountTypeUrl = "xray.proxy.vmess.Account";
         std::string id = "00000000-0000-0000-0000-000000000000";
         int securityType = 2;  // AUTO
-        auto uit = srv.find("users");
+        boost::json::object::const_iterator uit = srv.find("users");
         if (uit != srv.end() && uit->value().is_array() &&
             !uit->value().as_array().empty()) {
             const boost::json::object& u = uit->value().as_array()[0].as_object();
@@ -537,7 +556,7 @@ std::string XrayApi::jsonConfigToProtobuf(const std::string& typeUrl,
     } else if (isVLESS) {
         accountTypeUrl = "xray.proxy.vless.Account";
         std::string id, flow, encryption;
-        auto uit = srv.find("users");
+        boost::json::object::const_iterator uit = srv.find("users");
         if (uit != srv.end() && uit->value().is_array() &&
             !uit->value().as_array().empty()) {
             const boost::json::object& u = uit->value().as_array()[0].as_object();
@@ -569,7 +588,7 @@ std::string XrayApi::jsonConfigToProtobuf(const std::string& typeUrl,
     } else if (isSocks) {
         accountTypeUrl = "xray.proxy.socks.Account";
         std::string username, password;
-        auto uit = srv.find("users");
+        boost::json::object::const_iterator uit = srv.find("users");
         if (uit != srv.end() && uit->value().is_array() &&
             !uit->value().as_array().empty()) {
             const boost::json::object& u = uit->value().as_array()[0].as_object();
@@ -671,7 +690,12 @@ bool XrayApi::parseOutboundJson(const std::string& outboundJson,
         }
 
         return true;
-    } catch (const std::exception&) {
+    } catch (const std::exception& e) {
+        Logger::write("[XrayApi] parseOutboundJson exception: " +
+                      std::string(e.what()), LogLevel::WARN);
+        return false;
+    } catch (...) {
+        Logger::write("[XrayApi] parseOutboundJson: unknown exception", LogLevel::WARN);
         return false;
     }
 }
@@ -719,8 +743,11 @@ std::string XrayApi::encodeWebSocketConfig(const boost::json::object& ws) {
 }
 
 std::string XrayApi::encodeTLSSettings(const boost::json::object& tls) {
-    // Config: allow_insecure=1 server_name=3 next_protocol=4 min_version=7
-    //         max_version=8 cipher_suites=9 fingerprint=11 reject_unknown_sni=12
+    // Config fields per transport/internet/tls/config.proto:
+    //   allow_insecure=1(bool)  server_name=3(string)
+    //   next_protocol=4(repeated string, ALPN)  min_version=7(string)
+    //   max_version=8(string)  cipher_suites=9(string)  fingerprint=11(string)
+    //   reject_unknown_sni=12(bool)
     std::string result;
     const boost::json::value* allowInsecure = tls.if_contains("allowInsecure");
     if (allowInsecure != nullptr && allowInsecure->is_bool()) {
@@ -802,19 +829,100 @@ std::string XrayApi::encodeRealitySettings(const boost::json::object& reality) {
     if (serverName != nullptr && serverName->is_string()) {
         result += encodeString(22, serverName->as_string().c_str());
     }
+    // public_key (23) and short_id (24) are BYTES fields. The database /
+    // JSON config carry them as base64 (publicKey) and hex (shortId); the
+    // xray JSON adapter decodes both before they reach the proto, so we must
+    // decode here as well — encoding the raw strings made every REALITY
+    // handshake fail (X25519 NewPublicKey rejected the garbage key).
     const boost::json::value* publicKey = reality.if_contains("publicKey");
     if (publicKey != nullptr && publicKey->is_string()) {
-        result += encodeString(23, publicKey->as_string().c_str());
+        std::string decoded = base64Decode(publicKey->as_string().c_str());
+        if (!decoded.empty()) {
+            result += encodeLengthDelimited(23, decoded);
+        }
     }
     const boost::json::value* shortId = reality.if_contains("shortId");
     if (shortId != nullptr && shortId->is_string()) {
-        result += encodeString(24, shortId->as_string().c_str());
+        std::string sidText = std::string(shortId->as_string().c_str());
+        if (!sidText.empty()) {
+            std::string decoded = hexDecode(sidText);
+            if (!decoded.empty()) {
+                result += encodeLengthDelimited(24, decoded);
+            }
+        }
     }
     const boost::json::value* spiderX = reality.if_contains("spiderX");
     if (spiderX != nullptr && spiderX->is_string()) {
         result += encodeString(26, spiderX->as_string().c_str());
     }
     return result;
+}
+
+std::string XrayApi::base64Decode(const std::string& input) {
+    // Accepts both URL-safe ("-_") and standard ("+/") alphabets; padding
+    // ('=') is optional. Any other character makes the whole input invalid.
+    static const char* alphabet =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+    int reverse[256];
+    for (int i = 0; i < 256; ++i) {
+        reverse[i] = -1;
+    }
+    for (int i = 0; alphabet[i] != '\0'; ++i) {
+        reverse[static_cast<unsigned char>(alphabet[i])] = i;
+    }
+    std::string output;
+    unsigned int accumulator = 0;
+    int bitCount = 0;
+    for (size_t i = 0; i < input.size(); ++i) {
+        const char c = input[i];
+        if (c == '=') {
+            break;
+        }
+        const int value = reverse[static_cast<unsigned char>(c)];
+        if (value < 0) {
+            return std::string();
+        }
+        accumulator = (accumulator << 6) | static_cast<unsigned int>(value);
+        bitCount += 6;
+        if (bitCount >= 8) {
+            bitCount -= 8;
+            output += static_cast<char>((accumulator >> bitCount) & 0xFFu);
+        }
+    }
+    return output;
+}
+
+std::string XrayApi::hexDecode(const std::string& input) {
+    // Mirrors Go's hex.Decode: odd-length input is an error.
+    if (input.size() % 2 != 0) {
+        return std::string();
+    }
+    std::string output;
+    for (size_t i = 0; i + 1 < input.size(); i += 2) {
+        const char hi = input[i];
+        const char lo = input[i + 1];
+        int hiVal = -1;
+        if (hi >= '0' && hi <= '9') {
+            hiVal = hi - '0';
+        } else if (hi >= 'a' && hi <= 'f') {
+            hiVal = hi - 'a' + 10;
+        } else if (hi >= 'A' && hi <= 'F') {
+            hiVal = hi - 'A' + 10;
+        }
+        int loVal = -1;
+        if (lo >= '0' && lo <= '9') {
+            loVal = lo - '0';
+        } else if (lo >= 'a' && lo <= 'f') {
+            loVal = lo - 'a' + 10;
+        } else if (lo >= 'A' && lo <= 'F') {
+            loVal = lo - 'A' + 10;
+        }
+        if (hiVal < 0 || loVal < 0) {
+            return std::string();
+        }
+        output += static_cast<char>((hiVal << 4) | loVal);
+    }
+    return output;
 }
 
 std::string XrayApi::encodeGRPCSettings(const boost::json::object& grpc) {
@@ -920,6 +1028,73 @@ std::string XrayApi::encodeHTTPSettings(const boost::json::object& http) {
     return result;
 }
 
+std::string XrayApi::encodeXHTTPSettings(const boost::json::object& xhttp) {
+    // xhttp is the splithttp family; app normalizes splithttp→xhttp and
+    // StreamSettingsBuilder emits xhttpSettings {path, headers}. Encode the
+    // common splithttp-family fields (host=1 path=2 mode=3 headers=4 map).
+    std::string result;
+    const boost::json::value* host = xhttp.if_contains("host");
+    if (host != nullptr && host->is_string()) {
+        result += encodeString(1, host->as_string().c_str());
+    }
+    const boost::json::value* path = xhttp.if_contains("path");
+    if (path != nullptr && path->is_string()) {
+        result += encodeString(2, path->as_string().c_str());
+    }
+    const boost::json::value* mode = xhttp.if_contains("mode");
+    if (mode != nullptr && mode->is_string()) {
+        result += encodeString(3, mode->as_string().c_str());
+    }
+    const boost::json::value* headers = xhttp.if_contains("headers");
+    if (headers != nullptr && headers->is_object()) {
+        const boost::json::object& headerObj = headers->as_object();
+        for (const boost::json::key_value_pair& kv : headerObj) {
+            if (!kv.value().is_string()) {
+                continue;
+            }
+            // map entry: key=1 value=2, wrapped in field 4
+            std::string entry;
+            entry += encodeString(1, std::string(kv.key()));
+            entry += encodeString(2, kv.value().as_string().c_str());
+            result += encodeLengthDelimited(4, entry);
+        }
+    }
+    return result;
+}
+
+std::string XrayApi::encodeSplitHTTPSettings(const boost::json::object& split) {
+    // splithttp Config per transport/internet/splithttp/config.proto:
+    //   host=1(string) path=2(string) mode=3(string) headers=4(map<string,string>)
+    std::string result;
+    const boost::json::value* host = split.if_contains("host");
+    if (host != nullptr && host->is_string()) {
+        result += encodeString(1, host->as_string().c_str());
+    }
+    const boost::json::value* path = split.if_contains("path");
+    if (path != nullptr && path->is_string()) {
+        result += encodeString(2, path->as_string().c_str());
+    }
+    const boost::json::value* mode = split.if_contains("mode");
+    if (mode != nullptr && mode->is_string()) {
+        result += encodeString(3, mode->as_string().c_str());
+    }
+    const boost::json::value* headers = split.if_contains("headers");
+    if (headers != nullptr && headers->is_object()) {
+        const boost::json::object& headerObj = headers->as_object();
+        for (const boost::json::key_value_pair& kv : headerObj) {
+            if (!kv.value().is_string()) {
+                continue;
+            }
+            // map entry: key=1 value=2, wrapped in field 4
+            std::string entry;
+            entry += encodeString(1, std::string(kv.key()));
+            entry += encodeString(2, kv.value().as_string().c_str());
+            result += encodeLengthDelimited(4, entry);
+        }
+    }
+    return result;
+}
+
 std::string XrayApi::encodeStreamConfig(const boost::json::object& stream) {
     // StreamConfig: protocol_name=5 transport_settings=2(repeated TransportConfig)
     //               security_type=3 security_settings=4(repeated TypedMessage)
@@ -941,9 +1116,13 @@ std::string XrayApi::encodeStreamConfig(const boost::json::object& stream) {
         protocolName = "grpc";
     } else if (network == "http") {
         protocolName = "httpupgrade";
-    } else if (network == "tcp" || network == "httpupgrade"
+    } else if (network == "tcp" || network == "http"
                || network == "splithttp" || network == "hysteria") {
         protocolName = network;
+    } else if (network == "xhttp") {
+        // Xray v26.2.4+ removed the xhttp protocol name; its JSON adapter
+        // remaps network "xhttp" to "splithttp", so do the same here.
+        protocolName = "splithttp";
     }
     if (!protocolName.empty()) {
         result += encodeString(5, protocolName);
@@ -964,6 +1143,13 @@ std::string XrayApi::encodeStreamConfig(const boost::json::object& stream) {
     } else if (network == "http") {
         settingsValue = stream.if_contains("httpSettings");
         transportTypeUrl = "xray.transport.internet.httpupgrade.Config";
+    } else if (network == "xhttp" || network == "splithttp") {
+        // xhttpSettings and splithttpSettings share one schema; only the
+        // splithttp Config message is registered in Xray v26.2.4+.
+        settingsValue = (network == "xhttp")
+            ? stream.if_contains("xhttpSettings")
+            : stream.if_contains("splithttpSettings");
+        transportTypeUrl = "xray.transport.internet.splithttp.Config";
     }
 
     if (settingsValue != nullptr && settingsValue->is_object()
@@ -978,6 +1164,10 @@ std::string XrayApi::encodeStreamConfig(const boost::json::object& stream) {
             encodedSettings = encodeKCPSettings(settingsObj);
         } else if (network == "http") {
             encodedSettings = encodeHTTPSettings(settingsObj);
+        } else if (network == "xhttp" || network == "splithttp") {
+            // Same wire schema (host=1 path=2 mode=3 headers=4); splithttp
+            // is the registered protocol in Xray v26.2.4+.
+            encodedSettings = encodeSplitHTTPSettings(settingsObj);
         }
         if (!encodedSettings.empty()) {
             std::string typedMsg;
@@ -985,6 +1175,9 @@ std::string XrayApi::encodeStreamConfig(const boost::json::object& stream) {
             typedMsg += encodeString(2, encodedSettings);
             std::string transportConfig;
             transportConfig += encodeLengthDelimited(2, typedMsg);
+            // TransportConfig.protocol_name is field 3 (NOT 1) per
+            // transport/internet/config.proto. Encoding to field 1 made Xray
+            // drop the transport protocol name, losing ws/grpc/xhttp settings.
             transportConfig += encodeString(3, protocolName);
             result += encodeLengthDelimited(2, transportConfig);
         }
@@ -997,7 +1190,6 @@ std::string XrayApi::encodeStreamConfig(const boost::json::object& stream) {
         security = std::string(securityValue->as_string().c_str());
     }
     if (security == "tls" || security == "reality") {
-        result += encodeString(3, security);
         const boost::json::value* secSettingsValue = nullptr;
         std::string secTypeUrl;
         std::string encodedSecSettings;
@@ -1014,6 +1206,12 @@ std::string XrayApi::encodeStreamConfig(const boost::json::object& stream) {
                 encodedSecSettings = encodeRealitySettings(secSettingsValue->as_object());
             }
         }
+        // security_type (field 3) is a STRING — the message name of the
+        // security settings proto (transport/internet/config.proto:
+        // "string security_type = 3; // Type of security. Must be a message
+        // name of the settings proto."). Encoding it as a varint enum made
+        // Xray fail to parse StreamConfig for any TLS/REALITY outbound.
+        result += encodeString(3, secTypeUrl);
         std::string secTypedMsg;
         secTypedMsg += encodeString(1, secTypeUrl);
         secTypedMsg += encodeString(2, encodedSecSettings);
@@ -1075,14 +1273,18 @@ std::string XrayApi::encodeSenderSettings(const boost::json::object* streamSetti
 std::string XrayApi::encodeHpack(
     const std::vector<std::pair<std::string, std::string>>& headers) {
 
+    // RFC 7541 static table has 61 entries. Index 57 is "transfer-encoding",
+    // and "te"/"grpc-timeout"/"grpc-encoding" are NOT in the static table, so
+    // they must be sent as full literals (handled by the fall-through below).
     static const std::vector<std::pair<std::string, int>> NAME_INDEX = {
         {":authority", 1}, {":method", 2}, {":path", 4},
-        {":scheme", 6},    {"content-type", 31}, {"te", 57},
-        {"grpc-timeout", 62}, {"grpc-encoding", 63},
+        {":scheme", 6},    {"content-type", 31},
     };
 
     std::string result;
-    for (const auto& [name, value] : headers) {
+    for (std::size_t hidx = 0; hidx < headers.size(); ++hidx) {
+        const std::string& name = headers[hidx].first;
+        const std::string& value = headers[hidx].second;
         // Known name+value indexed entries
         if (name == ":method" && value == "POST") {
             result += static_cast<char>(0x80 | 3); continue;
@@ -1099,7 +1301,9 @@ std::string XrayApi::encodeHpack(
 
         // Literal without indexing — name in table or full literal
         int ni = -1;
-        for (const auto& [n, idx] : NAME_INDEX) {
+        for (std::size_t nidx = 0; nidx < NAME_INDEX.size(); ++nidx) {
+            const std::string& n = NAME_INDEX[nidx].first;
+            const int idx = NAME_INDEX[nidx].second;
             if (n == name) { ni = idx; break; }
         }
 
@@ -1124,6 +1328,283 @@ std::string XrayApi::encodeHpack(
     return result;
 }
 
+// ----- RFC 7541 Huffman / HPACK decoding helpers (private to this TU) -----
+namespace {
+
+// Canonical RFC 7541 Appendix B Huffman table in MSB-first "wire order"
+// (code bits are written from the most significant bit, matching both
+// XrayApi::encodeHpack and Go's x/net/http2/hpack encoder used by Xray).
+// Indexed by symbol (0..255); entry 256 is EOS and is never decoded.
+// Verified against RFC 7541 Appendix C.6 vectors.
+struct HuffmanEntry {
+    uint32_t code;
+    uint8_t  len;
+};
+
+const HuffmanEntry HUFFMAN_TABLE[257] = {
+    {0x1ff8, 13}, {0x7fffd8, 23}, {0xfffffe2, 28}, {0xfffffe3, 28},
+    {0xfffffe4, 28}, {0xfffffe5, 28}, {0xfffffe6, 28}, {0xfffffe7, 28},
+    {0xfffffe8, 28}, {0xffffea, 24}, {0x3ffffffc, 30}, {0xfffffe9, 28},
+    {0xfffffea, 28}, {0x3ffffffd, 30}, {0xfffffeb, 28}, {0xfffffec, 28},
+    {0xfffffed, 28}, {0xfffffee, 28}, {0xfffffef, 28}, {0xffffff0, 28},
+    {0xffffff1, 28}, {0xffffff2, 28}, {0x3ffffffe, 30}, {0xffffff3, 28},
+    {0xffffff4, 28}, {0xffffff5, 28}, {0xffffff6, 28}, {0xffffff7, 28},
+    {0xffffff8, 28}, {0xffffff9, 28}, {0xffffffa, 28}, {0xffffffb, 28},
+    {0x14, 6}, {0x3f8, 10}, {0x3f9, 10}, {0xffa, 12}, {0x1ff9, 13},
+    {0x15, 6}, {0xf8, 8}, {0x7fa, 11}, {0x3fa, 10}, {0x3fb, 10},
+    {0xf9, 8}, {0x7fb, 11}, {0xfa, 8}, {0x16, 6}, {0x17, 6}, {0x18, 6},
+    {0x0, 5}, {0x1, 5}, {0x2, 5}, {0x19, 6}, {0x1a, 6}, {0x1b, 6},
+    {0x1c, 6}, {0x1d, 6}, {0x1e, 6}, {0x1f, 6}, {0x5c, 7}, {0xfb, 8},
+    {0x7ffc, 15}, {0x20, 6}, {0xffb, 12}, {0x3fc, 10}, {0x1ffa, 13},
+    {0x21, 6}, {0x5d, 7}, {0x5e, 7}, {0x5f, 7}, {0x60, 7}, {0x61, 7},
+    {0x62, 7}, {0x63, 7}, {0x64, 7}, {0x65, 7}, {0x66, 7}, {0x67, 7},
+    {0x68, 7}, {0x69, 7}, {0x6a, 7}, {0x6b, 7}, {0x6c, 7}, {0x6d, 7},
+    {0x6e, 7}, {0x6f, 7}, {0x70, 7}, {0x71, 7}, {0x72, 7}, {0xfc, 8},
+    {0x73, 7}, {0xfd, 8}, {0x1ffb, 13}, {0x7fff0, 19}, {0x1ffc, 13},
+    {0x3ffc, 14}, {0x22, 6}, {0x7ffd, 15}, {0x3, 5}, {0x23, 6},
+    {0x4, 5}, {0x24, 6}, {0x5, 5}, {0x25, 6}, {0x26, 6}, {0x27, 6},
+    {0x6, 5}, {0x74, 7}, {0x75, 7}, {0x28, 6}, {0x29, 6}, {0x2a, 6},
+    {0x7, 5}, {0x2b, 6}, {0x76, 7}, {0x2c, 6}, {0x8, 5}, {0x9, 5},
+    {0x2d, 6}, {0x77, 7}, {0x78, 7}, {0x79, 7}, {0x7a, 7}, {0x7b, 7},
+    {0x7ffe, 15}, {0x7fc, 11}, {0x3ffd, 14}, {0x1ffd, 13}, {0xffffffc, 28},
+    {0xfffe6, 20}, {0x3fffd2, 22}, {0xfffe7, 20}, {0xfffe8, 20},
+    {0x3fffd3, 22}, {0x3fffd4, 22}, {0x3fffd5, 22}, {0x7fffd9, 23},
+    {0x3fffd6, 22}, {0x7fffda, 23}, {0x7fffdb, 23}, {0x7fffdc, 23},
+    {0x7fffdd, 23}, {0x7fffde, 23}, {0xffffeb, 24}, {0x7fffdf, 23},
+    {0xffffec, 24}, {0xffffed, 24}, {0x3fffd7, 22}, {0x7fffe0, 23},
+    {0xffffee, 24}, {0x7fffe1, 23}, {0x7fffe2, 23}, {0x7fffe3, 23},
+    {0x7fffe4, 23}, {0x1fffdc, 21}, {0x3fffd8, 22}, {0x7fffe5, 23},
+    {0x3fffd9, 22}, {0x7fffe6, 23}, {0x7fffe7, 23}, {0xffffef, 24},
+    {0x3fffda, 22}, {0x1fffdd, 21}, {0xfffe9, 20}, {0x3fffdb, 22},
+    {0x3fffdc, 22}, {0x7fffe8, 23}, {0x7fffe9, 23}, {0x1fffde, 21},
+    {0x7fffea, 23}, {0x3fffdd, 22}, {0x3fffde, 22}, {0xfffff0, 24},
+    {0x1fffdf, 21}, {0x3fffdf, 22}, {0x7fffeb, 23}, {0x7fffec, 23},
+    {0x1fffe0, 21}, {0x1fffe1, 21}, {0x3fffe0, 22}, {0x1fffe2, 21},
+    {0x7fffed, 23}, {0x3fffe1, 22}, {0x7fffee, 23}, {0x7fffef, 23},
+    {0xfffea, 20}, {0x3fffe2, 22}, {0x3fffe3, 22}, {0x3fffe4, 22},
+    {0x7ffff0, 23}, {0x3fffe5, 22}, {0x3fffe6, 22}, {0x7ffff1, 23},
+    {0x3ffffe0, 26}, {0x3ffffe1, 26}, {0xfffeb, 20}, {0x7fff1, 19},
+    {0x3fffe7, 22}, {0x7ffff2, 23}, {0x3fffe8, 22}, {0x1ffffec, 25},
+    {0x3ffffe2, 26}, {0x3ffffe3, 26}, {0x3ffffe4, 26}, {0x7ffffde, 27},
+    {0x7ffffdf, 27}, {0x3ffffe5, 26}, {0xfffff1, 24}, {0x1ffffed, 25},
+    {0x7fff2, 19}, {0x1fffe3, 21}, {0x3ffffe6, 26}, {0x7ffffe0, 27},
+    {0x7ffffe1, 27}, {0x3ffffe7, 26}, {0x7ffffe2, 27}, {0xfffff2, 24},
+    {0x1fffe4, 21}, {0x1fffe5, 21}, {0x3ffffe8, 26}, {0x3ffffe9, 26},
+    {0xffffffd, 28}, {0x7ffffe3, 27}, {0x7ffffe4, 27}, {0x7ffffe5, 27},
+    {0xfffec, 20}, {0xfffff3, 24}, {0xfffed, 20}, {0x1fffe6, 21},
+    {0x3fffe9, 22}, {0x1fffe7, 21}, {0x1fffe8, 21}, {0x7ffff3, 23},
+    {0x3fffea, 22}, {0x3fffeb, 22}, {0x1ffffee, 25}, {0x1ffffef, 25},
+    {0xfffff4, 24}, {0xfffff5, 24}, {0x3ffffea, 26}, {0x7ffff4, 23},
+    {0x3ffffeb, 26}, {0x7ffffe6, 27}, {0x3ffffec, 26}, {0x3ffffed, 26},
+    {0x7ffffe7, 27}, {0x7ffffe8, 27}, {0x7ffffe9, 27}, {0x7ffffea, 27},
+    {0x7ffffeb, 27}, {0xffffffe, 28}, {0x7ffffec, 27}, {0x7ffffed, 27},
+    {0x7ffffee, 27}, {0x7ffffef, 27}, {0x7fffff0, 27}, {0x3ffffee, 26},
+    {0x3fffffff, 30}  // symbol 256 = EOS (must never be produced)
+};
+
+// RFC 7541 Appendix A static table (61 entries). Entries with an empty
+// value are "name-only"; value comes from the wire.
+struct HpackStaticEntry {
+    const char* name;
+    const char* value;
+};
+
+const HpackStaticEntry HPACK_STATIC_TABLE[61] = {
+    {":authority", ""}, {":method", "GET"}, {":method", "POST"},
+    {":path", "/"}, {":path", "/index.html"}, {":scheme", "http"},
+    {":scheme", "https"}, {":status", "200"}, {":status", "204"},
+    {":status", "206"}, {":status", "304"}, {":status", "400"},
+    {":status", "404"}, {":status", "500"}, {"accept-charset", ""},
+    {"accept-encoding", "gzip, deflate"}, {"accept-language", ""},
+    {"accept-ranges", ""}, {"accept", ""},
+    {"access-control-allow-origin", ""}, {"age", ""}, {"allow", ""},
+    {"authorization", ""}, {"cache-control", ""},
+    {"content-disposition", ""}, {"content-encoding", ""},
+    {"content-language", ""}, {"content-length", ""},
+    {"content-location", ""}, {"content-range", ""},
+    {"content-type", ""}, {"cookie", ""}, {"date", ""}, {"etag", ""},
+    {"expect", ""}, {"expires", ""}, {"from", ""}, {"host", ""},
+    {"if-match", ""}, {"if-modified-since", ""}, {"if-none-match", ""},
+    {"if-range", ""}, {"if-unmodified-since", ""},
+    {"last-modified", ""}, {"link", ""}, {"location", ""},
+    {"max-forwards", ""}, {"proxy-authenticate", ""},
+    {"proxy-authorization", ""}, {"range", ""}, {"referer", ""},
+    {"refresh", ""}, {"retry-after", ""}, {"server", ""},
+    {"set-cookie", ""}, {"strict-transport-security", ""},
+    {"transfer-encoding", ""}, {"user-agent", ""}, {"vary", ""},
+    {"via", ""}, {"www-authenticate", ""},
+};
+
+// Forward declarations for HPACK decoder helpers.
+bool huffmanDecode(const std::string& data, std::string& out);
+bool hpackReadInt(const std::string& buf, size_t& pos, uint32_t firstValue,
+                  uint32_t prefixMask, uint32_t& out);
+bool hpackReadString(const std::string& buf, size_t& pos, std::string& out);
+
+// Read an HPACK integer: value is the already-masked prefix field of the
+// first byte; prefixMask is the mask for that field (0x7F for 7 bits, etc.).
+bool hpackReadInt(const std::string& buf, size_t& pos, uint32_t firstValue,
+                  uint32_t prefixMask, uint32_t& out) {
+    uint32_t value = firstValue;
+    if (value < prefixMask) { out = value; return true; }
+    int shift = 0;
+    while (true) {
+        if (pos >= buf.size()) return false;
+        unsigned char b = static_cast<unsigned char>(buf[pos++]);
+        value += static_cast<uint32_t>(b & 0x7F) << shift;
+        if ((b & 0x80) == 0) break;
+        shift += 7;
+        if (shift > 28) return false;
+    }
+    out = value;
+    return true;
+}
+
+// Read a header string: one H bit + 7-bit length (with continuation).
+bool hpackReadString(const std::string& buf, size_t& pos, std::string& out) {
+    if (pos >= buf.size()) return false;
+    unsigned char first = static_cast<unsigned char>(buf[pos++]);
+    bool huffman = (first & 0x80) != 0;
+    uint32_t len;
+    if (!hpackReadInt(buf, pos, first & 0x7F, 0x7F, len)) return false;
+    if (pos + len > buf.size()) return false;
+    std::string raw = buf.substr(pos, len);
+    pos += len;
+    if (huffman) {
+        if (!huffmanDecode(raw, out)) return false;
+    } else {
+        out = raw;
+    }
+    return true;
+}
+
+// Decode an RFC 7541 Huffman-coded string (MSB-first wire order).
+bool huffmanDecode(const std::string& data, std::string& out) {
+    out.clear();
+    uint32_t code = 0;
+    int bits = 0;
+    for (size_t i = 0; i < data.size(); ++i) {
+        unsigned char byte = static_cast<unsigned char>(data[i]);
+        for (int bitPos = 7; bitPos >= 0; --bitPos) {
+            int bit = (byte >> bitPos) & 1;
+            code = (code << 1) | static_cast<uint32_t>(bit);
+            ++bits;
+            // Longest real code is 30 bits; anything longer (or EOS) fails.
+            if (bits > 30) return false;
+            // Huffman codes are prefix-free, so a match at the exact code
+            // length is unambiguous.
+            int matched = -1;
+            for (int sym = 0; sym < 256; ++sym) {
+                if (HUFFMAN_TABLE[sym].len == bits &&
+                    (code & ((1u << bits) - 1)) == HUFFMAN_TABLE[sym].code) {
+                    matched = sym;
+                    break;
+                }
+            }
+            if (matched >= 0) {
+                out += static_cast<char>(matched);
+                code = 0;
+                bits = 0;
+            }
+        }
+    }
+    // RFC 7541 §5.2: padding must be 1..7 bits of all-ones.
+    if (bits > 7) return false;
+    if (bits > 0 && (code & ((1u << bits) - 1)) != ((1u << bits) - 1)) {
+        return false;
+    }
+    return true;
+}
+
+} // anonymous namespace
+
+bool XrayApi::decodeHuffman(const std::string& data, std::string& out) {
+    return huffmanDecode(data, out);
+}
+
+bool XrayApi::grpcDecodeHpackHeaders(
+    const std::string& block,
+    std::vector<std::pair<std::string, std::string>>& headers) {
+    headers.clear();
+    size_t pos = 0;
+    // Dynamic table: newest entry first, so dynamic index 62 == entries[0].
+    // A fresh table per block is sufficient for Xray traffic (grpc-go only
+    // adds one entry per response block and never references across blocks).
+    std::vector<std::pair<std::string, std::string>> dynTable;
+    dynTable.reserve(16);
+
+    while (pos < block.size()) {
+        unsigned char b = static_cast<unsigned char>(block[pos++]);
+
+        if (b & 0x80) {
+            // 1xxxxxxx: Indexed Header Field
+            uint32_t index;
+            if (!hpackReadInt(block, pos, b & 0x7F, 0x7F, index)) return false;
+            if (index == 0) return false;
+            if (index <= 61) {
+                headers.emplace_back(HPACK_STATIC_TABLE[index - 1].name,
+                                     HPACK_STATIC_TABLE[index - 1].value);
+            } else {
+                uint32_t dyn = index - 62;
+                if (dyn >= dynTable.size()) return false;
+                headers.push_back(dynTable[dyn]);
+            }
+            continue;
+        }
+
+        if (b & 0x40) {
+            // 01xxxxxx: Literal Header Field with Incremental Indexing
+            uint32_t nameIndex;
+            if (!hpackReadInt(block, pos, b & 0x3F, 0x3F, nameIndex))
+                return false;
+            std::string name;
+            if (nameIndex == 0) {
+                if (!hpackReadString(block, pos, name)) return false;
+            } else if (nameIndex <= 61) {
+                name = HPACK_STATIC_TABLE[nameIndex - 1].name;
+            } else {
+                uint32_t dyn = nameIndex - 62;
+                if (dyn >= dynTable.size()) return false;
+                name = dynTable[dyn].first;
+            }
+            std::string value;
+            if (!hpackReadString(block, pos, value)) return false;
+            dynTable.insert(dynTable.begin(), {name, value});
+            headers.emplace_back(name, value);
+            continue;
+        }
+
+        if (b & 0x20) {
+            // 001xxxxx: Dynamic Table Size Update
+            uint32_t size;
+            if (!hpackReadInt(block, pos, b & 0x1F, 0x1F, size)) return false;
+            // Table size > 4096 is a protocol error. Smaller updates are
+            // accepted but have no effect (no eviction is implemented).
+            if (size > 4096) return false;
+            continue;
+        }
+
+        // 0001xxxx: Literal Never Indexed / 0000xxxx: Literal without
+        // Indexing — decoded identically (only the prefix bits differ).
+        uint32_t nameIndex;
+        if (!hpackReadInt(block, pos, b & 0x0F, 0x0F, nameIndex)) return false;
+        std::string name;
+        if (nameIndex == 0) {
+            if (!hpackReadString(block, pos, name)) return false;
+        } else if (nameIndex <= 61) {
+            name = HPACK_STATIC_TABLE[nameIndex - 1].name;
+        } else {
+            uint32_t dyn = nameIndex - 62;
+            if (dyn >= dynTable.size()) return false;
+            name = dynTable[dyn].first;
+        }
+        std::string value;
+        if (!hpackReadString(block, pos, value)) return false;
+        headers.emplace_back(name, value);
+    }
+    return true;
+}
+
 // ----- HTTP/2 frame helpers (private to this TU) -----
 namespace {
 
@@ -1139,14 +1620,26 @@ void writeUint32BE(unsigned char* buf, uint32_t val) {
     buf[3] = static_cast<unsigned char>(val & 0xFF);
 }
 
-// Ensure Winsock is started (ref-counted, safe to call many times)
+// Ensure Winsock is started (ref-counted, safe to call many times).
+// Mutex-guarded: 4 worker threads may call this concurrently on first use;
+// a lock-free static bool had a startup race, and std::call_once would cache
+// a failed WSAStartup forever (making every later gRPC call fail). Only
+// SUCCESS is cached; a failure is retried on the next call and the OS error
+// code is logged for diagnosis.
 static bool ensureWinsock() {
+    static std::mutex mtx;
     static bool started = false;
-    if (!started) {
-        WSADATA wsa;
-        if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) return false;
-        started = true;
+    std::lock_guard<std::mutex> lock(mtx);
+    if (started) return true;
+    WSADATA wsa;
+    const int rc = WSAStartup(MAKEWORD(2, 2), &wsa);
+    if (rc != 0) {
+        Logger::write("[XrayApi] ensureWinsock: WSAStartup failed, error=" +
+                          std::to_string(rc),
+                      LogLevel::ERR);
+        return false;
     }
+    started = true;
     return true;
 }
 
@@ -1159,14 +1652,19 @@ bool XrayApi::parseServerAddr(std::string& host, int& port) const {
     // Strip "tcp://" prefix
     size_t pos = addr.find("://");
     if (pos != std::string::npos) addr = addr.substr(pos + 3);
-    // Handle IPv6 addresses: "[::1]:port" or "[::1]"
+    // Handle IPv6 addresses: "[::1]:port"
     if (!addr.empty() && addr[0] == '[') {
         size_t close = addr.find(']');
         if (close == std::string::npos) return false;
-        host = addr.substr(0, close + 1);  // includes brackets
+        host = addr.substr(1, close - 1);  // strip surrounding brackets
         if (close + 1 >= addr.size() || addr[close + 1] != ':') return false;
+        const std::string portStr = addr.substr(close + 2);
+        size_t parsed = 0;
         try {
-            port = std::stoi(addr.substr(close + 2));
+            const int parsedPort = std::stoi(portStr, &parsed);
+            if (parsed != portStr.size()) return false;
+            if (parsedPort < 1 || parsedPort > 65535) return false;
+            port = parsedPort;
         } catch (...) { return false; }
         return true;
     }
@@ -1174,8 +1672,13 @@ bool XrayApi::parseServerAddr(std::string& host, int& port) const {
     pos = addr.find(':');
     if (pos == std::string::npos) return false;
     host = addr.substr(0, pos);
+    const std::string portStr = addr.substr(pos + 1);
+    size_t parsed = 0;
     try {
-        port = std::stoi(addr.substr(pos + 1));
+        const int parsedPort = std::stoi(portStr, &parsed);
+        if (parsed != portStr.size()) return false;
+        if (parsedPort < 1 || parsedPort > 65535) return false;
+        port = parsedPort;
     } catch (...) { return false; }
     return true;
 }
@@ -1186,30 +1689,66 @@ int XrayApi::grpcConnect(const std::string& host, int port) {
         return -1;
     }
 
-    SOCKET sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    // Strip IPv6 brackets for getaddrinfo and resolve both IPv4 and IPv6
+    std::string resolvedHost = host;
+    if (!resolvedHost.empty() && resolvedHost[0] == '[') {
+        size_t closeBracket = resolvedHost.find(']');
+        if (closeBracket != std::string::npos) {
+            resolvedHost = resolvedHost.substr(1, closeBracket - 1);
+        }
+    }
+
+    struct addrinfo hints, *result = nullptr;
+    ZeroMemory(&hints, sizeof(hints));
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_protocol = IPPROTO_TCP;
+
+    std::string portStr = std::to_string(port);
+    int gaiRet = getaddrinfo(resolvedHost.empty() ? nullptr : resolvedHost.c_str(),
+                             portStr.c_str(), &hints, &result);
+    if (gaiRet != 0 || result == nullptr) {
+        lastError_ = "grpcConnect: getaddrinfo failed: " + std::to_string(gaiRet);
+        if (result) freeaddrinfo(result);
+        return -1;
+    }
+
+    SOCKET sock = INVALID_SOCKET;
+    int connectErr = 0;
+    for (struct addrinfo* ap = result; ap != nullptr; ap = ap->ai_next) {
+        sock = socket(ap->ai_family, ap->ai_socktype, ap->ai_protocol);
+        if (sock == INVALID_SOCKET) continue;
+
+        DWORD rcvTimeout = 5000;
+        setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO,
+                   reinterpret_cast<const char*>(&rcvTimeout), sizeof(rcvTimeout));
+
+        DWORD sndTimeout = 5000;
+        setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO,
+                   reinterpret_cast<const char*>(&sndTimeout), sizeof(sndTimeout));
+
+        if (connect(sock, ap->ai_addr, static_cast<int>(ap->ai_addrlen)) == 0) {
+            break;
+        }
+        connectErr = WSAGetLastError();
+        closesocket(sock);
+        sock = INVALID_SOCKET;
+    }
+
+    freeaddrinfo(result);
+
     if (sock == INVALID_SOCKET) {
-        lastError_ = "grpcConnect: socket() failed";
-        return -1;
-    }
-
-    // 5-second receive timeout
-    DWORD rcvTimeout = 5000;
-    setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO,
-               reinterpret_cast<const char*>(&rcvTimeout), sizeof(rcvTimeout));
-
-    struct sockaddr_in sin;
-    sin.sin_family = AF_INET;
-    sin.sin_port   = htons(static_cast<u_short>(port));
-    if (inet_pton(AF_INET, host.c_str(), &sin.sin_addr) != 1) {
-        closesocket(sock);
-        lastError_ = "grpcConnect: inet_pton failed";
-        return -1;
-    }
-
-    if (connect(sock, reinterpret_cast<const sockaddr*>(&sin), sizeof(sin)) < 0) {
-        int err = WSAGetLastError();
-        closesocket(sock);
-        lastError_ = "grpcConnect: connect() failed: " + std::to_string(err);
+        if (connectErr == WSAETIMEDOUT) {
+            lastError_ = "grpcConnect: connect() timed out (WSA" + std::to_string(connectErr) + ")";
+        } else if (connectErr == WSAECONNREFUSED) {
+            lastError_ = "grpcConnect: connect() refused (WSA" + std::to_string(connectErr) + ")";
+        } else if (connectErr == WSAENETUNREACH) {
+            lastError_ = "grpcConnect: network unreachable (WSA" + std::to_string(connectErr) + ")";
+        } else if (connectErr == WSAEHOSTUNREACH) {
+            lastError_ = "grpcConnect: host unreachable (WSA" + std::to_string(connectErr) + ")";
+        } else {
+            lastError_ = "grpcConnect: connect() failed (WSA" + std::to_string(connectErr) + ")";
+        }
         return -1;
     }
 
@@ -1307,7 +1846,19 @@ bool XrayApi::grpcSendReceive(int sock, const std::string& path,
     int frameCount = 0;
     const int MAX_FRAMES = 200;
 
+    std::string statusCode;
+    std::string grpcStatusCode;
+    std::string grpcMessage;
+    bool sawGrpcStatus = false;
+
+    const std::chrono::steady_clock::time_point absoluteDeadline =
+        std::chrono::steady_clock::now() + std::chrono::seconds(30);
+
     while (!done && frameCount < MAX_FRAMES) {
+        if (std::chrono::steady_clock::now() >= absoluteDeadline) {
+            lastError_ = "grpcSendReceive: overall receive timeout (30s) exceeded";
+            return false;
+        }
         ++frameCount;
 
         // Read 9-byte frame header
@@ -1317,9 +1868,22 @@ bool XrayApi::grpcSendReceive(int sock, const std::string& path,
             int n = ::recv(s, reinterpret_cast<char*>(frameHdr) + total,
                            9 - total, 0);
             if (n <= 0) {
-                // Connection closed by server — if we have data, it's OK
-                if (!response.empty()) return true;
-                lastError_ = "grpcSendReceive: recv frame header failed";
+                int err = WSAGetLastError();
+                // Distinguish connection-close (ok if we have data) from timeout
+                if (err == WSAETIMEDOUT) {
+                    lastError_ = "grpcSendReceive: recv timeout (GetLastError=" + std::to_string(err) + ")";
+                } else if (err == WSAECONNRESET ||
+                    err == WSAECONNABORTED || err == WSAENETDOWN) {
+                    // Server closed the connection mid-read
+                    if (!response.empty()) return true;
+                    lastError_ = "grpcSendReceive: connection reset by peer (GetLastError=" + std::to_string(err) + ")";
+                } else if (err == WSAEWOULDBLOCK) {
+                    // Server closed the connection cleanly
+                    if (!response.empty()) return true;
+                    lastError_ = "grpcSendReceive: connection closed by peer";
+                } else {
+                    lastError_ = "grpcSendReceive: recv failed: WSAGetLastError=" + std::to_string(err);
+                }
                 return false;
             }
             total += n;
@@ -1343,8 +1907,16 @@ bool XrayApi::grpcSendReceive(int sock, const std::string& path,
             while (total < static_cast<int>(flen)) {
                 int n = ::recv(s, &payload[0] + total, flen - total, 0);
                 if (n <= 0) {
-                    if (!response.empty()) return true;
-                    lastError_ = "grpcSendReceive: recv payload failed";
+                    int err = WSAGetLastError();
+                    if (err == WSAETIMEDOUT || err == WSAECONNRESET ||
+                        err == WSAECONNABORTED || err == WSAENETDOWN) {
+                         lastError_ = "grpcSendReceive: payload recv timeout (GetLastError=" + std::to_string(err) + ")";
+                    } else if (err == WSAEWOULDBLOCK) {
+                        if (!response.empty()) return true;
+                        lastError_ = "grpcSendReceive: payload recv would block";
+                    } else {
+                        lastError_ = "grpcSendReceive: payload recv failed: WSAGetLastError=" + std::to_string(err);
+                    }
                     return false;
                 }
                 total += n;
@@ -1371,7 +1943,55 @@ bool XrayApi::grpcSendReceive(int sock, const std::string& path,
                 }
                 if (fflags & 0x01) done = true;  // END_STREAM
             } else if (ftype == 0x01) {  // HEADERS
-                if (fflags & 0x04) { /* END_HEADERS — OK */ }
+                // Decode the HPACK block. Xray serves gRPC via Go's
+                // x/net/http2/hpack, which Huffman-encodes most names and
+                // values (e.g. "grpc-status", "content-type").
+                size_t hstart = 0;
+                size_t hend = payload.size();
+                if (fflags & 0x08) {  // PADDED
+                    if (payload.empty()) {
+                        lastError_ = "grpcSendReceive: empty padded HEADERS";
+                        return false;
+                    }
+                    unsigned char padLen =
+                        static_cast<unsigned char>(payload[0]);
+                    hstart = 1;
+                    if (padLen > payload.size() - hstart) {
+                        lastError_ = "grpcSendReceive: bad HEADERS padding";
+                        return false;
+                    }
+                    hend = payload.size() - padLen;
+                }
+                if (fflags & 0x20) {  // PRIORITY (1-bit exclusive + 4 bytes)
+                    if (payload.size() < hstart + 5) {
+                        lastError_ = "grpcSendReceive: truncated HEADERS priority";
+                        return false;
+                    }
+                    hstart += 5;
+                }
+                if (hstart > hend) {
+                    lastError_ = "grpcSendReceive: malformed HEADERS frame";
+                    return false;
+                }
+                if (fflags & 0x04) {  // END_HEADERS
+                    std::string block =
+                        payload.substr(hstart, hend - hstart);
+                    std::vector<std::pair<std::string, std::string>> hdrs;
+                    if (!grpcDecodeHpackHeaders(block, hdrs)) {
+                        lastError_ = "grpcSendReceive: invalid HPACK block";
+                        return false;
+                    }
+                    for (const std::pair<std::string, std::string>& h : hdrs) {
+                        if (h.first == ":status") {
+                            statusCode = h.second;
+                        } else if (h.first == "grpc-status") {
+                            grpcStatusCode = h.second;
+                            sawGrpcStatus = true;
+                        } else if (h.first == "grpc-message") {
+                            grpcMessage = h.second;
+                        }
+                    }
+                }
                 if (fflags & 0x01) done = true;  // END_STREAM (trailers)
             }
         } else if (fsid == 0 && ftype == 0x04) {
@@ -1381,8 +2001,15 @@ bool XrayApi::grpcSendReceive(int sock, const std::string& path,
                     0x00, 0x00, 0x00, 0x04, 0x01,
                     0x00, 0x00, 0x00, 0x00
                 };
-                ::send(s, reinterpret_cast<const char*>(ack), 9, 0);
+                if (::send(s, reinterpret_cast<const char*>(ack), 9, 0) != 9) {
+                    lastError_ = "grpcSendReceive: send SETTINGS ACK failed";
+                    return false;
+                }
             }
+        } else if (ftype == 0x03) {
+            // RST_STREAM — immediate connection error
+            lastError_ = "grpcSendReceive: RST_STREAM received";
+            return false;
         } else if (ftype == 0x07) {
             // GOAWAY — stop
             break;
@@ -1392,8 +2019,17 @@ bool XrayApi::grpcSendReceive(int sock, const std::string& path,
     if (!done) {
         lastError_ = "grpcSendReceive: response incomplete after " +
                      std::to_string(frameCount) + " frames";
+        return false;
     }
-    return done;
+
+    // Validate gRPC trailers: a non-zero grpc-status means the RPC failed.
+    if (sawGrpcStatus && grpcStatusCode != "0") {
+        lastError_ = "grpc call failed: status=" + grpcStatusCode +
+                     (grpcMessage.empty() ? std::string()
+                                          : ", message=" + grpcMessage);
+        return false;
+    }
+    return true;
 }
 
 // ----- Public gRPC methods -----
@@ -1425,9 +2061,10 @@ bool XrayApi::removeOutboundDirect(const std::string& tag) {
     grpcClose(sock);
 
     if (!ok) {
-        Logger::write("[XrayApi] removeOutboundDirect FAILED: " + lastError_, LogLevel::ERR);
+        Logger::write("[XrayApi] removeOutboundDirect FAILED: " + lastError_, LogLevel::DEBUG);
     } else {
         Logger::write("[XrayApi] removeOutboundDirect SUCCESS tag=" + tag, LogLevel::DEBUG);
+        lastError_.clear();
     }
     return ok;
 }
@@ -1449,7 +2086,7 @@ bool XrayApi::addOutboundDirect(const std::string& outboundJson,
         Logger::write("[XrayApi] addOutboundDirect: JSON parse fallback",
                       LogLevel::DEBUG);
         tagOut    = tag;
-        typeUrl   = "xray.core.proxy.outbound.Config";
+        typeUrl   = "xray.proxy.outbound.Config";
         valueJsonStr = outboundJson;
     }
 
@@ -1486,7 +2123,24 @@ bool XrayApi::addOutboundDirect(const std::string& outboundJson,
     //     TypedMessage { string type = 1; bytes value = 2; }
     std::string typedMsg;
     typedMsg += encodeString(1, typeUrl);
-    typedMsg += encodeString(2, jsonConfigToProtobuf(typeUrl, valueJsonStr));
+    const std::string encodedValue = jsonConfigToProtobuf(typeUrl, valueJsonStr);
+    // B5: server-class protocols (vmess/vless/trojan/shadowsocks/socks/http)
+    // must yield a usable outbound — an empty result means the JSON had no
+    // valid server (missing/empty servers array, non-object server entry).
+    // Fall back to the subprocess path instead of injecting a broken empty
+    // config. freedom/blackhole legitimately encode to empty (defaults).
+    if (encodedValue.empty() &&
+        (typeUrl == "xray.proxy.vmess.outbound.Config" ||
+         typeUrl == "xray.proxy.vless.outbound.Config" ||
+         typeUrl == "xray.proxy.trojan.ClientConfig" ||
+         typeUrl == "xray.proxy.shadowsocks.ClientConfig" ||
+         typeUrl == "xray.proxy.socks.ClientConfig" ||
+         typeUrl == "xray.proxy.http.ClientConfig")) {
+        Logger::write("[XrayApi] addOutboundDirect: empty config for server-class "
+                      + typeUrl + ", fallback to subprocess", LogLevel::DEBUG);
+        return addOutbound(outboundJson, tag, resultOutput);
+    }
+    typedMsg += encodeString(2, encodedValue);
 
     std::string handler;
     handler += encodeString(1, tagOut);
@@ -1508,7 +2162,7 @@ bool XrayApi::addOutboundDirect(const std::string& outboundJson,
             }
         } catch (const std::exception& ex) {
             Logger::write(std::string("[XrayApi] addOutboundDirect: bad streamSettings: ")
-                          + ex.what(), LogLevel::DEBUG);
+                          + ex.what(), LogLevel::WARN);
         }
     }
     if (!muxJson.empty()) {
@@ -1519,7 +2173,7 @@ bool XrayApi::addOutboundDirect(const std::string& outboundJson,
             }
         } catch (const std::exception& ex) {
             Logger::write(std::string("[XrayApi] addOutboundDirect: bad mux: ")
-                          + ex.what(), LogLevel::DEBUG);
+                          + ex.what(), LogLevel::WARN);
         }
     }
     const std::string senderValue =
@@ -1559,10 +2213,11 @@ bool XrayApi::addOutboundDirect(const std::string& outboundJson,
 
     if (!ok) {
         Logger::write("[XrayApi] addOutboundDirect FAILED: " + lastError_,
-                      LogLevel::ERR);
+                      LogLevel::DEBUG);
     } else {
         Logger::write("[XrayApi] addOutboundDirect SUCCESS tag=" + tag,
                       LogLevel::DEBUG);
+        lastError_.clear();
     }
     return ok;
 }
@@ -1594,11 +2249,12 @@ bool XrayApi::listOutboundsDirect(std::string& output) {
 
     if (!ok) {
         Logger::write("[XrayApi] listOutboundsDirect FAILED: " + lastError_,
-                      LogLevel::ERR);
+                      LogLevel::DEBUG);
     } else {
         Logger::write("[XrayApi] listOutboundsDirect SUCCESS, response sz=" +
                       std::to_string(output.size()) + " bytes",
                       LogLevel::DEBUG);
+        lastError_.clear();
     }
     return ok;
 }

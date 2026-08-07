@@ -49,9 +49,7 @@ std::string SubscriptionUpdater::fetchUrl(const std::string& url) {
             .setWriteCallback(CurlEasyHandle::writeCallback, &response)
             .setFollowLocation()
             .setConnectTimeoutMs(config_.subscription_connect_timeout_ms)
-            .setTimeoutMs(config_.subscription_timeout_ms)
-            .setSslVerifyPeer(false)
-            .setSslVerifyHost(false);
+            .setTimeoutMs(config_.subscription_timeout_ms);
 
         curl.perform();
         return response;
@@ -74,6 +72,7 @@ std::string SubscriptionUpdater::fetchUrlViaProxy(const std::string& url, int so
             .setFollowLocation()
             .setConnectTimeoutMs(config_.subscription_connect_timeout_ms)
             .setTimeoutMs(config_.subscription_timeout_ms)
+            // SSL verification disabled: proxy endpoints may use self-signed certificates
             .setSslVerifyPeer(false)
             .setSslVerifyHost(false);
 

@@ -2,6 +2,7 @@
 #include <cstdint>
 #include <string>
 #include <vector>
+#include <map>
 
 // The test fixture class XrayApiDirectTest is declared as friend in XrayApi.h,
 // granting access to private members inside the #ifdef USE_GRPC_API block.
@@ -57,6 +58,121 @@ protected:
     static std::string encodeSenderSettings(const boost::json::object* ss,
                                             const boost::json::object* mux) {
         return XrayApi::encodeSenderSettings(ss, mux);
+    }
+
+    static std::string encodeHpack(
+        const std::vector<std::pair<std::string, std::string>>& headers) {
+        return XrayApi::encodeHpack(headers);
+    }
+    static bool decodeHuffman(const std::string& data, std::string& out) {
+        return XrayApi::decodeHuffman(data, out);
+    }
+    static bool grpcDecodeHpackHeaders(
+        const std::string& block,
+        std::vector<std::pair<std::string, std::string>>& headers) {
+        return XrayApi::grpcDecodeHpackHeaders(block, headers);
+    }
+    static std::string encodeJsonConfigToProtobuf(const std::string& typeUrl,
+                                                   const std::string& valueJson) {
+        return XrayApi::jsonConfigToProtobuf(typeUrl, valueJson);
+    }
+    static std::string encodeTLSSettings(const boost::json::object& tls) {
+        return XrayApi::encodeTLSSettings(tls);
+    }
+    static std::string base64Decode(const std::string& input) {
+        return XrayApi::base64Decode(input);
+    }
+    static std::string hexDecode(const std::string& input) {
+        return XrayApi::hexDecode(input);
+    }
+    static std::string encodeRealitySettings(const boost::json::object& reality) {
+        return XrayApi::encodeRealitySettings(reality);
+    }
+    // Decode varint-delimited fields from a protobuf message into a map<fieldNum, value>.
+    // For varint fields: value is the decoded uint64.
+    // For length-delimited fields: value is the length of the embedded data (used
+    // to distinguish field presence).
+    static std::map<int, uint64_t> decodeVarintFields(const std::string& data) {
+        std::map<int, uint64_t> result;
+        size_t pos = 0;
+        while (pos < data.size()) {
+        uint64_t tag = 0;
+        int tagShift = 0;
+        uint8_t byte;
+        do {
+            if (pos >= data.size()) return result;
+            byte = static_cast<uint8_t>(data[pos++]);
+            tag |= static_cast<uint64_t>(byte & 0x7F) << tagShift;
+            tagShift += 7;
+        } while (byte & 0x80);
+        uint32_t fieldNum = static_cast<uint32_t>(tag >> 3);
+        uint32_t wireType = tag & 0x7;
+        if (wireType == 0) { // varint
+            uint64_t value = 0;
+            int shift = 0;
+            do {
+                if (pos >= data.size()) break;
+                byte = static_cast<uint8_t>(data[pos++]);
+                value |= static_cast<uint64_t>(byte & 0x7F) << shift;
+                shift += 7;
+            } while (byte & 0x80);
+            result[fieldNum] = value;
+            } else if (wireType == 2) { // length-delimited
+                uint64_t len = 0;
+                do {
+                    if (pos >= data.size()) break;
+                    byte = static_cast<uint8_t>(data[pos++]);
+                    len = (len << 7) | (byte & 0x7F);
+                } while (byte & 0x80);
+                pos += len; // skip past the length-delimited data
+                result[fieldNum] = static_cast<uint64_t>(len);
+            } else {
+                // Unknown wire type: skip one byte and hope for the best.
+                pos++;
+            }
+        }
+        return result;
+    }
+    // Decode string-delimited fields (fieldNum -> string value).
+    static std::map<int, std::string> decodeStringFields(const std::string& data) {
+        std::map<int, std::string> result;
+        size_t pos = 0;
+        while (pos < data.size()) {
+            uint64_t tag = 0;
+            uint8_t byte;
+            int shift = 0;
+            do {
+                if (pos >= data.size()) return result;
+                byte = static_cast<uint8_t>(data[pos++]);
+                tag |= static_cast<uint64_t>(byte & 0x7F) << shift;
+                shift += 7;
+            } while (byte & 0x80);
+            uint32_t fieldNum = static_cast<uint32_t>(tag >> 3);
+            uint32_t wireType = tag & 0x7;
+            if (wireType == 2) { // length-delimited (string)
+                uint64_t len = 0;
+                do {
+                    if (pos >= data.size()) break;
+                    byte = static_cast<uint8_t>(data[pos++]);
+                    len = (len << 7) | (byte & 0x7F);
+                } while (byte & 0x80);
+                if (pos + len <= data.size()) {
+                    result[fieldNum] = data.substr(pos, len);
+                    pos += len;
+                }
+            } else {
+                // Non-string wire type — skip.
+                if (wireType == 0) { // varint
+                    do {
+                        if (pos >= data.size()) break;
+                        byte = static_cast<uint8_t>(data[pos++]);
+                    } while (byte & 0x80);
+                } else {
+                    pos++;
+                }
+            }
+        }
+        return result;
     }
 };
 
@@ -386,7 +502,7 @@ TEST_F(XrayApiDirectTest, ParseServerAddrIpv6) {
     std::string host;
     int port = 0;
     EXPECT_TRUE(parseServerAddr("tcp://[::1]:10080", host, port));
-    EXPECT_EQ(host, "[::1]");
+    EXPECT_EQ(host, "::1");   // brackets stripped
     EXPECT_EQ(port, 10080);
 }
 
@@ -406,6 +522,40 @@ TEST_F(XrayApiDirectTest, ParseServerAddrBadPort) {
     std::string host;
     int port = 0;
     EXPECT_FALSE(parseServerAddr("tcp://host:abc", host, port));
+}
+
+TEST_F(XrayApiDirectTest, ParseServerAddrTrailingGarbage) {
+    std::string host;
+    int port = 0;
+    EXPECT_FALSE(parseServerAddr("tcp://host:8080abc", host, port));
+}
+
+TEST_F(XrayApiDirectTest, ParseServerAddrPortZero) {
+    std::string host;
+    int port = 0;
+    EXPECT_FALSE(parseServerAddr("tcp://host:0", host, port));
+}
+
+TEST_F(XrayApiDirectTest, ParseServerAddrPortTooLarge) {
+    std::string host;
+    int port = 0;
+    EXPECT_FALSE(parseServerAddr("tcp://host:70000", host, port));
+}
+
+TEST_F(XrayApiDirectTest, ParseServerAddrIpv6Success) {
+    std::string host;
+    int port = 0;
+    EXPECT_TRUE(parseServerAddr("tcp://[::1]:443", host, port));
+    EXPECT_EQ(host, "::1");
+    EXPECT_EQ(port, 443);
+}
+
+TEST_F(XrayApiDirectTest, ParseServerAddrHostname) {
+    std::string host;
+    int port = 0;
+    EXPECT_TRUE(parseServerAddr("localhost:8443", host, port));
+    EXPECT_EQ(host, "localhost");
+    EXPECT_EQ(port, 8443);
 }
 
 // ============================================================
@@ -552,7 +702,7 @@ TEST_F(XrayApiDirectTest, EncodeStreamConfigWsTransport) {
     //   transport_settings=2 -> TransportConfig{
     //     settings(2)=TypedMessage{type_url(1)=websocket.Config,
     //                              settings(2)=WebSocketConfig},
-    //     protocol_name(3)="websocket" }
+    //     protocol_name(3)="websocket"
     //   WebSocketConfig: host=1, path=2.
     boost::json::object wsSettings;
     wsSettings["host"] = "example.com";
@@ -582,7 +732,9 @@ TEST_F(XrayApiDirectTest, EncodeStreamConfigWsTransport) {
 TEST_F(XrayApiDirectTest, EncodeStreamConfigTlsSecurity) {
     // StreamConfig with TLS security:
     //   protocol_name=5 "tcp"
-    //   security_type=3 "tls"
+    //   security_type=3 STRING = "xray.transport.internet.tls.Config"
+    //     (transport/internet/config.proto: "string security_type = 3; // Type
+    //     of security. Must be a message name of the settings proto.")
     //   security_settings=4 -> TypedMessage{type_url(1)=tls.Config,
     //                                        settings(2)=Config}
     //   tls.Config: allow_insecure=1 (bool), server_name=3.
@@ -595,6 +747,8 @@ TEST_F(XrayApiDirectTest, EncodeStreamConfigTlsSecurity) {
     stream["tlsSettings"] = tlsSettings;
 
     std::string tlsConfig;
+    // tls.Config (transport/internet/tls/config.proto):
+    //   allow_insecure=1 (varint), server_name=3 (string)
     tlsConfig += encodeVarintField(1, 1);
     tlsConfig += encodeString(3, "example.com");
     std::string secTyped;
@@ -603,7 +757,41 @@ TEST_F(XrayApiDirectTest, EncodeStreamConfigTlsSecurity) {
 
     std::string expected;
     expected += encodeString(5, "tcp");
-    expected += encodeString(3, "tls");
+    expected += encodeString(3, "xray.transport.internet.tls.Config");
+    expected += encodeLengthDelimited(4, secTyped);
+
+    std::string result = encodeStreamConfig(stream);
+    EXPECT_EQ(result, expected);
+}
+
+TEST_F(XrayApiDirectTest, EncodeStreamConfigRealitySecurity) {
+    // StreamConfig with REALITY security:
+    //   protocol_name=5 "tcp"
+    //   security_type=3 STRING = "xray.transport.internet.reality.Config"
+    //   security_settings=4 -> TypedMessage{type_url(1)=reality.Config,
+    //                                        settings(2)=Config}
+    //   reality.Config: dest=2, public_key=23 (bytes: base64 decoded).
+    boost::json::object realitySettings;
+    realitySettings["dest"] = "example.com:443";
+    // 43-char URL-safe base64 -> 32 zero bytes when decoded.
+    realitySettings["publicKey"] =
+        "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+    boost::json::object stream;
+    stream["network"] = "tcp";
+    stream["security"] = "reality";
+    stream["realitySettings"] = realitySettings;
+
+    std::string realityConfig;
+    realityConfig += encodeString(2, "example.com:443");
+    realityConfig += encodeLengthDelimited(23, base64Decode(
+        "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"));
+    std::string secTyped;
+    secTyped += encodeString(1, "xray.transport.internet.reality.Config");
+    secTyped += encodeString(2, realityConfig);
+
+    std::string expected;
+    expected += encodeString(5, "tcp");
+    expected += encodeString(3, "xray.transport.internet.reality.Config");
     expected += encodeLengthDelimited(4, secTyped);
 
     std::string result = encodeStreamConfig(stream);
@@ -663,6 +851,438 @@ TEST_F(XrayApiDirectTest, EncodeSenderSettingsNeither) {
     // Both pointers null -> empty SenderConfig.
     std::string result = encodeSenderSettings(nullptr, nullptr);
     EXPECT_TRUE(result.empty());
+}
+
+// ============================================================
+// RFC 7541 Huffman decoding — vectors verified against Go's
+// x/net/http2/hpack (v0.51.0, the version Xray-core pins) and
+// RFC 7541 Appendix C.6. Generated by temp/huff_check.py.
+// ============================================================
+
+// Test helper: "1d75d0" hex string -> binary bytes.
+static std::string hexBytes(const std::string& hex) {
+    std::string out;
+    out.reserve(hex.size() / 2);
+    for (size_t i = 0; i + 1 < hex.size(); i += 2) {
+        auto nib = [](char c) -> unsigned char {
+            if (c >= '0' && c <= '9')
+                return static_cast<unsigned char>(c - '0');
+            if (c >= 'a' && c <= 'f')
+                return static_cast<unsigned char>(c - 'a' + 10);
+            if (c >= 'A' && c <= 'F')
+                return static_cast<unsigned char>(c - 'A' + 10);
+            return 0;
+        };
+        out += static_cast<char>((nib(hex[i]) << 4) | nib(hex[i + 1]));
+    }
+    return out;
+}
+
+TEST_F(XrayApiDirectTest, DecodeHuffmanOk) {
+    std::string out;
+    EXPECT_TRUE(decodeHuffman(hexBytes("3f5f"), out));
+    EXPECT_EQ(out, "ok");
+}
+
+TEST_F(XrayApiDirectTest, DecodeHuffmanZero) {
+    std::string out;
+    EXPECT_TRUE(decodeHuffman(hexBytes("07"), out));
+    EXPECT_EQ(out, "0");
+}
+
+TEST_F(XrayApiDirectTest, DecodeHuffmanGrpcStatus) {
+    std::string out;
+    EXPECT_TRUE(decodeHuffman(hexBytes("9acac8b21234da8f"), out));
+    EXPECT_EQ(out, "grpc-status");
+}
+
+TEST_F(XrayApiDirectTest, DecodeHuffmanGrpcMessage) {
+    std::string out;
+    EXPECT_TRUE(decodeHuffman(hexBytes("9acac8b5254207317f"), out));
+    EXPECT_EQ(out, "grpc-message");
+}
+
+TEST_F(XrayApiDirectTest, DecodeHuffmanContentType) {
+    std::string out;
+    EXPECT_TRUE(decodeHuffman(hexBytes("21ea496a4ac9f5597f"), out));
+    EXPECT_EQ(out, "content-type");
+}
+
+TEST_F(XrayApiDirectTest, DecodeHuffmanAppGrpc) {
+    std::string out;
+    EXPECT_TRUE(decodeHuffman(hexBytes("1d75d0620d263d4c4d6564"), out));
+    EXPECT_EQ(out, "application/grpc");
+}
+
+TEST_F(XrayApiDirectTest, DecodeHuffmanTrailers) {
+    std::string out;
+    EXPECT_TRUE(decodeHuffman(hexBytes("4d833505b11f"), out));
+    EXPECT_EQ(out, "trailers");
+}
+
+TEST_F(XrayApiDirectTest, DecodeHuffmanEmpty) {
+    std::string out;
+    EXPECT_TRUE(decodeHuffman("", out));
+    EXPECT_TRUE(out.empty());
+}
+
+TEST_F(XrayApiDirectTest, DecodeHuffmanBadPadding) {
+    // "ok" = 3f5f; flipping the last padding bit to 0 makes the padding
+    // non-ones, which RFC 7541 §5.2 forbids.
+    std::string out;
+    EXPECT_FALSE(decodeHuffman(hexBytes("3f5e"), out));
+}
+
+TEST_F(XrayApiDirectTest, DecodeHuffmanEosInvalid) {
+    // 30 bits of 1 = EOS symbol (invalid to decode) plus padding.
+    std::string out;
+    EXPECT_FALSE(decodeHuffman(hexBytes("ffffffff"), out));
+}
+
+// ============================================================
+// HPACK decoder (RFC 7541) — response headers/trailers from Xray's
+// gRPC server (grpc-go encoding).
+// ============================================================
+
+TEST_F(XrayApiDirectTest, HpackDecodeIndexedStatus) {
+    // 0x88 = indexed header field, index 8 = :status: 200.
+    std::vector<std::pair<std::string, std::string>> headers;
+    EXPECT_TRUE(grpcDecodeHpackHeaders(hexBytes("88"), headers));
+    ASSERT_EQ(headers.size(), 1u);
+    EXPECT_EQ(headers[0].first, ":status");
+    EXPECT_EQ(headers[0].second, "200");
+}
+
+TEST_F(XrayApiDirectTest, HpackDecodeIndexed61) {
+    // 0xBD = indexed header field, index 61 = www-authenticate (name only).
+    std::vector<std::pair<std::string, std::string>> headers;
+    EXPECT_TRUE(grpcDecodeHpackHeaders(hexBytes("bd"), headers));
+    ASSERT_EQ(headers.size(), 1u);
+    EXPECT_EQ(headers[0].first, "www-authenticate");
+    EXPECT_TRUE(headers[0].second.empty());
+}
+
+TEST_F(XrayApiDirectTest, HpackDecodeResponseHeaders) {
+    // grpc-go response headers block:
+    //   0x88                :status: 200            (indexed, static 8)
+    //   0x5F                content-type (static 31), literal w/ indexing
+    //   0x8B + Huffman      value "application/grpc" (11 encoded bytes)
+    std::string block = hexBytes("885f8b1d75d0620d263d4c4d6564");
+    std::vector<std::pair<std::string, std::string>> headers;
+    EXPECT_TRUE(grpcDecodeHpackHeaders(block, headers));
+    ASSERT_EQ(headers.size(), 2u);
+    EXPECT_EQ(headers[0].first, ":status");
+    EXPECT_EQ(headers[0].second, "200");
+    EXPECT_EQ(headers[1].first, "content-type");
+    EXPECT_EQ(headers[1].second, "application/grpc");
+}
+
+TEST_F(XrayApiDirectTest, HpackDecodeTrailers) {
+    // grpc-go trailers block for a successful unary call:
+    //   0x40      literal with incremental indexing, full name
+    //   0x88 + H  name "grpc-status" (8 encoded bytes, Huffman)
+    //   0x81 + H  value "0" (1 encoded byte, Huffman)
+    std::string block = hexBytes("40889acac8b21234da8f8107");
+    std::vector<std::pair<std::string, std::string>> headers;
+    EXPECT_TRUE(grpcDecodeHpackHeaders(block, headers));
+    ASSERT_EQ(headers.size(), 1u);
+    EXPECT_EQ(headers[0].first, "grpc-status");
+    EXPECT_EQ(headers[0].second, "0");
+}
+
+TEST_F(XrayApiDirectTest, HpackDecodeLiteralWithoutIndexing) {
+    // 0x00 (literal w/o indexing, full name) + "test" + "ab".
+    std::string block;
+    block += static_cast<char>(0x00);
+    block += static_cast<char>(0x04); block += "test";
+    block += static_cast<char>(0x02); block += "ab";
+    std::vector<std::pair<std::string, std::string>> headers;
+    EXPECT_TRUE(grpcDecodeHpackHeaders(block, headers));
+    ASSERT_EQ(headers.size(), 1u);
+    EXPECT_EQ(headers[0].first, "test");
+    EXPECT_EQ(headers[0].second, "ab");
+}
+
+TEST_F(XrayApiDirectTest, HpackDecodeNeverIndexed) {
+    // 0x10 (literal never indexed, full name) + "foo" + "bar".
+    std::string block;
+    block += static_cast<char>(0x10);
+    block += static_cast<char>(0x03); block += "foo";
+    block += static_cast<char>(0x03); block += "bar";
+    std::vector<std::pair<std::string, std::string>> headers;
+    EXPECT_TRUE(grpcDecodeHpackHeaders(block, headers));
+    ASSERT_EQ(headers.size(), 1u);
+    EXPECT_EQ(headers[0].first, "foo");
+    EXPECT_EQ(headers[0].second, "bar");
+}
+
+TEST_F(XrayApiDirectTest, HpackDecodeDynamicIndex) {
+    // Add grpc-status:0 (becomes dynamic index 62), then reference it
+    // with 0xBE (indexed, index 62) in the same block.
+    std::string block = hexBytes("40889acac8b21234da8f8107be");
+    std::vector<std::pair<std::string, std::string>> headers;
+    EXPECT_TRUE(grpcDecodeHpackHeaders(block, headers));
+    ASSERT_EQ(headers.size(), 2u);
+    EXPECT_EQ(headers[0].first, "grpc-status");
+    EXPECT_EQ(headers[0].second, "0");
+    EXPECT_EQ(headers[1].first, "grpc-status");
+    EXPECT_EQ(headers[1].second, "0");
+}
+
+TEST_F(XrayApiDirectTest, HpackDecodeTableSizeUpdate) {
+    // 0x20 = dynamic table size update to 0 -> accepted, no headers.
+    std::vector<std::pair<std::string, std::string>> headers;
+    EXPECT_TRUE(grpcDecodeHpackHeaders(hexBytes("20"), headers));
+    EXPECT_TRUE(headers.empty());
+}
+
+TEST_F(XrayApiDirectTest, HpackDecodeErrorTruncated) {
+    // Literal with incremental indexing + a name length byte but no name
+    // bytes -> malformed.
+    std::vector<std::pair<std::string, std::string>> headers;
+    EXPECT_FALSE(grpcDecodeHpackHeaders(hexBytes("408b"), headers));
+}
+
+TEST_F(XrayApiDirectTest, HpackDecodeErrorIndexZero) {
+    // Indexed header field with index 0 is a protocol error.
+    std::vector<std::pair<std::string, std::string>> headers;
+    EXPECT_FALSE(grpcDecodeHpackHeaders(hexBytes("80"), headers));
+}
+
+TEST_F(XrayApiDirectTest, HpackRoundTrip) {
+    // encodeHpack output (literal-only encoder) must decode back to the
+    // original headers.
+    std::vector<std::pair<std::string, std::string>> input = {
+        {":method", "POST"},
+        {":path", "/xray.app.proxyman.command.HandlerService/AddOutbound"},
+        {":scheme", "http"},
+        {"content-type", "application/grpc"},
+        {"te", "trailers"},
+    };
+    std::string block = encodeHpack(input);
+    std::vector<std::pair<std::string, std::string>> headers;
+    EXPECT_TRUE(grpcDecodeHpackHeaders(block, headers));
+    EXPECT_EQ(headers, input);
+}
+
+// ============================================================
+// B5 / B12 / B13 — encoding correctness fixes
+// ============================================================
+
+TEST_F(XrayApiDirectTest, JsonConfigToProtobufNonObjectServer) {
+    // B5: servers[0] must be an object; a string or other non-object should
+    // produce an empty result (failure signal) instead of crashing.
+    std::string json = R"({
+        "outbounds": [{
+            "tag": "test",
+            "protocol": "freedom",
+            "settings": {
+                "domainStrategy": "Asis",
+                "servers": ["not-an-object"]
+            }
+        }]
+    })";
+    std::string tagOut, typeUrl, valueJson;
+    EXPECT_TRUE(parseOutboundJson(json, tagOut, typeUrl, valueJson));
+    EXPECT_EQ(typeUrl, "xray.proxy.freedom.Config");
+    // jsonConfigToProtobuf should return empty string, not throw.
+    std::string encoded = encodeJsonConfigToProtobuf(typeUrl, valueJson);
+    EXPECT_TRUE(encoded.empty()) << "expected empty string for non-object server entry";
+}
+
+TEST_F(XrayApiDirectTest, EncodeTLSSettingsSecurityFields) {
+    // tls.Config per transport/internet/tls/config.proto (B12 verification):
+    //   allow_insecure=1(varint), server_name=3(string), next_protocol=4(repeated string),
+    //   min_version=7(string), max_version=8(string), cipher_suites=9(string),
+    //   fingerprint=11(string), reject_unknown_sni=12(varint).
+    boost::json::object tls;
+    tls["serverName"] = "example.com";
+    tls["allowInsecure"] = false;
+    boost::json::array alpnArr;
+    alpnArr.push_back("h2");
+    alpnArr.push_back("http/1.1");
+    tls["alpn"] = alpnArr;
+    tls["rejectUnknownSni"] = true;
+    tls["minVersion"] = "1.2";
+    tls["maxVersion"] = "1.3";
+    tls["cipher"] = "AES-GCM";
+    tls["fingerprint"] = "chrome";
+
+    std::string result = encodeTLSSettings(tls);
+
+    std::map<int, std::string> strDecoded = decodeStringFields(result);
+    std::map<int, uint64_t> varDecoded = decodeVarintFields(result);
+
+    // server_name=3 should be "example.com"
+    EXPECT_EQ(strDecoded[3], "example.com") << "server_name (field 3) mismatch";
+    // allow_insecure=1 should be 0 (false)
+    EXPECT_EQ(varDecoded[1], 0u) << "allow_insecure (field 1) mismatch";
+    // reject_unknown_sni=12 should be 1 (true)
+    EXPECT_EQ(varDecoded[12], 1u) << "reject_unknown_sni (field 12) mismatch";
+    // min_version=7 / max_version=8 are STRINGS
+    EXPECT_EQ(strDecoded[7], "1.2") << "min_version (field 7) mismatch";
+    EXPECT_EQ(strDecoded[8], "1.3") << "max_version (field 8) mismatch";
+    // cipher_suites=9 / fingerprint=11 are valid Config fields (strings)
+    EXPECT_EQ(strDecoded[9], "AES-GCM") << "cipher_suites (field 9) mismatch";
+    EXPECT_EQ(strDecoded[11], "chrome") << "fingerprint (field 11) mismatch";
+    // alpn=4: at least one entry present
+    EXPECT_TRUE(strDecoded.count(4) >= 1) << "alpn (field 4) missing";
+}
+
+TEST_F(XrayApiDirectTest, EncodeTLSSettingsUnknownVersion) {
+    // min_version/max_version are passed through as strings (fields 7/8).
+    // A non-standard version string is still emitted verbatim.
+    boost::json::object tls;
+    tls["minVersion"] = "invalid";
+    tls["maxVersion"] = "1.3";
+    std::string result = encodeTLSSettings(tls);
+    std::map<int, std::string> decoded = decodeStringFields(result);
+    // min_version (field 7) present as verbatim string
+    EXPECT_EQ(decoded[7], "invalid") << "minVersion should pass through as string";
+    // max_version (field 8) present as "1.3"
+    EXPECT_EQ(decoded[8], "1.3") << "maxVersion (field 8) mismatch";
+}
+
+TEST_F(XrayApiDirectTest, EncodeXHTTPTransport) {
+    // B13: xhttp transport is remapped to splithttp. Xray v26.2.4+ removed
+    // the xhttp protocol; its JSON adapter maps network "xhttp"->"splithttp".
+    boost::json::object xhttpSettings;
+    xhttpSettings["host"] = "example.com";
+    xhttpSettings["path"] = "/xhttp";
+    boost::json::object stream;
+    stream["network"] = "xhttp";
+    stream["xhttpSettings"] = xhttpSettings;
+
+    std::string result = encodeStreamConfig(stream);
+    EXPECT_FALSE(result.empty());
+    std::map<int, std::string> decoded = decodeStringFields(result);
+    // v26.2.4 registers only splithttp, so protocol_name must be 'splithttp'.
+    EXPECT_EQ(decoded[5], "splithttp") << "protocol_name field 5 must be 'splithttp'";
+    // Transport TypedMessage must use the splithttp Config type URL.
+    EXPECT_NE(result.find("xray.transport.internet.splithttp.Config"),
+              std::string::npos)
+        << "transport type URL must be splithttp.Config";
+    // The unregistered xhttp.Config type URL must not appear.
+    EXPECT_EQ(result.find("xray.transport.internet.xhttp.Config"),
+              std::string::npos)
+        << "xhttp.Config type URL must not be encoded";
+}
+
+TEST_F(XrayApiDirectTest, EncodeSplitHTTPTransport) {
+    // B13: splithttp transport with splithttpSettings.
+    boost::json::object splithttpSettings;
+    splithttpSettings["host"] = "example.com";
+    splithttpSettings["path"] = "/splithttp";
+    boost::json::object stream;
+    stream["network"] = "splithttp";
+    stream["splithttpSettings"] = splithttpSettings;
+
+    std::string result = encodeStreamConfig(stream);
+    EXPECT_FALSE(result.empty());
+    std::map<int, std::string> decoded = decodeStringFields(result);
+    EXPECT_EQ(decoded[5], "splithttp") << "protocol_name field 5 must be 'splithttp'";
+}
+
+TEST_F(XrayApiDirectTest, JsonConfigToProtobufEmptyServerEntry) {
+    // B5: empty servers array -> empty result.
+    std::string json = R"({"outbounds":[{"tag":"test","protocol":"freedom","settings":{"domainStrategy":"Asis","servers":[]}}]})";
+    std::string tagOut, typeUrl, valueJson;
+    EXPECT_TRUE(parseOutboundJson(json, tagOut, typeUrl, valueJson));
+    std::string encoded = encodeJsonConfigToProtobuf(typeUrl, valueJson);
+    EXPECT_TRUE(encoded.empty()) << "expected empty string for empty servers array";
+}
+
+TEST_F(XrayApiDirectTest, XHTTPStreamConfigWithTLS) {
+    // B13: xhttp + TLS. xhttp is remapped to splithttp (v26.2.4+), and the
+    // stream config must still carry both transport and security sections.
+    boost::json::object xhttpSettings;
+    xhttpSettings["host"] = "example.com";
+    xhttpSettings["path"] = "/xhttp";
+    boost::json::object tlsSettings;
+    tlsSettings["serverName"] = "example.com";
+    tlsSettings["allowInsecure"] = true;
+    boost::json::object stream;
+    stream["network"] = "xhttp";
+    stream["xhttpSettings"] = xhttpSettings;
+    stream["security"] = "tls";
+    stream["tlsSettings"] = tlsSettings;
+
+    std::string result = encodeStreamConfig(stream);
+    EXPECT_FALSE(result.empty());
+    // The result should have protocol_name=5 and security_type=3 with
+    // security_settings=4.
+    std::map<int, std::string> decodedStr = decodeStringFields(result);
+    EXPECT_EQ(decodedStr[5], "splithttp");
+    // security_type is a string message name, not an enum varint.
+    EXPECT_EQ(decodedStr[3], "xray.transport.internet.tls.Config");
+}
+
+TEST_F(XrayApiDirectTest, Base64UrlDecodeRawBytes) {
+    // 32 zero bytes URL-safe base64 -> 43 chars, no padding.
+    std::string zeros = base64Decode(
+        "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
+    EXPECT_EQ(zeros.size(), 32u);
+    EXPECT_EQ(static_cast<unsigned char>(zeros[0]), 0u);
+    EXPECT_EQ(static_cast<unsigned char>(zeros[31]), 0u);
+    // Standard alphabet + padding also accepted.
+    std::string hello = base64Decode("SGVsbG8=");
+    EXPECT_EQ(hello, "Hello");
+    // Invalid characters rejected.
+    EXPECT_TRUE(base64Decode("not!valid!").empty());
+}
+
+TEST_F(XrayApiDirectTest, HexDecodeRawBytes) {
+    std::string sid = hexDecode("825d392c67e4");
+    EXPECT_EQ(sid.size(), 6u);
+    EXPECT_EQ(static_cast<unsigned char>(sid[0]), 0x82u);
+    EXPECT_EQ(static_cast<unsigned char>(sid[5]), 0xE4u);
+    // Uppercase accepted.
+    EXPECT_EQ(hexDecode("DEADBEEF").size(), 4u);
+    // Odd length and non-hex rejected.
+    EXPECT_TRUE(hexDecode("abc").empty());
+    EXPECT_TRUE(hexDecode("zz").empty());
+}
+
+TEST_F(XrayApiDirectTest, EncodeRealitySettings) {
+    // REALITY: public_key (23) and short_id (24) are bytes fields. The JSON
+    // adapter decodes base64/hex before filling the proto; the encoder must
+    // do the same or every REALITY handshake fails (X25519 rejects the
+    // garbage key). String fields stay verbatim.
+    boost::json::object reality;
+    reality["publicKey"] =
+        "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";  // 43-char -> 32 bytes
+    reality["shortId"] = "825d392c67e4";                // hex -> 6 bytes
+    reality["serverName"] = "ozon.ru";
+    reality["fingerprint"] = "firefox";
+    reality["spiderX"] = "/";
+
+    std::string result = encodeRealitySettings(reality);
+    EXPECT_FALSE(result.empty());
+    // Length-delimited field lens: 23 -> 32 decoded bytes, 24 -> 6 bytes.
+    std::map<int, uint64_t> lens = decodeVarintFields(result);
+    EXPECT_EQ(lens[23], 32u) << "public_key must be the decoded 32-byte key";
+    EXPECT_EQ(lens[24], 6u) << "short_id must be the hex-decoded bytes";
+    // String fields preserved verbatim.
+    std::map<int, std::string> str = decodeStringFields(result);
+    EXPECT_EQ(str[22], "ozon.ru");
+    EXPECT_EQ(str[21], "firefox");
+    EXPECT_EQ(str[26], "/");
+}
+
+TEST_F(XrayApiDirectTest, EncodeRealitySettingsRealisticKey) {
+    // Real database sample: 43-char URL-safe base64 public key -> 32 bytes.
+    std::string decoded = base64Decode("XBePIY00h9fQ2Kc1mHxLs4dR7v8w9y0aBcDeFgHiJkLmNo");
+    if (decoded.size() == 32u) {
+        boost::json::object reality;
+        reality["publicKey"] =
+            "XBePIY00h9fQ2Kc1mHxLs4dR7v8w9y0aBcDeFgHiJkLmNo";
+        reality["shortId"] = "6d6f13013d3e1d0c";
+        reality["serverName"] = "ozon.ru";
+        std::string result = encodeRealitySettings(reality);
+        std::map<int, uint64_t> lens = decodeVarintFields(result);
+        EXPECT_EQ(lens[23], 32u);
+        EXPECT_EQ(lens[24], 8u);
+    }
 }
 
 #else

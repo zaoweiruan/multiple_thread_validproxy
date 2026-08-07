@@ -9,6 +9,8 @@
 #include <thread>
 #include <functional>
 #include <atomic>
+#include <chrono>
+#include "Logger.h"
 
 /// Thread-safe queue that batches test results and flushes via callback.
 /// Designed for the ProxyBatchTester flush thread pattern:
@@ -20,6 +22,8 @@ public:
 
     static constexpr int BATCH_SIZE = 50;
     static constexpr int FLUSH_INTERVAL_MS = 5000;
+    static constexpr int MAX_FLUSH_RETRIES = 3;
+    static constexpr int INITIAL_BACKOFF_MS = 100;
 
     explicit TestResultQueue(FlushCallback callback)
         : callback_(std::move(callback)), running_(false) {}
@@ -73,6 +77,62 @@ public:
     }
 
 private:
+    /// Attempt callback with retry + backoff on false/exception.
+    /// Retries up to MAX_FLUSH_RETRIES times with exponential backoff (INITIAL_BACKOFF_MS * 2^i).
+    /// On exhausted retries, logs ERR with indexid list via Logger::write and drops batch.
+    /// Never throws; returns true on success, false on permanent failure.
+    bool flushWithRetry(const std::vector<ResultTuple>& batch) {
+        std::vector<std::string> indexids;
+        indexids.reserve(batch.size());
+        for (size_t i = 0; i < batch.size(); ++i) {
+            indexids.push_back(std::get<0>(batch[i]));
+        }
+
+        int retryCount = 0;
+        int backoffMs = INITIAL_BACKOFF_MS;
+
+        while (retryCount <= MAX_FLUSH_RETRIES) {
+            bool success = false;
+            try {
+                if (callback_) {
+                    success = callback_(batch);
+                } else {
+                    success = true;
+                }
+            } catch (...) {
+                success = false;
+            }
+
+            if (success) {
+                return true;
+            }
+
+            ++retryCount;
+            if (retryCount > MAX_FLUSH_RETRIES) {
+                Logger::write("TestResultQueue: flush failed for " +
+                              std::to_string(batch.size()) + " results, indexids: " +
+                              joinStrings(indexids, ","), LogLevel::ERR);
+                return false;
+            }
+
+            // Sleep outside the mutex (buffer already swapped out in callers)
+            std::this_thread::sleep_for(std::chrono::milliseconds(backoffMs));
+            backoffMs *= 2;
+        }
+
+        return false;
+    }
+
+    /// Join vector of strings with a delimiter.
+    static std::string joinStrings(const std::vector<std::string>& parts, const std::string& delim) {
+        std::string result;
+        for (size_t i = 0; i < parts.size(); ++i) {
+            if (i > 0) result += delim;
+            result += parts[i];
+        }
+        return result;
+    }
+
     void flushLoop() {
         while (true) {
             std::unique_lock<std::mutex> lock(mutex_);
@@ -86,18 +146,17 @@ private:
             lock.unlock();
 
             if (!batch.empty()) {
-                if (callback_) {
-                    callback_(batch);
-                }
+                flushWithRetry(batch);
             }
 
             if (!running_) {
                 // Drain any remaining items after stop signal
                 lock.lock();
-                batch.swap(buffer_);
+                std::vector<ResultTuple> drainBatch;
+                drainBatch.swap(buffer_);
                 lock.unlock();
-                if (!batch.empty() && callback_) {
-                    callback_(batch);
+                if (!drainBatch.empty()) {
+                    flushWithRetry(drainBatch);
                 }
                 return;
             }
@@ -108,12 +167,10 @@ private:
         std::vector<ResultTuple> batch;
         {
             std::lock_guard<std::mutex> lock(mutex_);
-            if (!buffer_.empty() && callback_) {
-                batch.swap(buffer_);
-            }
+            batch.swap(buffer_);
         }
-        if (!batch.empty() && callback_) {
-            callback_(batch);
+        if (!batch.empty()) {
+            flushWithRetry(batch);
         }
     }
 

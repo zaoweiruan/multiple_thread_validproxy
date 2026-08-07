@@ -1,7 +1,7 @@
 # 功能实现状态清单
 
 > 状态日期: 2026-06-09
-> 最后更新: 工具栏 dbpath 显示去除 / searchbox 右移 50px / ProxyDetail 默认隐藏 / xray.executable 配置值校验双层级实现
+> 最后更新: 2026-08-07 计划文档落地核验（Sing-box 全链路 / GitTag 版本头 / Region 迁移 ✅；批量 INSERT Phase B / 分区去重 Phase 2 ❌）
 
 ## 约定
 
@@ -108,3 +108,17 @@
 | 订阅右键测试无 handler | 2026-06-02+ | MainFrame 绑定 `wxEVT_SUBSCRIPTION_TEST` 完整链路 |
 | 订阅删除未实现 | 2026-06-02 | `onDeleteSubscription` → `controller_->deleteSubscription()` |
 | 订阅刷新不存在 | 2026-06-02 | `onRefreshSubscription` → `loadSubscriptions()` |
+
+---
+
+## 7. 计划文档落地核验 (2026-08-07)
+
+> 对 specs/plans 中已立项功能逐项以源码 grep 证据核验实际落地状态。
+
+| 计划文档 | 功能 | 状态 | 代码证据 |
+|---------|------|------|---------|
+| `docs/specs/2026-07-02-Spec-Singbox-Support-v1.0.md` | **Sing-box 代理核心支持（Phase 1-3 全链路）** | ✅ | Phase 1 配置字段: `ConfigJsonSerializer.cpp:107-121`（use_singbox/singbox_executable/singbox_asset_dir/singbox_template_config_path）+ `ConfigDialog.cpp`（proxy_use_singbox 等属性与校验）<br>Phase 2 Builder: `src/config/SingBoxOutboundBuilderFactory.cpp`（SS/VMess/VLESS/Trojan/Hysteria2/TUIC/WireGuard）<br>Phase 3 集成: `AppController.cpp:513-719`（后端切换 514、outbound 生成 518-524、direct/block 530-540、模板路径 561-568、进程检测/终止 580-602、DNS 引导规则 635-658、standalone_*-singbox.json 写出 669、`sing-box run -c` 命令行 687-691、SING_BOX_LOCATION_ASSET 702、CreateProcessA 704-706） |
+| `docs/specs/2026-07-15-Spec-GitTagVersioning-v1.0.md` | **构建期版本头生成（GitTag）** | ✅ | `CMakeLists.txt:5-6`（include GetGitVersion.cmake + get_git_version()）、`:16-17`（生成 `${CMAKE_BINARY_DIR}/include/version.h` 自 `include/version.h.in`）、`:32` |
+| `docs/specs/2026-07-07-Spec-RegionDetection-Phase2-v2.0.md`（Region 检测 Phase 1 已落地） | **Region 数据库列迁移** | ✅ | `src/ProfileExItemDAO.cpp:25`（`ALTER TABLE ProfileItem ADD COLUMN Region TEXT;`）+ `tests/test_dedup.cpp:31`（`"Region TEXT"`） |
+| `docs/specs/2026-07-24-Spec-SubscriptionWritePerformance-v1.0.md` + `docs/plans/2026-07-24-SubscriptionWritePerformance-Optimization-v1.0.md` | **Phase B: 批量 INSERT（insertBatch）** | ❌ | `src/` 全量 grep `insertBatch|INSERT OR IGNORE|insertProfileItemBatch` 无匹配；计划文档复选框 `[ ]`（plan 行 119/121/231/344），tracker 状态 📝 draft |
+| `docs/specs/2026-07-07-Spec-RegionDetection-Phase2-v2.0.md` | **Phase 2: 去重阶段分区富化（deduplicateRegionPhase）** | ❌ | `src/` 全量 grep `deduplicateRegionPhase|regionDetectCount|getRegionDetectCount` 无匹配；spec 复选框 `[ ]`（行 596-597/624） |

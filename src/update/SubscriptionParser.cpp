@@ -363,10 +363,20 @@ std::vector<db::models::Profileitem> SubscriptionParser::parse(const std::string
 
             std::string decodedInfo = decodeBase64(userInfo);
             size_t methodPos = decodedInfo.find(':');
-            if (methodPos != std::string::npos) {
-                profile.security = decodedInfo.substr(0, methodPos);
-                profile.id = decodedInfo.substr(methodPos + 1);
+            if (methodPos == std::string::npos) {
+                // No "method:password" separator -> malformed link, drop node.
+                continue;
             }
+            const std::string method = decodedInfo.substr(0, methodPos);
+            const std::string password = decodedInfo.substr(methodPos + 1);
+            if (method.empty() || password.empty() ||
+                !utils::isPrintableAscii(method) || !utils::isPrintableAscii(password)) {
+                // Binary garbage (e.g. base64 of a URL-encoded username) can
+                // never form a usable shadowsocks cipher/password -> drop node.
+                continue;
+            }
+            profile.security = method;
+            profile.id = password;
         } else if (line.find("trojan://") == 0) {
             std::string uri = line.substr(9);
             size_t atPos = uri.find('@');
@@ -528,28 +538,37 @@ std::string SubscriptionParser::decodeBase64(const std::string& input) {
     int i = 0;
     unsigned char char_array_3[3];
     unsigned char char_array_4[4];
-    int in = 0;
 
     for (size_t idx = 0; idx < input.size(); idx++) {
-        char c = input[idx];
-        if (c == '=') {
-            in = 0;
-        } else {
-            in = c;
+        const char c = input[idx];
+
+        // Padding / whitespace: ignore.
+        if (c == '=' || c == '\n' || c == '\r' || c == ' ' || c == '\t') {
+            continue;
+        }
+        // Non-ASCII bytes are never valid base64: ignore.
+        if (static_cast<unsigned char>(c) > 127) {
+            continue;
         }
 
-        if (in < 0 || in > 127) continue;
-        if (c == '=') continue;
-
+        // Locate c in the base64 alphabet. Non-alphabet characters (e.g. '%',
+        // '@', ':', '_', '-') MUST be skipped — decoding them as index 0
+        // corrupts the output stream (root cause of binary-garbage
+        // method/password bytes for malformed ss:// links).
         size_t pos = 0;
+        bool found = false;
         for (size_t k = 0; k < sizeof(base64_chars); k++) {
             if (base64_chars[k] == c) {
                 pos = k;
+                found = true;
                 break;
             }
         }
+        if (!found) {
+            continue;
+        }
 
-        char_array_4[i] = pos;
+        char_array_4[i] = static_cast<unsigned char>(pos);
         i++;
 
         if (i == 4) {

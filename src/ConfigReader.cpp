@@ -37,8 +37,6 @@ std::string ConfigReader::getDefaultConfigPath() {
 }
 
 std::optional<AppConfig> ConfigReader::load(const std::string& configPath) {
-    Logger::write("DEBUG: Loading config from: " + configPath, LogLevel::DEBUG);
-
     // Step 1: Read file via ConfigFileStore
     ConfigFileStore fileStore;
     std::string content;
@@ -48,21 +46,17 @@ std::optional<AppConfig> ConfigReader::load(const std::string& configPath) {
         errorReporter_("Configuration Error", e.what());
         return std::nullopt;
     }
-    Logger::write("DEBUG: File read successfully, content length: " + std::to_string(content.length()), LogLevel::DEBUG);
 
     // Step 2: Parse JSON via ConfigJsonParser
-    Logger::write("DEBUG: About to parse JSON...", LogLevel::DEBUG);
     ConfigJsonParser jsonParser;
     boost::json::value jv = jsonParser.parse(content);
     if (jv.is_null()) {
-        Logger::write("DEBUG: JSON parsing failed", LogLevel::DEBUG);
         std::string errMsg = "Failed to parse configuration file.\n\n";
         errMsg += "Path:\n" + configPath + "\n\n";
         errMsg += "Error:\n" + jsonParser.lastError();
         errorReporter_("Configuration Error", errMsg);
         return std::nullopt;
     }
-    Logger::write("DEBUG: JSON parsed successfully, is_object: " + std::to_string(jv.is_object()), LogLevel::DEBUG);
 
     // Step 3: Get exeDir for path resolution
     std::string exeDir = utils::getExecutableDir();
@@ -110,7 +104,6 @@ std::optional<AppConfig> ConfigReader::load(const std::string& configPath) {
         Logger::write("WARNING: " + validationResult.warnings[i], LogLevel::WARN);
     }
 
-    Logger::write("DEBUG: Config loaded successfully", LogLevel::DEBUG);
     return config;
 }
 
@@ -128,7 +121,6 @@ bool ConfigReader::save(const std::string& configPath, const AppConfig& config) 
         return false;
     }
 
-    Logger::write("Config saved to: " + configPath, LogLevel::INFO);
     return true;
 }
 

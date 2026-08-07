@@ -97,8 +97,10 @@ cmake -B build -G "Ninja" -DCMAKE_BUILD_TYPE=Debug
 # 2. 并行编译 (指定 8 线程)
 cmake --build build --parallel 8
 
-# 3. 运行主程序 (无参数默认启动 GUI 模式)
-.\build\validproxy.exe
+# 3. 运行主程序
+# 优先使用 CLI 进行功能测试，通过分析产生的日志进行维护、修复、功能验证等
+.\build\validproxy.exe            # GUI 入口（默认启动图形界面）
+.\build\validproxy-cli.exe        # CLI 入口（无参启动时，进行默认批量测试）
 
 # 4. 执行全量集成测试
 ctest -V
@@ -129,7 +131,10 @@ cmake --build build --parallel 8 && .\scripts\run_coverage.ps1
 
 ### 4.3 CLI 工具参数速查表
 
+> CLI 入口程序：`validproxy-cli.exe`。
+
 ```text
+（无参）                    : 无参启动时，进行默认批量测试（对数据库中全部代理执行连通性测试）
 -c, --config <path>         : 指定配置文件路径 (默认: bin/config.json)
 -show-sub                   : 控制台输出并显示所有订阅源
 -G, -generator <id>         : 根据特定的 indexId 导出标准 outbound Xray JSON 文本

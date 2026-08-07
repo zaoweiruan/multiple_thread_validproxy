@@ -34,6 +34,11 @@ public:
     // Running flag for lifecycle tracking
     bool stopped_{false};
 
+    // Protects instances_ (T1.5). Never hold this lock while calling
+    // XrayInstance::start() (contains 2s sleep) — it is only taken for
+    // short read/commit sections and around stop()/clear in stopAll().
+    mutable std::mutex instancesMutex_;
+
     static XrayManager* instance_;
     static std::mutex instanceMutex_;
 };

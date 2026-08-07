@@ -14,7 +14,8 @@ public:
     ProxyTester(XrayManager* manager, const std::string& testUrl, int timeoutMs);
     ~ProxyTester();
     
-    TestResult test(int socksPort, std::atomic<bool>* cancelFlag = nullptr);
+    TestResult test(int socksPort, std::atomic<bool>* cancelFlag = nullptr,
+                    std::atomic<bool>* externalCancel = nullptr);
     XrayManager* getManager() const;
 
 private:

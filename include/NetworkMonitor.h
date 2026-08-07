@@ -18,7 +18,7 @@ public:
                int checkTimeoutMs);
     void Stop();
 
-bool IsConnected() const;
+    bool IsConnected() const;
     bool IsEnabled() const;
     void setEnabled(bool enabled) { enabled_ = enabled; }
 
@@ -37,11 +37,15 @@ bool IsConnected() const;
     }
 
     int getConsecutiveFailures() const { return consecutiveFailures_.load(); }
-    void resetProbeCount() { consecutiveFailures_ = 0; }
+    int getDnsFailures() const { return dnsFailures_.load(); }
+    void resetProbeCount() { consecutiveFailures_ = 0; dnsFailures_ = 0; }
 
 private:
     void ThreadLoop();
-    bool CheckURL(const std::string& url, int timeoutMs);
+
+    /// Result of a single probe check.
+    struct ProbeResult { bool success; bool isDnsError; };
+    ProbeResult CheckURLWithDnsFlag(const std::string& url, int timeoutMs);
 
     bool enabled_{true};
     std::vector<std::string> urls_;
@@ -56,5 +60,6 @@ private:
     // Probe-on-disconnect state
     bool probeEnabled_{true};
     int  maxProbes_{3};
-    std::atomic<int> consecutiveFailures_{0};
+    std::atomic<int> consecutiveFailures_{0};   // non-DNS failures (triggers cancel)
+    std::atomic<int> dnsFailures_{0};           // DNS-specific failures (does NOT trigger cancel)
 };

@@ -137,3 +137,36 @@ TEST(PortCheckTest, FindAvailablePortReturnsNextFreePort) {
     closesocket(testSock);
     WSACleanup();
 }
+
+TEST(PrintableAsciiTest, EmptyStringReturnsTrue) {
+    EXPECT_TRUE(utils::isPrintableAscii(""));
+}
+
+TEST(PrintableAsciiTest, PrintableAsciiOnlyReturnsTrue) {
+    EXPECT_TRUE(utils::isPrintableAscii("aA1 _-~"));
+    EXPECT_TRUE(utils::isPrintableAscii("0123456789"));
+    EXPECT_TRUE(utils::isPrintableAscii("!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~"));
+}
+
+TEST(PrintableAsciiTest, ControlCharactersReturnFalse) {
+    std::string withNul = "abc";
+    withNul.push_back('\0');
+    withNul.push_back('d');
+    EXPECT_FALSE(utils::isPrintableAscii(withNul));
+
+    std::string withUsAscii31 = "abc";
+    withUsAscii31.push_back(static_cast<char>(0x1F));
+    EXPECT_FALSE(utils::isPrintableAscii(withUsAscii31));
+
+    std::string withDel = "abc";
+    withDel.push_back(static_cast<char>(0x7F));
+    EXPECT_FALSE(utils::isPrintableAscii(withDel));
+}
+
+TEST(PrintableAsciiTest, Utf8MultibyteReturnsFalse) {
+    EXPECT_FALSE(utils::isPrintableAscii("中文"));
+}
+
+TEST(PrintableAsciiTest, MixedContentReturnsFalse) {
+    EXPECT_FALSE(utils::isPrintableAscii("abc\xE4\xB8\xAD"));
+}

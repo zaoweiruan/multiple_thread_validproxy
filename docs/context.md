@@ -29,6 +29,12 @@
 
 | 日期 | 条目 | 文档 |
 |------|------|------|
+| 2026-08-07 | About 窗口编译时间不准确 — version.h 生成依赖 build.ninja 致仅 configure 时刷新（增量构建 APP_BUILD_TIME 停留上次 configure 时刻），改 add_custom_target(update_version_h ALL) 每次构建重生成；配置窗口保存 console 日志级别未同步 LogPanel 下拉框过滤，保存回调补 setInitialLogLevel | `docs/bugfix/2026-08-07-Bugfix-GUI-AboutBuildTime-LogLevelSync-v1.0.md` |
+| 2026-08-07 | 订阅更新跳过提示误报 ERROR — updateAll() 全部订阅因更新间隔被跳过时以 ERR 输出 "All subscriptions skipped by update interval - nothing to update"（非错误，随后 return true 正常完成）；修复=ERR→REPORT；真正失败的 "failed to update" 保持 ERR | `docs/bugfix/2026-08-07-Bugfix-SubitemUpdater-SkipLogLevel-v1.0.md` |
+| 2026-08-07 | 网络监控探测错误详情日志级别过低 — CheckURLWithDnsFlag 内 probe failed/DNS error/http_code 从 DEBUG/TRACE 提升为 WARN（生产 console_level=WARN 下故障可见）；ThreadLoop 状态机日志保持 ERR | `docs/bugfix/2026-08-07-Bugfix-NetworkMonitor-ProbeLogLevel-Warn-v1.0.md` |
+| 2026-08-07 | GUI 启动日志未按 config.json file_level 过滤 — main_gui.cpp Logger::init 前预解析 log 段（ConfigFileStore+ConfigJsonParser+LogConfigParser），file_level=ERROR 时 INFO/DEBUG 不再写入日志文件 | `docs/bugfix/2026-08-07-Bugfix-GuiLogFileLevel-v1.0.md` |
+| 2026-08-06 | 状态栏日志文件名不可见 — netMonPanel_ 遮挡 Field1；状态栏扩 4 字段 + SetStatusWidths + 双击 Bind 状态栏 | `docs/bugfix/2026-08-06-Bugfix-MainFrame-StatusBar-LogFile-v1.0.md` |
+| 2026-08-06 | GUI 入口 Logger 启动级别补全 console_level + LogPanel 筛选器同步 config.json | `docs/bugfix/2026-08-06-Bugfix-Logger-GUI-ConsoleLevel-v1.0.md` |
 | 2026-06-09 | xray.executable 配置值校验 — 加载时 ERROR+弹窗、GUI 文件存在性+扩展名检查 | `docs/superpowers/specs/2026-06-09-Spec-Validproxy-xray-executable-validation-v1.0.md` |
 | 2026-06-09 | test_config_reader.exe 输出目录从 bin/ 移至 tests/ — 遵循测试文件目录规范 (AGENTS.md #8) | `CMakeLists.txt` |
 | 2026-06-09 | Config validation improvements plan — 5 tasks: in-class initializers, type-warn logs, xray existence check, save failure notification, load() unit tests | `docs/plans/2026-06-09-config-validation-improvements-plan.md` |
@@ -61,4 +67,5 @@
 | 2026-08-05 | **DNS 解析永久缓存 + NetworkMonitor 第二层缓存删除** — DnsShareCache 程序级共享（CURLSH + CURLOPT_DNS_CACHE_TIMEOUT=-1，7 模块复用，进程生命周期）；"统一为单一缓存"调查结论维持两套职责隔离缓存（DnsShareCache 管 libcurl 连接域名、utils::DnsCache 管节点域名）；NetworkMonitor dnsCache_（host→成功时间戳，只写不读死代码）整体删除（成员/include/getHostFromUrl/写入块），dnsFailures_/getDnsFailures() 保留；NetworkMonitorTest 11 用例通过（8.22s） | `docs/specs/2026-08-05-Spec-DnsCache-Permanent-v1.0.md` |
 | 2026-08-05 | **导入订阅稽核：去除无法正确生成配置的代理** — utils::isPrintableAscii 提取（Deduplicator/SubscriptionParser 复用）+ SubitemUpdaterV2::isValidProxy 增加 Security/Id 可打印 ASCII 稽核（与去重阶段 deduplicateConfigErrorPhase 判定一致，入库前丢弃二进制垃圾节点）；trojan/hy2 security 空串不误杀；test_utils 新增单测 | `docs/specs/2026-08-05-Spec-ImportProxyValidation-v1.0.md` |
 | 2026-08-06 | **代理列表面板测试速度/连接用户数列显示为空** — ProxyListModel/ProxyListPanel 列标题与字符串格式化修复，新增 GetTestSpeedStr/GetUserCountStr 辅助方法 | `docs/bugfix/2026-08-06-Bugfix-ProxyListDisplayValues-v1.0.md` |
-| 2026-08-06 | **GUI 入口 Logger 启动级别遗漏 console_level 配置** — main_gui.cpp 补全 setConsoleLevel 调用，与 CLI 一致；配置文件 log.console_level 现已在两个入口均生效 | `docs/bugfix/2026-08-06-Bugfix-Logger-GUI-ConsoleLevel-v1.0.md` |
+| 2026-08-06 | **GUI 入口 Logger 启动级别遗漏 console_level 配置** — main_gui.cpp 补全 setConsoleLevel 调用，与 CLI 一致；LogPanel 筛选器启动级别同步 config.json log_console_level，新增 setInitialLogLevel() 方法；21/21 测试通过 | `docs/bugfix/2026-08-06-Bugfix-Logger-GUI-ConsoleLevel-v1.0.md` |
+| 2026-08-06 | **状态栏未铺满底部行** — SetStatusWidths 固定宽度总和 920 逻辑 px < 状态栏逻辑宽 1280 px，右侧空白；末字段改 -1（可变宽度）后 Field3 拉伸铺满，UIA 验证右缘=1280 | `docs/bugfix/2026-08-06-Bugfix-MainFrame-StatusBar-LogFile-v1.0.md` |

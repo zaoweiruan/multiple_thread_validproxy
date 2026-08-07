@@ -203,7 +203,9 @@ bool isValidUrlFormat(const std::string& url) {
 
             timeval tv;
             tv.tv_sec = 0;
-            tv.tv_usec = 200000;  // 200 ms
+            tv.tv_usec = 30000;  // 30 ms — the probe only ever connects to
+                                 // 127.0.0.1, where connect resolves in
+                                 // microseconds; 200 ms per probe was pure waste
 
             int selResult = select(0, nullptr, &writeSet, nullptr, &tv);
 
@@ -295,5 +297,15 @@ bool isValidUrlFormat(const std::string& url) {
     std::string getProcessNameFromPath(const std::string& fullPath) {
         std::filesystem::path p(fullPath);
         return p.filename().string();
+    }
+
+    bool isPrintableAscii(const std::string& s) {
+        for (const char ch : s) {
+            const unsigned char uc = static_cast<unsigned char>(ch);
+            if (uc < 0x20 || uc > 0x7E) {
+                return false;
+            }
+        }
+        return true;
     }
  }
