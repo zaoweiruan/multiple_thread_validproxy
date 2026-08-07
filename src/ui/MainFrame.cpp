@@ -211,6 +211,11 @@ MainFrame::MainFrame(const config::AppConfig& cfg, sqlite3* db)
     initToolBar();
     Logger::write("[MainFrame] initStatusBar...", LogLevel::DEBUG);
     initStatusBar();
+    // Disable the menu/toolbar help-text mechanism (wxFrameBase::DoGiveHelp).
+    // Opening a menu with empty help strings would otherwise clear status bar
+    // field 0 ("Ready"); on wxMSW, clicking to close the menu does not reliably
+    // restore it, leaving the field permanently blank until the app writes again.
+    SetStatusBarPane(-1);
     Logger::write("[MainFrame] initAuiManager...", LogLevel::DEBUG);
     initAuiManager();
     Logger::write("[MainFrame] initPanels...", LogLevel::DEBUG);

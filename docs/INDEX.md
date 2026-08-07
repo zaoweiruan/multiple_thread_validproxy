@@ -30,7 +30,7 @@ status: maintained
 | [规范化设计](#75-规范化设计) | 10 | `docs/specs/` |
 | [实施计划](#8-实施计划) | 54 | `docs/plans/` |
 | [分析报告](#9-分析报告) | 13 | `docs/reports/` |
-| [Bug 修复记录](#91-bug-修复记录) | 33 | `docs/bugfix/` |
+| [Bug 修复记录](#91-bug-修复记录) | 34 | `docs/bugfix/` |
 | [测试报告](#10-测试报告) | 1 | `docs/test/` |
 | [长期记忆](#13-长期记忆) | 1 | `docs/project-knowledge.md` (6.2 KB) |
 
@@ -340,6 +340,7 @@ status: maintained
 | 31 | [`docs/bugfix/2026-08-07-Bugfix-NetworkMonitor-ProbeLogLevel-Warn-v1.0.md`](./bugfix/2026-08-07-Bugfix-NetworkMonitor-ProbeLogLevel-Warn-v1.0.md) | **网络监控探测错误详情日志级别过低** — CheckURLWithDnsFlag 内探测失败详情（curl 错误 DEBUG / DNS 错误 TRACE / 非 2xx-3xx 状态码 DEBUG）在生产 file_level=ERROR、console_level=WARN 下完全不可见；修复=3 处全部提升为 WARN（probe failed / DNS error / http_code）；ThreadLoop 连接状态机日志（LOST/RESTORED 等）保持 ERR 不变；NetworkMonitorTest 不受影响（仅断言 LOST 的 ERR 级别） | — |
 | 32 | [`docs/bugfix/2026-08-07-Bugfix-SubitemUpdater-SkipLogLevel-v1.0.md`](./bugfix/2026-08-07-Bugfix-SubitemUpdater-SkipLogLevel-v1.0.md) | **订阅更新跳过提示误报 ERROR** — updateAll() 在全部订阅因更新间隔被跳过时（`successCount<=0 && attemptedCount==0`，随后 return true 属正常完成）以 ERR 输出 "All subscriptions skipped by update interval - nothing to update"，非错误却被记入 ERROR 告警；修复=该消息级别 ERR→REPORT；相邻 "All subscriptions failed to update - check network connectivity"（真正失败）保持 ERR；无测试引用该消息文本；历史文档 2026-06-15-Bugfix-AutoTask-SubitemUpdater-logging-and-pipeline.md L37 记载原 ERR 级别不改写 | — |
 | 33 | [`docs/bugfix/2026-08-07-Bugfix-GUI-AboutBuildTime-LogLevelSync-v1.0.md`](./bugfix/2026-08-07-Bugfix-GUI-AboutBuildTime-LogLevelSync-v1.0.md) | **About 窗口编译时间不准确 + 配置窗口 console 日志级别不同步 LogPanel** — CMakeLists add_custom_command 依赖 build.ninja 致 version.h 仅在 configure 时生成（增量构建 APP_BUILD_TIME 停留上次 configure 时刻），改为 add_custom_target(update_version_h ALL) 每次构建重生成；onMenuConfig 保存回调仅更新 Logger 全局级别未同步 logPanel_ 界面过滤，补 setInitialLogLevel(cfg.log_console_level)；21/21 测试通过（CurlEasyHandleTest/NetworkMonitorTest 2 项网络环境性失败除外） | 112 lines |
+| 34 | [`docs/bugfix/2026-08-07-Bugfix-MainFrame-StatusBar-Field0-v1.0.md`](./bugfix/2026-08-07-Bugfix-MainFrame-StatusBar-Field0-v1.0.md) | **状态栏 Field0 被菜单帮助文本机制清空且点击关闭不恢复** — wxFrameBase::DoGiveHelp 在菜单打开时以空 help 串清空 Field0（framecmn.cpp L577 官方开关：m_statusBarPane<0 直接返回）；ESC 关闭可恢复但点击关闭不恢复（MSWFindMenuFromHMENU 仅匹配右键弹出菜单，菜单栏下拉关闭不触发恢复）；修复=构造 initStatusBar 后 SetStatusBarPane(-1) 根治 + doTestAllProxies/doTestSingleProxy 启动时经 wxQueueEvent 发送 "Testing all proxies..." / "Testing proxy <id>..." + 移除 dumpStatusBarGeometry 诊断；菜单全链路 SB_GETTEXTLENGTH 实测 lens=[5,22,0,61] 恒定 | — |
 
 ---
 

@@ -838,6 +838,11 @@ void AppController::doTestSingleProxy(const std::string& indexId, wxEvtHandler* 
     ScopeGuard<std::atomic<bool>> _guard{isRunning_};
 
     try {
+        // Show per-proxy testing progress in status bar field 0
+        if (wxHandler) {
+            wxQueueEvent(wxHandler, new StatusUpdateEvent(0, std::string("Testing proxy ") + indexId + "..."));
+        }
+
         ProxyBatchTester tester(db_, config_, "", &cancelRequested_, &netMon_);
         bool ok = tester.runWithIndexId(indexId);
 
@@ -873,6 +878,11 @@ void AppController::doTestAllProxies(wxEvtHandler* wxHandler) {
     ScopeGuard<std::atomic<bool>> _guard{isRunning_};
 
     try {
+        // Show batch testing progress in status bar field 0
+        if (wxHandler) {
+            wxQueueEvent(wxHandler, new StatusUpdateEvent(0, "Testing all proxies..."));
+        }
+
         ProxyBatchTester tester(db_, config_, "", &cancelRequested_, &netMon_);
         bool ok = tester.run();
 
