@@ -17,20 +17,35 @@ public:
     int getSocksPort() const;
     int getApiPort() const;
     std::string getConfigPath() const;
+    // Last observed exit code of the child process (STILL_ACTIVE while alive).
+    DWORD lastExitCode() const;
 
 private:
     std::string xrayPath_;
     int socksPort_;
     int apiPort_;
     std::string configPath_;
+    std::string stdoutLogPath_;
+    std::string stderrLogPath_;
     HANDLE processHandle_;
     HANDLE jobObject_;
-    std::atomic<bool> running_;
+    HANDLE stdoutFile_;
+    HANDLE stderrFile_;
+    mutable std::atomic<bool> running_;
+    mutable DWORD lastExitCode_;
     mutable std::mutex stateMutex_;
     
     static constexpr DWORD GRACEFUL_SHUTDOWN_MS = 500;
+    static constexpr size_t DEATH_STDERR_TAIL_BYTES = 4096;
     
     bool createConfigFile();
+    // Redirect child stdout/stderr into per-instance log files (CREATE_ALWAYS).
+    bool openRedirectFiles();
+    void closeRedirectFiles();
+    // Log exit code + tail of the stderr redirect file; caches the code in lastExitCode_.
+    void logDeathDetails(DWORD exitCode) const;
+    // Read the trailing maxBytes of a file, truncated to a full line boundary.
+    static std::string readFileTail(const std::string& path, size_t maxBytes);
 };
 
 #endif // XRAY_INSTANCE_H

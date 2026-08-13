@@ -25,6 +25,15 @@ public:
     int getWorkers() const { return workers_; }
     bool isRunning() const { return getInstanceCount() > 0; }
 
+    // Lifecycle management: locate the instance bound to apiPort and evaluate
+    // whether its process is still healthy. If the process is dead or hung
+    // (API port unresponsive), the instance is stopped, removed from the pool,
+    // its ports freed, and a fresh instance is relaunched immediately with the
+    // original config (same ports → same config file). Returns true if the
+    // instance was found and successfully relaunched (ready to accept tests);
+    // false if no instance is bound to apiPort or the relaunch failed.
+    bool evaluateInstanceHealth(int apiPort);
+
  private:
     std::vector<std::unique_ptr<XrayInstance>> instances_;
     std::string xrayPath_;

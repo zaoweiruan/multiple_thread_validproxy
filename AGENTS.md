@@ -98,7 +98,7 @@ cmake -B build -G "Ninja" -DCMAKE_BUILD_TYPE=Debug
 cmake --build build --parallel 8
 
 # 3. 运行主程序
-# 优先使用 CLI 进行功能测试，通过分析产生的日志进行维护、修复、功能验证等
+# 优先使用 CLI 进行功能测试，通过修改配置文件中默认sql定制目标进行测试，分析产生的日志进行维护、修复、功能验证等
 .\build\validproxy.exe            # GUI 入口（默认启动图形界面）
 .\build\validproxy-cli.exe        # CLI 入口（无参启动时，进行默认批量测试）
 

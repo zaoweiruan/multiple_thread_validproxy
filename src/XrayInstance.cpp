@@ -8,9 +8,13 @@
 #include <vector>
 
 XrayInstance::XrayInstance(const std::string& xrayPath, int socksPort, int apiPort, const std::string& configDir)
-    : xrayPath_(xrayPath), socksPort_(socksPort), apiPort_(apiPort), running_(false) {
+    : xrayPath_(xrayPath), socksPort_(socksPort), apiPort_(apiPort),
+      stdoutFile_(INVALID_HANDLE_VALUE), stderrFile_(INVALID_HANDLE_VALUE),
+      running_(false), lastExitCode_(STILL_ACTIVE) {
     
     configPath_ = configDir + "/xray_config_" + std::to_string(socksPort) + ".json";
+    stdoutLogPath_ = configDir + "/xray_stdout_" + std::to_string(socksPort) + ".log";
+    stderrLogPath_ = configDir + "/xray_stderr_" + std::to_string(socksPort) + ".log";
     processHandle_ = nullptr;
     jobObject_ = nullptr;
 }
@@ -65,15 +69,42 @@ bool XrayInstance::start() {
 
     Logger::write("[XrayInstance] Executing: " + xrayPath_ + " run -c " + configPath_, LogLevel::INFO);
 
+    // Redirect the child's stdout/stderr into per-instance log files so that
+    // xray warnings and panic stacks survive (previously no std handles were
+    // inherited, so xray's stderr output was silently discarded).
+    if (!openRedirectFiles()) {
+        CloseHandle(jobObject_);
+        jobObject_ = nullptr;
+        return false;
+    }
+
     STARTUPINFOW si = {};
     si.cb = sizeof(si);
+    si.dwFlags = STARTF_USESTDHANDLES;
+    si.hStdOutput = stdoutFile_;
+    si.hStdError = stderrFile_;
+
+    // xray does not read stdin; give it an inheritable NUL handle so the child
+    // never inherits an invalid stdin.
+    SECURITY_ATTRIBUTES saInherit = {};
+    saInherit.nLength = sizeof(saInherit);
+    saInherit.bInheritHandle = TRUE;
+    HANDLE nulIn = CreateFileA("NUL", GENERIC_READ,
+                               FILE_SHARE_READ | FILE_SHARE_WRITE,
+                               &saInherit, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    si.hStdInput = (nulIn != INVALID_HANDLE_VALUE) ? nulIn : nullptr;
+
     PROCESS_INFORMATION pi = {};
 
-    BOOL created = CreateProcessW(exeW.data(), cmdW.data(), nullptr, nullptr, FALSE,
+    BOOL created = CreateProcessW(exeW.data(), cmdW.data(), nullptr, nullptr, TRUE,
         CREATE_SUSPENDED | CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi);
+    if (nulIn != INVALID_HANDLE_VALUE) {
+        CloseHandle(nulIn);
+    }
     if (!created) {
         DWORD err = GetLastError();
         Logger::write("[XrayInstance] Failed to create process: " + std::to_string(err), LogLevel::ERR);
+        closeRedirectFiles();
         CloseHandle(jobObject_);
         jobObject_ = nullptr;
         return false;
@@ -87,6 +118,7 @@ bool XrayInstance::start() {
         TerminateProcess(pi.hProcess, 1);
         CloseHandle(pi.hThread);
         CloseHandle(pi.hProcess);
+        closeRedirectFiles();
         CloseHandle(jobObject_);
         jobObject_ = nullptr;
         return false;
@@ -94,6 +126,7 @@ bool XrayInstance::start() {
     
     ResumeThread(pi.hThread);
     processHandle_ = pi.hProcess;
+    lastExitCode_ = STILL_ACTIVE;
     CloseHandle(pi.hThread);
 
     // Bounded liveness poll: verify the process survived for at least a few hundred ms
@@ -104,13 +137,12 @@ bool XrayInstance::start() {
         std::this_thread::sleep_for(std::chrono::milliseconds(LIVENESS_STEP_MS));
         DWORD exitCode = 0;
         if (!GetExitCodeProcess(processHandle_, &exitCode) || exitCode != STILL_ACTIVE) {
-            Logger::write("[XrayInstance] Process died during startup (exitCode="
-                          + std::to_string(exitCode) + "), socks="
-                          + std::to_string(socksPort_), LogLevel::ERR);
+            logDeathDetails(exitCode);
             TerminateProcess(processHandle_, 1);
             WaitForSingleObject(processHandle_, 2000);
             CloseHandle(processHandle_);
             processHandle_ = nullptr;
+            closeRedirectFiles();
             CloseHandle(jobObject_);
             jobObject_ = nullptr;
             running_.store(false);
@@ -121,12 +153,12 @@ bool XrayInstance::start() {
     // Final confirmation: process is alive after the poll window
     DWORD finalExitCode = 0;
     if (!GetExitCodeProcess(processHandle_, &finalExitCode) || finalExitCode != STILL_ACTIVE) {
-        Logger::write("[XrayInstance] Process not alive after poll, socks="
-                      + std::to_string(socksPort_), LogLevel::ERR);
+        logDeathDetails(finalExitCode);
         TerminateProcess(processHandle_, 1);
         WaitForSingleObject(processHandle_, 2000);
         CloseHandle(processHandle_);
         processHandle_ = nullptr;
+        closeRedirectFiles();
         CloseHandle(jobObject_);
         jobObject_ = nullptr;
         running_.store(false);
@@ -197,11 +229,34 @@ void XrayInstance::stop() {
     if (job) {
         CloseHandle(job);
     }
+    closeRedirectFiles();
 }
 
 bool XrayInstance::isRunning() const {
     std::lock_guard<std::mutex> lock(stateMutex_);
-    return running_.load();
+    if (processHandle_ == nullptr) {
+        return false;
+    }
+    DWORD exitCode = 0;
+    if (!GetExitCodeProcess(processHandle_, &exitCode)) {
+        return false;
+    }
+    bool alive = (exitCode == STILL_ACTIVE);
+    if (!alive) {
+        running_.store(false);
+        // Log exit code + stderr tail once per death (transition detection).
+        if (lastExitCode_ == STILL_ACTIVE) {
+            logDeathDetails(exitCode);
+        } else {
+            lastExitCode_ = exitCode;
+        }
+    }
+    return alive;
+}
+
+DWORD XrayInstance::lastExitCode() const {
+    std::lock_guard<std::mutex> lock(stateMutex_);
+    return lastExitCode_;
 }
 
 int XrayInstance::getSocksPort() const {
@@ -257,4 +312,83 @@ bool XrayInstance::createConfigFile() {
     out << content;
     out.close();
     return true;
+}
+
+bool XrayInstance::openRedirectFiles() {
+    SECURITY_ATTRIBUTES sa = {};
+    sa.nLength = sizeof(sa);
+    sa.bInheritHandle = TRUE;
+    sa.lpSecurityDescriptor = nullptr;
+
+    stdoutFile_ = CreateFileA(stdoutLogPath_.c_str(), GENERIC_WRITE,
+                              FILE_SHARE_READ | FILE_SHARE_WRITE,
+                              &sa, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    stderrFile_ = CreateFileA(stderrLogPath_.c_str(), GENERIC_WRITE,
+                              FILE_SHARE_READ | FILE_SHARE_WRITE,
+                              &sa, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (stdoutFile_ == INVALID_HANDLE_VALUE || stderrFile_ == INVALID_HANDLE_VALUE) {
+        DWORD err = GetLastError();
+        Logger::write("[XrayInstance] Failed to open redirect log files: "
+                      + std::to_string(err), LogLevel::ERR);
+        closeRedirectFiles();
+        return false;
+    }
+    return true;
+}
+
+void XrayInstance::closeRedirectFiles() {
+    if (stdoutFile_ != INVALID_HANDLE_VALUE && stdoutFile_ != nullptr) {
+        CloseHandle(stdoutFile_);
+        stdoutFile_ = INVALID_HANDLE_VALUE;
+    }
+    if (stderrFile_ != INVALID_HANDLE_VALUE && stderrFile_ != nullptr) {
+        CloseHandle(stderrFile_);
+        stderrFile_ = INVALID_HANDLE_VALUE;
+    }
+}
+
+void XrayInstance::logDeathDetails(DWORD exitCode) const {
+    lastExitCode_ = exitCode;
+    std::string msg = "[XrayInstance] Process exited unexpectedly (socks="
+                      + std::to_string(socksPort_) + ", exitCode="
+                      + std::to_string(exitCode) + ")";
+    std::string tail = readFileTail(stderrLogPath_, DEATH_STDERR_TAIL_BYTES);
+    if (!tail.empty()) {
+        msg += ", stderr tail:\n" + tail;
+    }
+    Logger::write(msg, LogLevel::ERR);
+}
+
+std::string XrayInstance::readFileTail(const std::string& path, size_t maxBytes) {
+    std::ifstream in(path, std::ios::binary);
+    if (!in.is_open()) {
+        return std::string();
+    }
+    in.seekg(0, std::ios::end);
+    std::streamoff size = in.tellg();
+    if (size <= 0) {
+        return std::string();
+    }
+    size_t readLen = (static_cast<size_t>(size) <= maxBytes)
+                         ? static_cast<size_t>(size)
+                         : maxBytes;
+    in.seekg(-static_cast<std::streamoff>(readLen), std::ios::end);
+    std::string content(readLen, '\0');
+    in.read(&content[0], static_cast<std::streamsize>(readLen));
+    // The window covers the whole file: there is no partial leading line,
+    // so keep everything (only strip one trailing line break for tidiness).
+    if (readLen >= static_cast<size_t>(size)) {
+        while (!content.empty() &&
+               (content.back() == '\n' || content.back() == '\r')) {
+            content.pop_back();
+        }
+        return content;
+    }
+    // The window cut off the file head: drop the first (possibly partial)
+    // line so the tail never starts mid-line.
+    size_t firstNewline = content.find('\n');
+    if (firstNewline != std::string::npos && firstNewline != 0) {
+        content = content.substr(firstNewline + 1);
+    }
+    return content;
 }

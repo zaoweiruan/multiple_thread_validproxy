@@ -170,3 +170,88 @@ TEST(PrintableAsciiTest, Utf8MultibyteReturnsFalse) {
 TEST(PrintableAsciiTest, MixedContentReturnsFalse) {
     EXPECT_FALSE(utils::isPrintableAscii("abc\xE4\xB8\xAD"));
 }
+
+// Regression: numeric-leading valid domain names previously rejected by the
+// IPv4 parser's early "octet > 255" short-circuit (see
+// docs/bugfix/2026-08-12-Bugfix-IsPublicAddress-NumericDomain-v1.0.md).
+TEST(IsPublicAddressTest, NumericDomainWithAlphaTLD) {
+    EXPECT_TRUE(utils::isPublicAddress("8103.shomaparvazroyadetonnist-bypassishere.lat"));
+    EXPECT_TRUE(utils::isPublicAddress("876.outline-vpn.cloud"));
+    EXPECT_TRUE(utils::isPublicAddress("1744156156.tencentapp.cn"));
+    EXPECT_TRUE(utils::isPublicAddress("67.7777112.xyz"));
+    EXPECT_TRUE(utils::isPublicAddress("230920393.f-sub.com"));
+}
+
+TEST(IsPublicAddressTest, LeadingZeroNumericDomain) {
+    // "09..." is not the "0." pattern of the Rule 1 heuristic, so it must pass.
+    EXPECT_TRUE(utils::isPublicAddress("09303582303.ddns.net"));
+}
+
+TEST(IsPublicAddressTest, LongNumericSubdomainFallsBackToDomain) {
+    EXPECT_TRUE(utils::isPublicAddress(
+        "93343878961078676381579883502615.international-ixp.com"));
+    EXPECT_TRUE(utils::isPublicAddress(
+        "0101010101010101010101001010101010110010101010101010101010101.poki-pakipon.ir"));
+}
+
+TEST(IsPublicAddressTest, LoopbackStillRejected) {
+    EXPECT_FALSE(utils::isPublicAddress("127.0.0.1"));
+    EXPECT_FALSE(utils::isPublicAddress("127.0.0.53"));
+    EXPECT_FALSE(utils::isPublicAddress("127.1.1.127"));
+}
+
+TEST(IsPublicAddressTest, PrivateRangesStillRejected) {
+    EXPECT_FALSE(utils::isPublicAddress("0.0.0.0"));
+    EXPECT_FALSE(utils::isPublicAddress("10.1.2.3"));
+    EXPECT_FALSE(utils::isPublicAddress("192.168.1.1"));
+    EXPECT_FALSE(utils::isPublicAddress("172.16.0.1"));
+    EXPECT_FALSE(utils::isPublicAddress("172.31.255.255"));
+    EXPECT_FALSE(utils::isPublicAddress("169.254.1.1"));
+}
+
+TEST(IsPublicAddressTest, MulticastAndReservedStillRejected) {
+    EXPECT_FALSE(utils::isPublicAddress("224.0.0.1"));
+    EXPECT_FALSE(utils::isPublicAddress("240.0.0.1"));
+}
+
+TEST(IsPublicAddressTest, PublicIpv4Accepted) {
+    EXPECT_TRUE(utils::isPublicAddress("8.8.8.8"));
+    EXPECT_TRUE(utils::isPublicAddress("1.2.3.4"));
+    EXPECT_TRUE(utils::isPublicAddress("172.32.0.1"));
+}
+
+TEST(IsPublicAddressTest, MalformedIpv4Rejected) {
+    EXPECT_FALSE(utils::isPublicAddress("256.1.1.1"));
+    EXPECT_FALSE(utils::isPublicAddress("1.2.3.4.5"));
+    EXPECT_FALSE(utils::isPublicAddress("1.2.3"));
+    EXPECT_FALSE(utils::isPublicAddress("1."));
+    EXPECT_FALSE(utils::isPublicAddress("."));
+    EXPECT_FALSE(utils::isPublicAddress("1..2"));
+}
+
+TEST(IsPublicAddressTest, NormalDomainAccepted) {
+    EXPECT_TRUE(utils::isPublicAddress("example.com"));
+    EXPECT_TRUE(utils::isPublicAddress("sub.domain.example.org"));
+}
+
+TEST(IsPublicAddressTest, GarbageDomainHeuristicsRejected) {
+    EXPECT_FALSE(utils::isPublicAddress("0.example.com"));
+    EXPECT_FALSE(utils::isPublicAddress("a.b.c.d.example.org"));
+    EXPECT_FALSE(utils::isPublicAddress("0.0.0.einetwork.news"));
+}
+
+TEST(IsPublicAddressTest, IpPrefixedDomainFallsBackToDomain) {
+    EXPECT_TRUE(utils::isPublicAddress("127.0.0.1.example.com"));
+}
+
+TEST(IsPublicAddressTest, EmptyAndSingleLabel) {
+    EXPECT_FALSE(utils::isPublicAddress(""));
+    EXPECT_TRUE(utils::isPublicAddress("localhost"));
+}
+
+TEST(IsPublicAddressTest, Ipv6LiteralUnchanged) {
+    EXPECT_FALSE(utils::isPublicAddress("::1"));
+    EXPECT_FALSE(utils::isPublicAddress("::"));
+    EXPECT_FALSE(utils::isPublicAddress("fe80::1"));
+    EXPECT_TRUE(utils::isPublicAddress("2001:4860:4860::8888"));
+}

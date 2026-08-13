@@ -1,5 +1,14 @@
+// Winsock2 must be included before <windows.h> (which gtest may pull in
+// transitively on Windows) to avoid the winsock.h / winsock2.h clash.
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <winsock2.h>
+#include <ws2tcpip.h>
+
 #include <gtest/gtest.h>
 #include <cstdint>
+#include <cstring>
 #include <string>
 #include <vector>
 #include <map>
@@ -39,6 +48,16 @@ protected:
     bool parseServerAddr(const std::string& addr, std::string& host, int& port) {
         xray::XrayApi tempApi("xray.exe", addr);
         return tempApi.parseServerAddr(host, port);
+    }
+    // Lifecycle helpers — friend access to XrayApi private gRPC members.
+    int callGrpcConnect(xray::XrayApi& api, const std::string& host, int port) {
+        return api.grpcConnect(host, port);
+    }
+    void callGrpcClose(xray::XrayApi& api, int sock) {
+        api.grpcClose(sock);
+    }
+    int getConsecutiveFailures(const xray::XrayApi& api) const {
+        return api.consecutiveConnectFailures_;
     }
     static bool parseOutboundJson(const std::string& json,
                                   std::string& tagOut,
@@ -87,6 +106,14 @@ protected:
     }
     static std::string encodeRealitySettings(const boost::json::object& reality) {
         return XrayApi::encodeRealitySettings(reality);
+    }
+    static std::string encodePackedInt64Field(int fieldNumber,
+                                              const int64_t* values,
+                                              int count) {
+        return XrayApi::encodePackedInt64Field(fieldNumber, values, count);
+    }
+    static void parseSpiderYParams(const std::string& spiderX, int64_t* out) {
+        XrayApi::parseSpiderYParams(spiderX, out);
     }
     // Decode varint-delimited fields from a protobuf message into a map<fieldNum, value>.
     // For varint fields: value is the decoded uint64.
@@ -645,6 +672,92 @@ TEST_F(XrayApiDirectTest, ParseOutboundJsonNullTag) {
     EXPECT_FALSE(parseOutboundJson(json, tagOut, typeUrl, valueJson));
 }
 
+TEST_F(XrayApiDirectTest, ParseOutboundJsonShadowsocks2022) {
+    // SS2022 ciphers must map to xray.proxy.shadowsocks_2022.ClientConfig.
+    std::string json = R"({"outbounds":[{"tag":"ss2022","protocol":"shadowsocks","settings":{"servers":[{"address":"1.2.3.4","port":8388,"method":"2022-blake3-aes-128-gcm","password":"k3y-value"}]}}]})";
+    std::string tagOut, typeUrl, valueJson;
+    EXPECT_TRUE(parseOutboundJson(json, tagOut, typeUrl, valueJson));
+    EXPECT_EQ(tagOut, "ss2022");
+    EXPECT_EQ(typeUrl, "xray.proxy.shadowsocks_2022.ClientConfig");
+    EXPECT_TRUE(valueJson.find("2022-blake3") != std::string::npos);
+}
+
+TEST_F(XrayApiDirectTest, ParseOutboundJsonShadowsocksLegacy) {
+    // Legacy (non-2022) cipher keeps the legacy typeUrl.
+    std::string json = R"({"outbounds":[{"tag":"ss-legacy","protocol":"shadowsocks","settings":{"servers":[{"address":"1.2.3.4","port":8388,"method":"aes-256-gcm","password":"pw"}]}}]})";
+    std::string tagOut, typeUrl, valueJson;
+    EXPECT_TRUE(parseOutboundJson(json, tagOut, typeUrl, valueJson));
+    EXPECT_EQ(tagOut, "ss-legacy");
+    EXPECT_EQ(typeUrl, "xray.proxy.shadowsocks.ClientConfig");
+}
+
+TEST_F(XrayApiDirectTest, ParseOutboundJsonShadowsocksNoServers) {
+    // Malformed/empty servers must still map to the legacy typeUrl (fallback).
+    std::string json = R"({"outbounds":[{"tag":"ss-empty","protocol":"shadowsocks","settings":{}}]})";
+    std::string tagOut, typeUrl, valueJson;
+    EXPECT_TRUE(parseOutboundJson(json, tagOut, typeUrl, valueJson));
+    EXPECT_EQ(tagOut, "ss-empty");
+    EXPECT_EQ(typeUrl, "xray.proxy.shadowsocks.ClientConfig");
+}
+
+TEST_F(XrayApiDirectTest, JsonConfigToProtobufShadowsocks2022Wire) {
+    // ClientConfig { address=1, port=2, method=3, key=4 } — flat layout,
+    // no ServerEndpoint/User/TypedMessage nesting, key carries raw password.
+    const std::string addr = "1.2.3.4";
+    const int port = 8388;
+    const std::string method = "2022-blake3-aes-128-gcm";
+    const std::string key = "k3y-value";
+    const std::string valueJson =
+        "{\"settings\":{\"servers\":[{\"address\":\"" + addr + "\",\"port\":" +
+        std::to_string(port) + ",\"method\":\"" + method +
+        "\",\"password\":\"" + key + "\"}]}}";
+    const std::string result =
+        jsonConfigToProtobuf("xray.proxy.shadowsocks_2022.ClientConfig",
+                             valueJson);
+    ASSERT_FALSE(result.empty());
+    // IPOrDomain{bytes ip = 1} holding 1.2.3.4 in network byte order.
+    const std::string ipOrDomain =
+        encodeLengthDelimited(1, std::string("\x01\x02\x03\x04", 4));
+    const std::string expected =
+        encodeLengthDelimited(1, ipOrDomain) +
+        encodeVarintField(2, static_cast<uint64_t>(port)) +
+        encodeString(3, method) + encodeString(4, key);
+    EXPECT_EQ(result, expected);
+    // No legacy Account TypedMessage may be embedded.
+    EXPECT_EQ(result.find("xray.proxy.shadowsocks.Account"),
+              std::string::npos);
+}
+
+TEST_F(XrayApiDirectTest, JsonConfigToProtobufShadowsocksLegacyWireUnchanged) {
+    // Regression guard: legacy ciphers must still produce the legacy Account
+    // wire format (TypedMessage carrying xray.proxy.shadowsocks.Account).
+    const std::string valueJson =
+        "{\"settings\":{\"servers\":[{\"address\":\"1.2.3.4\",\"port\":8388,"
+        "\"method\":\"aes-256-gcm\",\"password\":\"pw\"}]}}";
+    const std::string result =
+        jsonConfigToProtobuf("xray.proxy.shadowsocks.ClientConfig", valueJson);
+    ASSERT_FALSE(result.empty());
+    EXPECT_NE(result.find("xray.proxy.shadowsocks.Account"),
+              std::string::npos);
+}
+
+TEST_F(XrayApiDirectTest, JsonConfigToProtobufShadowsocks2022MissingKey) {
+    // Missing password/key -> empty (caller falls back to subprocess path).
+    const std::string valueJson =
+        "{\"settings\":{\"servers\":[{\"address\":\"1.2.3.4\",\"port\":8388,"
+        "\"method\":\"2022-blake3-aes-128-gcm\"}]}}";
+    EXPECT_TRUE(jsonConfigToProtobuf(
+        "xray.proxy.shadowsocks_2022.ClientConfig", valueJson).empty());
+}
+
+TEST_F(XrayApiDirectTest, JsonConfigToProtobufShadowsocks2022MissingMethod) {
+    const std::string valueJson =
+        "{\"settings\":{\"servers\":[{\"address\":\"1.2.3.4\",\"port\":8388,"
+        "\"password\":\"k3y\"}]}}";
+    EXPECT_TRUE(jsonConfigToProtobuf(
+        "xray.proxy.shadowsocks_2022.ClientConfig", valueJson).empty());
+}
+
 // ---------------------------------------------------------------------------
 // Stream/Multiplex/Sender config encoders (SenderConfig for AddOutbound)
 // ---------------------------------------------------------------------------
@@ -785,6 +898,9 @@ TEST_F(XrayApiDirectTest, EncodeStreamConfigRealitySecurity) {
     realityConfig += encodeString(2, "example.com:443");
     realityConfig += encodeLengthDelimited(23, base64Decode(
         "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"));
+    // field 27 (spider_y): always encoded even without spiderX, 10 zero slots.
+    int64_t spiderY[10] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+    realityConfig += encodePackedInt64Field(27, spiderY, 10);
     std::string secTyped;
     secTyped += encodeString(1, "xray.transport.internet.reality.Config");
     secTyped += encodeString(2, realityConfig);
@@ -1283,6 +1399,264 @@ TEST_F(XrayApiDirectTest, EncodeRealitySettingsRealisticKey) {
         EXPECT_EQ(lens[23], 32u);
         EXPECT_EQ(lens[24], 8u);
     }
+}
+
+// ---- spider_y (protobuf field 27) regression ----
+// xray-core infra/conf/transport_internet.go always builds a 10-element
+// SpiderY slice from the spiderX query params (p/c/t/i/r); the gRPC path must
+// send the same 10 values or the receiving process hits reality.go:273
+// (config.SpiderY[8]/[9]) with a nil slice and panics the whole xray process.
+
+TEST_F(XrayApiDirectTest, ParseSpiderYParams) {
+    int64_t arr[10];
+
+    // p=3-5 -> padding [0]=3 [1]=5, all other slots stay 0.
+    std::memset(arr, 0x7F, sizeof(arr));
+    parseSpiderYParams("/?p=3-5", arr);
+    EXPECT_EQ(arr[0], 3);
+    EXPECT_EQ(arr[1], 5);
+    EXPECT_EQ(arr[2], 0);
+    EXPECT_EQ(arr[3], 0);
+    EXPECT_EQ(arr[4], 0);
+    EXPECT_EQ(arr[5], 0);
+    EXPECT_EQ(arr[6], 0);
+    EXPECT_EQ(arr[7], 0);
+    EXPECT_EQ(arr[8], 0);
+    EXPECT_EQ(arr[9], 0);
+
+    // "/" (no query) -> all zeros.
+    std::memset(arr, 0x7F, sizeof(arr));
+    parseSpiderYParams("/", arr);
+    for (int i = 0; i < 10; ++i) {
+        EXPECT_EQ(arr[i], 0) << "slot " << i;
+    }
+
+    // t=2 (single segment) -> both times slots get the same value.
+    std::memset(arr, 0x7F, sizeof(arr));
+    parseSpiderYParams("/?t=2", arr);
+    EXPECT_EQ(arr[4], 2);
+    EXPECT_EQ(arr[5], 2);
+    EXPECT_EQ(arr[0], 0);
+
+    // c=1-3-9 -> only the first two segments are used (mirrors Go Split[0/1]).
+    std::memset(arr, 0x7F, sizeof(arr));
+    parseSpiderYParams("/?c=1-3-9", arr);
+    EXPECT_EQ(arr[2], 1);
+    EXPECT_EQ(arr[3], 3);
+
+    // All params at once.
+    std::memset(arr, 0x7F, sizeof(arr));
+    parseSpiderYParams("/?p=1-2&c=3-4&t=5-6&i=7-8&r=9-10", arr);
+    EXPECT_EQ(arr[0], 1);
+    EXPECT_EQ(arr[1], 2);
+    EXPECT_EQ(arr[2], 3);
+    EXPECT_EQ(arr[3], 4);
+    EXPECT_EQ(arr[4], 5);
+    EXPECT_EQ(arr[5], 6);
+    EXPECT_EQ(arr[6], 7);
+    EXPECT_EQ(arr[7], 8);
+    EXPECT_EQ(arr[8], 9);
+    EXPECT_EQ(arr[9], 10);
+
+    // Empty string -> all zeros.
+    std::memset(arr, 0x7F, sizeof(arr));
+    parseSpiderYParams("", arr);
+    for (int i = 0; i < 10; ++i) {
+        EXPECT_EQ(arr[i], 0) << "slot " << i;
+    }
+
+    // Invalid number -> slot stays 0 (mirrors strconv.ParseInt failure).
+    std::memset(arr, 0x7F, sizeof(arr));
+    parseSpiderYParams("/?p=abc", arr);
+    EXPECT_EQ(arr[0], 0);
+    EXPECT_EQ(arr[1], 0);
+}
+
+TEST_F(XrayApiDirectTest, EncodeRealitySettingsSpiderY) {
+    // spiderX with query params -> field 27 carries the parsed 10 values.
+    boost::json::object reality;
+    reality["serverName"] = "ozon.ru";
+    reality["spiderX"] = "/?p=3-5";
+
+    std::string result = encodeRealitySettings(reality);
+    std::map<int, uint64_t> lens = decodeVarintFields(result);
+    EXPECT_EQ(lens[27], 10u) << "spider_y must be a 10-element packed array";
+
+    // Raw wire check: tag for field 27 wire type 2 is (27<<3)|2 = 218 = 0xDA,
+    // varint-encoded as 0xDA 0x01, followed by length 0x0A then 10 payload bytes.
+    const std::string needle = std::string("\xDA\x01\x0A", 3);
+    size_t pos = result.find(needle);
+    ASSERT_NE(pos, std::string::npos) << "packed spider_y tag/length missing";
+    // p=3-5 -> payload[0]=3 (varint 0x03), payload[1]=5 (varint 0x05), rest 0.
+    EXPECT_EQ(static_cast<unsigned char>(result[pos + 3]), 0x03u);
+    EXPECT_EQ(static_cast<unsigned char>(result[pos + 4]), 0x05u);
+    for (size_t i = pos + 5; i < pos + 13; ++i) {
+        EXPECT_EQ(static_cast<unsigned char>(result[i]), 0x00u) << "byte " << i;
+    }
+}
+
+TEST_F(XrayApiDirectTest, EncodeRealitySettingsSpiderYAlwaysPresent) {
+    // No spiderX at all -> field 27 must STILL be encoded with all zeros.
+    // Omitting it leaves SpiderY nil on the xray side (gRPC path skips the
+    // JSON adapter) and any failed REALITY handshake panics at reality.go:273.
+    boost::json::object reality;
+    reality["serverName"] = "ozon.ru";
+
+    std::string result = encodeRealitySettings(reality);
+    std::map<int, uint64_t> lens = decodeVarintFields(result);
+    EXPECT_EQ(lens[27], 10u) << "spider_y must be encoded even without spiderX";
+
+    // All ten payload bytes must be zero.
+    const std::string needle = std::string("\xDA\x01\x0A", 3);
+    size_t pos = result.find(needle);
+    ASSERT_NE(pos, std::string::npos);
+    for (size_t i = pos + 3; i < pos + 13; ++i) {
+        EXPECT_EQ(static_cast<unsigned char>(result[i]), 0x00u) << "byte " << i;
+    }
+}
+
+// ---- Lifecycle: consecutive gRPC connect failure detection ----
+
+TEST_F(XrayApiDirectTest, ConsecutiveConnectFailuresTriggerHealthHook) {
+    // serverAddr uses a closed port (1) so every connect fails fast with
+    // WSAECONNREFUSED — no real Xray process is involved.
+    xray::XrayApi api("xray.exe", "127.0.0.1:1");
+    int hookCount = 0;
+    api.setConnectFailureHook([&hookCount]() { hookCount++; });
+
+    EXPECT_LT(callGrpcConnect(api, "127.0.0.1", 1), 0);
+    EXPECT_EQ(getConsecutiveFailures(api), 1);
+    EXPECT_EQ(hookCount, 0);
+
+    // Second consecutive failure: counter reaches 2, hook fires exactly once.
+    EXPECT_LT(callGrpcConnect(api, "127.0.0.1", 1), 0);
+    EXPECT_EQ(getConsecutiveFailures(api), 2);
+    EXPECT_EQ(hookCount, 1);
+
+    // Third consecutive failure must NOT re-fire the hook.
+    EXPECT_LT(callGrpcConnect(api, "127.0.0.1", 1), 0);
+    EXPECT_EQ(getConsecutiveFailures(api), 3);
+    EXPECT_EQ(hookCount, 1);
+}
+
+TEST_F(XrayApiDirectTest, GrpcConnectSuccessResetsFailureCounter) {
+    xray::XrayApi api("xray.exe", "127.0.0.1:1");
+    EXPECT_LT(callGrpcConnect(api, "127.0.0.1", 1), 0);
+    EXPECT_LT(callGrpcConnect(api, "127.0.0.1", 1), 0);
+    EXPECT_EQ(getConsecutiveFailures(api), 2);
+
+    // Open a real listening socket on an ephemeral port so connect succeeds.
+    WSADATA wsaData;
+    ASSERT_EQ(WSAStartup(MAKEWORD(2, 2), &wsaData), 0);
+    SOCKET listener = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    ASSERT_NE(listener, INVALID_SOCKET);
+
+    sockaddr_in addr;
+    std::memset(&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(0);  // ephemeral port
+    addr.sin_addr.s_addr = inet_addr("127.0.0.1");
+    ASSERT_EQ(bind(listener, reinterpret_cast<struct sockaddr*>(&addr),
+                   static_cast<int>(sizeof(addr))), 0);
+    ASSERT_EQ(listen(listener, 1), 0);
+
+    int addrLen = static_cast<int>(sizeof(addr));
+    ASSERT_EQ(getsockname(listener, reinterpret_cast<struct sockaddr*>(&addr),
+                          &addrLen), 0);
+    int port = ntohs(addr.sin_port);
+
+    int sock = callGrpcConnect(api, "127.0.0.1", port);
+    EXPECT_GE(sock, 0);
+    if (sock >= 0) {
+        callGrpcClose(api, sock);
+    }
+
+    closesocket(listener);
+    WSACleanup();
+
+    // A successful connect resets the consecutive-failure counter.
+    EXPECT_EQ(getConsecutiveFailures(api), 0);
+}
+
+// ---- SplitHTTP nil-request panic guard ----
+// Xray-core splithttp OpenStream discards the error from
+// http.NewRequestWithContext; a host/path containing control or whitespace
+// characters (<= 0x20 or 0x7F) makes the request URL unparseable -> nil
+// request -> FillStreamRequest panics the whole xray process.
+// validateSplitHTTPSettings must reject such streamSettings pre-injection.
+
+TEST_F(XrayApiDirectTest, ValidateSplitHTTPSettingsOk) {
+    std::string errorOut;
+    const std::string json =
+        "{\"network\":\"splithttp\","
+        "\"splithttpSettings\":{\"host\":\"example.com\",\"path\":\"/a/b/\"}}";
+    EXPECT_TRUE(XrayApi::validateSplitHTTPSettings(json, errorOut));
+}
+
+TEST_F(XrayApiDirectTest, ValidateSplitHTTPSettingsEmptyHostOk) {
+    // Empty host is allowed: the Xray-core dialer falls back to the server
+    // address (dest.Address.String()), which is not a panic source.
+    std::string errorOut;
+    const std::string json =
+        "{\"network\":\"splithttp\","
+        "\"splithttpSettings\":{\"path\":\"/cdn/\"}}";
+    EXPECT_TRUE(XrayApi::validateSplitHTTPSettings(json, errorOut));
+}
+
+TEST_F(XrayApiDirectTest, ValidateSplitHTTPSettingsRejectsHostSpace) {
+    std::string errorOut;
+    const std::string json =
+        "{\"network\":\"splithttp\","
+        "\"splithttpSettings\":{\"host\":\"my host\",\"path\":\"/cdn/\"}}";
+    EXPECT_FALSE(XrayApi::validateSplitHTTPSettings(json, errorOut));
+    EXPECT_FALSE(errorOut.empty());
+}
+
+TEST_F(XrayApiDirectTest, ValidateSplitHTTPSettingsRejectsHostNewline) {
+    std::string errorOut;
+    const std::string json =
+        "{\"network\":\"splithttp\","
+        "\"splithttpSettings\":{\"host\":\"example.com\\n\",\"path\":\"/cdn/\"}}";
+    EXPECT_FALSE(XrayApi::validateSplitHTTPSettings(json, errorOut));
+}
+
+TEST_F(XrayApiDirectTest, ValidateSplitHTTPSettingsRejectsPathControlChar) {
+    // The query part travels verbatim in url.URL.RawQuery; a space in it
+    // also makes url.Parse fail (e.g. path "/cdn/?x=1 y=2").
+    std::string errorOut;
+    const std::string json =
+        "{\"network\":\"splithttp\","
+        "\"splithttpSettings\":{\"host\":\"example.com\","
+        "\"path\":\"/cdn/?x=1 y=2\"}}";
+    EXPECT_FALSE(XrayApi::validateSplitHTTPSettings(json, errorOut));
+}
+
+TEST_F(XrayApiDirectTest, ValidateSplitHTTPSettingsXhttp) {
+    std::string errorOut;
+    const std::string okJson =
+        "{\"network\":\"xhttp\","
+        "\"xhttpSettings\":{\"host\":\"example.com\",\"path\":\"/cdn/\"}}";
+    EXPECT_TRUE(XrayApi::validateSplitHTTPSettings(okJson, errorOut));
+
+    const std::string badJson =
+        "{\"network\":\"xhttp\","
+        "\"xhttpSettings\":{\"host\":\"bad host\",\"path\":\"/cdn/\"}}";
+    EXPECT_FALSE(XrayApi::validateSplitHTTPSettings(badJson, errorOut));
+}
+
+TEST_F(XrayApiDirectTest, ValidateSplitHTTPSettingsNonSplitHTTPPasses) {
+    // ws / tcp / missing network / empty input must not be intercepted.
+    std::string errorOut;
+    const std::string wsJson =
+        "{\"network\":\"ws\","
+        "\"wsSettings\":{\"path\":\"/abc def/\"}}";
+    EXPECT_TRUE(XrayApi::validateSplitHTTPSettings(wsJson, errorOut));
+
+    const std::string noNetJson = "{\"network\":\"tcp\"}";
+    EXPECT_TRUE(XrayApi::validateSplitHTTPSettings(noNetJson, errorOut));
+
+    EXPECT_TRUE(XrayApi::validateSplitHTTPSettings("", errorOut));
+    EXPECT_TRUE(XrayApi::validateSplitHTTPSettings("[]", errorOut));
 }
 
 #else

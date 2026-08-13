@@ -74,10 +74,43 @@ class ProfileExItemDAO {
 private:
   sqlite3* db_;
 
+  // Validates "yyyy-MM-dd HH:mm:ss" (19 chars, strict pattern).
+  // Returns false for legacy values ("OK"/"FAILED"/curlMsg/"NOT_TESTED"/empty).
+  static bool isMessageTimestamp(const std::string& text);
+
 public:
   explicit ProfileExItemDAO(sqlite3* db);
   static void migrateTable(sqlite3* db);
   std::vector<ProfileExItem> getAll();
+
+  // ---- Message field: only two kinds of info (test time + startup time) ----
+
+  // Returns current local time as "yyyy-MM-dd HH:mm:ss".
+  static std::string currentTimeString();
+
+  // Test-result write: replace the test side (before first '+'), keep the
+  // startup side (after first '+') when it is a valid timestamp.
+  // Invariant: result always contains exactly one '+'.
+  static std::string formatTestMessage(const std::string& existingMessage, const std::string& newTestTime);
+
+  // Startup write: replace the startup side (after first '+'), keep the test
+  // side (before first '+') when it is a valid timestamp.
+  // Invariant: result always contains exactly one '+'.
+  static std::string formatStartupMessage(const std::string& existingMessage, const std::string& newStartupTime);
+
+  // Sort key for the Message column: the newer of the two timestamp sides
+  // (test side before '+', startup side after). Returns "" when neither side
+  // is a valid timestamp, so empty / legacy values sort last.
+  static std::string messageActiveTime(const std::string& message);
+
+  // Comparator for the Message column, ordered by messageActiveTime().
+  // Returns -1/0/1; empty / legacy messages always sort after valid ones.
+  static int compareMessage(const std::string& lhs, const std::string& rhs);
+
+  // Writes "+<now>" as the startup time into ProfileExItem.message,
+  // preserving the existing test time. Inserts a new row when absent.
+  bool updateStartupTime(const std::string& indexid, sqlite3* db = nullptr);
+
   bool updateTestResult(const std::string& indexid, long latencyMs, bool success, const std::string& curlMsg, sqlite3* db = nullptr);
   bool updateTestResultBatch(const std::vector<std::tuple<std::string, long, bool, std::string>>& results, sqlite3* db = nullptr);
 };

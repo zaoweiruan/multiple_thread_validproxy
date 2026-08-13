@@ -129,6 +129,7 @@ set(CORE_SOURCES
     src/ConfigReader.cpp
     src/Logger.cpp
     src/LoggerInstance.cpp
+    src/LogStatistics.cpp
     src/PortManager.cpp
     src/ProfileitemDAO.cpp
     src/SubitemDAO.cpp
@@ -422,6 +423,20 @@ set_target_properties(test_dedup PROPERTIES
 )
 add_test(NAME DedupTest COMMAND test_dedup)
 
+add_executable(test_profile_ex_item_dao tests/test_profile_ex_item_dao.cpp src/ProfileExItemDAO.cpp src/Logger.cpp src/LoggerInstance.cpp)
+target_include_directories(test_profile_ex_item_dao PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(test_profile_ex_item_dao PRIVATE
+    gtest_main
+    gtest
+    ${VCPKG_ROOT}/installed/x64-mingw-static/lib/libsqlite3.a
+)
+set_target_properties(test_profile_ex_item_dao PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+)
+add_test(NAME ProfileExItemDAOTest COMMAND test_profile_ex_item_dao)
+
 # -- Profileitem model tests - DISABLED until test_model.cpp is created
 # add_executable(test_model tests/test_model.cpp)
 # target_include_directories(test_model PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
@@ -651,6 +666,41 @@ set_target_properties(test_ipv6_formatter PROPERTIES
 )
 add_test(NAME Ipv6FormatterTest COMMAND test_ipv6_formatter)
 
+# -- LogStatistics unit tests (pure file parser, no external deps beyond gtest) --
+add_executable(test_log_statistics tests/test_log_statistics.cpp src/LogStatistics.cpp)
+target_include_directories(test_log_statistics PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(test_log_statistics PRIVATE gtest_main gtest)
+set_target_properties(test_log_statistics PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+)
+add_test(NAME LogStatisticsTest COMMAND test_log_statistics)
+
+# -- LogStatisticsEvent unit test (requires wxWidgets for Events.h) --
+if(wxWidgets_FOUND)
+    add_executable(test_log_statistics_event
+        tests/test_log_statistics_event.cpp
+        src/ui/Events.cpp
+    )
+    target_include_directories(test_log_statistics_event PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/ui
+    )
+    target_link_libraries(test_log_statistics_event PRIVATE
+        gtest_main gtest
+        wx::wxbase
+        wx::wxcore
+    )
+    target_compile_definitions(test_log_statistics_event PRIVATE HAS_WXWIDGETS=1)
+    set_target_properties(test_log_statistics_event PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
+        RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
+        RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+    )
+    add_test(NAME LogStatisticsEventTest COMMAND test_log_statistics_event)
+endif()
+
 # -- ShareUriBuilders unit tests (6 protocol URI builders, no external deps beyond gtest) --
 add_executable(test_share_uri_builders
     tests/test_vless_uri_builder.cpp
@@ -735,6 +785,34 @@ if(USE_GRPC_API)
     )
     add_test(NAME XrayApiDirectTest COMMAND test_xray_api_direct)
 endif()
+
+# -- XrayInstance stderr/exit-code observability tests (compiled fake xray) --
+add_executable(test_xray_instance_stderr
+    tests/test_xray_instance_stderr.cpp
+    src/XrayInstance.cpp
+    src/Logger.cpp
+    src/LoggerInstance.cpp
+)
+target_include_directories(test_xray_instance_stderr PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(test_xray_instance_stderr PRIVATE gtest_main gtest)
+set_target_properties(test_xray_instance_stderr PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+)
+add_test(NAME XrayInstanceStderrTest COMMAND test_xray_instance_stderr)
+
+# Helper executable standing in for xray.exe during XrayInstance tests.
+# Not a gtest binary: it only writes PANIC to stderr and exits with a
+# deterministic code (7 for "startup" mode, 42 after ~8s for runtime mode).
+# The test copies it into a temp dir under the mode-selecting name, so it
+# must land in the same output directory as test_xray_instance_stderr.
+add_executable(fake_xray_helper tests/fake_xray_helper.cpp)
+set_target_properties(fake_xray_helper PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+)
 
 # -- TestResultQueue unit tests (retry logic, concurrent enqueue) --
 add_executable(test_result_queue tests/test_result_queue_test.cpp

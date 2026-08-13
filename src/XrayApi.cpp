@@ -13,6 +13,8 @@
 #include <ws2tcpip.h>
 #include <boost/json.hpp>
 #include <cstring>
+#include <cstdlib>
+#include <cerrno>
 #endif
 #include <windows.h>
 #include "XrayApi.h"
@@ -177,13 +179,28 @@ bool XrayApi::addOutbound(const std::string& outboundJson, const std::string& ta
     bool success = (exitCode == 0);
 
     if (!success) {
-        lastError_ = "xray api ado failed with code: " + std::to_string(exitCode) + " output: " + output;
-        // Per-proxy injection failures are already reported at ERR level by the
-        // batch-test worker (XRAY_ERROR with lastError_). Keep these two lines
-        // at DEBUG to avoid duplicating the flood 3x per proxy (retry loop).
-        Logger::write("[XrayApi] addOutbound FAILED: exitCode=" + std::to_string(exitCode) + ", output=" + output, LogLevel::DEBUG);
-        Logger::write("[XrayApi] addOutbound FAILED error: " + lastError_, LogLevel::DEBUG);
-        return false;
+        // P3: empty output + non-zero exit code during instance restart window → retry once
+        if (output.empty()) {
+            Logger::write("[XrayApi] addOutbound fallback failed with empty output, likely instance restart window; retrying once", LogLevel::WARN);
+            std::this_thread::sleep_for(std::chrono::milliseconds(300));
+            output.clear();
+            exitCode = runProcess(cmd, output, &outboundJson);
+            success = (exitCode == 0);
+            if (success) {
+                resultOutput = output;
+                Logger::write("[XrayApi] addOutbound retry SUCCESS for tag: " + tag, LogLevel::INFO);
+            } else {
+                Logger::write("[XrayApi] addOutbound retry FAILED: exitCode=" + std::to_string(exitCode) + ", output=" + output, LogLevel::ERR);
+            }
+        }
+
+        if (!success) {
+            lastError_ = "xray api ado failed with code: " + std::to_string(exitCode) + " output: " + output;
+            // gRPC/API errors must be visible at ERR level (user requirement).
+            Logger::write("[XrayApi] addOutbound FAILED: exitCode=" + std::to_string(exitCode) + ", output=" + output, LogLevel::ERR);
+            Logger::write("[XrayApi] addOutbound FAILED error: " + lastError_, LogLevel::ERR);
+            return false;
+        }
     }
 
     Logger::write("[XrayApi] addOutbound SUCCESS for tag: " + tag, LogLevel::DEBUG);
@@ -222,7 +239,7 @@ bool XrayApi::removeOutbound(const std::string& tag) {
         lastError_ = "xray api rmo failed: code=" + std::to_string(exitCode) +
                      " output=" + output;
         Logger::write("[XrayApi] removeOutbound FAILED: " + lastError_,
-                      LogLevel::DEBUG);
+                      LogLevel::ERR);
         return false;
     }
 
@@ -308,6 +325,22 @@ std::string XrayApi::encodeLengthDelimited(int fieldNumber, const std::string& d
 
 std::string XrayApi::encodeString(int fieldNumber, const std::string& str) {
     return encodeLengthDelimited(fieldNumber, str);
+}
+
+std::string XrayApi::encodePackedInt64Field(int fieldNumber,
+                                            const int64_t* values,
+                                            int count) {
+    uint64_t key = (static_cast<uint64_t>(fieldNumber) << 3) | 2;
+    std::string result = encodeVarint(key);
+    std::string payload;
+    for (int i = 0; i < count; ++i) {
+        // int64 varint: cast to uint64 preserves two's-complement encoding
+        // (negative values become the 10-byte sign-extended form).
+        payload += encodeVarint(static_cast<uint64_t>(values[i]));
+    }
+    result += encodeVarint(static_cast<uint64_t>(payload.size()));
+    result += payload;
+    return result;
 }
 
 // ----- Protobuf encoder helpers for complex messages -----
@@ -429,11 +462,13 @@ std::string XrayApi::jsonConfigToProtobuf(const std::string& typeUrl,
     const bool isVLESS      = (typeUrl == "xray.proxy.vless.outbound.Config");
     const bool isTrojan     = (typeUrl == "xray.proxy.trojan.ClientConfig");
     const bool isShadowsocks = (typeUrl == "xray.proxy.shadowsocks.ClientConfig");
+    const bool isShadowsocks2022 =
+        (typeUrl == "xray.proxy.shadowsocks_2022.ClientConfig");
     const bool isSocks      = (typeUrl == "xray.proxy.socks.ClientConfig");
     const bool isHTTP       = (typeUrl == "xray.proxy.http.ClientConfig");
 
     if (!isFreedom && !isBlackhole && !isVMess && !isVLESS && !isTrojan &&
-        !isShadowsocks && !isSocks && !isHTTP) {
+        !isShadowsocks && !isShadowsocks2022 && !isSocks && !isHTTP) {
         return {};
     }
 
@@ -585,6 +620,27 @@ std::string XrayApi::jsonConfigToProtobuf(const std::string& typeUrl,
             method = srv.at("method").as_string().c_str();
         accountProto = encodeShadowsocksAccount(password, method);
 
+    } else if (isShadowsocks2022) {
+        // xray.proxy.shadowsocks_2022.ClientConfig {
+        //   IPOrDomain address = 1; uint32 port = 2;
+        //   string method = 3; string key = 4; }
+        // NOTE: no Account/ServerEndpoint nesting. The key field carries the
+        // raw key verbatim (the profile stores it in the "password" field).
+        // Empty method/key → return {} so the caller falls back to subprocess.
+        std::string password, method;
+        if (srv.contains("password") && srv.at("password").is_string())
+            password = srv.at("password").as_string().c_str();
+        if (srv.contains("method") && srv.at("method").is_string())
+            method = srv.at("method").as_string().c_str();
+        if (method.empty() || password.empty()) return {};
+
+        std::string cfg;
+        cfg += encodeLengthDelimited(1, encodeIPOrDomain(addr));  // address
+        cfg += encodeVarintField(2, static_cast<uint64_t>(port)); // port
+        cfg += encodeString(3, method);                           // method
+        cfg += encodeString(4, password);                         // key
+        return cfg;
+
     } else if (isSocks) {
         accountTypeUrl = "xray.proxy.socks.Account";
         std::string username, password;
@@ -658,7 +714,32 @@ bool XrayApi::parseOutboundJson(const std::string& outboundJson,
         } else if (protocol == "trojan") {
             typeUrl = "xray.proxy.trojan.ClientConfig";
         } else if (protocol == "shadowsocks") {
+            // shadowsocks_2022 ciphers ("2022-..." methods) require the
+            // xray.proxy.shadowsocks_2022.ClientConfig protobuf; the legacy
+            // xray.proxy.shadowsocks.ClientConfig cannot carry them.
             typeUrl = "xray.proxy.shadowsocks.ClientConfig";
+            const boost::json::value* settingsVal =
+                outboundObj.if_contains("settings");
+            if (settingsVal != nullptr && settingsVal->is_object()) {
+                const boost::json::value* serversVal =
+                    settingsVal->as_object().if_contains("servers");
+                if (serversVal != nullptr && serversVal->is_array() &&
+                    !serversVal->as_array().empty()) {
+                    const boost::json::value& srv0 = serversVal->as_array()[0];
+                    if (srv0.is_object()) {
+                        const boost::json::value* methodVal =
+                            srv0.as_object().if_contains("method");
+                        if (methodVal != nullptr && methodVal->is_string()) {
+                            const std::string method =
+                                bj::value_to<std::string>(*methodVal);
+                            if (method.rfind("2022-", 0) == 0) {
+                                typeUrl =
+                                    "xray.proxy.shadowsocks_2022.ClientConfig";
+                            }
+                        }
+                    }
+                }
+            }
         } else if (protocol == "socks") {
             typeUrl = "xray.proxy.socks.ClientConfig";
         } else if (protocol == "http") {
@@ -794,7 +875,8 @@ std::string XrayApi::encodeTLSSettings(const boost::json::object& tls) {
 
 std::string XrayApi::encodeRealitySettings(const boost::json::object& reality) {
     // Config: show=1 dest=2 xver=4 server_names=5 private_key=6
-    //         fingerprint=21 server_name=22 public_key=23 short_id=24 spider_x=26
+    //         fingerprint=21 server_name=22 public_key=23 short_id=24
+    //         spider_x=26 spider_y=27
     std::string result;
     const boost::json::value* show = reality.if_contains("show");
     if (show != nullptr && show->is_bool()) {
@@ -852,10 +934,107 @@ std::string XrayApi::encodeRealitySettings(const boost::json::object& reality) {
         }
     }
     const boost::json::value* spiderX = reality.if_contains("spiderX");
+    std::string spiderXText;
     if (spiderX != nullptr && spiderX->is_string()) {
-        result += encodeString(26, spiderX->as_string().c_str());
+        spiderXText = std::string(spiderX->as_string().c_str());
+        result += encodeString(26, spiderXText);
     }
+    // spider_y (27): the xray-core JSON adapter always builds a 10-element
+    // array from the spiderX query params (p/c/t/i/r, defaults all zero). The
+    // gRPC path must send the same array: without it SpiderY is nil and the
+    // reality spider goroutine indexes [0..9] out of range -> the whole xray
+    // process panics (transport/internet/reality/reality.go:273) as soon as a
+    // REALITY handshake fails during batch testing. Field 27 is therefore
+    // always encoded (10 zero slots when spiderX carries no params).
+    int64_t spiderY[10] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+    parseSpiderYParams(spiderXText, spiderY);
+    result += encodePackedInt64Field(27, spiderY, 10);
     return result;
+}
+
+// Parse a decimal int64 string; returns 0 on empty/invalid input or
+// overflow. Mirrors Go's strconv.ParseInt failing -> slot keeps 0.
+static int64_t parseInt64Safe(const std::string& text) {
+    if (text.empty()) {
+        return 0;
+    }
+    errno = 0;
+    char* endPtr = nullptr;
+    long long value = std::strtoll(text.c_str(), &endPtr, 10);
+    if (errno == ERANGE || endPtr == text.c_str() || *endPtr != '\0') {
+        return 0;
+    }
+    return static_cast<int64_t>(value);
+}
+
+void XrayApi::parseSpiderYParams(const std::string& spiderX, int64_t* out) {
+    // Mirrors infra/conf/transport_internet.go: SpiderY is always a
+    // 10-element array; the spiderX query params fill two adjacent slots
+    // each. Zero every slot first (missing params stay 0).
+    for (int i = 0; i < 10; ++i) {
+        out[i] = 0;
+    }
+    if (spiderX.empty()) {
+        return;
+    }
+    const std::size_t qpos = spiderX.find('?');
+    if (qpos == std::string::npos) {
+        return;
+    }
+    // Parse key=value pairs on '&'. Only the first occurrence of each known
+    // param is honored (mirrors Go's url.Values.Get). Percent-decoding is not
+    // performed; an encoded value simply fails the int parse and stays 0.
+    const std::string query = spiderX.substr(qpos + 1);
+    bool seenP = false;
+    bool seenC = false;
+    bool seenT = false;
+    bool seenI = false;
+    bool seenR = false;
+    std::size_t start = 0;
+    while (start <= query.size()) {
+        const std::size_t amp = query.find('&', start);
+        const std::string pair = (amp == std::string::npos)
+            ? query.substr(start)
+            : query.substr(start, amp - start);
+        if (!pair.empty()) {
+            const std::size_t eq = pair.find('=');
+            if (eq != std::string::npos) {
+                const std::string key = pair.substr(0, eq);
+                const std::string value = pair.substr(eq + 1);
+                int index = -1;
+                if (key == "p" && !seenP) { index = 0; seenP = true; }
+                else if (key == "c" && !seenC) { index = 2; seenC = true; }
+                else if (key == "t" && !seenT) { index = 4; seenT = true; }
+                else if (key == "i" && !seenI) { index = 6; seenI = true; }
+                else if (key == "r" && !seenR) { index = 8; seenR = true; }
+                if (index >= 0 && !value.empty()) {
+                    // Split on '-': "N" -> both slots N; "A-B-..." -> slots
+                    // A,B (extra segments ignored, like Go's Split [0]/[1]).
+                    std::string lo, hi;
+                    const std::size_t dash1 = value.find('-');
+                    if (dash1 == std::string::npos) {
+                        lo = value;
+                        hi = value;
+                    } else {
+                        lo = value.substr(0, dash1);
+                        const std::size_t dash2 = value.find('-', dash1 + 1);
+                        if (dash2 == std::string::npos) {
+                            hi = value.substr(dash1 + 1);
+                        } else {
+                            hi = value.substr(dash1 + 1,
+                                              dash2 - dash1 - 1);
+                        }
+                    }
+                    out[index] = parseInt64Safe(lo);
+                    out[index + 1] = parseInt64Safe(hi);
+                }
+            }
+        }
+        if (amp == std::string::npos) {
+            break;
+        }
+        start = amp + 1;
+    }
 }
 
 std::string XrayApi::base64Decode(const std::string& input) {
@@ -1749,9 +1928,17 @@ int XrayApi::grpcConnect(const std::string& host, int port) {
         } else {
             lastError_ = "grpcConnect: connect() failed (WSA" + std::to_string(connectErr) + ")";
         }
+        // Lifecycle management: after two consecutive connect failures the
+        // backing Xray instance is likely unhealthy. Fire the hook once so the
+        // caller can evaluate the instance process state (e.g. isRunning()).
+        ++consecutiveConnectFailures_;
+        if (consecutiveConnectFailures_ == 2 && connectFailureHook_) {
+            connectFailureHook_();
+        }
         return -1;
     }
 
+    consecutiveConnectFailures_ = 0;
     return static_cast<int>(sock);
 }
 
@@ -2034,6 +2221,10 @@ bool XrayApi::grpcSendReceive(int sock, const std::string& path,
 
 // ----- Public gRPC methods -----
 
+void XrayApi::setConnectFailureHook(std::function<void()> hook) {
+    connectFailureHook_ = std::move(hook);
+}
+
 bool XrayApi::removeOutboundDirect(const std::string& tag) {
     Logger::write("[XrayApi] removeOutboundDirect: tag=" + tag, LogLevel::DEBUG);
 
@@ -2061,12 +2252,62 @@ bool XrayApi::removeOutboundDirect(const std::string& tag) {
     grpcClose(sock);
 
     if (!ok) {
-        Logger::write("[XrayApi] removeOutboundDirect FAILED: " + lastError_, LogLevel::DEBUG);
+        Logger::write("[XrayApi] removeOutboundDirect FAILED: " + lastError_, LogLevel::ERR);
     } else {
         Logger::write("[XrayApi] removeOutboundDirect SUCCESS tag=" + tag, LogLevel::DEBUG);
         lastError_.clear();
     }
     return ok;
+}
+
+bool XrayApi::validateSplitHTTPSettings(const std::string& streamSettingsJson,
+                                        std::string& errorOut) {
+    if (streamSettingsJson.empty()) {
+        return true;
+    }
+    boost::json::value streamValue;
+    try {
+        streamValue = boost::json::parse(streamSettingsJson);
+    } catch (const std::exception& ex) {
+        errorOut = std::string("streamSettings JSON parse error: ") + ex.what();
+        return false;
+    }
+    if (!streamValue.is_object()) {
+        return true;
+    }
+    const boost::json::object& stream = streamValue.as_object();
+    const boost::json::value* networkVal = stream.if_contains("network");
+    if (networkVal == nullptr || !networkVal->is_string()) {
+        return true;
+    }
+    const std::string network(networkVal->as_string().c_str());
+    if (network != "splithttp" && network != "xhttp") {
+        return true;
+    }
+    const boost::json::value* settingsVal =
+        (network == "xhttp") ? stream.if_contains("xhttpSettings")
+                             : stream.if_contains("splithttpSettings");
+    if (settingsVal == nullptr || !settingsVal->is_object()) {
+        return true;
+    }
+    const boost::json::object& settings = settingsVal->as_object();
+
+    const std::string checkedKeys[] = { "host", "path" };
+    for (const std::string& key : checkedKeys) {
+        const boost::json::value* fieldVal = settings.if_contains(key);
+        if (fieldVal == nullptr || !fieldVal->is_string()) {
+            continue;
+        }
+        const std::string fieldValue(fieldVal->as_string().c_str());
+        for (unsigned char ch : fieldValue) {
+            if (ch <= 0x20 || ch == 0x7F) {
+                errorOut = "splithttp " + key + " contains control/whitespace "
+                           "character: \"" + fieldValue + "\"";
+                return false;
+            }
+        }
+    }
+    return true;
 }
 
 bool XrayApi::addOutboundDirect(const std::string& outboundJson,
@@ -2090,6 +2331,23 @@ bool XrayApi::addOutboundDirect(const std::string& outboundJson,
         valueJsonStr = outboundJson;
     }
 
+    // ---- SplitHTTP nil-request panic guard ----
+    // Xray-core splithttp OpenStream discards the error from
+    // http.NewRequestWithContext: a host/path with control/whitespace
+    // characters makes the request URL unparseable -> nil request ->
+    // FillStreamRequest panics the whole xray process. Reject such proxies
+    // before injection (the worker marks them failed and skips them).
+    if (!streamSettingsJson.empty()) {
+        std::string streamError;
+        if (!validateSplitHTTPSettings(streamSettingsJson, streamError)) {
+            lastError_ = "addOutboundDirect: " + streamError +
+                         " (tag=" + tag + ")";
+            Logger::write("[XrayApi] addOutboundDirect REJECTED: " + lastError_,
+                          LogLevel::ERR);
+            return false;
+        }
+    }
+
     // ---- Check if protocol has protobuf encoder ----
     // jsonConfigToProtobuf handles freedom, blackhole, and all 6 proxy protocols
     // (vmess, vless, trojan, shadowsocks, socks, http) via direct protobuf wire
@@ -2099,6 +2357,7 @@ bool XrayApi::addOutboundDirect(const std::string& outboundJson,
         "xray.proxy.vless.outbound.Config",
         "xray.proxy.trojan.ClientConfig",
         "xray.proxy.shadowsocks.ClientConfig",
+        "xray.proxy.shadowsocks_2022.ClientConfig",
         "xray.proxy.socks.ClientConfig",
         "xray.proxy.http.ClientConfig",
         "xray.proxy.freedom.Config",
@@ -2134,6 +2393,7 @@ bool XrayApi::addOutboundDirect(const std::string& outboundJson,
          typeUrl == "xray.proxy.vless.outbound.Config" ||
          typeUrl == "xray.proxy.trojan.ClientConfig" ||
          typeUrl == "xray.proxy.shadowsocks.ClientConfig" ||
+         typeUrl == "xray.proxy.shadowsocks_2022.ClientConfig" ||
          typeUrl == "xray.proxy.socks.ClientConfig" ||
          typeUrl == "xray.proxy.http.ClientConfig")) {
         Logger::write("[XrayApi] addOutboundDirect: empty config for server-class "
@@ -2213,7 +2473,7 @@ bool XrayApi::addOutboundDirect(const std::string& outboundJson,
 
     if (!ok) {
         Logger::write("[XrayApi] addOutboundDirect FAILED: " + lastError_,
-                      LogLevel::DEBUG);
+                      LogLevel::ERR);
     } else {
         Logger::write("[XrayApi] addOutboundDirect SUCCESS tag=" + tag,
                       LogLevel::DEBUG);
@@ -2249,7 +2509,7 @@ bool XrayApi::listOutboundsDirect(std::string& output) {
 
     if (!ok) {
         Logger::write("[XrayApi] listOutboundsDirect FAILED: " + lastError_,
-                      LogLevel::DEBUG);
+                      LogLevel::ERR);
     } else {
         Logger::write("[XrayApi] listOutboundsDirect SUCCESS, response sz=" +
                       std::to_string(output.size()) + " bytes",

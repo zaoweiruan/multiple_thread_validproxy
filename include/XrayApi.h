@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 #include <cstdint>
+#include <functional>
 
 #ifdef USE_GRPC_API
 #include <boost/json.hpp>
@@ -32,6 +33,22 @@ public:
     bool addOutboundDirect(const std::string& outboundJson, const std::string& tag, std::string& resultOutput);
     bool removeOutboundDirect(const std::string& tag);
     bool listOutboundsDirect(std::string& output);
+
+    // Lifecycle health hook: invoked when grpcConnect fails twice consecutively
+    // against the same server address. The caller (e.g. ProxyBatchTester worker)
+    // uses it to evaluate whether the backing Xray instance process is healthy.
+    void setConnectFailureHook(std::function<void()> hook);
+
+    // Validate splithttp/xhttp streamSettings before gRPC injection.
+    // Xray-core's splithttp OpenStream discards the error from
+    // http.NewRequestWithContext: a host/path containing whitespace or
+    // control characters (<= 0x20 or 0x7F) makes the request URL
+    // unparseable -> nil request -> FillStreamRequest panics the whole
+    // xray process. Returns false and fills errorOut when the config
+    // would crash the worker (caller rejects the proxy). An empty host
+    // is allowed (Xray falls back to the server address).
+    static bool validateSplitHTTPSettings(const std::string& streamSettingsJson,
+                                          std::string& errorOut);
 #endif
 
 private:
@@ -51,6 +68,11 @@ private:
 
     // TCP connect to host:port. Returns socket fd or -1 on failure.
     int grpcConnect(const std::string& host, int port);
+
+    // Number of consecutive grpcConnect failures (reset to 0 on success).
+    // When this reaches exactly 2, connectFailureHook_ is invoked once.
+    int consecutiveConnectFailures_{0};
+    std::function<void()> connectFailureHook_;
 
     // Send HTTP/2 preface + SETTINGS frame on a connected socket.
     bool grpcSendPreface(int sock);
@@ -81,6 +103,12 @@ private:
     static std::string encodeVarintField(int fieldNumber, uint64_t value);
     static std::string encodeLengthDelimited(int fieldNumber, const std::string& data);
     static std::string encodeString(int fieldNumber, const std::string& str);
+    // Encode a repeated int64 field using packed wire format (one tag, one
+    // length, then concatenated varints — no per-element tags). Used for the
+    // reality.Config.spider_y field (27).
+    static std::string encodePackedInt64Field(int fieldNumber,
+                                              const int64_t* values,
+                                              int count);
     // ---- Protobuf encoder helpers for complex messages ----
     // Encode an address string (IPv4/IPv6/domain) as IPOrDomain protobuf.
     static std::string encodeIPOrDomain(const std::string& addr);
@@ -143,6 +171,12 @@ private:
     static std::string hexDecode(const std::string& input);
     // Encode a RealityConfig protobuf from the "realitySettings" JSON object.
     static std::string encodeRealitySettings(const boost::json::object& reality);
+    // Parse the "spiderX" URL query into the 10-slot SpiderY int64 array used
+    // by reality.Config (packed field 27). Mirrors the xray-core JSON adapter
+    // in infra/conf/transport_internet.go: p->slots[0,1] (padding),
+    // c->slots[2,3] (concurrency), t->slots[4,5] (times), i->slots[6,7]
+    // (interval), r->slots[8,9] (return); missing or invalid values stay 0.
+    static void parseSpiderYParams(const std::string& spiderX, int64_t* out);
     // Encode a gRPC Config protobuf from the "grpcSettings" JSON object.
     static std::string encodeGRPCSettings(const boost::json::object& grpc);
     // Encode a KCP Config protobuf from the "kcpSettings" JSON object.

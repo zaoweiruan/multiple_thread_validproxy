@@ -55,6 +55,22 @@ namespace {
             Logger::write("SKIP: " + p.address + ":" + p.port + " - non-printable Security/Id (cannot build xray config)", LogLevel::WARN);
             return false;
         }
+        if (!utils::isPublicAddress(p.address)) {
+            Logger::write("SKIP: " + p.address + ":" + p.port + " - private/invalid address", LogLevel::WARN);
+            return false;
+        }
+        if (p.configtype == "1" || p.configtype == "5") {
+            if (!utils::isValidUuid(p.id)) {
+                Logger::write("SKIP: " + p.address + ":" + p.port + " - invalid UUID format", LogLevel::WARN);
+                return false;
+            }
+        }
+        if (p.configtype == "3") {
+            if (!utils::isSupportedSsCipher(p.security)) {
+                Logger::write("SKIP: " + p.address + ":" + p.port + " - unsupported SS cipher: '" + p.security + "'", LogLevel::WARN);
+                return false;
+            }
+        }
         return true;
     }
 
@@ -696,7 +712,9 @@ bool SubitemUpdaterV2::updateProfileItems(const std::string& subid, const std::v
             sqlite3_bind_text(exStmt, 2, "0", -1, SQLITE_TRANSIENT);
             sqlite3_bind_text(exStmt, 3, "0", -1, SQLITE_TRANSIENT);
             sqlite3_bind_text(exStmt, 4, "0", -1, SQLITE_TRANSIENT);
-            sqlite3_bind_text(exStmt, 5, "NOT_TESTED", -1, SQLITE_TRANSIENT);
+            // Message carries only two kinds of info (test time / startup time);
+            // a freshly imported proxy has neither yet -> empty string.
+            sqlite3_bind_text(exStmt, 5, "", -1, SQLITE_TRANSIENT);
             sqlite3_bind_int(exStmt, 6, 0);
             sqlite3_step(exStmt);
         } else {
