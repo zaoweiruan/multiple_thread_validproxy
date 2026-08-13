@@ -259,6 +259,18 @@ int Deduplicator::deduplicateConfigErrorPhase() {
             garbageCount++;
             bad = true;
         }
+        if (!bad && !utils::isPublicAddress(p.address)) {
+            Logger::write("CONFIG_ERROR: " + p.indexid + " - " + p.address + ":" + p.port + " - private/invalid address", LogLevel::WARN);
+            bad = true;
+        }
+        if (!bad && (p.configtype == "1" || p.configtype == "5") && !utils::isValidUuid(p.id)) {
+            Logger::write("CONFIG_ERROR: " + p.indexid + " - " + p.address + ":" + p.port + " - invalid UUID format", LogLevel::WARN);
+            bad = true;
+        }
+        if (!bad && p.configtype == "3" && !utils::isSupportedSsCipher(p.security)) {
+            Logger::write("CONFIG_ERROR: " + p.indexid + " - " + p.address + ":" + p.port + " - unsupported SS cipher: '" + p.security + "'", LogLevel::WARN);
+            bad = true;
+        }
         if (bad) {
             failedIds.push_back(p.indexid);
         }

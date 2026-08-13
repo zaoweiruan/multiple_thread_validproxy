@@ -19,6 +19,9 @@ namespace utils {
     bool isPrintableAscii(const std::string& s);
     bool isPortAvailable(int port);
     int findAvailablePort(int startPort, int maxAttempts = 100);
+    bool isPublicAddress(const std::string& address);
+    bool isValidUuid(const std::string& id);
+    bool isSupportedSsCipher(const std::string& method);
 
     // Process management utilities
     bool isProcessRunning(const std::string& processName);

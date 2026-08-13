@@ -6,14 +6,19 @@
 #include <wx/choice.h>
 #include <wx/button.h>
 #include <string>
+#include <thread>
 
 #include "Logger.h"
 
 class LogMessageEvent;
+class LogStatisticsEvent;
+struct LogStatisticsResult;
 
 enum {
     ID_LOG_CLEAR = wxID_HIGHEST + 200,
     ID_LOG_FILTER,
+    ID_LOG_OPEN,
+    ID_LOG_STATISTICS,
 };
 
 // ---------------------------------------------------------------
@@ -31,12 +36,27 @@ public:
 
 private:
     void onLogMessage(LogMessageEvent& event);
+    void onLogStatisticsResult(LogStatisticsEvent& event);
     void onClear(wxCommandEvent& event);
     void onFilterChange(wxCommandEvent& event);
+    void onOpenLog(wxCommandEvent& event);
+    void onLogStatistics(wxCommandEvent& event);
+    void statisticsForFile(const std::string& logPath);
+    void onSelectLogFile(wxCommandEvent& event);
+    std::string buildStatisticsText(const LogStatisticsResult& result,
+                                    const std::string& filePath);
 
     wxTextCtrl* logCtrl_;         // read-only multi-line text
     wxChoice* levelFilter_;       // filter dropdown
     wxButton* clearBtn_;          // clear button
+    wxButton* statsBtn_;          // log statistics button
+    wxButton* openBtn_;           // open log file button
+
+    wxDialog* statsDialog_{nullptr};     // modeless statistics dialog
+    wxTextCtrl* statsTextCtrl_{nullptr}; // read-only text inside stats dialog
+
+    std::thread statsThread_;     // background parse thread for log statistics
+    std::string statsCurrentPath_;// current file path shown in stats dialog
 
     LogLevel minLevel_{LogLevel::TRACE};
 

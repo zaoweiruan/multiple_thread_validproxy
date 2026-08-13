@@ -8,6 +8,7 @@ using ui::AsyncOperationGuard;
 using ui::ScopeGuard;
 
 #include "SubitemUpdaterV2.h"
+#include "Profileexitem.h"
 #include "ProxyBatchTester.h"
 #include "ConfigGenerator.h"
 #include "config/OutboundBuilderFactory.h"
@@ -720,6 +721,17 @@ bool AppController::startStandaloneProxy(const std::string& indexId, int overrid
     standaloneProxies_[indexId] = std::move(info);
 
     CloseHandle(pi.hThread);
+
+    // Record proxy startup time into ProfileExItem.message ("+<startup time>"),
+    // preserving any existing test time.
+    {
+        db::models::ProfileExItemDAO exDao(db_);
+        if (exDao.updateStartupTime(indexId)) {
+            Logger::write("[StandaloneProxy] Recorded startup time for " + indexId, LogLevel::DEBUG);
+        } else {
+            Logger::write("[StandaloneProxy] Failed to record startup time for " + indexId, LogLevel::WARN);
+        }
+    }
 
     Logger::write("[StandaloneProxy] Started " + indexId + " on SOCKS5 :" + std::to_string(socksPort),
                   LogLevel::REPORT);

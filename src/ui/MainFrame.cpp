@@ -344,10 +344,6 @@ Bind(wxEVT_SUB_LIST_LOADED, [this](SubListLoadedEvent& evt) {
         repositionNetMonPanel();
     });
 
-    // Double-click on the status bar opens the log file (bound to the status
-    // bar itself, NOT the frame event table, to avoid misfires elsewhere).
-    statusBar_->Bind(wxEVT_LEFT_DCLICK, &MainFrame::onStatusBarDClick, this);
-
     Logger::write("[MainFrame] Constructor end", LogLevel::DEBUG);
 }
 
@@ -398,7 +394,6 @@ void MainFrame::setStatusText(int field, const wxString& text) {
 }
 
 void MainFrame::setLogFileLabel(const std::string& filePath) {
-    logFilePath_ = filePath;
     if (filePath.empty()) {
         setStatusText(1, "");
         return;
@@ -1112,14 +1107,5 @@ void MainFrame::onToggleDetailPane(wxCommandEvent&) {
 // -------------------------------------------------------------------
 void MainFrame::onStatusUpdate(StatusUpdateEvent& event) {
     setStatusText(0, event.getText());
-}
-
-void MainFrame::onStatusBarDClick(wxMouseEvent&) {
-    if (logFilePath_.empty()) return;
-#ifdef __WXMSW__
-    ShellExecuteA(NULL, "open", logFilePath_.c_str(), NULL, NULL, SW_SHOWNORMAL);
-#else
-    wxLaunchDefaultApplication(logFilePath_);
-#endif
 }
 

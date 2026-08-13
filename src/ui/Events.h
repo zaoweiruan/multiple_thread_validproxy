@@ -5,6 +5,7 @@
 #include <wx/event.h>
 #include <string>
 #include "Logger.h"
+#include "LogStatistics.h"
 #include <vector>
 #include <unordered_map>
 #include "Profileitem.h"
@@ -35,6 +36,7 @@ enum class UIEventId {
 // ---------------------------------------------------------------
 class ProxyTestProgressEvent;
 class LogMessageEvent;
+class LogStatisticsEvent;
 class StatusUpdateEvent;
 class SubscriptionSelectedEvent;
 class SubscriptionTestEvent;
@@ -45,6 +47,7 @@ class StandaloneProxyEvent;
 
 wxDECLARE_EVENT(wxEVT_PROXY_TEST_PROGRESS, ProxyTestProgressEvent);
 wxDECLARE_EVENT(wxEVT_LOG_MESSAGE, LogMessageEvent);
+wxDECLARE_EVENT(wxEVT_LOG_STATISTICS, LogStatisticsEvent);
 wxDECLARE_EVENT(wxEVT_STATUS_UPDATE, StatusUpdateEvent);
 wxDECLARE_EVENT(wxEVT_SUBSCRIPTION_SELECTED, SubscriptionSelectedEvent);
 wxDECLARE_EVENT(wxEVT_SUBSCRIPTION_TEST, SubscriptionTestEvent);
@@ -102,6 +105,26 @@ public:
 private:
     std::string message_;
     LogLevel level_;
+};
+
+// ---------------------------------------------------------------
+// LogStatisticsEvent — sent from the statistics worker thread to
+// the UI thread when log-file parsing finishes
+// ---------------------------------------------------------------
+class LogStatisticsEvent : public wxEvent {
+public:
+    LogStatisticsEvent(const std::string& filePath = "",
+                       const LogStatisticsResult& result = LogStatisticsResult())
+        : wxEvent(0, wxEVT_LOG_STATISTICS), filePath_(filePath), result_(result) {}
+
+    wxEvent* Clone() const override { return new LogStatisticsEvent(*this); }
+
+    const LogStatisticsResult& getResult() const { return result_; }
+    std::string getFilePath() const { return filePath_; }
+
+private:
+    std::string filePath_;
+    LogStatisticsResult result_;
 };
 
 // ---------------------------------------------------------------

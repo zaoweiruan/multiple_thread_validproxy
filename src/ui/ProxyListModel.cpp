@@ -250,7 +250,7 @@ int ProxyListModel::Compare(const wxDataViewItem& item1,
             std::unordered_map<std::string, std::string>::const_iterator itB = messageMap_.find(b.indexid);
             if (itA != messageMap_.end()) mA = itA->second;
             if (itB != messageMap_.end()) mB = itB->second;
-            cmp = mA.compare(mB);
+            cmp = db::models::ProfileExItemDAO::compareMessage(mA, mB);
             break;
         }
         case COL_REMARKS:

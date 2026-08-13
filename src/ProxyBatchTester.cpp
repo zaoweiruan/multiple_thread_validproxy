@@ -108,10 +108,36 @@ int ProxyBatchTester::calculateXrayInstanceCount(int proxyCount) {
 void ProxyBatchTester::workerThreadFunc(int workerId, int socksPort, int apiPort) {
 std::string xrayApiAddr = "127.0.0.1:" + std::to_string(apiPort);
     xray::XrayApi xrayApi(config_.proxy.xray_executable, xrayApiAddr);
-    
+
+    // Lifecycle management: when grpcConnect fails twice consecutively, evaluate
+    // the backing Xray instance process health. If the instance was successfully
+    // relaunched (evaluateInstanceHealth returned true), instanceDead is cleared
+    // at the loop top so this worker keeps serving the remaining shared queue
+    // items. Only a failed relaunch stops the worker (its queue items are then
+    // picked up by the other workers of the shared queue).
+    std::atomic<bool> instanceDead{false};
+    std::atomic<bool> relaunchedOk{false};
+#ifdef USE_GRPC_API
+    xrayApi.setConnectFailureHook([this, &instanceDead, &relaunchedOk, apiPort]() {
+        instanceDead.store(true, std::memory_order_relaxed);
+        relaunchedOk.store(xrayManager_->evaluateInstanceHealth(apiPort), std::memory_order_relaxed);
+    });
+#endif
+
     while (true) {
         // Check for cancellation
         if (isCancelled()) {
+            break;
+        }
+        if (instanceDead.load() && relaunchedOk.load()) {
+            Logger::write("[ProxyBatchTester] worker "
+                          + std::to_string(workerId)
+                          + ": instance relaunched (api="
+                          + std::to_string(apiPort)
+                          + ") — continuing to serve remaining queue items",
+                          LogLevel::WARN);
+            instanceDead.store(false);
+        } else if (instanceDead.load()) {
             break;
         }
         if (netMon_ && !netMon_->IsConnected()) {
@@ -181,9 +207,10 @@ std::string xrayApiAddr = "127.0.0.1:" + std::to_string(apiPort);
             if (waitInterruptible(20)) return;
             
             std::string addResult;
+            std::string injectError;
             int retryCount = 0;
             bool addSuccess = false;
-            while (retryCount < 3) {
+            while (retryCount < 3 && !instanceDead.load()) {
 #ifdef USE_GRPC_API
                 if (xrayApi.addOutboundDirect(config.outbound_json, tag, addResult)) {
 #else
@@ -192,6 +219,11 @@ std::string xrayApiAddr = "127.0.0.1:" + std::to_string(apiPort);
                     addSuccess = true;
                     break;
                 }
+                // Save the failure reason NOW: the removeOutboundDirect below may
+                // succeed against a freshly relaunched instance and clear
+                // lastError_ (XrayApi removeOutboundDirect success path), which
+                // would otherwise wipe the error before it reaches the final log.
+                injectError = xrayApi.getLastError();
                 retryCount++;
                 if (retryCount < 3) {
 #ifdef USE_GRPC_API
@@ -200,7 +232,7 @@ std::string xrayApiAddr = "127.0.0.1:" + std::to_string(apiPort);
                     xrayApi.removeOutbound(tag);
 #endif
                     // Exponential backoff only for transient/not-ready errors
-                    std::string lastErr = xrayApi.getLastError();
+                    std::string lastErr = injectError;
                     bool transientErr = (lastErr.find("not ready") != std::string::npos ||
                                          lastErr.find("not found") != std::string::npos ||
                                          lastErr.find("unavailable") != std::string::npos ||
@@ -214,18 +246,38 @@ std::string xrayApiAddr = "127.0.0.1:" + std::to_string(apiPort);
                                          lastErr.find("WSA10051") != std::string::npos ||  // WSAENETUNREACH
                                          lastErr.find("WSA10056") != std::string::npos);   // WSAEISCONN
                     if (transientErr) {
-                        int backoffMs = 50 * (1 << (retryCount - 1));
+                        int backoffMs = 200 * (1 << (retryCount - 1));
                         if (waitInterruptible(backoffMs)) return;
                     }
                 }
             }
 
+            // In-flight proxy retry: when this worker's own connect failures
+            // triggered a health evaluation that successfully relaunched the
+            // instance on the same ports, give this SAME proxy item one more
+            // chance instead of discarding it — the relaunched instance is
+            // ready and can run the injection + connectivity test.
+            if (!addSuccess && instanceDead.load() && relaunchedOk.load()) {
+                Logger::write("[Worker-" + std::to_string(workerId) + "] instance relaunched (api=" + std::to_string(apiPort) + ") — retrying proxy " + profile.indexid + " once", LogLevel::WARN);
+#ifdef USE_GRPC_API
+                xrayApi.removeOutboundDirect(tag);
+                if (xrayApi.addOutboundDirect(config.outbound_json, tag, addResult)) {
+#else
+                xrayApi.removeOutbound(tag);
+                if (xrayApi.addOutbound(config.outbound_json, tag, addResult)) {
+#endif
+                    addSuccess = true;
+                } else {
+                    injectError = xrayApi.getLastError();
+                }
+            }
+
             if (!addSuccess) {
-                // Per-proxy config errors are reported at DEBUG level to avoid
-                // flooding the log during batch tests; the batch summary
-                // (REPORT Total/Success/Failed) still reflects the failures.
-                Logger::write("[Worker-" + std::to_string(workerId) + "] 注入xray outbound 错误: " + xrayApi.getLastError(), LogLevel::DEBUG);
-                Logger::write("[Worker-" + std::to_string(workerId) + "] XRAY_ERROR - " + profile.indexid + " (tag=" + tag + ") - " + xrayApi.getLastError(), LogLevel::DEBUG);
+                // gRPC injection errors must be visible at ERR level (user
+                // requirement); the raw Xray output dump below stays at DEBUG.
+                std::string displayErr = injectError.empty() ? xrayApi.getLastError() : injectError;
+                Logger::write("[Worker-" + std::to_string(workerId) + "] 注入xray outbound 错误: " + displayErr, LogLevel::ERR);
+                Logger::write("[Worker-" + std::to_string(workerId) + "] XRAY_ERROR - " + profile.indexid + " (tag=" + tag + ") - " + displayErr, LogLevel::ERR);
                 if (addResult.length() > 300) {
                     Logger::write("  Xray output: " + addResult.substr(0, 300) + "...", LogLevel::DEBUG);
                 } else {

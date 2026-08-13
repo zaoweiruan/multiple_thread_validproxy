@@ -138,9 +138,36 @@ set_property(SOURCE
 - `cmake --build build --target validproxy-cli --parallel 8`：main_cli.cpp.obj 重编，cli 内嵌唯一 `2026-08-07 11:02:38`；version.h 最终 `APP_BUILD_TIME "2026-08-07 11:02:38"`。
 - `ctest --test-dir build`：20/21 通过，仅 NetworkMonitorTest 失败（环境性：curl probe http://127.0.0.1:1 超时，与基线一致）。
 
+## 三次修复（2026-08-12）：源码树 stale `include/version.h` 遮蔽生成头
+
+尽管 `update_version_h` ALL target + `OBJECT_DEPENDS` 机制正确，`bin/validproxy.exe` 在 2026-08-12 17:30:54 重建后仍内嵌旧时间戳 `2026-08-07 16:36:03`。
+
+### 根因（三次）
+
+`CMakeLists.txt` 含 `include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)`，编译器在源码树 `E:\eclipse_workspace\multiple_thread_validproxy\include\version.h` 找到 stale 文件（08/07/2026 16:36:03），优先于 `build/include/version.h`（08/12/2026 16:25:43）。虽然 `update_version_h` 每次构建刷新 `build/include/version.h`，但编译单元 include 的是源码树的 stale 副本，导致嵌入旧时间戳。
+
+### 修复（三次）
+
+删除源码树中的 stale 生成文件：
+
+```powershell
+Remove-Item "E:\eclipse_workspace\multiple_thread_validproxy\include\version.h"
+```
+
+`.gitignore` 已含 `/include/version.h`（line 21），删除不产生工作区噪声。`update_version_h` ALL target 每次构建继续在 `build/include/` 生成 fresh 头文件；`OBJECT_DEPENDS` 钉死 3 个 TU 重编机制保持不变。
+
+### 验证（三次）
+
+- `include/version.h` 不存在（源码树已清理）。
+- `build/include/version.h` 为 fresh 生成文件：`APP_BUILD_TIME "2026-08-12 17:39:19"`。
+- `bin/validproxy.exe` 重新链接（`2026/8/12 17:45:10`），内嵌唯一时间戳 `2026-08-12 17:39:19`，旧时间戳 `2026-08-07 16:36:03` 消失。
+- `ctest --output-on-failure`：24/24 通过。
+- `cmake --build build --parallel 8`：347/347 targets 完成，无错误。
+
 ## 涉及文件
 
 | 文件 | 变更 |
 |------|------|
-| `CMakeLists.txt` | version.h 生成机制：add_custom_command → add_custom_target(update_version_h ALL)；二次修复追加 OBJECT_DEPENDS 钉死 version.h 到 3 个 TU |
+| `include/version.h` | **已删除**（stale 生成文件，源码树残留遮蔽 `build/include/version.h`；`.gitignore` 已覆盖） |
+| `CMakeLists.txt` | 无变更（ALL target + OBJECT_DEPENDS 机制保持正确） |
 | `src/ui/MainFrame.cpp` | onMenuConfig 保存回调追加 logPanel_->setInitialLogLevel 同步 |

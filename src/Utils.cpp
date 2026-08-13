@@ -10,6 +10,7 @@
 #include <chrono>
 #include <algorithm>
 #include <set>
+#include <cctype>
 
 namespace utils {
     std::string getCurrentTimestamp() {
@@ -307,5 +308,167 @@ bool isValidUrlFormat(const std::string& url) {
             }
         }
         return true;
+    }
+
+    // Conservative domain garbage heuristics for subscription-imported addresses.
+    // Rule 1: 0.* labels (covers 0.ir0.ir, 0.0.0.einetwork.news, etc.).
+    // Rule 2: >=4 dot-separated labels that are single hex chars (covers IPv6
+    // reversed-domain garbage such as 0.5.0.0.7.0.f.1.0.7.4.0.1.0.0.2.xzhi.eu.org).
+    static bool isPublicDomain(const std::string& host) {
+        if (host.size() >= 2 && host[0] == '0' && host[1] == '.') {
+            return false;
+        }
+
+        size_t singleHexLabels = 0;
+        size_t i = 0;
+        while (i < host.size()) {
+            size_t dotPos = host.find('.', i);
+            std::string label;
+            if (dotPos == std::string::npos) {
+                label = host.substr(i);
+                i = host.size();
+            } else {
+                label = host.substr(i, dotPos - i);
+                i = dotPos + 1;
+            }
+            if (label.size() == 1) {
+                const unsigned char c = static_cast<unsigned char>(label[0]);
+                if ((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
+                    singleHexLabels++;
+                }
+            }
+        }
+        if (singleHexLabels >= 4) {
+            return false;
+        }
+        return true;
+    }
+
+    bool isPublicAddress(const std::string& address) {
+        if (address.empty()) {
+            return false;
+        }
+
+        // IPv6 literal (contains ':')
+        if (address.find(':') != std::string::npos) {
+            if (address == "::1") return false;
+            if (address == "::") return false;
+            if (address.size() >= 2 && address[0] == 'f' && address[1] == 'f') return false;
+            if (address.size() >= 2 && address[0] == 'f' && address[1] == 'c') return false;
+            if (address.size() >= 2 && address[0] == 'f' && address[1] == 'd') return false;
+            if (address.size() >= 4 && address[0] == 'f' && address[1] == 'e'
+                && address[2] == '8' && address[3] == '0') return false;
+            return true;
+        }
+
+        // No dots -> not an IPv4 address; treat as domain / single-label name.
+        if (address.find('.') == std::string::npos) {
+            if (!address.empty() && address[0] == '0') return false;
+            return true;
+        }
+
+        // Try to parse as an IPv4 dotted-quad.  As soon as a character is
+        // neither a digit nor a dot the whole string is a domain name and is
+        // validated via isPublicDomain() instead.  Strings that remain purely
+        // numeric/dotted are accepted only when they form a well-formed IPv4
+        // address (exactly four octets, each 0..255, outside reserved ranges);
+        // empty octets, octets > 255 or more than four octets are rejected.
+        int octets[4] = {0, 0, 0, 0};
+        int octetIndex = 0;
+        int current = 0;
+        bool inOctet = false;
+        bool malformed = false;    // invalid IPv4 shape seen (scan continues)
+        bool overflowed = false;   // current octet already > 255 (stop accumulating)
+
+        for (const char ch : address) {
+            if (ch >= '0' && ch <= '9') {
+                if (octetIndex >= 4) {
+                    malformed = true;              // more than four octets
+                } else if (!overflowed) {
+                    current = current * 10 + (ch - '0');
+                    if (current > 255) {
+                        overflowed = true;
+                    }
+                }
+                inOctet = true;
+            } else if (ch == '.') {
+                if (!inOctet) malformed = true;    // empty octet (e.g. "1..2")
+                if (overflowed) malformed = true;  // octet > 255
+                if (octetIndex < 4) {
+                    octets[octetIndex] = current;
+                }
+                octetIndex++;
+                current = 0;
+                overflowed = false;
+                inOctet = false;
+            } else {
+                // Non-digit, non-dot -> domain name
+                return isPublicDomain(address);
+            }
+        }
+
+        if (!inOctet) return false;                // trailing dot (e.g. "1." / ".")
+        if (overflowed) malformed = true;          // last octet > 255
+        if (octetIndex != 3) return false;         // must be exactly four octets
+        if (malformed) return false;
+        octets[3] = current;
+
+        // RFC1918 / special-use ranges (reject)
+        if (octets[0] == 0) return false;                // 0.0.0.0/8
+        if (octets[0] == 10) return false;               // 10.0.0.0/8
+        if (octets[0] == 127) return false;              // 127.0.0.0/8
+        if (octets[0] == 169 && octets[1] == 254) return false; // 169.254.0.0/16
+        if (octets[0] == 172 && octets[1] >= 16 && octets[1] <= 31) return false; // 172.16/12
+        if (octets[0] == 192 && octets[1] == 168) return false; // 192.168/16
+        if (octets[0] == 100 && octets[1] >= 64 && octets[1] <= 127) return false; // 100.64/10 CGNAT
+        if (octets[0] >= 224 && octets[0] <= 239) return false; // 224/4 multicast
+        if (octets[0] >= 240 && octets[0] <= 255) return false; // 240/4 reserved
+
+        return true;
+    }
+
+    bool isValidUuid(const std::string& id) {
+        if (id.size() != 36) return false;
+        if (id[8] != '-' || id[13] != '-' || id[18] != '-' || id[23] != '-') {
+            return false;
+        }
+        const char* p = id.c_str();
+        for (int i = 0; i < 8; ++i) {
+            if (!std::isxdigit(static_cast<unsigned char>(p[i]))) return false;
+        }
+        for (int i = 9; i < 13; ++i) {
+            if (!std::isxdigit(static_cast<unsigned char>(p[i]))) return false;
+        }
+        for (int i = 14; i < 18; ++i) {
+            if (!std::isxdigit(static_cast<unsigned char>(p[i]))) return false;
+        }
+        for (int i = 19; i < 23; ++i) {
+            if (!std::isxdigit(static_cast<unsigned char>(p[i]))) return false;
+        }
+        for (int i = 24; i < 36; ++i) {
+            if (!std::isxdigit(static_cast<unsigned char>(p[i]))) return false;
+        }
+        return true;
+    }
+
+    bool isSupportedSsCipher(const std::string& method) {
+        static const char* supported[] = {
+            "aes-128-gcm",
+            "aes-256-gcm",
+            "chacha20-poly1305",
+            "chacha20-ietf-poly1305",
+            "xchacha20-poly1305",
+            "none",
+            "2022-blake3-aes-128-gcm",
+            "2022-blake3-aes-256-gcm",
+            "2022-blake3-chacha20-poly1305"
+        };
+        size_t count = sizeof(supported) / sizeof(supported[0]);
+        for (size_t i = 0; i < count; ++i) {
+            if (method == supported[i]) {
+                return true;
+            }
+        }
+        return false;
     }
  }
