@@ -114,6 +114,8 @@ TEST_F(ConfigReaderTest, SaveRoundTrip_FieldCompleteness) {
     original.network_monitor.checkUrls = {"https://fc.example.com"};
     original.network_monitor.checkIntervalMs = 15000;
     original.network_monitor.checkTimeoutMs = 8000;
+    original.proxy_process_monitor.enabled = true;
+    original.proxy_process_monitor.checkIntervalMs = 5000;
 
     // Create files needed by load validation
     touchFile(original.database_path);
@@ -161,6 +163,8 @@ TEST_F(ConfigReaderTest, SaveRoundTrip_FieldCompleteness) {
     EXPECT_EQ(loaded->network_monitor.checkUrls, original.network_monitor.checkUrls);
     EXPECT_EQ(loaded->network_monitor.checkIntervalMs, original.network_monitor.checkIntervalMs);
     EXPECT_EQ(loaded->network_monitor.checkTimeoutMs, original.network_monitor.checkTimeoutMs);
+    EXPECT_EQ(loaded->proxy_process_monitor.enabled, original.proxy_process_monitor.enabled);
+    EXPECT_EQ(loaded->proxy_process_monitor.checkIntervalMs, original.proxy_process_monitor.checkIntervalMs);
 }
 
 // ============================================================

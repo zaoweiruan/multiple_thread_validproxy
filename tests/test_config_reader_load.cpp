@@ -3,6 +3,7 @@
 #include <filesystem>
 #include "test_utils.h"
 #include "ConfigReader.h"
+#include "Logger.h"
 
 using namespace config;
 
@@ -637,4 +638,127 @@ TEST_F(ConfigReaderLoadTest, SaveRoundTripInLoad) {
     EXPECT_EQ(reloaded->sync.source_db, original->sync.source_db);
     EXPECT_EQ(reloaded->sync.target_db, original->sync.target_db);
     EXPECT_EQ(reloaded->sync.sync_skip_subids, original->sync.sync_skip_subids);
+}
+
+// --- Proxy section type validation ---
+// Captures Logger output via callback to assert no spurious "wrong type" warning
+// when proxy is a valid object, and that a correct warning is emitted when the
+// proxy value has the wrong type.
+
+namespace {
+
+std::vector<std::string> g_capturedLogs;
+
+void captureLogger(const std::string& msg, LogLevel) {
+    g_capturedLogs.push_back(msg);
+}
+
+} // namespace
+
+TEST_F(ConfigReaderLoadTest, ProxySectionValidObject_NoWrongTypeWarning) {
+    writeConfig("proxy_valid.json", R"({
+        "proxy": {
+            "socks_base_port": 10808,
+            "xray_executable": "C:/xray/xray.exe",
+            "use_singbox": false
+        }
+    })");
+    g_capturedLogs.clear();
+    Logger::pushCallback(captureLogger);
+
+    std::optional<AppConfig> result = ConfigReader::load(configPath("proxy_valid.json"));
+
+    Logger::popCallback();
+
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result->proxy.socks_base_port, 10808);
+    EXPECT_EQ(result->proxy.xray_executable, "C:/xray/xray.exe");
+    // Regression: valid proxy object must NOT emit the wrong-type warning.
+    for (const std::string& log : g_capturedLogs) {
+        EXPECT_EQ(log.find("config.proxy has wrong type"), std::string::npos)
+            << "unexpected spurious warning: " << log;
+    }
+}
+
+TEST_F(ConfigReaderLoadTest, ProxySectionWrongType_UsesDefaultAndWarns) {
+    writeConfig("proxy_wrong.json", R"({
+        "proxy": "not-an-object"
+    })");
+    g_capturedLogs.clear();
+    Logger::pushCallback(captureLogger);
+
+    std::optional<AppConfig> result = ConfigReader::load(configPath("proxy_wrong.json"));
+
+    Logger::popCallback();
+
+    ASSERT_TRUE(result.has_value());
+    // Defaults from AppConfig::proxy struct must be retained.
+    EXPECT_EQ(result->proxy.socks_base_port, 10808);
+    EXPECT_FALSE(result->proxy.use_singbox);
+
+    bool found = false;
+    for (const std::string& log : g_capturedLogs) {
+        if (log.find("config.proxy has wrong type (expected object), using default") != std::string::npos) {
+            found = true;
+            break;
+        }
+    }
+    EXPECT_TRUE(found) << "expected wrong-type warning with (expected object), using default";
+}
+
+TEST_F(ConfigReaderLoadTest, ProxyProcessMonitor_Defaults) {
+    writeConfig("ppm_defaults.json", R"({
+        "database": {"path": "test/guiNDB.db"},
+        "xray": {"workers": 2}
+    })");
+
+    std::optional<AppConfig> result = ConfigReader::load(configPath("ppm_defaults.json"));
+
+    ASSERT_TRUE(result.has_value());
+    EXPECT_FALSE(result->proxy_process_monitor.enabled);
+    EXPECT_EQ(result->proxy_process_monitor.checkIntervalMs, 30000);
+}
+
+TEST_F(ConfigReaderLoadTest, ProxyProcessMonitor_CustomValues) {
+    writeConfig("ppm_custom.json", R"({
+        "database": {"path": "test/guiNDB.db"},
+        "xray": {"workers": 2},
+        "proxy_process_monitor": {
+            "enabled": true,
+            "check_interval_ms": 15000
+        }
+    })");
+
+    std::optional<AppConfig> result = ConfigReader::load(configPath("ppm_custom.json"));
+
+    ASSERT_TRUE(result.has_value());
+    EXPECT_TRUE(result->proxy_process_monitor.enabled);
+    EXPECT_EQ(result->proxy_process_monitor.checkIntervalMs, 15000);
+}
+
+TEST_F(ConfigReaderLoadTest, ProxyProcessMonitor_WrongType_UsesDefaultAndWarns) {
+    writeConfig("ppm_wrong.json", R"({
+        "database": {"path": "test/guiNDB.db"},
+        "xray": {"workers": 2},
+        "proxy_process_monitor": "not-an-object"
+    })");
+    g_capturedLogs.clear();
+    Logger::pushCallback(captureLogger);
+
+    std::optional<AppConfig> result = ConfigReader::load(configPath("ppm_wrong.json"));
+
+    Logger::popCallback();
+
+    ASSERT_TRUE(result.has_value());
+    EXPECT_FALSE(result->proxy_process_monitor.enabled);
+    EXPECT_EQ(result->proxy_process_monitor.checkIntervalMs, 30000);
+
+    bool found = false;
+    for (const std::string& log : g_capturedLogs) {
+        if (log.find("config.proxy_process_monitor has wrong type (expected object), using default") != std::string::npos) {
+            found = true;
+            break;
+        }
+    }
+    EXPECT_TRUE(found) << "expected wrong-type warning";
 }
