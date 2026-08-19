@@ -51,6 +51,15 @@ boost::json::object ConfigJsonSerializer::serialize(const AppConfig& config) con
     subObj["check_auto_update_interval"] = config.check_auto_update_interval;
     subObj["connect_timeout_ms"] = config.subscription_connect_timeout_ms;
     subObj["timeout_ms"] = config.subscription_timeout_ms;
+    {
+        // priority_subids: join with comma
+        std::string joined;
+        for (size_t i = 0; i < config.priority_subids.size(); ++i) {
+            if (i > 0) joined += ",";
+            joined += config.priority_subids[i];
+        }
+        subObj["priority_subids"] = joined;
+    }
     root["subscription"] = subObj;
 
     // dedup

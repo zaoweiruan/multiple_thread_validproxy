@@ -19,6 +19,9 @@ struct ProfileExItem {
   std::string sort;  // Sort
   std::string message;  // Message
   int consecutive_failures = 0;  // 连续失败次数（>=阈值则视为黑名单）
+  int start_count = 0;          // 独立代理启动次数（历史聚合）
+  int64_t total_runtime_ms = 0; // 独立代理累计运行时长（ms，历史聚合）
+  int crash_count = 0;          // 独立代理崩溃次数（exit_code==259，历史聚合）
 
   ProfileExItem() = default;
 
@@ -42,6 +45,12 @@ struct ProfileExItem {
     obj.message = text ? text : "";
     // consecutive_failures (column 5)
     obj.consecutive_failures = sqlite3_column_int(stmt, 5);
+    // start_count (column 6)
+    obj.start_count = sqlite3_column_int(stmt, 6);
+    // total_runtime_ms (column 7)
+    obj.total_runtime_ms = sqlite3_column_int64(stmt, 7);
+    // crash_count (column 8)
+    obj.crash_count = sqlite3_column_int(stmt, 8);
     return obj;
   }
 
@@ -65,6 +74,15 @@ struct ProfileExItem {
     oss << ", ";
     oss << "\"consecutive_failures\": ";
     oss << consecutive_failures;
+    oss << ", ";
+    oss << "\"start_count\": ";
+    oss << start_count;
+    oss << ", ";
+    oss << "\"total_runtime_ms\": ";
+    oss << total_runtime_ms;
+    oss << ", ";
+    oss << "\"crash_count\": ";
+    oss << crash_count;
     oss << "}";
     return oss.str();
   }

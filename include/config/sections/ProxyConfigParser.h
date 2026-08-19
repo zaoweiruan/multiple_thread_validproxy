@@ -55,6 +55,19 @@ inline void ProxyConfigParser::parse(const boost::json::value& root, AppConfig& 
             Logger::write("WARNING: config.proxy.template_config_path has wrong type (expected string), using default", LogLevel::WARN);
         }
         // sing-box configuration
+        // Scoring weights (0.0 to 1.0)
+        if (proxy.contains("scoring_delay_weight") && proxy.at("scoring_delay_weight").is_number()) {
+            double v = proxy.at("scoring_delay_weight").as_double();
+            if (v >= 0.0 && v <= 1.0) config.proxy.scoring_delay_weight = v;
+        }
+        if (proxy.contains("scoring_stability_weight") && proxy.at("scoring_stability_weight").is_number()) {
+            double v = proxy.at("scoring_stability_weight").as_double();
+            if (v >= 0.0 && v <= 1.0) config.proxy.scoring_stability_weight = v;
+        }
+        if (proxy.contains("scoring_history_weight") && proxy.at("scoring_history_weight").is_number()) {
+            double v = proxy.at("scoring_history_weight").as_double();
+            if (v >= 0.0 && v <= 1.0) config.proxy.scoring_history_weight = v;
+        }
         if (proxy.contains("singbox_executable") && proxy.at("singbox_executable").is_string()) {
             std::string rawPath = proxy.at("singbox_executable").as_string().c_str();
             std::filesystem::path p(rawPath);

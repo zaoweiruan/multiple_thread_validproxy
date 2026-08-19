@@ -26,6 +26,7 @@ struct AppConfig {
     bool check_auto_update_interval = false;
     int subscription_connect_timeout_ms = 10000;  // Default: 10s connect timeout
     int subscription_timeout_ms = 30000;          // Default: 30s total timeout
+    std::vector<std::string> priority_subids;      // Subscriptions sorted to top of list on startup
     bool dedup_enabled = true;
     bool dedup_after_update = false;
     std::vector<std::string> dedup_subids;
