@@ -28,6 +28,8 @@
 #include <shellapi.h>
 #include <thread>
 #include <fstream>
+#include <algorithm>
+#include <set>
 
 // -------------------------------------------------------------------
 //  Menu / Tool identifiers
@@ -279,7 +281,30 @@ Bind(wxEVT_PROXY_LIST_LOADED, [this](ProxyListLoadedEvent& evt) {
 // ── Async subscription list loaded ────────────────────────────
 Bind(wxEVT_SUB_LIST_LOADED, [this](SubListLoadedEvent& evt) {
     if (subPanel_) {
-        subPanel_->loadSubscriptions(evt.takeSubs(), evt.takeProxyCounts());
+        std::vector<db::models::Subitem> subs = evt.takeSubs();
+
+        // Sort priority subscriptions to the top (preserving config order)
+        if (!config_.priority_subids.empty()) {
+            std::set<std::string> priSet(config_.priority_subids.begin(),
+                                          config_.priority_subids.end());
+            // Stable partition: priority subs first, then the rest
+            std::stable_partition(subs.begin(), subs.end(),
+                [&priSet](const db::models::Subitem& s) {
+                    return priSet.count(s.id) > 0;
+                });
+        }
+
+        subPanel_->loadSubscriptions(subs, evt.takeProxyCounts());
+
+        // On initial async load, auto-select the first subscription and
+        // load its proxies so the user sees data immediately.
+        if (!initialSubsLoaded_) {
+            initialSubsLoaded_ = true;
+            if (!subs.empty()) {
+                controller_->loadProxiesAsync(subs[0].id, this);
+                setStatusText(0, "Loading proxies...");
+            }
+        }
     }
 });
       
@@ -772,17 +797,14 @@ void MainFrame::initPanels() {
     auiManager_->Update();
     Logger::write("[MainFrame] auiManager_->Update() returned", LogLevel::DEBUG);
 
-    // Load initial data (unchanged) — done before AUI Update() to ensure
-    // data is ready when the layout triggers first paint
-    subPanel_->loadSubscriptions();
-
-    if (!subPanel_->getSubscriptions().empty()) {
-        std::string firstSubId = subPanel_->getSubscriptions()[0].id;
-        proxyPanel_->loadProxies(firstSubId);
-    } else {
-        proxyPanel_->loadProxies("");
-    }
-    Logger::write("[MainFrame] initPanels done", LogLevel::DEBUG);
+    // ── Async initial data load (non-blocking UI) ──────────────────
+    // The synchronous loadSubscriptions()/loadProxies() calls blocked the
+    // UI thread for >5 seconds with 50k+ proxies.  Replace with async
+    // loads that return via wxQueueEvent; the SubListLoadedEvent handler
+    // auto-selects the first subscription and triggers proxy loading.
+    setStatusText(0, "Loading data...");
+    controller_->loadSubscriptionsAsync(this);
+    Logger::write("[MainFrame] initPanels done (async load started)", LogLevel::DEBUG);
 }
 
 void MainFrame::initTrayIcon() {

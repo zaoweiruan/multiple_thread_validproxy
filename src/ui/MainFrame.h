@@ -126,6 +126,7 @@ private:
     wxAuiToolBarItem* m_toggleDetailItem{nullptr};  // Toggle detail panel button
     bool detailPaneVisible_{false};
     bool monitoringStarted_{false};
+    bool initialSubsLoaded_{false};  // Guard: auto-load proxies on first async subscription load
     config::AppConfig config_;
     wxTimer* netMonTimer_{nullptr};
     wxPanel* netMonPanel_{nullptr};

@@ -16,17 +16,20 @@
 // Column indices in the data view
 // -------------------------------------------------------------------
 enum {
-    COL_ROWNUM   = 0,
-    COL_REGION   = 1,
-    COL_DELAY    = 2,
-    COL_TYPE     = 3,
-    COL_ADDRESS  = 4,
-    COL_PORT     = 5,
-    COL_FAILURES = 6,
-    COL_REMARKS  = 7,
-    COL_MESSAGE  = 8,
-    COL_INDEXID  = 9,
-    COL_COUNT    = 10,
+    COL_ROWNUM        = 0,
+    COL_REGION        = 1,
+    COL_DELAY         = 2,
+    COL_TYPE          = 3,
+    COL_ADDRESS       = 4,
+    COL_PORT          = 5,
+    COL_FAILURES      = 6,
+    COL_REMARKS       = 7,
+    COL_MESSAGE       = 8,
+    COL_INDEXID       = 9,
+    COL_START_COUNT   = 10,
+    COL_TOTAL_RUNTIME_MS = 11,
+    COL_HEALTH        = 12,
+    COL_COUNT         = 13,
 };
 
 // -------------------------------------------------------------------
@@ -51,6 +54,15 @@ public:
     // Rebuild lookup maps from exItems_
     void rebuildMaps();
 
+    // Replace the currently-running standalone sessions (indexId -> elapsed
+    // ms from the watch heartbeat) with the given snapshot.  The map is
+    // ASSIGNED, not accumulated, so repeated periodic refreshes stay
+    // idempotent (the runtime/health columns do not grow every tick).
+    // Returns true when the snapshot actually changed — the caller should
+    // skip the view redraw when it returns false (e.g. no in-progress
+    // session, which makes the periodic evaluation refresh a no-op).
+    bool setRunningDurations(const std::unordered_map<std::string, long long>& runningMs);
+
     // Detect the internal ID offset.
     // Some wxWidgets builds of wxDataViewIndexListModel::Reset(N) populate
     // m_list with 1-based IDs (1..N) instead of 0-based (0..N-1).
@@ -73,6 +85,12 @@ public:
     std::string getDelay(const std::string& indexId) const;
     std::string getMessage(const std::string& indexId) const;
     int getFailures(const std::string& indexId) const;
+    // Runtime (ms) shown for an indexId: total_runtime_ms plus any live
+    // elapsed time merged by setRunningDurations().
+    long long getRuntime(const std::string& indexId) const;
+    // Health score shown for an indexId (base + running-time bonus, capped
+    // at 1.0) as computed by rebuildMaps()/setRunningDurations().
+    double getHealth(const std::string& indexId) const;
 
     // Retrieve a typed pointer to the profile item at the given view row
     const db::models::Profileitem* getProfileAtRow(unsigned int viewRow) const;
@@ -80,6 +98,15 @@ public:
     // Notify the view that delay/message/failures values changed for all rows.
     // Model must call this after rebuildMaps() to trigger view redraw.
     void notifyTestResultChanged();
+
+    // Notify the view that history (start_count/total_runtime_ms/health) values
+    // changed for all rows with standalone history.  Call this after
+    // rebuildMaps() when those columns are updated.
+    void notifyHistoryChanged();
+
+    // Notify the view that only the in-progress (running) rows changed.
+    // Used by the periodic 3s refresh so idle proxies stay completely still.
+    void notifyRunningChanged();
 
     // wxDataViewIndexListModel overrides
     unsigned int GetCount() const override;
@@ -100,6 +127,17 @@ private:
     std::unordered_map<std::string, std::string> delayMap_;
     std::unordered_map<std::string, std::string> messageMap_;
     std::unordered_map<std::string, int> failuresMap_;
+
+    // History lookup maps built from exItems_
+    std::unordered_map<std::string, int> startCountMap_;
+    std::unordered_map<std::string, long long> runtimeMap_;
+    std::unordered_map<std::string, double> healthMap_;
+
+    // Current in-progress standalone sessions (indexId -> elapsed ms),
+    // assigned by setRunningDurations().  Kept separate from runtimeMap_
+    // (cumulated totals) so the same snapshot can be re-applied idempotently
+    // on every periodic refresh without growing the Runtime column.
+    std::unordered_map<std::string, long long> runningDurations_;
 
     // Internal ID offset compensation.
     // 0 = IDs are 0-based (correct), 1 = IDs are 1-based (buggy wx build).

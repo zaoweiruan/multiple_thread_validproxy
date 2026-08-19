@@ -28,6 +28,7 @@ enum {
     ID_CONTEXT_RESOLVE_REGION = wxID_HIGHEST + 403,
     ID_CONTEXT_BATCH_RESOLVE_REGION = wxID_HIGHEST + 404,
     ID_CONTEXT_REFRESH        = wxID_HIGHEST + 405,
+    ID_HISTORY_TIMER          = wxID_HIGHEST + 406,
 };
 
 // -------------------------------------------------------------------
@@ -40,6 +41,7 @@ wxBEGIN_EVENT_TABLE(ProxyListPanel, wxPanel)
     EVT_MENU(ID_CONTEXT_BATCH_RESOLVE_REGION, ProxyListPanel::onBatchResolveRegion)
     EVT_MENU(ID_CONTEXT_REFRESH, ProxyListPanel::onRefreshProxyList)
     EVT_DATAVIEW_SELECTION_CHANGED(wxID_ANY, ProxyListPanel::onSelectionChanged)
+    EVT_TIMER(ID_HISTORY_TIMER, ProxyListPanel::onHistoryTimer)
 wxEND_EVENT_TABLE()
 
 // -------------------------------------------------------------------
@@ -61,8 +63,15 @@ ProxyListPanel::ProxyListPanel(wxWindow* parent, AppController* controller,
     listCtrl_->AssociateModel(model_);
     model_->DecRef();  // AssociateModel took ownership
 
+    // Periodic evaluation refresh: every 3 seconds re-read the live
+    // running-session durations from the DB (on a background thread) so the
+    // displayed evaluation stays in sync with the heartbeat updates without
+    // blocking the UI.
+    historyTimer_ = new wxTimer(this, ID_HISTORY_TIMER);
+    historyTimer_->Start(3000);
+
     // Columns: Row# | Region | Latency ↕ | Type | Host ↕ | Port | Failures ↕ |
-    // Remarks | Message | IndexId
+    // Remarks | Message | IndexId | Starts ↕ | Runtime(ms) ↕ | Health ↕
     listCtrl_->AppendTextColumn("#",        COL_ROWNUM,   wxDATAVIEW_CELL_INERT,  40);
     listCtrl_->AppendTextColumn("Region",   COL_REGION,   wxDATAVIEW_CELL_INERT,  90);
     listCtrl_->AppendTextColumn("Latency ↕", COL_DELAY,  wxDATAVIEW_CELL_INERT,  80);
@@ -73,6 +82,9 @@ ProxyListPanel::ProxyListPanel(wxWindow* parent, AppController* controller,
     listCtrl_->AppendTextColumn("Remarks",  COL_REMARKS,  wxDATAVIEW_CELL_EDITABLE, 160);
     listCtrl_->AppendTextColumn("Message ↕", COL_MESSAGE,  wxDATAVIEW_CELL_INERT, 160);
     listCtrl_->AppendTextColumn("IndexId",  COL_INDEXID,  wxDATAVIEW_CELL_INERT, 120);
+    listCtrl_->AppendTextColumn("Starts ↕", COL_START_COUNT, wxDATAVIEW_CELL_INERT, 60);
+    listCtrl_->AppendTextColumn("Runtime ↕", COL_TOTAL_RUNTIME_MS, wxDATAVIEW_CELL_INERT, 90);
+    listCtrl_->AppendTextColumn("Health ↕", COL_HEALTH, wxDATAVIEW_CELL_INERT, 70);
 
     sizer->Add(listCtrl_, 1, wxEXPAND | wxALL, 2);
     SetSizer(sizer);
@@ -80,6 +92,7 @@ ProxyListPanel::ProxyListPanel(wxWindow* parent, AppController* controller,
     // Bind custom events for completion handling
     Bind(wxEVT_PROXY_TEST_PROGRESS, &ProxyListPanel::onProxyTestProgress, this);
     Bind(wxEVT_STANDALONE_PROXY, &ProxyListPanel::onStandaloneProxyEvent, this);
+    Bind(wxEVT_RUNNING_DURATIONS_LOADED, &ProxyListPanel::onRunningDurationsLoaded, this);
     Bind(wxEVT_DATAVIEW_COLUMN_HEADER_CLICK, &ProxyListPanel::onColumnHeaderClick, this);
 
     // Double-click to start proxy
@@ -89,7 +102,13 @@ ProxyListPanel::ProxyListPanel(wxWindow* parent, AppController* controller,
     });
 }
 
-ProxyListPanel::~ProxyListPanel() = default;
+ProxyListPanel::~ProxyListPanel() {
+    if (historyTimer_) {
+        historyTimer_->Stop();
+        delete historyTimer_;
+        historyTimer_ = nullptr;
+    }
+}
 
 // -------------------------------------------------------------------
 // UI update helper — sets member data, resets model, selects first row.
@@ -143,11 +162,70 @@ void ProxyListPanel::loadProxies(std::vector<db::models::Profileitem> proxies,
 // Model's lookup maps are rebuilt and the view is notified to redraw.
 // -------------------------------------------------------------------
 void ProxyListPanel::refreshResults() {
+    Logger::write("[ProxyListPanel] refreshResults called", LogLevel::REPORT);
+
     exItems_ = controller_->loadProxyResults();
 
     model_->rebuildMaps();
 
+    // Merge live elapsed time of in-progress standalone sessions so the
+    // Runtime column shows total_runtime_ms + current session duration and
+    // the Health score gains a running-time bonus.
+    model_->setRunningDurations(controller_->getRunningDurations());
+
+    // Notify the view that the history columns changed so the DataViewCtrl
+    // re-queries the model for Starts/Runtime/Health cells (Refresh() alone
+    // only repaints, it does not invalidate cached cell values on MSW).
+    model_->notifyHistoryChanged();
+
     listCtrl_->Refresh();
+}
+
+// -------------------------------------------------------------------
+void ProxyListPanel::onHistoryTimer(wxTimerEvent& event) {
+    refreshHistoryPeriodic();
+}
+
+// -------------------------------------------------------------------
+// Periodic evaluation refresh.  Kicks off a background read of live
+// running-session durations; the actual DB query runs off the UI thread
+// (see AppController::getRunningDurationsAsync).  No full-table re-read
+// of exItems and no map rebuild here — only in-flight sessions change on
+// a heartbeat cadence, so an incremental merge is sufficient.  The
+// refreshInFlight_ guard prevents stacking multiple background reads if
+// the timer fires while the previous query is still running.
+void ProxyListPanel::refreshHistoryPeriodic() {
+    if (!model_ || !controller_) {
+        return;
+    }
+    if (refreshInFlight_.exchange(true)) {
+        // Previous background read still in flight — skip this tick.
+        return;
+    }
+    controller_->getRunningDurationsAsync(this);
+}
+
+// -------------------------------------------------------------------
+// RunningDurationsLoadedEvent handler (UI thread).  Merges the live
+// durations of in-progress sessions into the model and re-queries the
+// view for the evaluation columns.  Only rows with standalone history
+// are notified, so the cost is small even with a large profile database.
+// When the snapshot is unchanged (e.g. no in-progress session at all) the
+// redraw is skipped entirely — otherwise an idle UI would repaint every
+// 3s even though no evaluation data changed.
+void ProxyListPanel::onRunningDurationsLoaded(RunningDurationsLoadedEvent& event) {
+    if (!model_ || !controller_) {
+        refreshInFlight_ = false;
+        return;
+    }
+    if (model_->setRunningDurations(event.takeDurations())) {
+        // Only the in-progress (running) rows actually changed, so notify
+        // and repaint only those.  Idle proxies keep their historical values
+        // and stay completely still during the periodic 3s poll.
+        model_->notifyRunningChanged();
+        listCtrl_->Refresh();
+    }
+    refreshInFlight_ = false;
 }
 
 // -------------------------------------------------------------------
@@ -380,6 +458,19 @@ void ProxyListPanel::onStartProxy(wxCommandEvent& event) {
 
     if (!controller_) return;
 
+    // Reject a duplicate start before any port check: if a standalone proxy
+    // using the same derived config file is already running, there is no point
+    // in resolving ports for it (it would be refused right after anyway).
+    if (controller_->isStandaloneProxyRunning(indexId)) {
+        Logger::write("[UI] Standalone proxy for " + indexId
+                      + " is already running, skipped duplicate start", LogLevel::WARN);
+        wxMessageDialog dlg(this, "该代理已作为独立进程运行，请先停止后再启动。",
+                            "代理已运行", wxOK | wxICON_INFORMATION);
+        dlg.CentreOnScreen();
+        dlg.ShowModal();
+        return;
+    }
+
     // Check if the configured SOCKS port is available
     config::AppConfig cfg = controller_->getConfig();
     int desiredPort = cfg.proxy.socks_base_port;
@@ -432,8 +523,12 @@ void ProxyListPanel::onStandaloneProxyEvent(StandaloneProxyEvent& event) {
     if (event.isStarted()) {
         Logger::write("[UI] Standalone proxy started: " + event.getIndexId()
                       + " on port " + std::to_string(event.getSocksPort()), LogLevel::REPORT);
+        // Refresh history/health columns so runtimes and health reflect the
+        // new in-progress session (insertStart already updated the DB).
+        refreshResults();
     } else {
         Logger::write("[UI] Standalone proxy stopped: " + event.getIndexId(), LogLevel::REPORT);
+        refreshResults();
     }
     event.Skip();
 }

@@ -6,6 +6,7 @@
 
 #include <string>
 #include <vector>
+#include <atomic>
 
 #include "Profileitem.h"
 #include "ProfileExItem.h"
@@ -54,17 +55,33 @@ private:
     void onColumnHeaderClick(wxDataViewEvent& event);
     void onSelectionChanged(wxDataViewEvent& event);
     void onStandaloneProxyEvent(StandaloneProxyEvent& event);
+    void onHistoryTimer(wxTimerEvent& event);
+    void onRunningDurationsLoaded(RunningDurationsLoadedEvent& event);
 
     void selectFirstProxy();
     void updateProxyList(const std::vector<db::models::Profileitem>& proxies,
                          const std::vector<db::models::ProfileExItem>& exItems,
                          const std::string& subId);
+    // Periodic refresh of the history/evaluation columns (Starts/Runtime/Health).
+    // Called from onHistoryTimer so the evaluation stays current even when no
+    // standalone start/stop event arrives.  Lightweight: kicks off a
+    // background DB read (getRunningDurationsAsync) instead of doing any
+    // query on the UI thread; the RunningDurationsLoadedEvent handler applies
+    // the merged durations and only rows with standalone history are notified.
+    void refreshHistoryPeriodic();
 
     AppController* controller_;
     sqlite3* db_;
 
     wxDataViewCtrl* listCtrl_;
     ProxyListModel* model_;
+
+    // Periodic timer (3s) that refreshes the evaluation columns
+    // (Starts/Runtime/Health) from the latest DB state.  The DB read itself
+    // happens on a background thread; this flag prevents a new background
+    // read from being spawned while the previous one is still in flight.
+    wxTimer* historyTimer_ = nullptr;
+    std::atomic<bool> refreshInFlight_{false};
 
     std::vector<db::models::Profileitem> proxies_;
     std::vector<db::models::ProfileExItem> exItems_;

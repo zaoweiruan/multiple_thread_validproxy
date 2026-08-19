@@ -44,6 +44,7 @@ class ProxySelectionEvent;
 class ProxyListLoadedEvent;
 class SubListLoadedEvent;
 class StandaloneProxyEvent;
+class RunningDurationsLoadedEvent;
 
 wxDECLARE_EVENT(wxEVT_PROXY_TEST_PROGRESS, ProxyTestProgressEvent);
 wxDECLARE_EVENT(wxEVT_LOG_MESSAGE, LogMessageEvent);
@@ -55,6 +56,7 @@ wxDECLARE_EVENT(wxEVT_PROXY_SELECTION, ProxySelectionEvent);
 wxDECLARE_EVENT(wxEVT_PROXY_LIST_LOADED, ProxyListLoadedEvent);
 wxDECLARE_EVENT(wxEVT_SUB_LIST_LOADED, SubListLoadedEvent);
 wxDECLARE_EVENT(wxEVT_STANDALONE_PROXY, StandaloneProxyEvent);
+wxDECLARE_EVENT(wxEVT_RUNNING_DURATIONS_LOADED, RunningDurationsLoadedEvent);
 
 // ---------------------------------------------------------------
 // ProxyTestProgressEvent — sent during batch testing
@@ -254,6 +256,30 @@ public:
 private:
     std::vector<db::models::Subitem> subs_;
     std::unordered_map<std::string, int> proxyCounts_;
+};
+
+// ---------------------------------------------------------------
+// RunningDurationsLoadedEvent — live running-session durations (ms)
+// keyed by indexId, fetched on a background thread.  The payload is
+// intentionally tiny: only proxy_runtime_history rows whose ended_at
+// IS NULL (in-progress sessions), so the UI can merge elapsed time
+// into the Runtime/Health columns without a full DB re-read.
+// ---------------------------------------------------------------
+class RunningDurationsLoadedEvent : public wxEvent {
+public:
+    explicit RunningDurationsLoadedEvent(
+        std::unordered_map<std::string, long long> durations)
+        : wxEvent(0, wxEVT_RUNNING_DURATIONS_LOADED),
+          durations_(std::move(durations)) {}
+
+    wxEvent* Clone() const override { return new RunningDurationsLoadedEvent(*this); }
+
+    std::unordered_map<std::string, long long> takeDurations() {
+        return std::move(durations_);
+    }
+
+private:
+    std::unordered_map<std::string, long long> durations_;
 };
 
 // ---------------------------------------------------------------

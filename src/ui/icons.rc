@@ -32,3 +32,9 @@ tool_pipeline_png     RCDATA "docs/design/ui/icon/png/tool_pipeline.png"
 // (directory of available resolutions) so Windows / wxWidgets can load
 // it with LoadImage / wxBITMAP_TYPE_ICO_RESOURCE.
 icon_ico              ICON   "docs/design/ui/icon.ico"
+
+// ── Common Controls v6 manifest ─────────────────────────────────────
+// wxcore 3.3.x delay-loads comctl32!GetWindowSubclass (v6-only export).
+// Without this dependency Windows loads legacy comctl32 v5.82 (System32)
+// and GUI startup fails with "无法定位程序输入点 GetWindowSubclass".
+1 24 "src/ui/app.manifest"
