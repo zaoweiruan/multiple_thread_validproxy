@@ -98,9 +98,16 @@ private:
     void onToggleDetailPane(wxCommandEvent& event);
     void onTestSubscription(SubscriptionTestEvent& event);
     void onNetMonTimer(wxTimerEvent& event);
+    void onFirstShow(wxShowEvent& event);
     void repositionNetMonPanel();
+    void onProxyMonTimer(wxTimerEvent& event);
+    void repositionProxyMonPanel();
+    void updateProxyMonStatus(bool enabled, int aliveCount);
+    void startProxyMonitor(int intervalMs);
+    void stopProxyMonitor();
+    void startMonitoring();
 
-// Members
+    // Members
      wxAuiManager* auiManager_{nullptr};
      wxSplitterWindow* splitter_{nullptr};  // Resizable splitter for subscription/proxy panels
      AppController* controller_;
@@ -118,10 +125,16 @@ private:
     wxChoice* m_searchTargetChoice{nullptr};
     wxAuiToolBarItem* m_toggleDetailItem{nullptr};  // Toggle detail panel button
     bool detailPaneVisible_{false};
+    bool monitoringStarted_{false};
     config::AppConfig config_;
     wxTimer* netMonTimer_{nullptr};
     wxPanel* netMonPanel_{nullptr};
     bool netMonConnected_{true};
+
+    wxTimer* proxyMonTimer_{nullptr};
+    wxPanel* proxyMonPanel_{nullptr};
+    bool proxyMonEnabled_{false};
+    int proxyAliveCount_{0};
 
     wxDECLARE_EVENT_TABLE();
 };

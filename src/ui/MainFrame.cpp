@@ -67,6 +67,7 @@ wxBEGIN_EVENT_TABLE(MainFrame, wxFrame)
     EVT_CLOSE(MainFrame::onClose)
     EVT_ICONIZE(MainFrame::onIconize)
     EVT_SIZE(MainFrame::onResize)
+    EVT_SHOW(MainFrame::onFirstShow)
     // Menu
     EVT_MENU(ID_MENU_IMPORT_SUB,  MainFrame::onMenuImportSub)
     EVT_MENU(ID_MENU_SYNC_DB,     MainFrame::onMenuSyncDb)
@@ -109,6 +110,10 @@ MainFrame::MainFrame(const config::AppConfig& cfg, sqlite3* db)
 {
     controller_ = new AppController(db, cfg);
     Logger::write("[MainFrame] Constructor begin", LogLevel::DEBUG);
+
+    // Route AppController's wxQueueEvent notifications (standalone proxy
+    // start/stop, dangling adoption) to this frame's event table.
+    controller_->setTopWindow(this);
 
     Logger::write("[MainFrame] After controller creation, initializing icon", LogLevel::DEBUG);
 
@@ -202,6 +207,20 @@ MainFrame::MainFrame(const config::AppConfig& cfg, sqlite3* db)
         }
     });
 
+    // ── Standalone proxy start/stop → refresh history columns ──
+    // AppController posts StandaloneProxyEvent to topWindow_ on standalone
+    // proxy start (incl. dangling adoption) and stop; refresh the proxy list
+    // so Starts/Runtime/Health columns reflect the updated runtime history.
+    Bind(wxEVT_STANDALONE_PROXY, [this](StandaloneProxyEvent& evt) {
+        Logger::write("[MainFrame] StandaloneProxyEvent received, started="
+                      + std::string(evt.isStarted() ? "true" : "false")
+                      + " indexId=" + evt.getIndexId(), LogLevel::REPORT);
+        if (proxyPanel_) {
+            proxyPanel_->refreshResults();
+        }
+        evt.Skip();
+    });
+
     // ── Subscription right-click Test ────────────────────────────
     Bind(wxEVT_SUBSCRIPTION_TEST, &MainFrame::onTestSubscription, this);
 
@@ -293,12 +312,55 @@ Bind(wxEVT_SUB_LIST_LOADED, [this](SubListLoadedEvent& evt) {
 
     loadSettings();
 
-    // Network status timer (2s poll)
+    // Network status panel (created but timer not started until first show)
+    // netMonPanel_ is created in startMonitoring() after the frame is visible
+    // to avoid layout flicker and ensure status bar field widths are final.
+
+    Logger::write("[MainFrame] Constructor end", LogLevel::DEBUG);
+}
+
+// -------------------------------------------------------------------
+//  First-show handler: defer heavy/background work until the frame is
+//  actually visible and the event loop has drained the initial paint /
+//  layout / subscription-proxy data-loading events.  This guarantees
+//  that menus, buttons, and panel content are on screen before the
+//  dangling-adoption thread and the network-monitor timer start.
+// -------------------------------------------------------------------
+void MainFrame::onFirstShow(wxShowEvent& evt) {
+    evt.Skip();  // allow default show processing
+
+    // Only run once — unwatch so subsequent Show() calls (un-minimize etc.)
+    // do not re-trigger adoption or timer creation.
+    if (monitoringStarted_) {
+        return;
+    }
+    monitoringStarted_ = true;
+
+    // wxCallAfter posts a callback to the event loop; it runs after the
+    // current batch of show/layout/paint/data events has been processed,
+    // which is exactly when the UI is visually settled.
+    CallAfter([this]() {
+        Logger::write("[MainFrame] onFirstShow: starting monitoring", LogLevel::DEBUG);
+        startMonitoring();
+    });
+}
+
+void MainFrame::startMonitoring() {
+    // 1) Adopt any dangling standalone proxy processes left from a previous
+    //    GUI session.  Run in a background thread so the main window remains
+    //    responsive; the controller's DB handle is SQLITE_OPEN_FULLMUTEX and
+    //    all UI notifications go through wxQueueEvent.
+    std::thread([this]() {
+        controller_->adoptDanglingStandaloneProxies();
+    }).detach();
+
+    // 2) Network status timer (2s poll) — started only after the frame is
+    //    visible so the status bar has its final field widths.
     netMonTimer_ = new wxTimer(this);
     Bind(wxEVT_TIMER, &MainFrame::onNetMonTimer, this);
     netMonTimer_->Start(2000);
 
-    // Create network status indicator panel on status bar field 1
+    // 3) Create network status indicator panel on status bar field 1
     netMonPanel_ = new wxPanel(statusBar_, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxBORDER_NONE);
     netMonPanel_->SetBackgroundStyle(wxBG_STYLE_PAINT);
     netMonPanel_->Bind(wxEVT_PAINT, [this](wxPaintEvent&) {
@@ -338,13 +400,63 @@ Bind(wxEVT_SUB_LIST_LOADED, [this](SubListLoadedEvent& evt) {
     }
     repositionNetMonPanel();
 
+    // 4) Proxy process monitor timer + panel (field 3)
+    proxyMonPanel_ = new wxPanel(statusBar_, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxBORDER_NONE);
+    proxyMonPanel_->SetBackgroundStyle(wxBG_STYLE_PAINT);
+    proxyMonPanel_->Bind(wxEVT_PAINT, [this](wxPaintEvent&) {
+        wxPaintDC dc(proxyMonPanel_);
+        wxSize sz = proxyMonPanel_->GetClientSize();
+        if (sz.x < 4 || sz.y < 4) return;
+        // Background
+        wxColour face = wxSystemSettings::GetColour(wxSYS_COLOUR_MENUBAR);
+        dc.SetBrush(wxBrush(face));
+        dc.SetPen(*wxTRANSPARENT_PEN);
+        dc.DrawRectangle(0, 0, sz.x, sz.y);
+        // Border
+        wxColour shadow = wxSystemSettings::GetColour(wxSYS_COLOUR_3DSHADOW);
+        wxColour highlight = wxSystemSettings::GetColour(wxSYS_COLOUR_3DHIGHLIGHT);
+        dc.SetPen(wxPen(shadow));
+        dc.DrawLine(0, 0, sz.x - 1, 0);
+        dc.DrawLine(0, 0, 0, sz.y - 1);
+        dc.SetPen(wxPen(highlight));
+        dc.DrawLine(0, sz.y - 1, sz.x - 1, sz.y - 1);
+        dc.DrawLine(sz.x - 1, 0, sz.x - 1, sz.y - 1);
+        // Text: alive count
+        wxString label = wxString::Format("%d", proxyAliveCount_);
+        dc.SetFont(wxFont(8, wxFONTFAMILY_DEFAULT, wxFONTSTYLE_NORMAL, wxFONTWEIGHT_NORMAL));
+        wxSize textExt = dc.GetTextExtent(label);
+        int textH = textExt.y;
+        int r = (textH - 2) / 2;
+        if (r < 2) r = 2;
+        int cx = r + 3;
+        int cy = sz.y / 2;
+        // Dot color
+        wxColour dotColor;
+        if (!proxyMonEnabled_) {
+            dotColor = wxColour(128, 128, 128);  // Grey: not enabled
+        } else {
+            dotColor = wxColour(0, 180, 0);      // Green: monitoring
+        }
+        dc.SetBrush(wxBrush(dotColor));
+        dc.SetPen(wxPen(dotColor));
+        dc.DrawCircle(cx, cy, r);
+        dc.SetTextForeground(wxSystemSettings::GetColour(wxSYS_COLOUR_BTNTEXT));
+        dc.DrawText(label, cx + r + 4, cy - textH / 2);
+    });
+
+    // Start proxy monitor timer if enabled in config
+    if (controller_ && controller_->getConfig().proxy_process_monitor.enabled) {
+        startProxyMonitor(controller_->getConfig().proxy_process_monitor.checkIntervalMs);
+    } else {
+        updateProxyMonStatus(false, 0);
+    }
+    repositionProxyMonPanel();
 
     statusBar_->Bind(wxEVT_SIZE, [this](wxSizeEvent& evt) {
         evt.Skip();
         repositionNetMonPanel();
+        repositionProxyMonPanel();
     });
-
-    Logger::write("[MainFrame] Constructor end", LogLevel::DEBUG);
 }
 
 MainFrame::~MainFrame() {
@@ -353,6 +465,12 @@ MainFrame::~MainFrame() {
         netMonTimer_->Stop();
         delete netMonTimer_;
         netMonTimer_ = nullptr;
+    }
+
+    if (proxyMonTimer_) {
+        proxyMonTimer_->Stop();
+        delete proxyMonTimer_;
+        proxyMonTimer_ = nullptr;
     }
 
      // Step 1: AUI must be torn down before any panel/frame member is destroyed
@@ -574,20 +692,16 @@ void MainFrame::initToolBar() {
 }
 
 void MainFrame::initStatusBar() {
-    statusBar_ = CreateStatusBar(4);
-    // Explicit widths (not equal-width): field0=status msg, field1=log file,
-    // field2=network status, field3=database path.
-    // SetStatusWidths forces SB_SETPARTS with real widths so SetStatusText
-    // actually reaches the native control (equal-width path can leave parts
-    // at width 0 until a WM_SIZE is processed).
-    // -1 = variable-width field: field3 (database path) stretches to fill
-    // the remaining status bar width so the bar spans the whole bottom row.
-    int widths[] = { 250, 250, 120, -1 };
-    statusBar_->SetStatusWidths(4, widths);
+    statusBar_ = CreateStatusBar(5);
+    // field0=status msg, field1=log file, field2=network status,
+    // field3=proxy monitor status, field4=database path.
+    int widths[] = { 200, 200, 100, 110, -1 };
+    statusBar_->SetStatusWidths(5, widths);
     statusBar_->SetStatusText("Ready", 0);
     statusBar_->SetStatusText("", 1);
     statusBar_->SetStatusText("", 2);
-    statusBar_->SetStatusText(wxString(getDbPath()), 3);
+    statusBar_->SetStatusText("", 3);
+    statusBar_->SetStatusText(wxString(getDbPath()), 4);
 }
 
 void MainFrame::initAuiManager() {
@@ -690,6 +804,14 @@ void MainFrame::repositionNetMonPanel() {
     netMonPanel_->Refresh();
 }
 
+void MainFrame::repositionProxyMonPanel() {
+    if (!statusBar_ || !proxyMonPanel_) return;
+    wxRect fieldRect;
+    statusBar_->GetFieldRect(3, fieldRect);
+    proxyMonPanel_->SetSize(fieldRect);
+    proxyMonPanel_->Refresh();
+}
+
 // -------------------------------------------------------------------
 //  Network monitor timer — updates status bar field 1
 // -------------------------------------------------------------------
@@ -702,6 +824,44 @@ void MainFrame::onNetMonTimer(wxTimerEvent&) {
         netMonConnected_ = connected;
         netMonPanel_->Refresh();
     }
+}
+
+void MainFrame::onProxyMonTimer(wxTimerEvent&) {
+    if (!controller_) return;
+    // Scan and adopt dangling standalone proxies in background
+    std::thread([this]() {
+        controller_->adoptDanglingStandaloneProxies();
+    }).detach();
+    // Update alive count in status bar
+    int aliveCount = controller_->getRunningStandaloneCount();
+    updateProxyMonStatus(true, aliveCount);
+}
+
+void MainFrame::updateProxyMonStatus(bool enabled, int aliveCount) {
+    if (!proxyMonPanel_) return;
+    proxyMonEnabled_ = enabled;
+    proxyAliveCount_ = aliveCount;
+    proxyMonPanel_->Refresh();
+}
+
+void MainFrame::startProxyMonitor(int intervalMs) {
+    if (proxyMonTimer_) {
+        proxyMonTimer_->Stop();
+        delete proxyMonTimer_;
+    }
+    proxyMonTimer_ = new wxTimer(this);
+    Bind(wxEVT_TIMER, &MainFrame::onProxyMonTimer, this);
+    proxyMonTimer_->Start(intervalMs);
+    updateProxyMonStatus(true, 0);
+}
+
+void MainFrame::stopProxyMonitor() {
+    if (proxyMonTimer_) {
+        proxyMonTimer_->Stop();
+        delete proxyMonTimer_;
+        proxyMonTimer_ = nullptr;
+    }
+    updateProxyMonStatus(false, 0);
 }
 
 // -------------------------------------------------------------------
@@ -864,6 +1024,19 @@ void MainFrame::onMenuConfig(wxCommandEvent&) {
             }
         }
 
+        // Detect proxy process monitor changes
+        bool oldProxyMonEnabled = config_.proxy_process_monitor.enabled;
+        int oldProxyMonInterval = config_.proxy_process_monitor.checkIntervalMs;
+        bool proxyMonEnabledChanged = (cfg.proxy_process_monitor.enabled != oldProxyMonEnabled);
+        bool proxyMonIntervalChanged = (cfg.proxy_process_monitor.checkIntervalMs != oldProxyMonInterval);
+        if (proxyMonEnabledChanged || proxyMonIntervalChanged) {
+            if (cfg.proxy_process_monitor.enabled) {
+                startProxyMonitor(cfg.proxy_process_monitor.checkIntervalMs);
+            } else {
+                stopProxyMonitor();
+            }
+        }
+
         // Apply log level changes
         Logger::setFileLevel(Logger::stringToLevel(cfg.log_file_level));
         Logger::setConsoleLevel(Logger::stringToLevel(cfg.log_console_level));
@@ -888,7 +1061,7 @@ void MainFrame::onMenuConfig(wxCommandEvent&) {
                 // Update config path
                 config_.database_path = cfg.database_path;
                 if (statusBar_) {
-                    statusBar_->SetStatusText(wxString(cfg.database_path), 3);
+                    statusBar_->SetStatusText(wxString(cfg.database_path), 4);
                 }
 
                 // Refresh all panels with the new database
