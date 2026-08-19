@@ -1,0 +1,11 @@
+// -------------------------------------------------------------------
+// test_proxy_list_model.rc — Common Controls v6 manifest for the test exe
+//
+// wxcore 3.3.x imports comctl32!GetWindowSubclass (a v6-only export).
+// Without a Common-Controls v6 manifest, Windows loads the legacy
+// comctl32 v5.82 from System32, which lacks that export, and the
+// process aborts at startup with 0xC0000139 (STATUS_ENTRYPOINT_NOT_FOUND).
+// The main GUI exe embeds the same manifest via src/ui/icons.rc.
+// -------------------------------------------------------------------
+
+1 24 "src/ui/app.manifest"
