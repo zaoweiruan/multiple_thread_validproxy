@@ -762,3 +762,53 @@ TEST_F(ConfigReaderLoadTest, ProxyProcessMonitor_WrongType_UsesDefaultAndWarns) 
     }
     EXPECT_TRUE(found) << "expected wrong-type warning";
 }
+// ============================================================
+// ProxyProcessMonitor section tests
+// ============================================================
+
+TEST_F(ConfigReaderLoadTest, ProxyProcessMonitorDefaults) {
+    writeConfig("empty.json", "{}");
+    std::optional<AppConfig> result = ConfigReader::load(configPath("empty.json"));
+    ASSERT_TRUE(result.has_value());
+    EXPECT_FALSE(result->proxy_process_monitor.enabled);
+    EXPECT_EQ(result->proxy_process_monitor.checkIntervalMs, 30000);
+}
+
+TEST_F(ConfigReaderLoadTest, ProxyProcessMonitorCustomValues) {
+    writeConfig("ppm.json", R"({
+        "proxy_process_monitor": {
+            "enabled": true,
+            "check_interval_ms": 15000
+        }
+    })");
+    std::optional<AppConfig> result = ConfigReader::load(configPath("ppm.json"));
+    ASSERT_TRUE(result.has_value());
+    EXPECT_TRUE(result->proxy_process_monitor.enabled);
+    EXPECT_EQ(result->proxy_process_monitor.checkIntervalMs, 15000);
+}
+
+TEST_F(ConfigReaderLoadTest, ProxyProcessMonitorClampsLowInterval) {
+    writeConfig("ppm_low.json", R"({
+        "proxy_process_monitor": {
+            "enabled": true,
+            "check_interval_ms": 1000
+        }
+    })");
+    std::optional<AppConfig> result = ConfigReader::load(configPath("ppm_low.json"));
+    ASSERT_TRUE(result.has_value());
+    // Parser clamps to minimum 5000
+    EXPECT_EQ(result->proxy_process_monitor.checkIntervalMs, 5000);
+}
+
+TEST_F(ConfigReaderLoadTest, ProxyProcessMonitorClampsHighInterval) {
+    writeConfig("ppm_high.json", R"({
+        "proxy_process_monitor": {
+            "enabled": true,
+            "check_interval_ms": 500000
+        }
+    })");
+    std::optional<AppConfig> result = ConfigReader::load(configPath("ppm_high.json"));
+    ASSERT_TRUE(result.has_value());
+    // Parser clamps to maximum 300000
+    EXPECT_EQ(result->proxy_process_monitor.checkIntervalMs, 300000);
+}
