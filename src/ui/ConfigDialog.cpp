@@ -59,25 +59,25 @@ ConfigDialog::ConfigDialog(wxWindow* parent, const config::AppConfig& cfg)
         wxFileProperty* assetDirProp = new wxFileProperty(L"xray_location_asset 目录", "proxy_xray_asset_dir", cfg.proxy.xray_asset_dir);
         propGrid_->Append(assetDirProp);
         propGrid_->SetPropertyAttribute("proxy_xray_asset_dir", wxPG_FILE_SHOW_FULL_PATH, (long)1);
-        propGrid_->SetPropertyAttribute("proxy_xray_asset_dir", wxPG_FILE_DIALOG_TITLE, L"选择 Xray 资源目录");
+        propGrid_->SetPropertyAttribute("proxy_xray_asset_dir", wxPG_DIALOG_TITLE, L"选择 Xray 资源目录");
     }
     {
         wxFileProperty* tmplProp = new wxFileProperty(L"xray配置模板", "proxy_template_config_path", cfg.proxy.template_config_path);
         propGrid_->Append(tmplProp);
         propGrid_->SetPropertyAttribute("proxy_template_config_path", wxPG_FILE_SHOW_FULL_PATH, (long)1);
-        propGrid_->SetPropertyAttribute("proxy_template_config_path", wxPG_FILE_DIALOG_TITLE, L"选择 Xray 启动配置模板文件");
+        propGrid_->SetPropertyAttribute("proxy_template_config_path", wxPG_DIALOG_TITLE, L"选择 Xray 启动配置模板文件");
     }
     {
         wxFileProperty* sbExecProp = new wxFileProperty(L"Sing-box执行文件", "proxy_singbox_executable", cfg.proxy.singbox_executable);
         propGrid_->Append(sbExecProp);
         propGrid_->SetPropertyAttribute("proxy_singbox_executable", wxPG_FILE_SHOW_FULL_PATH, (long)1);
-        propGrid_->SetPropertyAttribute("proxy_singbox_executable", wxPG_FILE_DIALOG_TITLE, L"选择 Sing-box 可执行文件");
+        propGrid_->SetPropertyAttribute("proxy_singbox_executable", wxPG_DIALOG_TITLE, L"选择 Sing-box 可执行文件");
     }
     {
         wxFileProperty* sbTmplProp = new wxFileProperty(L"Sing-box配置模板", "proxy_singbox_template_config_path", cfg.proxy.singbox_template_config_path);
         propGrid_->Append(sbTmplProp);
         propGrid_->SetPropertyAttribute("proxy_singbox_template_config_path", wxPG_FILE_SHOW_FULL_PATH, (long)1);
-        propGrid_->SetPropertyAttribute("proxy_singbox_template_config_path", wxPG_FILE_DIALOG_TITLE, L"选择 Sing-box 启动配置模板文件");
+        propGrid_->SetPropertyAttribute("proxy_singbox_template_config_path", wxPG_DIALOG_TITLE, L"选择 Sing-box 启动配置模板文件");
     }
     propGrid_->Append(new wxBoolProperty(L"使用sing-box为代理终端", "proxy_use_singbox", cfg.proxy.use_singbox));
     propGrid_->Append(new wxIntProperty(L"SOCKS 监听端口", "proxy_socks_base_port", cfg.proxy.socks_base_port));
@@ -166,6 +166,11 @@ ConfigDialog::ConfigDialog(wxWindow* parent, const config::AppConfig& cfg)
     propGrid_->Append(new wxBoolProperty(L"测试时通知", "notification_on_test", cfg.notification_on_test));
     propGrid_->Append(new wxBoolProperty(L"任务完成通知", "autotask_notify", cfg.auto_task.notify_on_complete));
 
+    // --- 监控代理进程 配置 ---
+    propGrid_->Append(new wxPropertyCategory(L"监控代理进程"));
+    propGrid_->Append(new wxBoolProperty(L"启用", "proxy_process_monitor_enabled", cfg.proxy_process_monitor.enabled));
+    propGrid_->Append(new wxIntProperty(L"检测间隔(毫秒)", "proxy_process_monitor_check_interval_ms", cfg.proxy_process_monitor.checkIntervalMs));
+
     propGrid_->SetPropertyAttributeAll(wxPG_BOOL_USE_CHECKBOX, true);
 
     topSizer->Add(propGrid_, 1, wxEXPAND | wxALL, 8);
@@ -249,6 +254,10 @@ void ConfigDialog::loadConfig(const config::AppConfig& cfg) {
     propGrid_->SetPropertyValue("proxy_singbox_executable", wxString(cfg.proxy.singbox_executable));
 
     propGrid_->SetPropertyValue("proxy_singbox_template_config_path", wxString(cfg.proxy.singbox_template_config_path));
+
+    // ProxyProcessMonitor fields
+    propGrid_->SetPropertyValue("proxy_process_monitor_enabled", cfg.proxy_process_monitor.enabled);
+    propGrid_->SetPropertyValue("proxy_process_monitor_check_interval_ms", cfg.proxy_process_monitor.checkIntervalMs);
 }
 
 bool ConfigDialog::saveConfig() {
@@ -354,6 +363,13 @@ bool ConfigDialog::saveConfig() {
     editedConfig_.proxy.singbox_executable = propGrid_->GetPropertyValueAsString("proxy_singbox_executable").ToStdString();
 
     editedConfig_.proxy.singbox_template_config_path = propGrid_->GetPropertyValueAsString("proxy_singbox_template_config_path").ToStdString();
+
+    // ProxyProcessMonitor fields
+    editedConfig_.proxy_process_monitor.enabled = propGrid_->GetPropertyValueAsBool("proxy_process_monitor_enabled");
+    editedConfig_.proxy_process_monitor.checkIntervalMs = propGrid_->GetPropertyValueAsInt("proxy_process_monitor_check_interval_ms");
+    // Clamp to valid range
+    if (editedConfig_.proxy_process_monitor.checkIntervalMs < 5000) editedConfig_.proxy_process_monitor.checkIntervalMs = 5000;
+    if (editedConfig_.proxy_process_monitor.checkIntervalMs > 300000) editedConfig_.proxy_process_monitor.checkIntervalMs = 300000;
 
     // AutoTask fields
     editedConfig_.auto_task.steps = stepOrder_;
@@ -490,6 +506,12 @@ bool ConfigDialog::validateConfig() {
             wxMessageBox("网络监控启用时必须配置至少一个检测URL", "验证错误", wxOK | wxICON_ERROR);
             return false;
         }
+    }
+    // ProxyProcessMonitor validation
+    if (editedConfig_.proxy_process_monitor.checkIntervalMs < 5000 ||
+        editedConfig_.proxy_process_monitor.checkIntervalMs > 300000) {
+        wxMessageBox("代理进程监控检测间隔必须在 5000 到 300000 毫秒之间", "验证错误", wxOK | wxICON_ERROR);
+        return false;
     }
     return true;
 }
