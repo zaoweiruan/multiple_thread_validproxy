@@ -141,6 +141,12 @@ boost::json::object ConfigJsonSerializer::serialize(const AppConfig& config) con
     }
     root["network_monitor"] = nmObj;
 
+    // proxy_process_monitor
+    boost::json::object pmObj;
+    pmObj["enabled"] = config.proxy_process_monitor.enabled;
+    pmObj["check_interval_ms"] = config.proxy_process_monitor.checkIntervalMs;
+    root["proxy_process_monitor"] = pmObj;
+
     return root;
 }
 
