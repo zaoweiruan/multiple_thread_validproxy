@@ -67,6 +67,12 @@ struct AppConfig {
         int maxProbes{3};
     } network_monitor;
 
+    // ProxyProcessMonitor configuration
+    struct {
+        bool enabled{false};
+        int checkIntervalMs{30000};
+    } proxy_process_monitor;
+
     // Proxy configuration (standalone proxy)
     struct {
         int socks_base_port = 10808;
@@ -77,6 +83,10 @@ struct AppConfig {
         std::string singbox_executable;      // sing-box executable path (only relevant when use_singbox=true)
         std::string singbox_asset_dir;       // sing-box geoip/geosite resource directory
         std::string singbox_template_config_path;  // sing-box config template path
+        // Scoring weights (0.0-1.0, sum not required to equal 1.0)
+        double scoring_delay_weight = 0.2;
+        double scoring_stability_weight = 0.3;
+        double scoring_history_weight = 0.5;
     } proxy;
 };
 

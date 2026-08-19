@@ -1,14 +1,14 @@
 # Spec: 代理评分引入历史服务记录（ProxyScoring History）
 
-- 日期: 2026-08-13（v1.1 修订于 2026-08-14；v1.2 修订于 2026-08-14）
+- 日期: 2026-08-13（v1.1 修订于 2026-08-14；v1.2 修订于 2026-08-14；v1.3 修订于 2026-08-14）
 - 类型: Spec
 - 模块: `ProxyRuntimeHistoryDAO`（新）/ `ProfileExItemDAO` / `AppController`（ProcessExitListener）/ `ProxyScorer`（新）/ `ProxyListPanel` / `ProcessInspector`（新）
-- 版本: v1.2
+- 版本: v1.3
 - 状态: 🔍 draft（评审中）
 
 ---
 
-## 0. 修订记录（v1.0 → v1.2）
+## 0. 修订记录（v1.0 → v1.3）
 
 | # | 评审意见 / 修订要求 | 落点 |
 |---|----------------------|------|
@@ -17,6 +17,7 @@
 | R3 | 后台线程按配置时间（新增），轮询进程句柄 + command line 是否吻合，判断进程存活 | **v1.1**：§3.3.2 Watchdog 周期轮询（`history_watchdog_interval_ms`）。**v1.2 再修订（R5）**：改为事件驱动 `ProcessExitListener`，见下 |
 | R4 | 总分 = 0.20 × 速度分 + 0.30 × 稳定性分 + 0.50 × 历史服务分 | §3.4 权重反转；冷启动归一化比例同步调整 |
 | R5 | **评审对话（2026-08-14）**：R3 Watchdog 周期轮询能否改为接受进程终止系统消息通知？—— 结论：**可改为事件驱动**。Windows 进程句柄即同步对象，进程退出时自动 signaled，`WaitForSingleObject(handle, INFINITE)` 阻塞等待即系统级"进程终止通知"（零延迟、零 CPU 轮询开销）。§3.3.2 重写为 `ProcessExitListener`（每受管进程一个专用等待线程）；`history_watchdog_interval_ms` 配置项删除；R3 的 command line 判据保留为 finalize 时一次性接管检查 | §3.3.2；§3.3.4；§4.2；§5；§6 |
+| R6 | **P0 ⑥ 定案（2026-08-14）**：外部重启接管语义 = **自动接管新进程**。句柄 signaled 但 command line 仍有同配置进程时：旧会话按正常退出收尾（exit_code=0），枚举新进程 pid → `OpenProcess` 获取新句柄 → 新会话 `insertStart` → 更新受管信息并**重新启动等待线程**继续监控（接管失败则放弃，下次启动重新走全流程） | §3.3.2 handleProcessExit；§4.2；§5 P2；§6 MockProcessRestart |
 
 ---
 
@@ -34,7 +35,7 @@
 |---|--------|------|
 | D1 | 历史数据范围 | **仅独立代理 StandaloneProxy**（用户实际使用），批量测试临时 Xray 进程不计入 |
 | D2 | 存储方案 | **明细表 + 聚合缓存**（`proxy_runtime_history` 明细 + `ProfileExItem` 3 个聚合列） |
-| D3 | 退出检测 | **事件驱动**（v1.2）：每受管独立代理一个专用等待线程阻塞 `WaitForSingleObject(handle, INFINITE)`，进程退出即系统通知；finalize 时一次性 `ProcessInspector` command line 检查区分正常退出/崩溃/外部重启接管（v1.0 原选 Watchdog 轮询，经 R5 修订为事件驱动） |
+| D3 | 退出检测 | **事件驱动**（v1.2）：每受管独立代理一个专用等待线程阻塞 `WaitForSingleObject(handle, INFINITE)`，进程退出即系统通知；finalize 时一次性 `ProcessInspector` command line 检查区分正常退出/崩溃/外部重启接管（v1.0 原选 Watchdog 轮询，经 R5 修订为事件驱动）。**外部重启接管 = 自动接管新进程**（v1.3，R6 定案）：旧会话正常收尾 + 新进程 `OpenProcess`/`insertStart` 继续受管监控 |
 
 ---
 
@@ -169,7 +170,7 @@ public:
   // 是否存在存活进程，其 command line 包含指定配置文件名（如 "standalone_xxx-xray.json"）
   static bool isProcessRunningWithConfig(const std::string& configFileName);
 
-  // 枚举匹配进程名的进程，返回 { pid, commandLine } 列表（供 finalize 接管检查与 R1 查重）
+  // 枚举匹配进程名的进程，返回 { pid, commandLine } 列表（供 R1 查重、finalize 接管检查与外部重启自动接管 OpenProcess）
   static std::vector<ProcessInfo> enumerateByName(const std::string& exeName);
 };
 ```
@@ -194,7 +195,7 @@ public:
 → R3 ProcessExitListener（事件驱动，v1.2）
         进程句柄 signaled（进程实例退出）→ finalize 回调
           一次性 command line 检查：
-            同配置进程仍在 → 外部重启接管（旧会话收尾 + 新会话 insertStart）
+            同配置进程仍在 → 外部重启接管（v1.3：自动接管新进程——旧会话收尾 + 新进程 insertStart 继续受管）
             同配置进程消失 → finalizeStop 回填历史（exit_code 判正常/崩溃）
 ```
 
@@ -288,10 +289,38 @@ if (info->managed && info->running) {
         info->running = false;
         wxQueueEvent(顶层窗口, new StandaloneProxyEvent(indexId, "", socksPort, false, exitCodeMsg));
     } else {
-        // 外部重启接管：用户/外部在进程退出后立即重启了同配置代理（句柄陈旧）
-        // 视同旧会话正常退出（exit_code=0）收尾；新进程由 R1 查重放行后走全新流程，
-        // 若新进程未经本应用启动则不做新会话记录（P0 确认是否自动接管）
+        // 外部重启接管（v1.3，R6 定案：自动接管新进程）：
+        // 句柄 signaled 仅代表"我们跟踪的那个进程实例"退出；同配置新进程已由外部/守护拉起。
+        // 旧会话按正常退出收尾（exit_code=0），随后自动接管新进程继续受管监控。
         historyDao.finalizeStop(info->runtimeHistoryId, endedAt, 0, durationMs);
+        wxQueueEvent(顶层窗口, new StandaloneProxyEvent(indexId, "", socksPort, false, "restart-takeover"));
+
+        // ① 枚举同配置存活进程，取新 pid（ProcessInspector 返回 { pid, commandLine }）
+        std::vector<ProcessInfo> procs =
+            ProcessInspector::enumerateByName(info->configFileName);
+        if (!procs.empty()) {
+            // ② OpenProcess 获取新进程句柄（PROCESS_QUERY_INFORMATION | PROCESS_SYNCHRONIZE）
+            HANDLE newHandle = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_SYNCHRONIZE,
+                                           FALSE, procs.front().pid);
+            if (newHandle != NULL) {
+                // ③ 新会话入表 + 更新受管信息
+                int64_t newHistoryId = historyDao.insertStart(indexId, currentTimeString());
+                CloseHandle(info->processHandle);              // 释放旧句柄
+                info->processHandle = newHandle;
+                info->runtimeHistoryId = newHistoryId;
+                info->startedAt = currentTimeString();
+                info->managed = true; info->running = true;
+                // ④ 重新启动专用等待线程，继续监控新进程
+                exitListeners_.emplace_back([this, indexId, info = &standaloneProxies_[indexId]] {
+                    WaitForSingleObject(info->processHandle, INFINITE);
+                    handleProcessExit(indexId);
+                });
+                Logger::write("[StandaloneProxy] 外部重启接管 " + indexId, LogLevel::INFO);
+                return;   // 新会话已接管，等待线程继续
+            }
+        }
+        // ⑤ 接管失败（枚举/OpenProcess 失败）：放弃接管，下次启动重新走全流程
+        Logger::write("[StandaloneProxy] 接管失败，放弃 " + indexId, LogLevel::WARN);
         info->runtimeHistoryId = -1; info->managed = false; info->running = false;
     }
 }
@@ -380,7 +409,7 @@ historyScore = 100 × (0.30×kicker + 0.40×health + 0.30×duration)
 | **R1 进程 command line 读取失败**（权限/PEB 偏移） | `ProcessInspector` 降级为仅按进程名匹配（保守拦截重复启动）；读取失败仅 WARN 不崩溃 |
 | **R2 连通性验证阻塞 UI 线程** | 探测下沉后台线程 + `wxQueueEvent` 回 UI 弹窗（P0 定案）；或限 1 次探测短阻塞 |
 | **R2 弃管进程游离**（不入表不监控） | 属预期行为；弃管仅影响历史记录，不影响用户手动使用代理；再次启动重新走全流程 |
-| **R3/R5 进程被外部重启**（句柄陈旧） | ProcessExitListener finalize 时一次性 command line 检查：同配置进程仍在 → 旧会话收尾 + 不再接管；P0 确认是否自动接管新进程 |
+| **R3/R5 进程被外部重启**（句柄陈旧） | ProcessExitListener finalize 时一次性 command line 检查：同配置进程仍在 → **自动接管新进程**（v1.3 定案：旧会话正常收尾 + `OpenProcess`/`insertStart` 继续受管）；接管失败（枚举/打开失败）→ 放弃接管，下次启动重新走全流程 |
 
 ---
 
@@ -388,9 +417,9 @@ historyScore = 100 × (0.30×kicker + 0.40×health + 0.30×duration)
 
 | 阶段 | 内容 | 预估 |
 |------|------|------|
-| **P0 前置确认** | ① `profileexitem` 实际表名与迁移机制 ② `db_` 并发锁模型 ③ `StandaloneProxyEvent` 投递路径 ④ `UrlFetcher` SOCKS5 代理支持 ⑤ R2 探测异步化方案（后台线程 vs 短阻塞） ⑥ R3/R5 外部重启接管语义（是否自动接管新进程） ⑦ `ProcessInspector` command line 读取实现（PEB 方案） | 1 天 |
+| **P0 前置确认** | ① `profileexitem` 实际表名与迁移机制 ② `db_` 并发锁模型 ③ `StandaloneProxyEvent` 投递路径 ④ `UrlFetcher` SOCKS5 代理支持 ⑤ R2 探测异步化方案（后台线程 vs 短阻塞） ⑥ R3/R5 外部重启接管语义（**已定案：自动接管新进程**，v1.3 R6） ⑦ `ProcessInspector` command line 读取实现（PEB 方案） | 1 天 |
 | **P1 数据层** | `ProxyRuntimeHistory.h/.cpp`；`ProfileExItem` +3 聚合列；幂等迁移；H 层测试 | 1–2 天 |
-| **P2 采集层** | `StandaloneProxyInfo` 扩展（runtimeHistoryId/managed/configFileName/startedAt）；R1 查重；R2 连通性验证 + 弃管；**ProcessExitListener**（每受管进程专用等待线程 + finalize 一次性 command line 检查 + 析构清理）；事件投递；H 层测试 | 2–3 天 |
+| **P2 采集层** | `StandaloneProxyInfo` 扩展（runtimeHistoryId/managed/configFileName/startedAt）；R1 查重；R2 连通性验证 + 弃管；**ProcessExitListener**（每受管进程专用等待线程 + finalize 一次性 command line 检查 + **外部重启自动接管新进程**：枚举新 pid → OpenProcess → insertStart → 重启等待线程；接管失败放弃 + 析构清理）；事件投递；H 层测试 | 2–3 天 |
 | **P3 评分引擎** | `ProxyScorer` 三因子（20/30/50）+ 贝叶斯平滑 + 权重归一化；H 层测试 | 1–2 天 |
 | **P4 集成展示** | `score` 写回；ProxyListPanel 历史列 + 5 星；`config.json` `scoring.weights`（v1.2 无周期配置项） | 1 天 |
 
@@ -408,7 +437,7 @@ historyScore = 100 × (0.30×kicker + 0.40×health + 0.30×duration)
 | `RuntimeHistoryDAOTest.Transaction` | 明细+聚合同事务，中途失败回滚一致 |
 | `ProcessExitListenerTest.MockProcessExit` | 启动 mock 进程 → 结束（事件通知唤醒）→ 断言历史行回填 + `StandaloneProxyEvent` 投递 |
 | `ProcessExitListenerTest.MockProcessKill` | 强杀场景 → exit_code=259 → crash_count+1 |
-| `ProcessExitListenerTest.MockProcessRestart` | 句柄信号化但 command line 仍有同配置进程 → 旧会话 finalize + 不再接管（R3/R5 接管语义） |
+| `ProcessExitListenerTest.MockProcessRestart` | 句柄信号化但 command line 仍有同配置进程 → 旧会话 finalize（exit_code=0）+ **自动接管新进程**（新 insertStart + 新句柄等待继续监控）（R3/R5/R6 接管语义） |
 | `ProcessExitListenerTest.ShutdownNoDbWrite` | `shutdownRequested_` 置位后进程退出 → 等待线程跳过写库、不悬挂（析构清理） |
 | `ProcessInspectorTest.FindByConfig` | 枚举 mock 进程（带指定 command line 参数启动）→ 匹配配置文件名命中（R1） |
 | `ProcessInspectorTest.CommandLineReadFailure` | PEB 读取失败降级为进程名匹配（保守拦截） |
