@@ -11,6 +11,7 @@
 
 #include "Profileitem.h"
 #include "ProfileExItem.h"
+#include "Utils.h"
 
 // -------------------------------------------------------------------
 // Column indices in the data view
@@ -51,8 +52,17 @@ public:
     void setData(std::vector<db::models::Profileitem>* proxies,
                  const std::vector<db::models::ProfileExItem>* exItems);
 
+    // Set data pointers without rebuilding maps (use when maps will be
+    // set separately via setMaps, e.g. after a background-thread build).
+    void setDataWithoutRebuild(std::vector<db::models::Profileitem>* proxies,
+                               const std::vector<db::models::ProfileExItem>* exItems);
+
     // Rebuild lookup maps from exItems_
     void rebuildMaps();
+
+    // Set pre-built maps (built in a background thread).  Skips the
+    // O(N) exItems_ iteration on the UI thread.
+    void setMaps(const utils::ProxyListMaps& maps);
 
     // Replace the currently-running standalone sessions (indexId -> elapsed
     // ms from the watch heartbeat) with the given snapshot.  The map is
@@ -85,6 +95,12 @@ public:
     std::string getDelay(const std::string& indexId) const;
     std::string getMessage(const std::string& indexId) const;
     int getFailures(const std::string& indexId) const;
+
+    // Validity check for standalone proxy start: returns empty string when the
+    // proxy is valid (delay > 0), or a non-empty reason string ("untested" or
+    // "invalid") when it should not be started.  UI callers can use the
+    // returned reason directly for user-facing messages.
+    std::string getProxyValidityReason(const std::string& indexId) const;
     // Runtime (ms) shown for an indexId: total_runtime_ms plus any live
     // elapsed time merged by setRunningDurations().
     long long getRuntime(const std::string& indexId) const;

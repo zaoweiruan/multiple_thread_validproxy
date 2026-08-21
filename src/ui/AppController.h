@@ -43,6 +43,18 @@ struct StandaloneProxyInfo {
     std::string startedAt;
 };
 
+// One row of the standalone-proxy monitor dialog: a watched process joined
+// with its in-progress proxy_runtime_history row. durationMs is computed
+// live (now - startedAt) so the dialog refreshes smoothly between heartbeats.
+struct StandaloneMonitorRow {
+    std::string indexId;
+    std::string host;        // ProfileItem.Address; empty when profile missing
+    std::string startedAt;   // "yyyy-MM-dd HH:mm:ss"; empty when unknown
+    int64_t durationMs = 0;  // live elapsed time
+    int socksPort = 0;       // 0 = port unknown (config parse failed)
+    int64_t pid = -1;        // -1 = history row missing
+};
+
 class AppController {
 public:
   AppController(sqlite3* db, const config::AppConfig& cfg);
@@ -88,6 +100,11 @@ std::unordered_map<std::string, long long> getRunningDurations();
 // I/O off the UI thread so the periodic evaluation refresh cannot freeze
 // the main window even on large databases.
 void getRunningDurationsAsync(wxEvtHandler* handler);
+
+// Snapshot of all currently watched standalone proxies (running && managed).
+// Copies the watched set under standaloneMutex_, then joins with in-progress
+// history rows for pid/startedAt. Safe to call from the UI thread.
+std::vector<StandaloneMonitorRow> getWatchedStandaloneMonitors();
 
 // ---------------------------------------------------------------
 // Testing / Cancellation
@@ -187,6 +204,7 @@ std::thread workerThread_;
   // Listener for standalone process exits
   proc::ProcessExitListener* exitListener_{nullptr};
   db::models::ProxyRuntimeHistoryDAO historyDao_{db_};  // for standalone proxy runtime tracking
+  db::models::ProfileExItemDAO exDao_{db_};             // for startup-time message writeback
   std::optional<int64_t> runtimeHistoryId_{std::nullopt};
   std::unordered_map<std::string, proc::ProcessExitListener::WatchKey> proxyWatchKeys_;
 

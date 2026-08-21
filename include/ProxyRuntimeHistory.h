@@ -3,6 +3,7 @@
 
 #include <cstdint>
 #include <string>
+#include <vector>
 #include <sqlite3.h>
 
 namespace db {
@@ -18,6 +19,7 @@ struct ProxyRuntimeHistoryItem {
   int exitCode = 0;        // 0 = normal exit; 259 (STILL_ACTIVE) = killed; other = crash
   int64_t durationMs = 0;
   std::string source = "standalone";
+  int64_t pid = -1;        // proxy process pid (populated by getInProgressSessions)
 };
 
 // DAO for proxy_runtime_history + the 3 aggregation columns on ProfileExItem
@@ -44,9 +46,11 @@ public:
   static void migrateTable(sqlite3* db);
 
   // Startup: insert detail row (ended_at = NULL) + bump start_count in the
-  // same transaction. Returns the new row id, or -1 on failure (rolled back).
+  // same transaction. pid identifies the process instance (proxy process pid);
+  // it is stored on the row so in-progress sessions can be matched per
+  // instance later. Returns the new row id, or -1 on failure (rolled back).
   int64_t insertStart(const std::string& indexId, const std::string& startedAt,
-                      sqlite3* db = nullptr);
+                      int64_t pid, sqlite3* db = nullptr);
 
   // Exit: backfill ended_at/exit_code/duration_ms (only when ended_at IS NULL,
   // so a second call is a no-op) + accumulate total_runtime_ms / crash_count
@@ -63,9 +67,13 @@ public:
                       sqlite3* db = nullptr);
 
   // Finds the most recent in-progress (ended_at IS NULL) session id for an
-  // indexId, or -1 when there is none. Used when adopting a dangling proxy
-  // process so the existing session is reused instead of opening a new one.
-  int64_t findInProgressHistory(const std::string& indexId,
+  // indexId that belongs to the SAME process instance, identified by the
+  // (pid, startedAt) triplet — or -1 when there is none. Used when adopting a
+  // dangling proxy process so the existing session is reused instead of
+  // opening a new one; a new process instance (different pid or startedAt)
+  // intentionally does NOT match, so it starts a fresh session.
+  int64_t findInProgressHistory(const std::string& indexId, int64_t pid,
+                                const std::string& startedAt,
                                 sqlite3* db = nullptr);
 
   // Reads the 3 aggregation columns for a proxy. Returns false when the row
@@ -73,6 +81,12 @@ public:
   bool getRuntimeStats(const std::string& indexId, int* startCount,
                        int64_t* totalRuntimeMs, int* crashCount,
                        sqlite3* db = nullptr);
+
+  // Returns all in-progress (ended_at IS NULL) sessions ordered by started_at.
+  // Populates id/indexId/startedAt/pid on each item; used by the standalone
+  // monitor dialog to join live watched processes with their history rows.
+  std::vector<ProxyRuntimeHistoryItem> getInProgressSessions(
+      sqlite3* db = nullptr);
 };
 
 } // namespace models

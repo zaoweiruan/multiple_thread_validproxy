@@ -9,10 +9,12 @@
 namespace proc {
 
 // One running process of interest (xray.exe / sing-box.exe), with its
-// command line when it could be read (empty on PEB read failure).
+// command line when it could be read (empty on PEB read failure) and its
+// system creation time (empty when it could not be read).
 struct ProcessInfo {
     DWORD pid = 0;
     std::wstring commandLine;
+    std::string creationTime;   // "yyyy-MM-dd HH:mm:ss", empty on failure
 };
 
 // Enumerates running processes and matches command lines / executable names.
@@ -46,6 +48,13 @@ public:
     // config (used by dangling-process adoption). Pure/unit-testable.
     static std::string extractConfigFileName(const std::wstring& commandLine);
 
+    // Extracts the full path (when present) of a standalone config file from a
+    // process command line, e.g. "D:\\other\\standalone_<indexId>-xray.json".
+    // Returns an empty string when no "standalone_*.json" token exists, or when
+    // the token is a bare file name (no directory component). The bare-name case
+    // is covered by extractConfigFileName plus the caller's directory probe.
+    static std::string extractConfigFullPath(const std::wstring& commandLine);
+
     // Local time as "yyyy-MM-dd HH:mm:ss" (used for runtime-history sessions).
     static std::string nowTimestamp();
 
@@ -53,6 +62,19 @@ public:
     // Returns 0 when either timestamp cannot be parsed.
     static long long durationMsBetween(const std::string& start,
                                        const std::string& end);
+
+    // System creation time of the process with the given pid, formatted
+    // "yyyy-MM-dd HH:mm:ss" (local time). Returns an empty string when the
+    // process does not exist or its creation time cannot be read.
+    static std::string processCreationTime(DWORD pid);
+
+    // Same as processCreationTime(DWORD) but takes an already-open process
+    // handle (used inside enumerateByName to reuse the OpenProcess handle).
+    static std::string processCreationTime(HANDLE processHandle);
+
+    // Converts a FILETIME (100ns ticks since 1601-01-01 UTC) to a local-time
+    // "yyyy-MM-dd HH:mm:ss" string. Pure function, unit-testable.
+    static std::string fileTimeToString(const FILETIME& ft);
 
 private:
     // Test-only enumerator override (nullptr = use real process table).

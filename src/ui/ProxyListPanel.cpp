@@ -70,21 +70,21 @@ ProxyListPanel::ProxyListPanel(wxWindow* parent, AppController* controller,
     historyTimer_ = new wxTimer(this, ID_HISTORY_TIMER);
     historyTimer_->Start(3000);
 
-    // Columns: Row# | Region | Latency ↕ | Type | Host ↕ | Port | Failures ↕ |
-    // Remarks | Message | IndexId | Starts ↕ | Runtime(ms) ↕ | Health ↕
-    listCtrl_->AppendTextColumn("#",        COL_ROWNUM,   wxDATAVIEW_CELL_INERT,  40);
+    // Columns: Region | Latency ↕ | Health ↕ | Type | Host ↕ | Port | Message ↕ |
+    // Starts ↕ | Runtime(ms) ↕ | # | IndexId | Failures ↕ | Remarks
     listCtrl_->AppendTextColumn("Region",   COL_REGION,   wxDATAVIEW_CELL_INERT,  90);
     listCtrl_->AppendTextColumn("Latency ↕", COL_DELAY,  wxDATAVIEW_CELL_INERT,  80);
+    listCtrl_->AppendTextColumn("Health ↕", COL_HEALTH, wxDATAVIEW_CELL_INERT, 70);
     listCtrl_->AppendTextColumn("Type",     COL_TYPE,     wxDATAVIEW_CELL_INERT,  80);
     listCtrl_->AppendTextColumn("Host ↕",   COL_ADDRESS,  wxDATAVIEW_CELL_INERT, 100);
     listCtrl_->AppendTextColumn("Port",     COL_PORT,     wxDATAVIEW_CELL_INERT,  70);
-    listCtrl_->AppendTextColumn("Failures ↕", COL_FAILURES, wxDATAVIEW_CELL_INERT, 80);
-    listCtrl_->AppendTextColumn("Remarks",  COL_REMARKS,  wxDATAVIEW_CELL_EDITABLE, 160);
     listCtrl_->AppendTextColumn("Message ↕", COL_MESSAGE,  wxDATAVIEW_CELL_INERT, 160);
-    listCtrl_->AppendTextColumn("IndexId",  COL_INDEXID,  wxDATAVIEW_CELL_INERT, 120);
     listCtrl_->AppendTextColumn("Starts ↕", COL_START_COUNT, wxDATAVIEW_CELL_INERT, 60);
     listCtrl_->AppendTextColumn("Runtime ↕", COL_TOTAL_RUNTIME_MS, wxDATAVIEW_CELL_INERT, 90);
-    listCtrl_->AppendTextColumn("Health ↕", COL_HEALTH, wxDATAVIEW_CELL_INERT, 70);
+    listCtrl_->AppendTextColumn("#",        COL_ROWNUM,   wxDATAVIEW_CELL_INERT,  40);
+    listCtrl_->AppendTextColumn("IndexId",  COL_INDEXID,  wxDATAVIEW_CELL_INERT, 120);
+    listCtrl_->AppendTextColumn("Failures ↕", COL_FAILURES, wxDATAVIEW_CELL_INERT, 80);
+    listCtrl_->AppendTextColumn("Remarks",  COL_REMARKS,  wxDATAVIEW_CELL_EDITABLE, 160);
 
     sizer->Add(listCtrl_, 1, wxEXPAND | wxALL, 2);
     SetSizer(sizer);
@@ -157,6 +157,37 @@ void ProxyListPanel::loadProxies(std::vector<db::models::Profileitem> proxies,
 }
 
 // -------------------------------------------------------------------
+// Accept pre-fetched proxy data and pre-built maps (no DB read, no
+// O(N) map rebuild on the UI thread).
+// -------------------------------------------------------------------
+void ProxyListPanel::loadProxies(std::vector<db::models::Profileitem> proxies,
+                                  std::vector<db::models::ProfileExItem> exItems,
+                                  utils::ProxyListMaps maps,
+                                  const std::string& subId) {
+    currentSubId_ = subId;
+    allProxies_ = proxies;
+    proxies_ = std::move(proxies);
+    exItems_ = std::move(exItems);
+
+    sortState_.column = -1;
+    sortState_.direction = SortDirection::None;
+
+    // Set data pointers without triggering rebuildMaps(); the maps are
+    // already built in the background thread.
+    model_->setDataWithoutRebuild(&proxies_, &exItems_);
+    model_->setMaps(std::move(maps));
+    model_->Reset(0);
+    model_->Reset(static_cast<unsigned int>(proxies_.size()));
+    model_->detectIdOffset();
+
+    if (!proxies_.empty()) {
+        if (!listCtrl_->GetSelection().IsOk()) {
+            selectFirstProxy();
+        }
+    }
+}
+
+// -------------------------------------------------------------------
 // Refresh only the Delay/Message/Failures columns by reloading exItems_ from DB.
 // Proxies list and user selection are preserved.
 // Model's lookup maps are rebuilt and the view is notified to redraw.
@@ -179,6 +210,20 @@ void ProxyListPanel::refreshResults() {
     model_->notifyHistoryChanged();
 
     listCtrl_->Refresh();
+}
+
+// -------------------------------------------------------------------
+// Reload the full proxy rows (ProfileItem incl. Region column) for the
+// current subscription filter from the database.  refreshResults() only
+// re-reads ProfileExItem test results, so region values written by the
+// background resolver would never appear without this full reload.
+// Runs asynchronously (background reader + prebuilt maps) to avoid
+// blocking the UI thread on 50k+ row databases.
+// -------------------------------------------------------------------
+void ProxyListPanel::reloadFromDatabase() {
+    if (controller_) {
+        controller_->loadProxiesAsync(currentSubId_, this);
+    }
 }
 
 // -------------------------------------------------------------------
@@ -244,6 +289,20 @@ void ProxyListPanel::selectProxyByIndexId(const std::string& indexId) {
 // -------------------------------------------------------------------
 // Column header click handler + virtual model sorting
 // -------------------------------------------------------------------
+wxDataViewColumn* ProxyListPanel::resolveColumnByModel(int modelCol) const {
+    if (modelCol < 0) {
+        return nullptr;
+    }
+    const unsigned int count = listCtrl_->GetColumnCount();
+    for (unsigned int i = 0; i < count; ++i) {
+        wxDataViewColumn* col = listCtrl_->GetColumn(i);
+        if (col != nullptr && static_cast<int>(col->GetModelColumn()) == modelCol) {
+            return col;
+        }
+    }
+    return nullptr;
+}
+
 void ProxyListPanel::onColumnHeaderClick(wxDataViewEvent& event) {
     int col = event.GetColumn();
 
@@ -272,7 +331,7 @@ void ProxyListPanel::onColumnHeaderClick(wxDataViewEvent& event) {
     if (sortState_.direction != SortDirection::None) {
         // Set the sort indicator on the column and trigger re-sort.
         // The model's Compare() is called by the view during sorting.
-        wxDataViewColumn* dvCol = listCtrl_->GetColumn(col);
+        wxDataViewColumn* dvCol = resolveColumnByModel(col);
         if (dvCol) {
             dvCol->SetSortOrder(sortState_.direction == SortDirection::Asc);
         }
@@ -471,6 +530,24 @@ void ProxyListPanel::onStartProxy(wxCommandEvent& event) {
         return;
     }
 
+    // Reject proxies whose last test result is invalid (delay <= 0 or
+    // untested).  The user must run a connectivity test first so the proxy
+    // has a meaningful latency before being promoted to standalone mode.
+    {
+        std::string reason = model_->getProxyValidityReason(indexId);
+        if (!reason.empty()) {
+            Logger::write("[UI] Refusing standalone start for " + indexId
+                          + ": reason=" + reason, LogLevel::WARN);
+            wxString userMsg = reason == "untested"
+                ? "该代理尚未测速，请先进行连通性测速后再启动。"
+                : "该代理测速失败，请先进行连通性测速后再启动。";
+            wxMessageDialog dlg(this, userMsg, "需要测速", wxOK | wxICON_WARNING);
+            dlg.CentreOnScreen();
+            dlg.ShowModal();
+            return;
+        }
+    }
+
     // Check if the configured SOCKS port is available
     config::AppConfig cfg = controller_->getConfig();
     int desiredPort = cfg.proxy.socks_base_port;
@@ -617,7 +694,7 @@ void ProxyListPanel::filterBySearch(const wxString& query) {
         model_->Reset(0);
         model_->Reset(static_cast<unsigned int>(proxies_.size()));
         model_->detectIdOffset();
-        wxDataViewColumn* dvCol = listCtrl_->GetColumn(sortState_.column);
+        wxDataViewColumn* dvCol = resolveColumnByModel(sortState_.column);
         if (dvCol) {
             dvCol->SetSortOrder(sortState_.direction == SortDirection::Asc);
         }

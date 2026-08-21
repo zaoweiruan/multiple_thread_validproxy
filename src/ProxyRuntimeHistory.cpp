@@ -29,6 +29,13 @@ void ProxyRuntimeHistoryDAO::migrateTable(sqlite3* db) {
         "ON proxy_runtime_history(index_id, started_at)";
     sqlite3_exec(db, createIndexSql, nullptr, nullptr, nullptr);
 
+    // pid column: identifies the process instance. Idempotent ALTER —
+    // existing rows get pid = NULL and are intentionally NOT matched by the
+    // triplet lookup (they keep audit value but cannot be reused).
+    const char* addPidColSql =
+        "ALTER TABLE proxy_runtime_history ADD COLUMN pid INTEGER";
+    sqlite3_exec(db, addPidColSql, nullptr, nullptr, nullptr);
+
     // Aggregate columns on ProfileExItem (idempotent - column already exists is OK).
     const char* addCols[] = {
         "ALTER TABLE ProfileExItem ADD COLUMN start_count INTEGER NOT NULL DEFAULT 0",
@@ -42,6 +49,7 @@ void ProxyRuntimeHistoryDAO::migrateTable(sqlite3* db) {
 
 int64_t ProxyRuntimeHistoryDAO::insertStart(const std::string& indexId,
                                             const std::string& startedAt,
+                                            int64_t pid,
                                             sqlite3* db) {
     sqlite3* execDb = db ? db : db_;
 
@@ -65,7 +73,7 @@ int64_t ProxyRuntimeHistoryDAO::insertStart(const std::string& indexId,
 
     // 1. Insert the detail row (ended_at = NULL, session in progress).
     {
-        const char* sql = "INSERT INTO proxy_runtime_history (index_id, started_at, source) VALUES (?, ?, 'standalone')";
+        const char* sql = "INSERT INTO proxy_runtime_history (index_id, started_at, pid, source) VALUES (?, ?, ?, 'standalone')";
         sqlite3_stmt* stmt = nullptr;
         if (sqlite3_prepare_v2(execDb, sql, -1, &stmt, nullptr) != SQLITE_OK) {
             Logger::write("ProxyRuntimeHistoryDAO::insertStart: insert prepare failed: " + std::string(sqlite3_errmsg(execDb)), LogLevel::ERR);
@@ -73,6 +81,7 @@ int64_t ProxyRuntimeHistoryDAO::insertStart(const std::string& indexId,
         } else {
             sqlite3_bind_text(stmt, 1, indexId.c_str(), -1, SQLITE_TRANSIENT);
             sqlite3_bind_text(stmt, 2, startedAt.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_int64(stmt, 3, pid);
             if (sqlite3_step(stmt) == SQLITE_DONE) {
                 historyId = sqlite3_last_insert_rowid(execDb);
             } else {
@@ -255,10 +264,13 @@ bool ProxyRuntimeHistoryDAO::touchHeartbeat(int64_t historyId,
 }
 
 int64_t ProxyRuntimeHistoryDAO::findInProgressHistory(const std::string& indexId,
+                                                      int64_t pid,
+                                                      const std::string& startedAt,
                                                       sqlite3* db) {
     sqlite3* execDb = db ? db : db_;
     const char* sql = "SELECT id FROM proxy_runtime_history "
-                      "WHERE index_id = ? AND ended_at IS NULL "
+                      "WHERE index_id = ? AND pid = ? AND started_at = ? "
+                      "AND ended_at IS NULL "
                       "ORDER BY id DESC LIMIT 1";
     sqlite3_stmt* stmt = nullptr;
     if (sqlite3_prepare_v2(execDb, sql, -1, &stmt, nullptr) != SQLITE_OK) {
@@ -266,6 +278,8 @@ int64_t ProxyRuntimeHistoryDAO::findInProgressHistory(const std::string& indexId
         return -1;
     }
     sqlite3_bind_text(stmt, 1, indexId.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int64(stmt, 2, pid);
+    sqlite3_bind_text(stmt, 3, startedAt.c_str(), -1, SQLITE_TRANSIENT);
     int64_t historyId = -1;
     if (sqlite3_step(stmt) == SQLITE_ROW) {
         historyId = sqlite3_column_int64(stmt, 0);
@@ -303,6 +317,37 @@ bool ProxyRuntimeHistoryDAO::getRuntimeStats(const std::string& indexId,
     }
     sqlite3_finalize(stmt);
     return found;
+}
+
+std::vector<ProxyRuntimeHistoryItem> ProxyRuntimeHistoryDAO::getInProgressSessions(
+    sqlite3* db) {
+    std::vector<ProxyRuntimeHistoryItem> result;
+    sqlite3* execDb = db ? db : db_;
+    const char* sql =
+        "SELECT id, index_id, started_at, pid FROM proxy_runtime_history "
+        "WHERE ended_at IS NULL ORDER BY started_at;";
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(execDb, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        Logger::write("ProxyRuntimeHistoryDAO::getInProgressSessions: prepare failed: "
+                      + std::string(sqlite3_errmsg(execDb)), LogLevel::ERR);
+        return result;
+    }
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        ProxyRuntimeHistoryItem item;
+        item.id = sqlite3_column_int64(stmt, 0);
+        const unsigned char* idx = sqlite3_column_text(stmt, 1);
+        if (idx != nullptr) {
+            item.indexId = reinterpret_cast<const char*>(idx);
+        }
+        const unsigned char* started = sqlite3_column_text(stmt, 2);
+        if (started != nullptr) {
+            item.startedAt = reinterpret_cast<const char*>(started);
+        }
+        item.pid = sqlite3_column_int64(stmt, 3);
+        result.push_back(item);
+    }
+    sqlite3_finalize(stmt);
+    return result;
 }
 
 } // namespace models

@@ -39,6 +39,9 @@ ConfigDialog::ConfigDialog(wxWindow* parent, const config::AppConfig& cfg)
     wxFileProperty* dbPathProp = new wxFileProperty(L"路径", "database_path", cfg.database_path);
     propGrid_->Append(dbPathProp);
     propGrid_->SetPropertyAttribute("database_path", wxPG_FILE_SHOW_FULL_PATH, (long)1);
+    // wxWidgets 3.3.3 bug: wxPGPropertyFlags_ShowFullFileName maps to Reserved_1,
+    // but ValueToString checks wxPGFlags::ShowFullFileName — set the correct flag directly.
+    dbPathProp->ChangeFlag(wxPGFlags::ShowFullFileName, true);
     propGrid_->Append(new wxStringProperty(L"SQL 查询", "sql_query", cfg.sql_query));
     propGrid_->Append(new wxStringProperty(L"按 SubId 查询", "sql_by_subid", cfg.sql_by_subid));
 
@@ -54,29 +57,34 @@ ConfigDialog::ConfigDialog(wxWindow* parent, const config::AppConfig& cfg)
         wxFileProperty* xrayExecProp = new wxFileProperty(L"xray执行文件", "proxy_xray_executable", cfg.proxy.xray_executable);
         propGrid_->Append(xrayExecProp);
         propGrid_->SetPropertyAttribute("proxy_xray_executable", wxPG_FILE_SHOW_FULL_PATH, (long)1);
+        xrayExecProp->ChangeFlag(wxPGFlags::ShowFullFileName, true);
     }
     {
         wxFileProperty* assetDirProp = new wxFileProperty(L"xray_location_asset 目录", "proxy_xray_asset_dir", cfg.proxy.xray_asset_dir);
         propGrid_->Append(assetDirProp);
         propGrid_->SetPropertyAttribute("proxy_xray_asset_dir", wxPG_FILE_SHOW_FULL_PATH, (long)1);
+        assetDirProp->ChangeFlag(wxPGFlags::ShowFullFileName, true);
         propGrid_->SetPropertyAttribute("proxy_xray_asset_dir", wxPG_DIALOG_TITLE, L"选择 Xray 资源目录");
     }
     {
         wxFileProperty* tmplProp = new wxFileProperty(L"xray配置模板", "proxy_template_config_path", cfg.proxy.template_config_path);
         propGrid_->Append(tmplProp);
         propGrid_->SetPropertyAttribute("proxy_template_config_path", wxPG_FILE_SHOW_FULL_PATH, (long)1);
+        tmplProp->ChangeFlag(wxPGFlags::ShowFullFileName, true);
         propGrid_->SetPropertyAttribute("proxy_template_config_path", wxPG_DIALOG_TITLE, L"选择 Xray 启动配置模板文件");
     }
     {
         wxFileProperty* sbExecProp = new wxFileProperty(L"Sing-box执行文件", "proxy_singbox_executable", cfg.proxy.singbox_executable);
         propGrid_->Append(sbExecProp);
         propGrid_->SetPropertyAttribute("proxy_singbox_executable", wxPG_FILE_SHOW_FULL_PATH, (long)1);
+        sbExecProp->ChangeFlag(wxPGFlags::ShowFullFileName, true);
         propGrid_->SetPropertyAttribute("proxy_singbox_executable", wxPG_DIALOG_TITLE, L"选择 Sing-box 可执行文件");
     }
     {
         wxFileProperty* sbTmplProp = new wxFileProperty(L"Sing-box配置模板", "proxy_singbox_template_config_path", cfg.proxy.singbox_template_config_path);
         propGrid_->Append(sbTmplProp);
         propGrid_->SetPropertyAttribute("proxy_singbox_template_config_path", wxPG_FILE_SHOW_FULL_PATH, (long)1);
+        sbTmplProp->ChangeFlag(wxPGFlags::ShowFullFileName, true);
         propGrid_->SetPropertyAttribute("proxy_singbox_template_config_path", wxPG_DIALOG_TITLE, L"选择 Sing-box 启动配置模板文件");
     }
     propGrid_->Append(new wxBoolProperty(L"使用sing-box为代理终端", "proxy_use_singbox", cfg.proxy.use_singbox));
@@ -86,7 +94,6 @@ ConfigDialog::ConfigDialog(wxWindow* parent, const config::AppConfig& cfg)
     propGrid_->Append(new wxPropertyCategory(L"测试"));
     propGrid_->Append(new wxStringProperty(L"测试 URL", "test_url", cfg.test_url));
     propGrid_->Append(new wxIntProperty(L"超时(毫秒)", "test_timeout_ms", cfg.test_timeout_ms));
-    propGrid_->Append(new wxStringProperty(L"ipinfo.io Token", "ipinfo_token", cfg.ipinfo_token));
 
     // --- 日志 配置 ---
     propGrid_->Append(new wxPropertyCategory(L"日志"));
@@ -146,7 +153,9 @@ ConfigDialog::ConfigDialog(wxWindow* parent, const config::AppConfig& cfg)
     propGrid_->Append(srcDbProp);
     propGrid_->Append(tgtDbProp);
     propGrid_->SetPropertyAttribute("sync_source_db", wxPG_FILE_SHOW_FULL_PATH, (long)1);
+    srcDbProp->ChangeFlag(wxPGFlags::ShowFullFileName, true);
     propGrid_->SetPropertyAttribute("sync_target_db", wxPG_FILE_SHOW_FULL_PATH, (long)1);
+    tgtDbProp->ChangeFlag(wxPGFlags::ShowFullFileName, true);
     propGrid_->Append(new wxBoolProperty(L"跳过保护订阅", "sync_skip_subids", cfg.sync.sync_skip_subids));
 
     // --- 自动任务 配置 ---
@@ -212,8 +221,6 @@ void ConfigDialog::loadConfig(const config::AppConfig& cfg) {
     propGrid_->SetPropertyValue("network_monitor_maxProbes", cfg.network_monitor.maxProbes);
     // Set accelerator_url
     propGrid_->SetPropertyValue("accelerator_url", wxString(cfg.accelerator_url));
-    // Set ipinfo_token
-    propGrid_->SetPropertyValue("ipinfo_token", wxString(cfg.ipinfo_token));
     // Set update_methods checkboxes
     bool hasAccel = false, hasProxy = false, hasDirect = false;
     for (const std::string& m : cfg.update_methods) {
@@ -274,7 +281,6 @@ bool ConfigDialog::saveConfig() {
     // Test fields
     editedConfig_.test_url = propGrid_->GetPropertyValueAsString("test_url").ToStdString();
     editedConfig_.test_timeout_ms = propGrid_->GetPropertyValueAsInt("test_timeout_ms");
-    editedConfig_.ipinfo_token = propGrid_->GetPropertyValueAsString("ipinfo_token").ToStdString();
 
     // Log fields - log_enabled always true (removed from UI)
     editedConfig_.log_enabled = true;

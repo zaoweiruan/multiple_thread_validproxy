@@ -134,7 +134,7 @@ TEST_F(RuntimeHistoryDAOTest, MigrateTable_IsIdempotent) {
 TEST_F(RuntimeHistoryDAOTest, InsertStart_CreatesDetailRowAndReturnsId) {
   insertProxy(A1);
   db::models::ProxyRuntimeHistoryDAO dao(db_);
-  int64_t id = dao.insertStart(A1, T0);
+  int64_t id = dao.insertStart(A1, T0, 1001);
   EXPECT_GT(id, 0);
 
   std::string started = columnText("SELECT started_at FROM proxy_runtime_history WHERE id = ?", id);
@@ -148,8 +148,8 @@ TEST_F(RuntimeHistoryDAOTest, InsertStart_CreatesDetailRowAndReturnsId) {
 TEST_F(RuntimeHistoryDAOTest, InsertStart_BumpsStartCount) {
   insertProxy(A1);
   db::models::ProxyRuntimeHistoryDAO dao(db_);
-  dao.insertStart(A1, T0);
-  dao.insertStart(A1, T1);
+  dao.insertStart(A1, T0, 1001);
+  dao.insertStart(A1, T1, 1001);
   EXPECT_EQ(startCountOf(A1), 2);
 }
 
@@ -157,7 +157,7 @@ TEST_F(RuntimeHistoryDAOTest, InsertStart_UnknownIndex_StillWritesDetail) {
   // Unknown IndexId: detail row is still recorded (audit), aggregate UPDATE
   // affects 0 rows but must not fail the transaction.
   db::models::ProxyRuntimeHistoryDAO dao(db_);
-  int64_t id = dao.insertStart("ghost-index", T0);
+  int64_t id = dao.insertStart("ghost-index", T0, 1001);
   EXPECT_GT(id, 0);
   EXPECT_EQ(columnInt("SELECT COUNT(*) FROM proxy_runtime_history WHERE index_id='ghost-index'"), 1);
 }
@@ -167,7 +167,7 @@ TEST_F(RuntimeHistoryDAOTest, InsertStart_UnknownIndex_StillWritesDetail) {
 TEST_F(RuntimeHistoryDAOTest, FinalizeStop_BackfillsDetailRow) {
   insertProxy(A1);
   db::models::ProxyRuntimeHistoryDAO dao(db_);
-  int64_t id = dao.insertStart(A1, T0);
+  int64_t id = dao.insertStart(A1, T0, 1001);
   ASSERT_GT(id, 0);
 
   EXPECT_TRUE(dao.finalizeStop(id, T1, 0, 5000));
@@ -179,8 +179,8 @@ TEST_F(RuntimeHistoryDAOTest, FinalizeStop_BackfillsDetailRow) {
 TEST_F(RuntimeHistoryDAOTest, FinalizeStop_AccumulatesTotalRuntime) {
   insertProxy(A1);
   db::models::ProxyRuntimeHistoryDAO dao(db_);
-  int64_t id1 = dao.insertStart(A1, T0);
-  int64_t id2 = dao.insertStart(A1, T1);
+  int64_t id1 = dao.insertStart(A1, T0, 1001);
+  int64_t id2 = dao.insertStart(A1, T1, 1001);
   ASSERT_GT(id1, 0);
   ASSERT_GT(id2, 0);
 
@@ -198,7 +198,7 @@ TEST_F(RuntimeHistoryDAOTest, FinalizeStop_AccumulatesTotalRuntime) {
 TEST_F(RuntimeHistoryDAOTest, FinalizeStop_SecondCall_NoDoubleAccumulate) {
   insertProxy(A1);
   db::models::ProxyRuntimeHistoryDAO dao(db_);
-  int64_t id = dao.insertStart(A1, T0);
+  int64_t id = dao.insertStart(A1, T0, 1001);
   ASSERT_GT(id, 0);
 
   EXPECT_TRUE(dao.finalizeStop(id, T1, 0, 5000));
@@ -215,14 +215,14 @@ TEST_F(RuntimeHistoryDAOTest, FinalizeStop_SecondCall_NoDoubleAccumulate) {
 TEST_F(RuntimeHistoryDAOTest, FinalizeStop_CrashExitCode259_IncrementsCrashCount) {
   insertProxy(A1);
   db::models::ProxyRuntimeHistoryDAO dao(db_);
-  int64_t id = dao.insertStart(A1, T0);
+  int64_t id = dao.insertStart(A1, T0, 1001);
   ASSERT_GT(id, 0);
 
   EXPECT_TRUE(dao.finalizeStop(id, T1, 259, 4000));
   EXPECT_EQ(crashCountOf(A1), 1);
 
   // Normal exit on a second session must not increment crash count.
-  int64_t id2 = dao.insertStart(A1, T1);
+  int64_t id2 = dao.insertStart(A1, T1, 1001);
   ASSERT_GT(id2, 0);
   EXPECT_TRUE(dao.finalizeStop(id2, "2026-08-14 09:00:00", 0, 2000));
   EXPECT_EQ(crashCountOf(A1), 1);
@@ -231,7 +231,7 @@ TEST_F(RuntimeHistoryDAOTest, FinalizeStop_CrashExitCode259_IncrementsCrashCount
 TEST_F(RuntimeHistoryDAOTest, FinalizeStop_NonCrashExit_NoCrashIncrement) {
   insertProxy(A1);
   db::models::ProxyRuntimeHistoryDAO dao(db_);
-  int64_t id = dao.insertStart(A1, T0);
+  int64_t id = dao.insertStart(A1, T0, 1001);
   ASSERT_GT(id, 0);
 
   EXPECT_TRUE(dao.finalizeStop(id, T1, 1, 1000));
@@ -282,7 +282,7 @@ TEST_F(RuntimeHistoryDAOTest, InsertStart_InsideOuterTransaction_Participates) {
   sqlite3_free(errMsg);
 
   db::models::ProxyRuntimeHistoryDAO dao(db_);
-  int64_t id = dao.insertStart(A1, T0);
+  int64_t id = dao.insertStart(A1, T0, 1001);
   EXPECT_GT(id, 0);
 
   // ROLLBACK should also discard the detail row (DAO joined the outer txn).
@@ -297,7 +297,7 @@ TEST_F(RuntimeHistoryDAOTest, InsertStart_InsideOuterTransaction_Participates) {
 TEST_F(RuntimeHistoryDAOTest, FinalizeStop_InsideOuterTransaction_Participates) {
   insertProxy(A1);
   db::models::ProxyRuntimeHistoryDAO dao(db_);
-  int64_t id = dao.insertStart(A1, T0);
+  int64_t id = dao.insertStart(A1, T0, 1001);
   ASSERT_GT(id, 0);
 
   char* errMsg = nullptr;
@@ -324,8 +324,8 @@ TEST_F(RuntimeHistoryDAOTest, FullLifecycle_SingleProxy) {
   insertProxy(A1);
   db::models::ProxyRuntimeHistoryDAO dao(db_);
 
-  int64_t s1 = dao.insertStart(A1, T0);
-  int64_t s2 = dao.insertStart(A1, T1);
+  int64_t s1 = dao.insertStart(A1, T0, 1001);
+  int64_t s2 = dao.insertStart(A1, T1, 1001);
   ASSERT_GT(s1, 0);
   ASSERT_GT(s2, 0);
   EXPECT_TRUE(dao.finalizeStop(s1, T1, 259, 15000));
@@ -346,7 +346,7 @@ TEST_F(RuntimeHistoryDAOTest, FullLifecycle_IndependentProxies) {
   insertProxy(B1);
   db::models::ProxyRuntimeHistoryDAO dao(db_);
 
-  int64_t id = dao.insertStart(A1, T0);
+  int64_t id = dao.insertStart(A1, T0, 1001);
   ASSERT_GT(id, 0);
   EXPECT_TRUE(dao.finalizeStop(id, T1, 259, 9000));
 
@@ -362,6 +362,104 @@ TEST_F(RuntimeHistoryDAOTest, FullLifecycle_IndependentProxies) {
   EXPECT_EQ(startCount, 0);
   EXPECT_EQ(crashCount, 0);
   EXPECT_EQ(totalRuntime, 0);
+}
+
+// ---- pid factor + triplet matching ----
+
+TEST_F(RuntimeHistoryDAOTest, MigrateTable_AddsPidColumn) {
+  db::models::ProxyRuntimeHistoryDAO dao(db_);
+  insertProxy(A1);
+  int64_t id = dao.insertStart(A1, T0, 1001);
+  EXPECT_GT(id, 0);
+  EXPECT_EQ(columnInt64("SELECT pid FROM proxy_runtime_history WHERE id = ?", id), 1001);
+}
+
+TEST_F(RuntimeHistoryDAOTest, FindInProgressHistory_ExactMatch) {
+  insertProxy(A1);
+  db::models::ProxyRuntimeHistoryDAO dao(db_);
+  int64_t id = dao.insertStart(A1, T0, 1001);
+  int64_t found = dao.findInProgressHistory(A1, 1001, T0);
+  EXPECT_EQ(found, id);
+}
+
+TEST_F(RuntimeHistoryDAOTest, FindInProgressHistory_DifferentPid_ReturnsMinusOne) {
+  insertProxy(A1);
+  db::models::ProxyRuntimeHistoryDAO dao(db_);
+  dao.insertStart(A1, T0, 1001);
+  EXPECT_EQ(dao.findInProgressHistory(A1, 2002, T0), -1);
+}
+
+TEST_F(RuntimeHistoryDAOTest, FindInProgressHistory_DifferentStartedAt_ReturnsMinusOne) {
+  insertProxy(A1);
+  db::models::ProxyRuntimeHistoryDAO dao(db_);
+  dao.insertStart(A1, T0, 1001);
+  EXPECT_EQ(dao.findInProgressHistory(A1, 1001, T1), -1);
+}
+
+TEST_F(RuntimeHistoryDAOTest, FindInProgressHistory_Finalized_ReturnsMinusOne) {
+  insertProxy(A1);
+  db::models::ProxyRuntimeHistoryDAO dao(db_);
+  int64_t id = dao.insertStart(A1, T0, 1001);
+  dao.finalizeStop(id, T1, 0, 5000);
+  EXPECT_EQ(dao.findInProgressHistory(A1, 1001, T0), -1);
+}
+
+TEST_F(RuntimeHistoryDAOTest, FindInProgressHistory_LatestWins) {
+  insertProxy(A1);
+  db::models::ProxyRuntimeHistoryDAO dao(db_);
+  int64_t id1 = dao.insertStart(A1, T0, 1001);
+  int64_t id2 = dao.insertStart(A1, T1, 1001);
+  EXPECT_NE(id1, id2);
+  EXPECT_EQ(dao.findInProgressHistory(A1, 1001, T1), id2);
+}
+
+// ---- getInProgressSessions (standalone monitor dialog data source) ----
+
+TEST_F(RuntimeHistoryDAOTest, GetInProgressSessions_ReturnsPidAndStartedAt) {
+  insertProxy(A1);
+  insertProxy(B1);
+  db::models::ProxyRuntimeHistoryDAO dao(db_);
+  int64_t idA = dao.insertStart(A1, T0, 1001);
+  int64_t idB = dao.insertStart(B1, T1, 2002);
+  ASSERT_GT(idA, 0);
+  ASSERT_GT(idB, 0);
+
+  std::vector<db::models::ProxyRuntimeHistoryItem> rows =
+      dao.getInProgressSessions();
+  ASSERT_EQ(rows.size(), static_cast<std::size_t>(2));
+  // Ordered by started_at: T0 row first.
+  EXPECT_EQ(rows[0].id, idA);
+  EXPECT_EQ(rows[0].indexId, A1);
+  EXPECT_EQ(rows[0].startedAt, T0);
+  EXPECT_EQ(rows[0].pid, 1001);
+  EXPECT_EQ(rows[1].id, idB);
+  EXPECT_EQ(rows[1].indexId, B1);
+  EXPECT_EQ(rows[1].startedAt, T1);
+  EXPECT_EQ(rows[1].pid, 2002);
+}
+
+TEST_F(RuntimeHistoryDAOTest, GetInProgressSessions_ExcludesFinalizedRows) {
+  insertProxy(A1);
+  db::models::ProxyRuntimeHistoryDAO dao(db_);
+  int64_t idA = dao.insertStart(A1, T0, 1001);
+  int64_t idB = dao.insertStart(B1, T1, 2002);
+  ASSERT_GT(idA, 0);
+  ASSERT_GT(idB, 0);
+
+  EXPECT_TRUE(dao.finalizeStop(idA, T1, 0, 5000));
+
+  std::vector<db::models::ProxyRuntimeHistoryItem> rows =
+      dao.getInProgressSessions();
+  ASSERT_EQ(rows.size(), static_cast<std::size_t>(1));
+  EXPECT_EQ(rows[0].id, idB);
+  EXPECT_EQ(rows[0].pid, 2002);
+}
+
+TEST_F(RuntimeHistoryDAOTest, GetInProgressSessions_EmptyTable_ReturnsEmpty) {
+  db::models::ProxyRuntimeHistoryDAO dao(db_);
+  std::vector<db::models::ProxyRuntimeHistoryItem> rows =
+      dao.getInProgressSessions();
+  EXPECT_TRUE(rows.empty());
 }
 
 }  // namespace

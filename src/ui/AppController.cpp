@@ -294,7 +294,7 @@ void AppController::loadProxiesAsync(const std::string& subId, wxEvtHandler* han
         if (sqlite3_open(dbPath.c_str(), &readerDb) != SQLITE_OK) {
             Logger::write("sqlite3_open failed for loadProxiesAsync: " + dbPath, LogLevel::ERR);
             if (readerDb) sqlite3_close(readerDb);
-            wxQueueEvent(handler, new ProxyListLoadedEvent(subIdCopy, {}, {}));
+            wxQueueEvent(handler, new ProxyListLoadedEvent(subIdCopy, {}, {}, utils::ProxyListMaps()));
             return;
         }
         if (sqlite3_exec(readerDb, "PRAGMA journal_mode=WAL;", nullptr, nullptr, nullptr) != SQLITE_OK) {
@@ -321,10 +321,14 @@ void AppController::loadProxiesAsync(const std::string& subId, wxEvtHandler* han
         db::models::ProfileExItemDAO exDao(readerDb);
         std::vector<db::models::ProfileExItem> exItems = exDao.getAll();
 
+        // Build lookup maps in the background thread so the UI thread only
+        // assigns them into the model instead of iterating 50k+ items.
+        utils::ProxyListMaps maps = utils::buildProxyListMaps(exItems);
+
         sqlite3_close(readerDb);
 
         wxQueueEvent(handler, new ProxyListLoadedEvent(subIdCopy,
-                     std::move(proxies), std::move(exItems)));
+                     std::move(proxies), std::move(exItems), std::move(maps)));
     }).detach();
 }
 
@@ -611,7 +615,7 @@ bool AppController::isStandaloneProxyRunning(const std::string& indexId) const {
 }
 
 bool AppController::startStandaloneProxy(const std::string& indexId, int overridePort) {
-    std::lock_guard<std::mutex> lock(standaloneMutex_);
+    std::unique_lock<std::mutex> lock(standaloneMutex_);
 
     // Fetch proxy from DB
     db::models::ProfileitemDAO dao(db_);
@@ -840,8 +844,14 @@ bool AppController::startStandaloneProxy(const std::string& indexId, int overrid
         if (!portReady) {
             Logger::write("[StandaloneProxy] SOCKS port never became ready for " + indexId
                           + " on SOCKS5 :" + std::to_string(socksPort), LogLevel::WARN);
+            exDao_.updateTestResult(indexId, -1, false, "port never ready");
+            // Release lock before modal dialog — wxMessageBox pumps WM_TIMER
+            // which triggers onProxyMonTimer → getRunningStandaloneCount →
+            // same-thread deadlock on standaloneMutex_.
+            lock.unlock();
             const int rc = wxMessageBox("代理已启动但连通性验证失败，是否关闭该进程？",
                                         "连通性验证失败", wxYES_NO | wxCANCEL, topWindow_);
+            lock.lock();
             if (rc == wxYES) {
                 TerminateProcess(pi.hProcess, 1);
                 WaitForSingleObject(pi.hProcess, 5000);
@@ -864,11 +874,15 @@ bool AppController::startStandaloneProxy(const std::string& indexId, int overrid
         if (!ok) {
             Logger::write("[StandaloneProxy] Connectivity test FAILED for " + indexId
                           + " on SOCKS5 :" + std::to_string(socksPort), LogLevel::WARN);
+            exDao_.updateTestResult(indexId, -1, false, "connectivity verification failed");
             // Ask the user whether to keep the (possibly broken) process alive.
             // topWindow_ may be null in headless/CLI runs; wxMessageBox accepts a
             // null parent and still shows the dialog.
+            // Release lock before modal dialog — see note in portReady path above.
+            lock.unlock();
             const int rc = wxMessageBox("代理已启动但连通性验证失败，是否关闭该进程？",
                                         "连通性验证失败", wxYES_NO | wxCANCEL, topWindow_);
+            lock.lock();
             if (rc == wxYES) {
                 TerminateProcess(pi.hProcess, 1);
                 WaitForSingleObject(pi.hProcess, 5000);
@@ -889,19 +903,38 @@ bool AppController::startStandaloneProxy(const std::string& indexId, int overrid
         }
         Logger::write("[StandaloneProxy] Connectivity test PASSED for " + indexId
                       + " on SOCKS5 :" + std::to_string(socksPort), LogLevel::DEBUG);
+        // Write startup time into ProfileExItem.message (+<startup time>)
+        exDao_.updateStartupTime(indexId, db_);
         if (topWindow_) {
             wxQueueEvent(topWindow_, new StandaloneProxyEvent(
-                indexId, "127.0.0.1", socksPort, /*started=*/true, ""));
+                indexId, "127.0.0.1", socksPort, /*started=*/true,
+                utils::getCurrentTimestamp()));
         }
     }
 
-    // Track runtime history for PID-based exit listening
-    int64_t rhId = historyDao_.insertStart(indexId, utils::getCurrentTimestamp(), db_);
+    // Track runtime history for PID-based exit listening. started_at uses the
+    // process system creation time (spec §3.4) so the session time base is
+    // real and the (indexId, pid, startedAt) triplet identifies this exact
+    // process instance; fall back to now when creation time cannot be read.
+    const std::string startedAt =
+        proc::ProcessInspector::processCreationTime(pi.dwProcessId);
+    const std::string safeStartedAt =
+        startedAt.empty() ? utils::getCurrentTimestampFormatted() : startedAt;
+    int64_t rhId = historyDao_.insertStart(
+        indexId, safeStartedAt, static_cast<int64_t>(pi.dwProcessId), db_);
     if (rhId >= 0) {
         runtimeHistoryId_ = rhId;
-        const std::string startedAtStr = utils::getCurrentTimestamp();
+        const std::string startedAtStr = safeStartedAt;
         // Capture configFileName by value for the takeoverFn lambda
         const std::string configFileNameCopy = configFileName;
+
+        // Heartbeat/finalize baseline: process may have started before we
+        // began watching (normally ~0 here; nonzero for adoption/takeover).
+        const long long baselineMs =
+            safeStartedAt.empty()
+                ? 0LL
+                : proc::ProcessInspector::durationMsBetween(
+                      safeStartedAt, utils::getCurrentTimestampFormatted());
 
         proxyWatchKeys_[indexId] = exitListener_->watch(
             pi.hProcess, indexId, rhId,
@@ -918,8 +951,15 @@ bool AppController::startStandaloneProxy(const std::string& indexId, int overrid
                    const std::string& endedAt, int exitCode, int64_t durMs) -> bool {
                 return historyDao_.finalizeStop(hid, endedAt, exitCode, durMs, db_);
             },
-            // NotifyFn — notify UI
+            // NotifyFn — mark not-running + notify UI
             [this](const std::string& idx, int64_t hid) {
+                {
+                    std::lock_guard<std::mutex> lock(standaloneMutex_);
+                    auto it = standaloneProxies_.find(idx);
+                    if (it != standaloneProxies_.end()) {
+                        it->second.running = false;
+                    }
+                }
                 if (topWindow_) {
                     wxQueueEvent(topWindow_, new StandaloneProxyEvent(
                         idx, "", 0, /*started=*/false, "进程已退出"));
@@ -960,13 +1000,18 @@ bool AppController::startStandaloneProxy(const std::string& indexId, int overrid
                         pi.hProcess = nullptr;
                     }
                     // Insert new history start for the takeover session
+                    // (fallback must be datetime-formatted: stored as started_at)
+                    const std::string newStartedAt =
+                        procs[i].creationTime.empty()
+                            ? utils::getCurrentTimestampFormatted()
+                            : procs[i].creationTime;
                     int64_t newRhId = historyDao_.insertStart(
-                        indexId, utils::getCurrentTimestamp(), db_);
+                        indexId, newStartedAt,
+                        static_cast<int64_t>(procs[i].pid), db_);
                     if (newRhId < 0) {
                         CloseHandle(newHandle);
                         return false;
                     }
-                    const std::string newStartedAt = utils::getCurrentTimestamp();
                     // Update standaloneProxies_ with the new handle
                     {
                         std::lock_guard<std::mutex> lock(standaloneMutex_);
@@ -976,6 +1021,11 @@ bool AppController::startStandaloneProxy(const std::string& indexId, int overrid
                         sp.runtimeHistoryId = newRhId;
                     }
                     runtimeHistoryId_ = newRhId;
+                    const long long takeoverBaselineMs =
+                        newStartedAt.empty()
+                            ? 0LL
+                            : proc::ProcessInspector::durationMsBetween(
+                                  newStartedAt, utils::getCurrentTimestampFormatted());
                     proxyWatchKeys_[indexId] = exitListener_->watch(
                         newHandle, indexId, newRhId,
                         [](sqlite3*, const std::string&, const std::string&) -> int64_t {
@@ -993,6 +1043,13 @@ bool AppController::startStandaloneProxy(const std::string& indexId, int overrid
                                 hid, endedAt, exitCode, durMs, db_);
                         },
                         [this](const std::string& idx, int64_t hid) {
+                            {
+                                std::lock_guard<std::mutex> lock(standaloneMutex_);
+                                auto it = standaloneProxies_.find(idx);
+                                if (it != standaloneProxies_.end()) {
+                                    it->second.running = false;
+                                }
+                            }
                             if (topWindow_) {
                                 wxQueueEvent(
                                     topWindow_,
@@ -1006,7 +1063,8 @@ bool AppController::startStandaloneProxy(const std::string& indexId, int overrid
                         /*heartbeatFn*/ [this](const std::string&, int64_t hid,
                                                int64_t elapsedMs) {
                             historyDao_.touchHeartbeat(hid, elapsedMs, db_);
-                        });
+                        },
+                        /*baselineElapsedMs*/ takeoverBaselineMs);
                     Logger::write(
                         "[StandaloneProxy] R6 auto-takeover: adopted new " +
                         exeName + " pid=" +
@@ -1022,8 +1080,18 @@ bool AppController::startStandaloneProxy(const std::string& indexId, int overrid
             /*heartbeatFn*/ [this](const std::string&, int64_t hid,
                                    int64_t elapsedMs) {
                 historyDao_.touchHeartbeat(hid, elapsedMs, db_);
-            }
+            },
+            /*baselineElapsedMs*/ baselineMs
         );
+
+        // Backfill the map entry (this function already holds standaloneMutex_)
+        // so stopStandaloneProxy can unwatch this session and the monitor
+        // dialog can join the live process with its history row. Without this,
+        // watchKey stays 0 and unwatch is skipped (watcher leak).
+        StandaloneProxyInfo& startedInfo = standaloneProxies_[indexId];
+        startedInfo.runtimeHistoryId = rhId;
+        startedInfo.watchKey = proxyWatchKeys_[indexId];
+        startedInfo.startedAt = safeStartedAt;
     }
     Logger::write("[StandaloneProxy] Started " + indexId + " on SOCKS5 :" + std::to_string(socksPort),
                   LogLevel::REPORT);
@@ -1063,6 +1131,121 @@ int AppController::getRunningStandaloneCount() const {
         }
     }
     return count;
+}
+
+std::vector<StandaloneMonitorRow> AppController::getWatchedStandaloneMonitors() {
+    // Pass 1: copy watched entries under the lock. Only running && managed
+    // entries are shown — matches the "currently watched" semantics of the
+    // monitor dialog (unmanaged processes have no history row / no watcher).
+    struct WatchedEntry {
+        std::string indexId;
+        int socksPort;
+        int64_t historyId;
+        std::string fallbackStartedAt;
+    };
+    std::vector<WatchedEntry> watched;
+    {
+        std::lock_guard<std::mutex> lock(standaloneMutex_);
+        for (std::unordered_map<std::string, StandaloneProxyInfo>::const_iterator it =
+                 standaloneProxies_.begin(); it != standaloneProxies_.end(); ++it) {
+            if (!it->second.running || !it->second.managed) {
+                continue;
+            }
+            WatchedEntry e;
+            e.indexId = it->first;
+            e.socksPort = it->second.socksPort;
+            e.historyId = it->second.runtimeHistoryId;
+            e.fallbackStartedAt = it->second.startedAt;
+            watched.push_back(e);
+        }
+    }
+    if (watched.empty()) {
+        return std::vector<StandaloneMonitorRow>();
+    }
+
+    // Pass 2: join with in-progress history rows (pid/startedAt source of
+    // truth). Small result set (one row per watched process), same UI-thread
+    // read pattern as getRunningDurations().
+    std::vector<db::models::ProxyRuntimeHistoryItem> sessions =
+        historyDao_.getInProgressSessions();
+    std::unordered_map<int64_t, const db::models::ProxyRuntimeHistoryItem*> byId;
+    for (std::size_t i = 0; i < sessions.size(); ++i) {
+        byId[sessions[i].id] = &sessions[i];
+    }
+
+    const std::string now = utils::getCurrentTimestampFormatted();
+    db::models::ProfileitemDAO profileDao(db_);
+    std::vector<StandaloneMonitorRow> rows;
+    for (std::size_t j = 0; j < watched.size(); ++j) {
+        StandaloneMonitorRow row;
+        row.indexId = watched[j].indexId;
+        row.socksPort = watched[j].socksPort;
+        // Host = ProfileItem.Address (spec v1.1); "-" rendered by the dialog
+        // when the profile has been deleted or the address is empty.
+        std::optional<db::models::Profileitem> profile =
+            profileDao.getByIndexId(watched[j].indexId);
+        if (profile.has_value()) {
+            row.host = profile->address;
+        }
+        std::unordered_map<int64_t, const db::models::ProxyRuntimeHistoryItem*>::const_iterator hit =
+            byId.find(watched[j].historyId);
+        if (hit != byId.end()) {
+            row.pid = hit->second->pid;
+            row.startedAt = hit->second->startedAt;
+        } else {
+            // History row missing (insertStart failed or legacy entry):
+            // fall back to the in-memory startedAt, pid unknown.
+            row.pid = -1;
+            row.startedAt = watched[j].fallbackStartedAt;
+        }
+        row.durationMs = row.startedAt.empty()
+            ? 0LL
+            : proc::ProcessInspector::durationMsBetween(row.startedAt, now);
+        if (row.durationMs < 0) {
+            row.durationMs = 0;
+        }
+        rows.push_back(row);
+    }
+    return rows;
+}
+
+// ---------------------------------------------------------------
+// Reads the SOCKS inbound port from a standalone config file on disk
+// (xray: inbounds[0].port / sing-box: inbounds[0].listen_port).
+// Returns 0 when the file cannot be read or parsed.
+// ---------------------------------------------------------------
+static int readStandaloneInboundPort(const std::string& configPath) {
+    std::ifstream f(configPath.c_str());
+    if (!f.is_open()) {
+        return 0;
+    }
+    std::stringstream ss;
+    ss << f.rdbuf();
+    boost::system::error_code ec;
+    boost::json::value root = boost::json::parse(ss.str(), ec);
+    if (ec || !root.is_object()) {
+        return 0;
+    }
+    const boost::json::object& obj = root.as_object();
+    boost::json::object::const_iterator it = obj.find("inbounds");
+    if (it == obj.end() || !it->value().is_array() ||
+        it->value().as_array().empty()) {
+        return 0;
+    }
+    const boost::json::value& first = it->value().as_array().at(0);
+    if (!first.is_object()) {
+        return 0;
+    }
+    const boost::json::object& inbound = first.as_object();
+    boost::json::object::const_iterator p = inbound.find("listen_port");
+    if (p != inbound.end() && p->value().is_int64()) {
+        return static_cast<int>(p->value().as_int64());
+    }
+    p = inbound.find("port");
+    if (p != inbound.end() && p->value().is_int64()) {
+        return static_cast<int>(p->value().as_int64());
+    }
+    return 0;
 }
 
 void AppController::adoptDanglingStandaloneProxies() {
@@ -1116,17 +1299,27 @@ void AppController::adoptDanglingStandaloneProxies() {
                 continue;
             }
 
-            // Reuse an in-progress history session, otherwise open a new one.
-            int64_t rhId = historyDao_.findInProgressHistory(indexId, db_);
+            // Reuse an in-progress history session for THIS exact process instance
+            // (indexId + pid + system creation time), otherwise open a new one.
+            // Fallback must be datetime-formatted: it is stored as started_at
+            // and later parsed by durationMsBetween (epoch seconds would break).
+            const std::string procStartedAt =
+                procs[i].creationTime.empty()
+                    ? utils::getCurrentTimestampFormatted()
+                    : procs[i].creationTime;
+            int64_t rhId = historyDao_.findInProgressHistory(
+                indexId, static_cast<int64_t>(procs[i].pid),
+                procStartedAt, db_);
             if (rhId < 0) {
                 rhId = historyDao_.insertStart(
-                    indexId, utils::getCurrentTimestamp(), db_);
+                    indexId, procStartedAt,
+                    static_cast<int64_t>(procs[i].pid), db_);
             }
             if (rhId < 0) {
                 CloseHandle(hProcess);
                 continue;
             }
-            const std::string startedAt = utils::getCurrentTimestamp();
+            const std::string startedAt = procStartedAt;
 
             proc::ProcessExitListener::WatchKey key = exitListener_->watch(
                 hProcess, indexId, rhId,
@@ -1144,6 +1337,13 @@ void AppController::adoptDanglingStandaloneProxies() {
                     return historyDao_.finalizeStop(hid, endedAt, exitCode, durMs, db_);
                 },
                 [this](const std::string& idx, int64_t hid) {
+                    {
+                        std::lock_guard<std::mutex> lock(standaloneMutex_);
+                        auto it = standaloneProxies_.find(idx);
+                        if (it != standaloneProxies_.end()) {
+                            it->second.running = false;
+                        }
+                    }
                     if (topWindow_) {
                         wxQueueEvent(topWindow_, new StandaloneProxyEvent(
                             idx, "", 0, /*started=*/false, "进程已退出"));
@@ -1154,10 +1354,44 @@ void AppController::adoptDanglingStandaloneProxies() {
                 /*heartbeatFn*/ [this](const std::string&, int64_t hid,
                                        int64_t elapsedMs) {
                     historyDao_.touchHeartbeat(hid, elapsedMs, db_);
-                });
+                },
+                /*baselineElapsedMs*/ proc::ProcessInspector::durationMsBetween(
+                    startedAt, utils::getCurrentTimestampFormatted()));
             if (key == 0) {
                 CloseHandle(hProcess);
                 continue;
+            }
+
+            // Resolve the SOCKS inbound port from the on-disk config so the
+            // monitor dialog and logs can show it for adopted processes too.
+            // Dangling processes may have been started by the worker copy
+            // (bin\worker\validproxy.exe), whose configs live under
+            // <exeDir>\worker\config\ — probe both known layouts.
+            const std::string adoptedExeDir = utils::getExecutableDir();
+            const std::string adoptedDirs[2] = {
+                adoptedExeDir + "\\config\\",
+                adoptedExeDir + "\\worker\\config\\"
+            };
+            int adoptedPort = 0;
+            for (int di = 0; di < 2 && adoptedPort <= 0; ++di) {
+                adoptedPort = readStandaloneInboundPort(
+                    adoptedDirs[di] + configFileName);
+            }
+            // Step (b): an external program may launch the proxy with its config in
+            // a non-standard directory (not <exeDir>\config nor <exeDir>\worker\config).
+            // Derive the full config path from the launching command line and read the
+            // port directly. This stays authoritative (no listener ambiguity) for both
+            // xray (single inbound) and sing-box (many DNS inbounds).
+            if (adoptedPort <= 0) {
+                const std::string fullPath =
+                    proc::ProcessInspector::extractConfigFullPath(procs[i].commandLine);
+                if (!fullPath.empty()) {
+                    adoptedPort = readStandaloneInboundPort(fullPath);
+                }
+            }
+            if (adoptedPort <= 0) {
+                Logger::write("[StandaloneProxy] Could not resolve inbound port from "
+                              + configFileName, LogLevel::WARN);
             }
 
             {
@@ -1165,6 +1399,7 @@ void AppController::adoptDanglingStandaloneProxies() {
                 StandaloneProxyInfo& info = standaloneProxies_[indexId];
                 info.indexId = indexId;
                 info.configFileName = configFileName;
+                info.socksPort = adoptedPort;
                 info.processHandle = hProcess;
                 info.running = true;
                 info.managed = true;
@@ -1175,11 +1410,14 @@ void AppController::adoptDanglingStandaloneProxies() {
             }
             Logger::write("[StandaloneProxy] Adopted dangling process pid="
                           + std::to_string(procs[i].pid) + " indexId=" + indexId
+                          + " on SOCKS5 :" + std::to_string(adoptedPort)
                           + " config=" + configFileName, LogLevel::REPORT);
+            // Write startup time into ProfileExItem.message (+<startup time>)
+            exDao_.updateStartupTime(indexId, db_);
             // Notify the UI so the history/health columns refresh for the adopted proxy.
             if (topWindow_) {
                 wxQueueEvent(topWindow_, new StandaloneProxyEvent(
-                    indexId, "", 0, /*started=*/true, ""));
+                    indexId, "", 0, /*started=*/true, startedAt));
             }
         }
     }
@@ -1202,7 +1440,8 @@ bool AppController::stopStandaloneProxy(const std::string& indexId) {
         it->second.watchKey = 0;
     }
     it->second.running = false;
-    Logger::write("[StandaloneProxy] Stopped " + indexId, LogLevel::REPORT);
+    Logger::write("[StandaloneProxy] Stopped " + indexId + " on SOCKS5 :"
+                  + std::to_string(it->second.socksPort), LogLevel::REPORT);
     return true;
 }
 
@@ -1329,7 +1568,7 @@ void AppController::doTestSingleProxy(const std::string& indexId, wxEvtHandler* 
 
         // Get actual test result (delay + message) from the tester
         TestResult result = tester.getLastResult();
-        std::string delayStr = (result.latencyMs > 0) ? std::to_string(result.latencyMs) : std::string("");
+        std::string delayStr = utils::isTestResultValid(result.success, result.latencyMs) ? std::to_string(result.latencyMs) : std::string("");
         std::string message   = result.success
                                     ? std::to_string(result.latencyMs) + "ms"
                                     : result.errorMsg.empty() ? "FAIL" : result.errorMsg;
@@ -1586,7 +1825,7 @@ void AppController::findProxyByIndexIdAsync(const std::string& indexId, wxEvtHan
 
             if (wxHandler) {
                 TestResult result = tester.getLastResult();
-                std::string delayStr = (result.latencyMs > 0) ? std::to_string(result.latencyMs) : std::string("");
+                std::string delayStr = utils::isTestResultValid(result.success, result.latencyMs) ? std::to_string(result.latencyMs) : std::string("");
                 std::string message = result.success ? std::to_string(result.latencyMs) + "ms"
                                                      : result.errorMsg.empty() ? "FAIL" : result.errorMsg;
                 wxQueueEvent(wxHandler,
@@ -1682,6 +1921,10 @@ void AppController::doResolveRegionsBatch(wxEvtHandler* handler, const std::stri
             if (wxWindow* topLevel = wxGetTopLevelParent(win)) {
                 if (topLevel != win) {
                     wxQueueEvent(topLevel, new ProxyTestProgressEvent(0, 0, "", "", "", msg, true));
+                    // Ask MainFrame to reload the proxy rows so the Region
+                    // column reflects freshly resolved values (refreshResults
+                    // alone only re-reads ProfileExItem test results).
+                    wxQueueEvent(topLevel, new StatusUpdateEvent(0, "REGION_RESOLVE_DONE"));
                 }
             }
         }
@@ -1755,8 +1998,8 @@ void AppController::doResolveSingleProxyRegion(const std::string& indexId, wxEvt
 
         Logger::write("[RegionBatchResolver] Resolving region for " + proxyAddress + " (" + proxyIndexId + ")", LogLevel::INFO);
 
-        // Reuse shared ipinfo.io resolution logic from RegionBatchResolver
-        std::string response = RegionBatchResolver::fetchRegionFromIpInfo(proxyAddress, config_.ipinfo_token);
+        // Reuse shared ipwho.is resolution logic from RegionBatchResolver
+        std::string response = RegionBatchResolver::fetchRegionFromIpWhoIs(proxyAddress);
         if (response.empty()) {
             if (handler)
                 wxQueueEvent(handler, new StatusUpdateEvent(0, "API请求失败"));
@@ -1786,6 +2029,15 @@ void AppController::doResolveSingleProxyRegion(const std::string& indexId, wxEvt
         if (handler) {
             wxQueueEvent(handler, new StatusUpdateEvent(0, msg));
             wxQueueEvent(handler, new ProxyTestProgressEvent(0, 0, proxyIndexId, "", "", msg, true));
+            // Ask MainFrame to reload the proxy rows so the Region column
+            // shows the freshly resolved value.
+            if (wxWindow* win = dynamic_cast<wxWindow*>(handler)) {
+                if (wxWindow* topLevel = wxGetTopLevelParent(win)) {
+                    if (topLevel != win) {
+                        wxQueueEvent(topLevel, new StatusUpdateEvent(0, "REGION_RESOLVE_DONE"));
+                    }
+                }
+            }
         }
     } catch (const std::exception& e) {
         if (handler) {

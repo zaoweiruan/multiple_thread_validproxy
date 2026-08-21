@@ -13,6 +13,7 @@
 #include "AppController.h"
 #include "Events.h"
 #include "ProxyListModel.h"
+#include "Utils.h"
 
 // Forward declarations
 
@@ -35,7 +36,12 @@ public:
     void loadProxies(std::vector<db::models::Profileitem> proxies,
                      std::vector<db::models::ProfileExItem> exItems,
                      const std::string& subId);
+    void loadProxies(std::vector<db::models::Profileitem> proxies,
+                     std::vector<db::models::ProfileExItem> exItems,
+                     utils::ProxyListMaps maps,
+                     const std::string& subId);
     void refreshResults();
+    void reloadFromDatabase();
     void selectProxyByIndexId(const std::string& indexId);
     void filterBySearch(const wxString& query);
     bool HasSelection() const;
@@ -53,6 +59,12 @@ private:
     void onStartProxy(wxCommandEvent& event);
     void onProxyTestProgress(ProxyTestProgressEvent& event);
     void onColumnHeaderClick(wxDataViewEvent& event);
+    // Resolve a model column index (as returned by wxDataViewEvent::GetColumn)
+    // to the actual wxDataViewColumn*, scanning visual positions.  This is
+    // required because wxDataViewEvent::GetColumn() yields the *model* column,
+    // while wxDataViewCtrl::GetColumn() expects a *visual* position; the two
+    // diverge once columns are reordered.
+    wxDataViewColumn* resolveColumnByModel(int modelCol) const;
     void onSelectionChanged(wxDataViewEvent& event);
     void onStandaloneProxyEvent(StandaloneProxyEvent& event);
     void onHistoryTimer(wxTimerEvent& event);

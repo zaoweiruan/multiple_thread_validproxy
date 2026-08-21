@@ -1,5 +1,6 @@
 #include "MainFrame.h"
 #include "ConfigDialog.h"
+#include "StandaloneMonitorDialog.h"
 #include "LogPanel.h"
 #include "ProxyDetailPanel.h"
 #include "ProxyListPanel.h"
@@ -49,6 +50,7 @@ enum {
     ID_MENU_ABOUT         = wxID_HIGHEST + 111,
     ID_MENU_AUTOTASK_RUN  = wxID_HIGHEST + 112,
     ID_MENU_AUTOTASK_RESUME = wxID_HIGHEST + 113,
+    ID_MENU_STANDALONE_MON  = wxID_HIGHEST + 114,
     ID_TOOL_UPDATE_ALL    = wxID_HIGHEST + 200,
     ID_TOOL_TEST          = wxID_HIGHEST + 201,
     ID_TOOL_FIND          = wxID_HIGHEST + 202,
@@ -62,6 +64,7 @@ enum {
     ID_SEARCH_BOX         = wxID_HIGHEST + 206,
     ID_SEARCH_TARGET      = wxID_HIGHEST + 300,
     ID_TOOL_DETAIL_TOGGLE = wxID_HIGHEST + 302,
+    ID_TOOL_STANDALONE_MON = wxID_HIGHEST + 211,
 };
 
 // -------------------------------------------------------------------
@@ -84,6 +87,7 @@ wxBEGIN_EVENT_TABLE(MainFrame, wxFrame)
     EVT_MENU(ID_MENU_AUTOTASK_RUN, MainFrame::onMenuAutoTask)
     EVT_MENU(ID_MENU_AUTOTASK_RESUME, MainFrame::onMenuAutoTaskResume)
     EVT_MENU(ID_MENU_ABOUT,       MainFrame::onMenuAbout)
+    EVT_MENU(ID_MENU_STANDALONE_MON, MainFrame::onMenuStandaloneMonitor)
     // Toolbar
     EVT_MENU(ID_TOOL_UPDATE_ALL,  MainFrame::onToolUpdateAll)
     EVT_MENU(ID_TOOL_TEST,        MainFrame::onToolTest)
@@ -94,6 +98,7 @@ wxBEGIN_EVENT_TABLE(MainFrame, wxFrame)
     EVT_MENU(ID_TOOL_CANCEL, MainFrame::onToolCancel)
     EVT_MENU(ID_TOOL_SYNC,       MainFrame::onToolSync)
     EVT_MENU(ID_TOOL_AUTOTASK,   MainFrame::onMenuAutoTask)
+    EVT_MENU(ID_TOOL_STANDALONE_MON, MainFrame::onMenuStandaloneMonitor)
     // Search
     EVT_TEXT_ENTER(ID_SEARCH_BOX,  MainFrame::onSearchBoxEnter)
     EVT_TEXT(ID_SEARCH_BOX,        MainFrame::onSearchTextChanged)
@@ -198,8 +203,8 @@ MainFrame::MainFrame(const config::AppConfig& cfg, sqlite3* db)
             if (proxyPanel_) {
                 proxyPanel_->refreshResults();
             }
-            if (subPanel_) {
-                subPanel_->loadSubscriptions();
+            if (subPanel_ && controller_) {
+                controller_->loadSubscriptionsAsync(this);
             }
             setOperationState(OperationType::NONE);
             setStatusText(0, "Test completed");
@@ -273,7 +278,8 @@ MainFrame::MainFrame(const config::AppConfig& cfg, sqlite3* db)
 // ── Async proxy list loaded ───────────────────────────────────
 Bind(wxEVT_PROXY_LIST_LOADED, [this](ProxyListLoadedEvent& evt) {
     if (proxyPanel_) {
-        proxyPanel_->loadProxies(evt.takeProxies(), evt.takeExItems(), evt.getSubId());
+        proxyPanel_->loadProxies(evt.takeProxies(), evt.takeExItems(),
+                                 evt.takeMaps(), evt.getSubId());
     }
     setStatusText(0, "Loaded subscription: " + wxString(evt.getSubId()));
 });
@@ -639,6 +645,8 @@ void MainFrame::initMenuBar() {
     proxyMenu->Append(ID_MENU_DEDUP,      "Remove Duplicates");
     proxyMenu->Append(ID_MENU_EXPORT,     "Export Share Links");
     proxyMenu->Append(ID_MENU_GEN_CONFIG, "Generate Config…");
+    proxyMenu->AppendSeparator();
+    proxyMenu->Append(ID_MENU_STANDALONE_MON, L"独立代理监控…\tCtrl+M");
     bar->Append(proxyMenu, "&Proxy");
 
     wxMenu* taskMenu = new wxMenu;
@@ -686,6 +694,7 @@ void MainFrame::initToolBar() {
     m_toolbar->AddTool(ID_TOOL_DEDUP, "去重", ToolbarIcons::load("tool_dedup"), "去重");
     m_toolbar->AddTool(ID_TOOL_IMPORT, "导入", ToolbarIcons::load("tool_import"), "增加新订阅");
     m_toolbar->AddTool(ID_TOOL_AUTOTASK, "自动任务", ToolbarIcons::load("tool_pipeline"), "自动任务");
+    m_toolbar->AddTool(ID_TOOL_STANDALONE_MON, "监控代理", ToolbarIcons::load("tool_monitoring_proxy_process"), "监控代理");
     m_toolbar->AddTool(ID_TOOL_CONFIG, "配置", ToolbarIcons::load("tool_config"), "配置");
 
     // ── Search box: left-shifted by 150px from center ──
@@ -966,23 +975,12 @@ void MainFrame::onMenuFindBest(wxCommandEvent&) {
 }
 
 void MainFrame::onMenuDedup(wxCommandEvent&) {
-    bool ok = controller_->deduplicate();
-    if (ok) {
-        // Refresh subscription list (updates "Proxies" count column)
-        if (subPanel_) {
-            subPanel_->loadSubscriptions();
-        }
-        // Refresh current proxy list if a subscription is selected
-        if (proxyPanel_ && subPanel_) {
-            std::string currentSubId = subPanel_->getSelectedSubId();
-            if (!currentSubId.empty()) {
-                proxyPanel_->loadProxies(currentSubId);
-            }
-        }
-    }
-    wxMessageBox(ok ? "Dedup completed." : "Dedup failed.",
-                 "Dedup", wxOK | (ok ? wxICON_INFORMATION : wxICON_WARNING));
-    setStatusText(0, ok ? "Dedup completed." : "Dedup failed.");
+    setStatusText(0, "Deduplicating…");
+    std::thread([this]() {
+        bool ok = controller_->deduplicate();
+        wxQueueEvent(this, new StatusUpdateEvent(0,
+            ok ? "DEDUP_OK" : "DEDUP_FAIL"));
+    }).detach();
 }
 
 void MainFrame::onMenuExportShareLink(wxCommandEvent&) {
@@ -1006,6 +1004,15 @@ void MainFrame::onMenuGenerateConfig(wxCommandEvent&) {
     bool ok = controller_->generateConfig(idx.ToStdString());
     wxMessageBox(ok ? "Outbound config generated." : "Index not found.",
                  "Generate Config", wxOK | (ok ? wxICON_INFORMATION : wxICON_WARNING));
+}
+
+void MainFrame::onMenuStandaloneMonitor(wxCommandEvent&) {
+    // Lazy-create once; the dialog hides itself on close and is reused.
+    if (!monitorDialog_) {
+        monitorDialog_ = new StandaloneMonitorDialog(this, controller_);
+    }
+    monitorDialog_->Show(true);
+    monitorDialog_->Raise();
 }
 
 void MainFrame::onMenuConfig(wxCommandEvent&) {
@@ -1087,15 +1094,19 @@ void MainFrame::onMenuConfig(wxCommandEvent&) {
                 }
 
                 // Refresh all panels with the new database
-                if (subPanel_) {
-                    subPanel_->loadSubscriptions();
+                if (subPanel_ && controller_) {
+                    controller_->loadSubscriptionsAsync(this);
                 }
                 // Reload proxy list (empty subId = show all / first sub)
                 if (subPanel_ && !subPanel_->getSubscriptions().empty()) {
                     std::string firstSubId = subPanel_->getSubscriptions()[0].id;
-                    if (proxyPanel_) proxyPanel_->loadProxies(firstSubId);
+                    if (proxyPanel_ && controller_) {
+                        controller_->loadProxiesAsync(firstSubId, this);
+                    }
                 } else {
-                    if (proxyPanel_) proxyPanel_->loadProxies("");
+                    if (proxyPanel_ && controller_) {
+                        controller_->loadProxiesAsync("", this);
+                    }
                 }
 
                 setStatusText(0, wxString("Switched to database: ") + cfg.database_path);
@@ -1301,6 +1312,34 @@ void MainFrame::onToggleDetailPane(wxCommandEvent&) {
 //  in the Bind lambda).
 // -------------------------------------------------------------------
 void MainFrame::onStatusUpdate(StatusUpdateEvent& event) {
-    setStatusText(0, event.getText());
+    wxString text = event.getText();
+    if (text == "DEDUP_OK") {
+        if (subPanel_ && controller_) {
+            controller_->loadSubscriptionsAsync(this);
+        }
+        if (proxyPanel_ && subPanel_) {
+            std::string currentSubId = subPanel_->getSelectedSubId();
+            if (!currentSubId.empty()) {
+                controller_->loadProxiesAsync(currentSubId, this);
+            }
+        }
+        wxMessageBox("Dedup completed.", "Dedup",
+                     wxOK | wxICON_INFORMATION);
+        setStatusText(0, "Dedup completed.");
+    } else if (text == "DEDUP_FAIL") {
+        wxMessageBox("Dedup failed.", "Dedup",
+                     wxOK | wxICON_WARNING);
+        setStatusText(0, "Dedup failed.");
+    } else if (text == "REGION_RESOLVE_DONE") {
+        // Region resolution (single or batch) finished: reload the proxy
+        // rows so the Region column reflects values written to ProfileItem
+        // by the background resolver.  refreshResults() alone is not enough
+        // because it only re-reads ProfileExItem test results.
+        if (proxyPanel_) {
+            proxyPanel_->reloadFromDatabase();
+        }
+    } else {
+        setStatusText(0, text);
+    }
 }
 

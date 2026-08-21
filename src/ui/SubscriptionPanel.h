@@ -40,6 +40,10 @@ private:
     void onTestSubscription(wxCommandEvent& event);
     void onImportSubscription(wxCommandEvent& event);
     void onColumnHeaderClick(wxDataViewEvent& event);
+    // Resolve a model column index (as returned by wxDataViewEvent::GetColumn)
+    // to the actual wxDataViewColumn*, scanning visual positions.  See
+    // ProxyListPanel::resolveColumnByModel for the rationale.
+    wxDataViewColumn* resolveColumnByModel(int modelCol) const;
 
     void showEditDialog(const db::models::Subitem& sub);
     bool confirmDelete(const std::string& id, const std::string& remarks);

@@ -229,3 +229,153 @@ TEST_F(ProcessInspectorTest, NowTimestamp_NonEmpty) {
     EXPECT_FALSE(ts.empty());
     EXPECT_EQ(ts.size(), 19u);
 }
+
+// ---- process creation time (PID-factor matching support) ----
+
+// Launches a real independent child process (stands in for a standalone
+// proxy process: xray.exe / sing-box.exe) and returns its pid + handle.
+// The caller must TerminateProcess + CloseHandle when done.
+bool launchStandInChild(DWORD& outPid, HANDLE& outProcess) {
+    STARTUPINFOA si{};
+    si.cb = sizeof(si);
+    PROCESS_INFORMATION pi{};
+    BOOL ok = CreateProcessA(nullptr,
+                             const_cast<char*>("cmd /c timeout 999"),
+                             nullptr, nullptr, FALSE, 0, nullptr, nullptr,
+                             &si, &pi);
+    if (!ok) {
+        return false;
+    }
+    outPid = pi.dwProcessId;
+    outProcess = pi.hProcess;
+    CloseHandle(pi.hThread);
+    return true;
+}
+
+class ProcessInspectorTimeTest : public ::testing::Test {
+protected:
+    // FILETIME for 2026-08-20 00:00:00 UTC: 100ns ticks since 1601-01-01.
+    static FILETIME makeFileTimeUtc(long long unixSeconds) {
+        const long long ticks =
+            (unixSeconds + 11644473600LL) * 10000000LL;
+        ULARGE_INTEGER ui;
+        ui.QuadPart = static_cast<unsigned long long>(ticks);
+        FILETIME ft;
+        ft.dwLowDateTime = ui.LowPart;
+        ft.dwHighDateTime = ui.HighPart;
+        return ft;
+    }
+
+    // Spawns a child process (proxy stand-in) that lives until teardown.
+    DWORD spawnStandIn() {
+        DWORD pid = 0;
+        HANDLE proc = nullptr;
+        EXPECT_TRUE(launchStandInChild(pid, proc));
+        childHandles_.push_back(proc);
+        return pid;
+    }
+
+    void TearDown() override {
+        for (HANDLE h : childHandles_) {
+            TerminateProcess(h, 1);
+            WaitForSingleObject(h, 5000);
+            CloseHandle(h);
+        }
+        childHandles_.clear();
+        proc::ProcessInspector::setEnumeratorForTesting(nullptr);
+    }
+
+    std::vector<HANDLE> childHandles_;
+};
+
+TEST_F(ProcessInspectorTimeTest, FileTimeToString_Returns19CharTimestamp) {
+    FILETIME ft = makeFileTimeUtc(1784592000LL);  // 2026-08-20 00:00:00 UTC
+    std::string s = proc::ProcessInspector::fileTimeToString(ft);
+    EXPECT_EQ(s.size(), 19u);
+    // Format sanity: "YYYY-MM-DD HH:MM:SS" (time zone independent checks).
+    EXPECT_EQ(s[4], '-');
+    EXPECT_EQ(s[7], '-');
+    EXPECT_EQ(s[10], ' ');
+    EXPECT_EQ(s[13], ':');
+    EXPECT_EQ(s[16], ':');
+}
+
+TEST_F(ProcessInspectorTimeTest, FileTimeToString_ZeroEpoch_Returns1970) {
+    FILETIME ft = makeFileTimeUtc(0);  // 1970-01-01 00:00:00 UTC
+    std::string s = proc::ProcessInspector::fileTimeToString(ft);
+    EXPECT_EQ(s.substr(0, 4), "1970");
+}
+
+TEST_F(ProcessInspectorTimeTest, ProcessCreationTime_RealChildProcess_NonEmpty) {
+    const DWORD pid = spawnStandIn();
+    ASSERT_NE(pid, 0u);
+    std::string s = proc::ProcessInspector::processCreationTime(pid);
+    EXPECT_FALSE(s.empty());
+    EXPECT_EQ(s.size(), 19u);
+}
+
+TEST_F(ProcessInspectorTimeTest, ProcessCreationTime_InvalidPid_ReturnsEmpty) {
+    std::string s = proc::ProcessInspector::processCreationTime(0xFFFFFFFFu);
+    EXPECT_TRUE(s.empty());
+}
+
+TEST_F(ProcessInspectorTimeTest, EnumerateByName_PopulatesCreationTime) {
+    // Stand in for a proxy process: spawn cmd.exe (a real, independent
+    // process) and locate it by its exe name; creationTime must be filled.
+    const DWORD pid = spawnStandIn();
+    ASSERT_NE(pid, 0u);
+
+    std::vector<proc::ProcessInfo> procs =
+        proc::ProcessInspector::enumerateByName("cmd.exe");
+    bool foundChild = false;
+    for (const proc::ProcessInfo& p : procs) {
+        if (p.pid == pid) {
+            foundChild = true;
+            EXPECT_FALSE(p.creationTime.empty());
+            EXPECT_EQ(p.creationTime.size(), 19u);
+        }
+    }
+    EXPECT_TRUE(foundChild);
+}
+
+// Baseline elapsed time (e.g. time before adoption) must be added to heartbeat
+// elapsedMs so duration_ms reflects the process real start time (spec §3.5).
+TEST_F(ProcessExitListenerTest, Heartbeat_IncludesBaseline) {
+    const std::string indexId = "idx-baseline";
+    insertProxy(indexId);
+    // Never-signaled event handle = simulated long-running process.
+    HANDLE h = makeSignaledHandle();
+    // Reset it to non-signaled so WAIT_TIMEOUT fires on each heartbeat interval.
+    ResetEvent(h);
+
+    std::atomic<bool> gotHeartbeat{false};
+    int64_t observedElapsedMs = 0;
+
+    const int64_t baselineMs = 60000;
+    proc::ProcessExitListener::WatchKey key = listener.watch(
+        h, indexId, 77,
+        [](sqlite3*, const std::string&, const std::string&) -> int64_t { return -1; },
+        [](int64_t, sqlite3*) -> bool { return true; },
+        []() -> std::vector<std::pair<int64_t, std::string>> { return {}; },
+        [](sqlite3*, const std::string&, int64_t, const std::string&, int, int64_t) -> bool {
+            return true;
+        },
+        [](const std::string&, int64_t) {},
+        /*takeoverFn=*/nullptr,
+        /*configFileName=*/"",
+        /*heartbeatFn=*/[&](const std::string&, int64_t, int64_t elapsedMs) {
+            gotHeartbeat.store(true);
+            observedElapsedMs = elapsedMs;
+        },
+        /*heartbeatIntervalMs=*/30,
+        /*baselineElapsedMs=*/baselineMs);
+
+    // Give the watcher thread at least one WAIT_TIMEOUT cycle.
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    listener.unwatch(key);
+    CloseHandle(h);
+
+    EXPECT_TRUE(gotHeartbeat.load());
+    // Baseline (60000) + at least one interval => strictly greater than baseline.
+    EXPECT_GT(observedElapsedMs, baselineMs);
+}

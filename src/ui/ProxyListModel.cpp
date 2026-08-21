@@ -1,5 +1,6 @@
 #include "ProxyListModel.h"
 #include "Logger.h"
+#include "Utils.h"
 
 #include <algorithm>
 
@@ -40,6 +41,23 @@ void ProxyListModel::setData(
     rebuildMaps();
 }
 
+void ProxyListModel::setDataWithoutRebuild(
+    std::vector<db::models::Profileitem>* proxies,
+    const std::vector<db::models::ProfileExItem>* exItems)
+{
+    proxies_ = proxies;
+    exItems_ = exItems;
+}
+
+void ProxyListModel::setMaps(const utils::ProxyListMaps& maps) {
+    delayMap_ = maps.delayMap;
+    messageMap_ = maps.messageMap;
+    failuresMap_ = maps.failuresMap;
+    startCountMap_ = maps.startCountMap;
+    runtimeMap_ = maps.runtimeMap;
+    healthMap_ = maps.healthMap;
+}
+
 // -------------------------------------------------------------------
 // Rebuild lookup maps from exItems_.
 // NOTE: total_runtime_ms is only back-filled into ProfileExItem when a
@@ -78,8 +96,12 @@ void ProxyListModel::rebuildMaps() {
 
         int stable = ex.start_count - ex.crash_count;
         if (stable < 0) stable = 0;
-        healthMap_[ex.indexid] = static_cast<double>(stable + 1) /
-                                 static_cast<double>(ex.start_count + 2);
+        if (ex.start_count == 0) {
+            healthMap_[ex.indexid] = 0.0;
+        } else {
+            healthMap_[ex.indexid] = static_cast<double>(stable + 1) /
+                                     static_cast<double>(ex.start_count + 2);
+        }
     }
 }
 
@@ -112,14 +134,17 @@ bool ProxyListModel::setRunningDurations(
             }
             int stable = ex.start_count - ex.crash_count;
             if (stable < 0) stable = 0;
-            double base = static_cast<double>(stable + 1) /
-                          static_cast<double>(ex.start_count + 2);
+            double base = 0.0;
             double bonus = 0.0;
-            if (running > 0) {
-                double ramp = static_cast<double>(running) /
-                              static_cast<double>(RAMP_MS);
-                if (ramp > 1.0) ramp = 1.0;
-                bonus = ramp * WEIGHT;
+            if (ex.start_count > 0) {
+                base = static_cast<double>(stable + 1) /
+                       static_cast<double>(ex.start_count + 2);
+                if (running > 0) {
+                    double ramp = static_cast<double>(running) /
+                                  static_cast<double>(RAMP_MS);
+                    if (ramp > 1.0) ramp = 1.0;
+                    bonus = ramp * WEIGHT;
+                }
             }
             double h = base + bonus;
             if (h > 1.0) h = 1.0;
@@ -391,11 +416,8 @@ int ProxyListModel::Compare(const wxDataViewItem& item1,
             break;
         }
         case COL_TOTAL_RUNTIME_MS: {
-            long long rA = 0, rB = 0;
-            auto itA = runtimeMap_.find(a.indexid);
-            auto itB = runtimeMap_.find(b.indexid);
-            if (itA != runtimeMap_.end()) rA = itA->second;
-            if (itB != runtimeMap_.end()) rB = itB->second;
+            long long rA = getRuntime(a.indexid);
+            long long rB = getRuntime(b.indexid);
             cmp = (rA > rB) - (rA < rB);
             break;
         }
@@ -472,6 +494,18 @@ std::string ProxyListModel::getMessage(const std::string& indexId) const {
 int ProxyListModel::getFailures(const std::string& indexId) const {
     std::unordered_map<std::string, int>::const_iterator it = failuresMap_.find(indexId);
     return it != failuresMap_.end() ? it->second : 0;
+}
+
+// -------------------------------------------------------------------
+std::string ProxyListModel::getProxyValidityReason(const std::string& indexId) const {
+    std::string delay = getDelay(indexId);
+    if (utils::isDelayValid(delay)) {
+        return "";
+    }
+    if (delay.empty() || delay == "-1") {
+        return "untested";
+    }
+    return "invalid";
 }
 
 // -------------------------------------------------------------------

@@ -11,6 +11,7 @@
 #include "Profileitem.h"
 #include "ProfileExItem.h"
 #include "Subitem.h"
+#include "Utils.h"
 
 // ---------------------------------------------------------------
 // Custom event IDs — range starting from wxID_HIGHEST + 1
@@ -219,22 +220,26 @@ class ProxyListLoadedEvent : public wxEvent {
 public:
     ProxyListLoadedEvent(const std::string& subId,
                         std::vector<db::models::Profileitem> proxies,
-                        std::vector<db::models::ProfileExItem> exItems)
+                        std::vector<db::models::ProfileExItem> exItems,
+                        utils::ProxyListMaps maps = utils::ProxyListMaps())
         : wxEvent(0, wxEVT_PROXY_LIST_LOADED),
           subId_(subId),
           proxies_(std::move(proxies)),
-          exItems_(std::move(exItems)) {}
+          exItems_(std::move(exItems)),
+          maps_(std::move(maps)) {}
 
     wxEvent* Clone() const override { return new ProxyListLoadedEvent(*this); }
 
     const std::string& getSubId() const { return subId_; }
     std::vector<db::models::Profileitem> takeProxies() { return std::move(proxies_); }
     std::vector<db::models::ProfileExItem> takeExItems() { return std::move(exItems_); }
+    utils::ProxyListMaps takeMaps() { return std::move(maps_); }
 
 private:
     std::string subId_;
     std::vector<db::models::Profileitem> proxies_;
     std::vector<db::models::ProfileExItem> exItems_;
+    utils::ProxyListMaps maps_;
 };
 
 // ---------------------------------------------------------------

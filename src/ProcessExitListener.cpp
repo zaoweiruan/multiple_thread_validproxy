@@ -15,7 +15,8 @@ ProcessExitListener::WatchKey ProcessExitListener::watch(
     InsertFn insertFn, AliveFn aliveFn, EnumerateFn enumerateFn,
     FinalizeFn finalizeFn, NotifyFn notifyFn,
     TakeoverFn takeoverFn, const std::string& configFileName,
-    HeartbeatFn heartbeatFn, int heartbeatIntervalMs) {
+    HeartbeatFn heartbeatFn, int heartbeatIntervalMs,
+    int64_t baselineElapsedMs) {
     std::lock_guard<std::mutex> lock(mutex_);
     WatchKey key = nextKey_++;
     auto w = std::make_unique<Watcher>();
@@ -31,6 +32,7 @@ ProcessExitListener::WatchKey ProcessExitListener::watch(
     w->configFileName = configFileName;
     w->heartbeatFn = std::move(heartbeatFn);
     if (heartbeatIntervalMs > 0) { w->heartbeatIntervalMs = heartbeatIntervalMs; }
+    w->baselineElapsedMs = baselineElapsedMs;
     w->threadStartTime = std::chrono::steady_clock::now();
     watchers_[key] = std::move(w);
     watchers_[key]->thread = std::thread([this, key]() {
@@ -55,6 +57,7 @@ ProcessExitListener::WatchKey ProcessExitListener::watch(
                 if (w->heartbeatFn) {
                     const auto now = std::chrono::steady_clock::now();
                     const auto elapsedMs =
+                        w->baselineElapsedMs +
                         std::chrono::duration_cast<std::chrono::milliseconds>(
                             now - w->threadStartTime).count();
                     w->heartbeatFn(w->indexId, w->historyId, elapsedMs);
@@ -114,8 +117,9 @@ void ProcessExitListener::handleProcessExit(Watcher* w, DWORD exitCode) {
     if (w->notifyFn) { w->notifyFn(w->indexId, w->historyId); }
     if (!event.shouldFinalize) { return; }
     if (takeoverAttempted) { return; }
-    const auto now = std::chrono::steady_clock::now();
+const auto now = std::chrono::steady_clock::now();
     const auto durationMs =
+        w->baselineElapsedMs +
         std::chrono::duration_cast<std::chrono::milliseconds>(now - w->threadStartTime).count();
     const auto timeT = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
     char timeBuf[64];

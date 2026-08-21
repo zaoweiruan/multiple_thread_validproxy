@@ -272,6 +272,8 @@ if(wxWidgets_FOUND)
         src/ui/LogPanel.cpp
         src/ui/ConfigDialog.h
         src/ui/ConfigDialog.cpp
+        src/ui/StandaloneMonitorDialog.h
+        src/ui/StandaloneMonitorDialog.cpp
         src/ui/TrayIcon.h
         src/ui/TrayIcon.cpp
         src/ui/UIApp.h
@@ -400,6 +402,7 @@ add_dependencies(validproxy update_version_h)
         src/ProfileExItemDAO.cpp
         src/Logger.cpp
         src/LoggerInstance.cpp
+        src/Utils.cpp
         tests/test_proxy_list_model.rc)
     target_include_directories(test_proxy_list_model PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include
@@ -482,12 +485,13 @@ set_target_properties(test_dedup PROPERTIES
 )
 add_test(NAME DedupTest COMMAND test_dedup)
 
-add_executable(test_profile_ex_item_dao tests/test_profile_ex_item_dao.cpp src/ProfileExItemDAO.cpp src/Logger.cpp src/LoggerInstance.cpp)
+add_executable(test_profile_ex_item_dao tests/test_profile_ex_item_dao.cpp src/ProfileExItemDAO.cpp src/Logger.cpp src/LoggerInstance.cpp src/Utils.cpp)
 target_include_directories(test_profile_ex_item_dao PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(test_profile_ex_item_dao PRIVATE
     gtest_main
     gtest
     ${VCPKG_ROOT}/installed/x64-mingw-static/lib/libsqlite3.a
+    ws2_32
 )
 set_target_properties(test_profile_ex_item_dao PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
@@ -943,3 +947,53 @@ set_target_properties(test_process_exit_listener PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
 )
 add_test(NAME ProcessExitListenerTest COMMAND test_process_exit_listener)
+
+# Standalone-config command-line extraction (extractConfigFileName /
+# extractConfigFullPath) used to resolve ports of externally-launched proxies.
+add_executable(test_process_inspector tests/test_process_inspector.cpp
+    src/ProcessInspector.cpp)
+target_include_directories(test_process_inspector PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(test_process_inspector PRIVATE
+    gtest_main gtest
+    -lpsapi
+    -lntdll
+)
+set_target_properties(test_process_inspector PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+)
+add_test(NAME ProcessInspectorTest COMMAND test_process_inspector)
+
+# -- RegionBatchResolver unit tests (ip-api.com region resolution) --------------------
+add_executable(test_region_batch_resolver tests/test_region_batch_resolver.cpp
+    src/RegionBatchResolver.cpp src/ConfigGenerator.cpp src/ProfileitemDAO.cpp
+    src/config/ProfileConfigRepository.cpp src/config/ProfileNormalizer.cpp
+    src/config/StreamSettingsBuilder.cpp src/config/OutboundBuilderFactory.cpp
+    src/config/XrayConfigAssembler.cpp
+    src/config/outbound/VLESSOutboundBuilder.cpp
+    src/config/outbound/VMessOutboundBuilder.cpp
+    src/config/outbound/SSOutboundBuilder.cpp
+    src/config/outbound/TrojanOutboundBuilder.cpp
+    src/config/outbound/SOCKSOutboundBuilder.cpp
+    src/config/outbound/HTTPOutboundBuilder.cpp
+    src/config/outbound/Hysteria2OutboundBuilder.cpp
+    src/config/outbound/TUICOutboundBuilder.cpp
+    src/config/outbound/WireGuardOutboundBuilder.cpp
+    src/ProfileExItemDAO.cpp
+    src/utils/DnsCache.cpp src/Logger.cpp src/LoggerInstance.cpp src/Utils.cpp)
+target_include_directories(test_region_batch_resolver PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(test_region_batch_resolver PRIVATE
+    gtest_main gtest
+    ${VCPKG_ROOT}/installed/x64-mingw-static/lib/libsqlite3.a
+    ${VCPKG_ROOT}/installed/x64-mingw-static/lib/libboost_json-gcc14-mt-x64-1_91.a
+    Threads::Threads
+    CURL::libcurl
+    -lws2_32
+)
+set_target_properties(test_region_batch_resolver PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+)
+add_test(NAME RegionBatchResolverTest COMMAND test_region_batch_resolver)

@@ -19,6 +19,16 @@ namespace utils {
             now.time_since_epoch()).count();
         return std::to_string(timestamp);
     }
+
+    std::string getCurrentTimestampFormatted() {
+        std::chrono::system_clock::time_point now = std::chrono::system_clock::now();
+        std::time_t t = std::chrono::system_clock::to_time_t(now);
+        std::tm tm{};
+        localtime_s(&tm, &t);
+        char buf[32];
+        std::strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", &tm);
+        return std::string(buf);
+    }
 }
 
 namespace utils {
@@ -471,4 +481,44 @@ bool isValidUrlFormat(const std::string& url) {
         }
         return false;
     }
- }
+
+    bool isTestResultValid(bool success, long latencyMs) {
+        return success && latencyMs > 0;
+    }
+
+    bool isDelayValid(const std::string& delayStr) {
+        if (delayStr.empty() || delayStr == "-1") return false;
+        try {
+            long val = std::stol(delayStr);
+            return val > 0;
+        } catch (...) {
+            return false;
+        }
+    }
+
+    ProxyListMaps buildProxyListMaps(const std::vector<db::models::ProfileExItem>& exItems) {
+        ProxyListMaps maps;
+        for (const db::models::ProfileExItem& ex : exItems) {
+            maps.delayMap[ex.indexid] = ex.delay;
+            maps.messageMap[ex.indexid] = ex.message;
+            maps.failuresMap[ex.indexid] = ex.consecutive_failures;
+            maps.startCountMap[ex.indexid] = ex.start_count;
+
+            if (ex.total_runtime_ms > 0) {
+                maps.runtimeMap[ex.indexid] = ex.total_runtime_ms;
+            } else {
+                maps.runtimeMap[ex.indexid] = 0;
+            }
+
+            int stable = ex.start_count - ex.crash_count;
+            if (stable < 0) stable = 0;
+            if (ex.start_count == 0) {
+                maps.healthMap[ex.indexid] = 0.0;
+            } else {
+                maps.healthMap[ex.indexid] = static_cast<double>(stable + 1) /
+                                             static_cast<double>(ex.start_count + 2);
+            }
+        }
+        return maps;
+    }
+}

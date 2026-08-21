@@ -1,5 +1,6 @@
 #include "Profileexitem.h"
 #include "Logger.h"
+#include "Utils.h"
 #include <sqlite3.h>
 #include <string>
 #include <vector>
@@ -98,6 +99,9 @@ std::string ProfileExItemDAO::formatTestMessage(const std::string& existingMessa
 
 std::string ProfileExItemDAO::formatStartupMessage(const std::string& existingMessage, const std::string& newStartupTime) {
     // Keep the test side (before first '+') only when it is a valid timestamp.
+    // When the test side is empty/invalid, FILL it with the new startup time
+    // (bugfix 2026-08-21): "<NS>+<NS>" instead of a blank test side, so the
+    // message always carries two valid timestamps after a monitored start.
     std::string testPart;
     std::size_t plusPos = existingMessage.find('+');
     if (plusPos != std::string::npos && plusPos > 0) {
@@ -107,7 +111,7 @@ std::string ProfileExItemDAO::formatStartupMessage(const std::string& existingMe
       }
     }
     if (testPart.empty()) {
-      return "+" + newStartupTime;
+      return newStartupTime + "+" + newStartupTime;
     }
     return testPart + "+" + newStartupTime;
   }
@@ -264,7 +268,7 @@ bool ProfileExItemDAO::updateTestResult(const std::string& indexid, long latency
 
     int newFailures = success ? 0 : currentFailures + 1;
 
-    std::string delayStr = (success && latencyMs >= 0) ? std::to_string(latencyMs / 10) : "-1";
+    std::string delayStr = utils::isTestResultValid(success, latencyMs) ? std::to_string(latencyMs / 10) : "-1";
 
     const char* insertSql = "INSERT OR REPLACE INTO ProfileExItem (indexid, delay, speed, sort, message, consecutive_failures, start_count, total_runtime_ms, crash_count) VALUES (?, ?, '0', '0', ?, ?, ?, ?, ?);";
     sqlite3_stmt* insertStmt = nullptr;
@@ -391,7 +395,7 @@ bool ProfileExItemDAO::updateTestResult(const std::string& indexid, long latency
                   }
               }
               
-              std::string delayStr = (success && latencyMs >= 0) ? std::to_string(latencyMs / 10) : "-1";
+              std::string delayStr = utils::isTestResultValid(success, latencyMs) ? std::to_string(latencyMs / 10) : "-1";
               int newFailures = success ? 0 : failures + 1;
               
               sqlite3_bind_text(stmt, 1, indexid.c_str(), -1, SQLITE_TRANSIENT);

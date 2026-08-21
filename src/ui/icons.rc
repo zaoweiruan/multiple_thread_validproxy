@@ -26,6 +26,7 @@ tool_import_png       RCDATA "docs/design/ui/icon/png/tool_import.png"
 tool_config_png       RCDATA "docs/design/ui/icon/png/tool_config.png"
  tool_dockarrow_png    RCDATA "docs/design/ui/icon/png/tool_dockarrow.png"
 tool_pipeline_png     RCDATA "docs/design/ui/icon/png/tool_pipeline.png"
+tool_monitoring_proxy_process_png RCDATA "docs/design/ui/icon/png/tool_monitoring_proxy_process.png"
 
 // ── Application / frame icon (native ICON group) ────────────────────
 // Creates both RT_ICON (raw DIB data per resolution) and RT_GROUP_ICON

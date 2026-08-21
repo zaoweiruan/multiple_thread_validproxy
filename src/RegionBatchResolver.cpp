@@ -6,6 +6,7 @@
 #include "utils/DnsCache.h"
 
 #include <algorithm>
+#include <cctype>
 #include <thread>
 #include <vector>
 #include <boost/json.hpp>
@@ -183,8 +184,8 @@ void RegionBatchResolver::workerThreadFunc(int workerId) {
                       + target.address + " (" + target.indexId + ")", LogLevel::INFO);
 
         try {
-            // Direct curl to ipinfo.io (no Xray SOCKS5 proxy needed)
-            std::string response = fetchRegionFromIpInfo(target.address, config_.ipinfo_token);
+            // Direct curl to ipwho.is (no proxy, no token needed)
+            std::string response = fetchRegionFromIpWhoIs(target.address);
             std::string region;
             if (!response.empty()) {
                 region = parseRegionFromJson(response);
@@ -192,7 +193,7 @@ void RegionBatchResolver::workerThreadFunc(int workerId) {
 
             if (response.empty()) {
                 emptyResponseCount_++;
-                Logger::write("[RegionBatchResolver] fetchRegionFromIpInfo returned empty for "
+                Logger::write("[RegionBatchResolver] fetchRegionFromIpWhoIs returned empty for "
                               + target.address + " (" + target.indexId + ")", LogLevel::INFO);
                 processedCount_++;
                 if (progressCallback_) {
@@ -248,13 +249,14 @@ void RegionBatchResolver::workerThreadFunc(int workerId) {
 }
 
 // ---------------------------------------------------------------
-// Static helper: query ipinfo.io Lite API (returns JSON)
+// Static helper: query ipwho.is (IP only; domains resolved via DnsCache first).
+// Free, no token required. Accuracy for CDN/anycast ranges matches ipinfo.io.
 // ---------------------------------------------------------------
-std::string RegionBatchResolver::fetchRegionFromIpInfo(const std::string& address, const std::string& ipinfoToken) {
+std::string RegionBatchResolver::fetchRegionFromIpWhoIs(const std::string& address) {
     std::string responseBody;
 
     try {
-        // DNS resolution: if address is a domain (not raw IP), resolve it first
+        // DNS resolution: ipwho.is only accepts IPs, resolve domain addresses first
         std::string targetAddress = address;
 
         // Inline IP check: true for IPv4 (3 dots, all digits/dots) or IPv6 (contains ':')
@@ -282,15 +284,15 @@ std::string RegionBatchResolver::fetchRegionFromIpInfo(const std::string& addres
         }
 
         CurlEasyHandle curl;
-
-        // Direct curl to ipinfo.io Lite API (no SOCKS5 proxy needed)
-        std::string url = "https://api.ipinfo.io/lite/" + targetAddress + "?token=" + ipinfoToken;
+        std::string url = "https://ipwho.is/" + targetAddress;
         curl.setUrl(url);
-        curl.setTimeoutSec(15);
+        curl.setTimeoutMs(15000);
         curl.setConnectTimeoutMs(10000);
-        curl.setSslVerifyPeer(false);
-        curl.setSslVerifyHost(false);
         curl.setFollowLocation(true);
+
+        // MinGW curl lacks a CA bundle on Windows; follow project convention
+        // (UrlFetcher/SubitemUpdaterV2) of disabling peer verification
+        curl.setSslVerifyPeer(false);
 
         // Capture response body
         curl.setWriteCallback(CurlEasyHandle::writeCallback, &responseBody);
@@ -312,8 +314,9 @@ std::string RegionBatchResolver::fetchRegionFromIpInfo(const std::string& addres
 }
 
 // ---------------------------------------------------------------
-// Static helper: parse JSON response from ipinfo.io Lite API
+// Static helper: parse JSON response from ipwho.is API
 // Format: {"ip": "...", "country": "United States", "country_code": "US", ...}
+// Failure: {"success":false,"message":"..."} (no 'country' field)
 // Returns the full country name (e.g., "United States"), uppercased.
 // ---------------------------------------------------------------
 std::string RegionBatchResolver::parseRegionFromJson(const std::string& jsonStr) {

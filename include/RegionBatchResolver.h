@@ -34,10 +34,13 @@ public:
     int getSuccessCount() const { return successCount_.load(); }
 
     // --- Static helper methods reusable by AppController ---
-    /// Query ipinfo.io Lite API for an address. Returns raw CSV response string, empty on failure.
-    static std::string fetchRegionFromIpInfo(const std::string& address, const std::string& ipinfoToken);
+    /// Query ipwho.is for an address. Returns raw JSON response string, empty on failure.
+    /// Domain names are resolved to IP via DnsCache first (ipwho.is only accepts IPs).
+    /// No token required.
+    static std::string fetchRegionFromIpWhoIs(const std::string& address);
 
-    /// Extract "country" field from ipinfo.io JSON response.
+    /// Extract "country" field from ipwho.is JSON response.
+    /// Normalizes to uppercase.
     static std::string parseRegionFromJson(const std::string& jsonStr);
 
 private:

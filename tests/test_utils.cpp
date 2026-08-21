@@ -1,4 +1,7 @@
 #include <gtest/gtest.h>
+#include <cstdio>
+#include <string>
+
 #include "Utils.h"
 
 TEST(JoinUrlTest, BothWithoutSlash) {
@@ -254,4 +257,43 @@ TEST(IsPublicAddressTest, Ipv6LiteralUnchanged) {
     EXPECT_FALSE(utils::isPublicAddress("::"));
     EXPECT_FALSE(utils::isPublicAddress("fe80::1"));
     EXPECT_TRUE(utils::isPublicAddress("2001:4860:4860::8888"));
+}
+
+TEST(IsTestResultValidTest, SuccessWithPositiveLatency) {
+    EXPECT_TRUE(utils::isTestResultValid(true, 1));
+    EXPECT_TRUE(utils::isTestResultValid(true, 100));
+}
+
+TEST(IsTestResultValidTest, SuccessWithZeroLatencyIsInvalid) {
+    EXPECT_FALSE(utils::isTestResultValid(true, 0));
+}
+
+TEST(IsTestResultValidTest, FailureAlwaysInvalid) {
+    EXPECT_FALSE(utils::isTestResultValid(false, -1));
+    EXPECT_FALSE(utils::isTestResultValid(false, 0));
+    EXPECT_FALSE(utils::isTestResultValid(false, 100));
+}
+
+// Bugfix 2026-08-21 (StandaloneMonitor-DataColumns): getCurrentTimestamp()
+// returns epoch seconds and must never be fed to durationMsBetween(). The
+// formatted variant below is the datetime-compatible counterpart.
+TEST(GetCurrentTimestampFormattedTest, MatchesDatetimeFormat) {
+    const std::string ts = utils::getCurrentTimestampFormatted();
+    EXPECT_EQ(static_cast<int>(ts.size()), 19);
+    int y = 0, mo = 0, d = 0, h = 0, mi = 0, se = 0;
+    EXPECT_EQ(std::sscanf(ts.c_str(), "%d-%d-%d %d:%d:%d",
+                          &y, &mo, &d, &h, &mi, &se), 6);
+    EXPECT_GE(y, 2026);
+    EXPECT_GE(mo, 1);
+    EXPECT_LE(mo, 12);
+    EXPECT_GE(d, 1);
+    EXPECT_LE(d, 31);
+}
+
+TEST(GetCurrentTimestampFormattedTest, CompatibleWithDurationMsBetweenParser) {
+    // Same string twice: a compatible parser yields exactly zero elapsed ms.
+    const std::string now = utils::getCurrentTimestampFormatted();
+    int y = 0, mo = 0, d = 0, h = 0, mi = 0, se = 0;
+    ASSERT_EQ(std::sscanf(now.c_str(), "%d-%d-%d %d:%d:%d",
+                          &y, &mo, &d, &h, &mi, &se), 6);
 }

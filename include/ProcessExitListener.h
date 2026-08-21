@@ -63,7 +63,8 @@ public:
                    TakeoverFn takeoverFn = nullptr,
                    const std::string& configFileName = "",
                    HeartbeatFn heartbeatFn = nullptr,
-                   int heartbeatIntervalMs = 30000);
+                   int heartbeatIntervalMs = 30000,
+                   int64_t baselineElapsedMs = 0);
 
     void unwatch(WatchKey key);
 
@@ -89,6 +90,7 @@ private:
         std::string configFileName;  // R6: config file name for takeover process lookup
         HeartbeatFn heartbeatFn;     // periodic refresh while process is alive
         int heartbeatIntervalMs = 30000;
+        int64_t baselineElapsedMs = 0;  // pre-watch runtime (e.g. before adoption)
         std::thread thread;
         std::atomic<bool> running{true};
         std::chrono::steady_clock::time_point threadStartTime;

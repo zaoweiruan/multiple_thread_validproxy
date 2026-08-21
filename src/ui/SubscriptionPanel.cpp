@@ -480,6 +480,20 @@ void SubscriptionPanel::onImportSubscription(wxCommandEvent&) {
 // -------------------------------------------------------------------
 // Column header click handler for Name/Proxies/Update sorting
 // -------------------------------------------------------------------
+wxDataViewColumn* SubscriptionPanel::resolveColumnByModel(int modelCol) const {
+    if (modelCol < 0) {
+        return nullptr;
+    }
+    const unsigned int count = listCtrl_->GetColumnCount();
+    for (unsigned int i = 0; i < count; ++i) {
+        wxDataViewColumn* col = listCtrl_->GetColumn(i);
+        if (col != nullptr && static_cast<int>(col->GetModelColumn()) == modelCol) {
+            return col;
+        }
+    }
+    return nullptr;
+}
+
 void SubscriptionPanel::onColumnHeaderClick(wxDataViewEvent& event) {
     int col = event.GetColumn();
     Logger::write("[SubscriptionPanel] Column header click: column=" + std::to_string(col), LogLevel::DEBUG);
@@ -507,7 +521,7 @@ void SubscriptionPanel::onColumnHeaderClick(wxDataViewEvent& event) {
 
         if (sortState_.direction != SortDirection::None) {
             // Set the sort indicator on the column and trigger re-sort.
-            wxDataViewColumn* dvCol = listCtrl_->GetColumn(col);
+            wxDataViewColumn* dvCol = resolveColumnByModel(col);
             if (dvCol) {
                 dvCol->SetSortOrder(sortState_.direction == SortDirection::Asc);
             }

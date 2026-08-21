@@ -22,6 +22,7 @@ class wxSearchCtrl;
 class wxChoice;
 class ConfigDialog;
 class TrayIcon;
+class StandaloneMonitorDialog;
 
 enum class OperationType {
     NONE,
@@ -82,6 +83,7 @@ private:
     void onMenuAutoTask(wxCommandEvent& event);
     void onMenuAutoTaskResume(wxCommandEvent& event);
     void onMenuAbout(wxCommandEvent& event);
+    void onMenuStandaloneMonitor(wxCommandEvent& event);
     void onToolUpdateAll(wxCommandEvent& event);
     void onToolTest(wxCommandEvent& event);
     void onToolFind(wxCommandEvent& event);
@@ -117,6 +119,7 @@ private:
     ProxyDetailPanel* detailPanel_{nullptr};
     LogPanel* logPanel_{nullptr};
     ConfigDialog* configDialog_{nullptr};
+    StandaloneMonitorDialog* monitorDialog_{nullptr};  // Lazy, reused (hidden on close)
     wxAuiToolBar* m_toolbar{nullptr};  // Toolbar pointer for AUI management
     TrayIcon* trayIcon_{nullptr};
     sqlite3* db_;
