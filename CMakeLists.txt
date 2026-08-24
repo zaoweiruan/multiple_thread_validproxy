@@ -997,3 +997,54 @@ set_target_properties(test_region_batch_resolver PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
 )
 add_test(NAME RegionBatchResolverTest COMMAND test_region_batch_resolver)
+
+# ===== UI Automation Tests (Catch2 3.x + Windows UIA, Spec 2026-08-24) =====
+# Independent target: real GUI driven via Windows UI Automation. Does NOT link
+# wxWidgets (pure Win32/UIA/COM), so it cannot disturb existing GTest targets.
+option(BUILD_UI_TESTS "Build wxWidgets UI automation tests (real GUI)" ON)
+if(wxWidgets_FOUND AND BUILD_UI_TESTS)
+    find_package(Catch2 CONFIG QUIET
+        PATHS "${VCPKG_ROOT}/installed/x64-mingw-static/share/catch2"
+        NO_DEFAULT_PATH)
+    if(NOT Catch2_FOUND)
+        message(STATUS "Catch2 not installed (run: vcpkg install catch2:x64-mingw-static) - UI tests skipped")
+    else()
+        set(UI_FRAMEWORK_SOURCES
+            tests/ui/framework/Wait.cpp
+            tests/ui/framework/UIAutomation.cpp
+            tests/ui/framework/UIElement.cpp
+            tests/ui/framework/Application.cpp
+            tests/ui/framework/Screenshot.cpp
+            tests/ui/framework/Diagnostics.cpp
+        )
+        set(UI_TEST_SOURCES
+            tests/ui/TestMain.cpp
+            tests/ui/TestFrameworkUnit.cpp
+            tests/ui/TestDiscovery.cpp
+            tests/ui/TestMainWindow.cpp
+            tests/ui/TestSearch.cpp
+            tests/ui/TestClear.cpp
+        )
+        add_executable(UITests ${UI_FRAMEWORK_SOURCES} ${UI_TEST_SOURCES})
+        target_include_directories(UITests PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/ui)
+        target_link_libraries(UITests PRIVATE
+            Catch2::Catch2
+            uiautomationcore oleaut32 uuid
+            user32 gdi32 gdiplus shell32)
+        set_target_properties(UITests PROPERTIES
+            RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
+            RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
+            RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests)
+
+        # CTest entries for the three tagged UI suites. WORKING_DIRECTORY is
+        # the repo root: Paths::* resolve absolute paths from the module
+        # location, but test-results/ and artifacts land relative to it.
+        add_test(NAME UI_MAINWINDOW COMMAND UITests "[mainwindow]")
+        add_test(NAME UI_SEARCH     COMMAND UITests "[search]")
+        add_test(NAME UI_CLEAR      COMMAND UITests "[clear]")
+        set_tests_properties(UI_MAINWINDOW UI_SEARCH UI_CLEAR PROPERTIES
+            TIMEOUT 120
+            WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+    endif()
+endif()
