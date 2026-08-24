@@ -3,7 +3,7 @@ title: "docs: Project Plans Tracker — global plan index and progress tracker"
 type: docs
 status: maintained
 date: 2026-05-11
-updated: 2026-08-21
+updated: 2026-08-24
 ---
 
 # Project Plans Tracker
@@ -17,6 +17,9 @@ updated: 2026-08-21
 
 | 日期 | 类型 | 文档路径 | 说明 |
 |------|------|----------|------|
+| 2026-08-24 | spec | `docs/DEV-PROCESS.md` | 开发流程规范 v1.0→**v1.1**：新增「UI 自动化测试规范」章节 — 适用范围（UI 元素/窗口/事件链路变更强制随附用例；纯算法/DAO/网络层由 GTest 覆盖）；框架组成（tests/ui/framework + Test*.cpp Catch2 3.x + `UIIds.h` 唯一定位源禁硬编码选择器 + scripts 四件套 + test/ui-sandbox 沙箱自动重建）；TDD 定位先行（新控件先 --dumptree 实测再固化 UIIds.h，禁猜选择器；RED→GREEN；交付门=build-and-test.bat ALL TESTS PASSED exit 0；失败 A/B/C/D 四分类、B 类≥3 次升级评审、严禁削断言）；数据隔离红线（仅触碰 test/ui-sandbox，严禁读写 bin/worker/guindb.db 与 test/guindb.db；GUI 以真实 exe `-c` 沙箱启动，测试进程不链 wxWidgets；失败产物至 test-results/ui-artifacts）；已知限制 D5（DataView 自绘单元格断言）/D8（xray.executable 未显式写沙箱 config，存在性守卫兜底）列二期；顺带修正 §流程 step7 过期引用 todo-tracker→project-plans-tracker.md；同步更新 AGENTS.md §4.1 新增命令 #6 + INDEX.md §3 描述行 | ✅ completed |
+| 2026-08-24 | plan | `docs/plans/2026-08-24-Plan-UITestFramework-v1.0.md` | wxWidgets UI 自动化测试体系落地（承接 Spec-install-test-Framework）— 零业务代码改动，新增 UITests target（vcpkg classic 装 catch2:x64-mingw-static，manifest 偏差 D1 记录于计划）；沙箱 test/ui-sandbox 隔离生产库（exe 原地 `-c` 启动、DB 复制自 guiNDB_empty.db、关网络监控/自动订阅更新、xray 路径存在性防校验弹窗 D8）；UIA 定位 Name(窗口文本)+ClassName 兜底+PID 过滤防多实例；Task0-11：环境硬门禁→骨架→COM RAII→元素封装→进程生命周期(WM_CLOSE→Terminate)→失败截图+树dump+JUnit→--dumptree 发现固化 UIIds→三用例(mainwindow/search/clear)→bat 三件套→实跑修复循环≤5(A业务/B框架/C用例/D环境分类)→交付报告；范围裁剪=DataView 自绘内容断言列二期(D5)；验收=build-and-test.bat 一键 ALL TESTS PASSED 且 GTest 32 项不受影响 | ✅ completed |
+| 2026-08-24 | report | `docs/reports/2026-08-24-Report-UITestFramework-v1.0.md` | **UI 自动化测试体系落地交付报告** — 一键 build-and-test.bat ALL TESTS PASSED（UI 三用例 100% 3/3，ctest 1.74/1.85/1.25s）；GTest 32 项不受影响（NetworkMonitorTest 全量负载偶发失败属已知环境抖动白名单，单独复跑 7.88s 通过）；破坏性演练实证失败链路（改坏 MainWindowName → exit=42 + failure_*.png 68KB/*.txt 50KB UTF-8 树自动生成 → 还原全绿 16 assertions）；12 项交付清单、A/B/C/D 分类修复（Uia init 缺失/COM 析构顺序/PID 过滤/wofstream 中文 badbit/GUI 等号参数不解析/searchCtrl 容器定位）、二期遗留（DataView 单元格断言 D5、scripts 入库 git add -f）；偏差=bat 四件套实际平铺 `scripts/` 根而非计划的 `scripts/ui_tests/`（架构师裁决接受：随既有平铺惯例、%~dp0.. 互调无需改、gitignore 行为不变）；二期加固=沙箱 config 未显式写 xray.executable（D8 守卫经存在性检查兜底，实测两轮全绿无弹窗，建议补写显式路径）；报告修订 **v1.1**=补录架构师独立验收（ctest -N 注册 35 项含 UI 三用例 / 三用例独立复跑 3/3 / 一键端到端实跑 ALL TESTS PASSED exit 0）、bat 平铺 scripts\ 根偏差裁决（接受：随既有平铺惯例）、规范集成记录（DEV-PROCESS v1.1 + AGENTS.md §4.1 命令#6 + INDEX 同步） | ✅ completed（v1.1） |
 | 2026-08-21 | spec | `docs/specs/2026-08-21-Spec-ProxyListPanel-ColumnReorder-v1.0.md` | ProxyListPanel 列显示顺序调整（用户指定：Region / Latency ↕ / Health ↕ / Type / Host ↕ / Port / Message ↕ / Starts ↕ / Runtime ↕ / # / IndexId / Failures ↕ / Remarks）— 仅重排 `onColumnsInit` 的 AppendTextColumn 调用顺序，ProxyListModel 未动（COL_*/GetValueByRow/Compare/SetValueByRow 均基于模型列索引）；框架 Resort 时 Compare 收到模型列索引（m_sortOrder.GetColumn()=GetModelColumn()）与视觉位置解耦，排序不受影响；验证=构建 0 error + ctest 32/32 | ✅ completed |
 | 2026-08-21 | spec | `docs/specs/2026-08-21-Spec-Toolbar-MonitorProxyButton-v1.0.md` | 工具栏新增「监控代理」按钮（打开独立代理监控对话框）— 新增 ID `ID_TOOL_STANDALONE_MON` 复用 onMenuStandaloneMonitor，插入配置按钮左侧；图标 tool_monitoring_proxy_process.png 经 icons.rc 嵌入 + bin/icons 回退；验证=构建 0 error + ctest 32/32 | ✅ completed |
 | 2026-08-21 | bugfix | `docs/bugfix/2026-08-21-Bugfix-StandaloneProxy-PortExternalConfigDir-v1.0.md` | 独立代理由其它程序启动且配置文件在其它目录时无法解析监听端口 — 纳管仅双目录探测；外部程序把 standalone config 放在任意目录时文件找不到→端口恒 0；修复=新增 `ProcessInspector::extractConfigFullPath`（命令行提取含目录完整路径）+ 纳管端口解析第三步回退直读端口；权威无歧义（规避 OS 套接字查询多 inbound 端口错配，尤其 sing-box 多个 DNS inbound）；TDD 新增 `test_process_inspector` 9 用例 + CMake 注册；验证=构建 0 error + ctest 32/32 | ✅ completed |

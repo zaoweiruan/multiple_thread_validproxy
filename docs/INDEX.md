@@ -1,4 +1,4 @@
-updated: 2026-08-21
+updated: 2026-08-24
 title: "docs: project document index"
 type: meta
 status: maintained
@@ -71,7 +71,7 @@ status: maintained
 
 | # | 文件 | 说明 | 大小 |
 |---|------|------|------|
-| 1 | [`docs/plans/DEV-PROCESS.md`](./plans/DEV-PROCESS.md) | **开发流程核心规则** — "先创建计划文档、审核后再执行" 7 步工作流；LogLevel 等级规范(INFO/WARN/ERR/REPORT/DEBUG)；计划文档 frontmatter 模板 | 2.7 KB |
+| 1 | [`docs/plans/DEV-PROCESS.md`](./plans/DEV-PROCESS.md) | **开发流程核心规则** — "先创建计划文档、审核后再执行" 7 步工作流；LogLevel 等级规范(INFO/WARN/ERR/REPORT/DEBUG)；计划文档 frontmatter 模板；**v1.1 UI 自动化测试规范**(适用范围/TDD 定位先行/UIIds.h 唯一定位源/数据隔离红线/一键验收 build-and-test.bat) | 2.7 KB |
 
 > **约束**: 任何源代码修改前**必须先创建计划文档**并经过审核。详见 DEV-PROCESS.md §1–2。
 
@@ -204,6 +204,7 @@ status: maintained
 
 | 日期 | 编号 | 文件 | 类型 | 说明 |
 |------|------|------|------|------|
+| 2026-08-24 | feat | [`2026-08-24-Plan-UITestFramework-v1.0.md`](./plans/2026-08-24-Plan-UITestFramework-v1.0.md) | feat ✅ | **wxWidgets UI 自动化测试体系落地** — 零业务代码改动；新增 UITests target（Catch2 3.x vcpkg classic）+ UIA 测试框架 tests/ui/framework（COM RAII/PID 过滤/ElementFromHandle 精准绑定/失败工件采集移入 AppFixture 析构）；沙箱 test/ui-sandbox 隔离生产库；三用例 mainwindow/search/clear 注册 CTest(UI_MAINWINDOW/UI_SEARCH/UI_CLEAR)；破坏性演练实证失败截图+UTF-8 树 dump 自动生成；一键 build-and-test.bat ALL TESTS PASSED，GTest 32 项不受影响（NetworkMonitorTest 已知抖动白名单）；交付报告 [`2026-08-24-Report-UITestFramework-v1.0`](./reports/2026-08-24-Report-UITestFramework-v1.0.md) | ✅ completed |
 | 2026-08-10 | fix | [`2026-08-10-Plan-ImportProxyValidation-v1.0.md`](./plans/2026-08-10-Plan-ImportProxyValidation-v1.0.md) | fix draft | **订阅导入数据污染治理** — 私网/回环地址、非法 UUID（vmess/vless）、旧流式 SS 加密三层拦截（导入闸门 isValidProxy 扩展 / 存量清洗 deduplicateConfigErrorPhase 扩展 / 测试前 preGenerateConfigs 显式预过滤）+ utils 3 纯函数（isPublicAddress 含 172.16-31 数值判定防误伤 Cloudflare、isValidUuid 8-4-4-4-12、isSupportedSsCipher AEAD+2022-blake3 白名单）；依据报告 §4.7/§6 P1 |
 | 2026-08-03 | refactor | [`2026-08-03-Plan-CodeAudit-Optimization-Implementation-v1.0.md`](./plans/2026-08-03-Plan-CodeAudit-Optimization-Implementation-v1.0.md) | refactor ✅ | **代码审查优化实施计划** — 26 任务 5 阶段：Phase1 崩溃/UB(A1-A6) → Phase2 正确性(B+E1/E2) → Phase3 性能(D) → Phase4 低危收尾(C/E) → Phase5 规范清理(auto)；每任务含位置/变更/验收，A3 测试期望同步修正。Phase 1-4 全部落地：A1-A6 / B1-B14 / C1-C9 / D1-D8 / E1-E14（C2/C5/C8/C9/E3/E4/E8/E9b 验证为已实现），21/21 ctest 通过 | ✅ completed |
 | 2026-06-26 |  | [`./superpowers/plans/2026-06-26-batch-write-transaction-fix.md`](./superpowers/plans/2026-06-26-batch-write-transaction-fix.md) | fix | **批量写入事务安全修复** — syncDatabases()/deleteBySubId()/updateTestResultBatch() 事务包装，防止部分写入导致数据不一致 |
@@ -312,6 +313,7 @@ status: maintained
 | 12 | [`docs/reports/2026-08-05-Report-v148-vs-Current-ProxyTest-v1.0.md`](./reports/2026-08-05-Report-v148-vs-Current-ProxyTest-v1.0.md) | **v1.4.8 vs 当前版批量测试对比报告** — 同一订阅 5544（207 代理）同配置公平对比：OK 73 vs 69（16 个差异节点全为 5s 超时边界抖动）；两版均零 parse error/WARN/ERR；测试窗口 4:41→2:05（快 2.24×，DnsCache/预生成/E7/端口管理优化成果）；FAIL 均记录 Delay=-1 无遗漏 | — |
 | 13 | [`docs/reports/2026-08-07-Report-GitMasterSkill-Install-v1.0.md`](./reports/2026-08-07-Report-GitMasterSkill-Install-v1.0.md) | **git-master 技能安装报告** — AGENTS.md §6.2 路由表引用 `skill(name="git-master")` 但环境缺失；`npx skills add` 因 GitHub 直连不通失败（镜像 ghfast.top/gh-proxy.com 403、gitclone.com 404、github.moeyy.xyz 不存在）；配置 git 全局代理 `socks5://127.0.0.1:10808` 后手动 `git clone --depth 1` josiahsiegel/claude-plugin-marketplace（563 安装量）→ 复制 `plugins\git-master\skills\git-master\` 至全局技能目录（10 文件：SKILL.md 149 行 + references/ 9 文档）；当前会话不可用需重启 Kilo 生效；附代理移除命令 | — |
 | 14 | [`docs/reports/2026-08-20-Report-ProxyListModel-StatsColumns-v1.0.md`](./reports/2026-08-20-Report-ProxyListModel-StatsColumns-v1.0.md) | **ProxyListPanel Starts/Runtime/Health 三列计算逻辑提取报告（v1.1 修订）** — ①Starts=`startCountMap_[id]=ex.start_count`（rebuildMaps L68，不含运行中会话；v1.1 补充：PID 三因子匹配后崩溃重启新实例 +1 / 同实例纳管复用不 +1）；②Runtime=历史 `runtimeMap_[id]`（total_runtime_ms>0 才覆盖，保留非零）+ 实时 `runningDurations_[id]`（setRunningDurations 整体替换幂等），显示 `%lld:%02lld`（M:SS；v1.1 补充：duration_ms 含纳管前 baseline，从进程系统启动时间起算）；③Health=贝叶斯平滑 `(stable+1)/(start_count+2)`（start_count==0 → 0.0，2026-08-20 修复）+ 运行加成 `min(running/30min,1)*0.3` 封顶 1.0（仅 start_count>0 授予），显示 `%.3f`；排序：Starts/Health 与显示一致，**Runtime 排序仅比较 runtimeMap_ 历史部分（不含运行中时长，与显示不一致，候选改进，v1.1 确认仍存在）**；含数据流图与相关历史修复（2026-08-18 幂等/异步化、2026-08-20 冷启动归零、2026-08-20 PID 匹配+baseline） | — |
+| 15 | [`docs/reports/2026-08-24-Report-UITestFramework-v1.0.md`](./reports/2026-08-24-Report-UITestFramework-v1.0.md) | **UI 自动化测试体系落地交付报告** — 依据同日 Plan：零业务代码改动；一键 build-and-test.bat 实证 ALL TESTS PASSED（UI_MAINWINDOW/UI_SEARCH/UI_CLEAR，100% 3/3）+ GTest 32 项不受影响（NetworkMonitorTest 已知抖动白名单单独复跑通过）；破坏性演练 exit=42 且 fixture 析构自动生成 failure_*.png(68KB)+*.txt(50KB UTF-8 树)；12 项交付清单 + A/B/C/D 四类实施期修复记录 + 二期遗留（DataView 单元格断言、/scripts/ 入库需 git add -f、listener 职责移交说明）；**v1.1 补录**=架构师独立验收（ctest -N 注册 35 项 / 三用例复跑 3/3 / 一键端到端实跑 ALL TESTS PASSED exit 0）、bat 平铺 scripts\ 根偏差裁决（接受）、规范集成记录（DEV-PROCESS v1.1 章节 + AGENTS.md §4.1 命令 #6 + INDEX 同步）、二期加固项 xray.executable 显式化 | — |
 
 ---
 
