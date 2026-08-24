@@ -1,5 +1,6 @@
 #include "StandaloneMonitorDialog.h"
 #include "AppController.h"
+#include "Events.h"
 
 #include <wx/sizer.h>
 #include <wx/button.h>
@@ -27,6 +28,7 @@ wxBEGIN_EVENT_TABLE(StandaloneMonitorDialog, wxDialog)
     EVT_TIMER(wxID_ANY, StandaloneMonitorDialog::onRefreshTimer)
     EVT_BUTTON(wxID_CLOSE, StandaloneMonitorDialog::onCloseButton)
     EVT_CLOSE(StandaloneMonitorDialog::onCloseWindow)
+    EVT_LIST_ITEM_ACTIVATED(wxID_ANY, StandaloneMonitorDialog::onItemActivated)
 wxEND_EVENT_TABLE()
 
 StandaloneMonitorDialog::StandaloneMonitorDialog(wxWindow* parent,
@@ -84,6 +86,23 @@ void StandaloneMonitorDialog::onCloseWindow(wxCloseEvent& event) {
     // Hide instead of destroy: the dialog is reused by MainFrame.
     Show(false);
     event.Veto();
+}
+
+void StandaloneMonitorDialog::onItemActivated(wxListEvent& event) {
+    const long row = event.GetIndex();
+    if (row < 0 || !controller_) {
+        return;
+    }
+    // COL_INDEX_ID (column 0) holds the proxy's indexId verbatim.
+    const wxString indexId = list_->GetItemText(row, COL_INDEX_ID);
+    if (indexId.IsEmpty()) {
+        return;
+    }
+    // Hand off to MainFrame (the dialog's parent), which owns ProxyListPanel
+    // and will select + scroll the proxy into view.  The dialog is hidden,
+    // not destroyed, so posting to the parent window is safe.
+    wxQueueEvent(GetParent(), new LocateProxyEvent(indexId.ToStdString()));
+    Show(false);
 }
 
 void StandaloneMonitorDialog::refreshRows() {

@@ -308,15 +308,9 @@ void AppController::loadProxiesAsync(const std::string& subId, wxEvtHandler* han
         sqlite3_exec(readerDb, "PRAGMA journal_size_LIMIT=1073741824;", nullptr, nullptr, nullptr);
 
         db::models::ProfileitemDAO dao(readerDb);
-        std::vector<db::models::Profileitem> allProxies = dao.getAll();
-
-        std::vector<db::models::Profileitem> proxies;
-        if (subIdCopy.empty()) {
-            proxies = std::move(allProxies);
-        } else {
-            std::copy_if(allProxies.begin(), allProxies.end(), std::back_inserter(proxies),
-                [&subIdCopy](const db::models::Profileitem& p) { return p.subid == subIdCopy; });
-        }
+        // Post the FULL unfiltered profile table: the panel caches it and
+        // derives each subscription's subset in memory (instant switching).
+        std::vector<db::models::Profileitem> proxies = dao.getAll();
 
         db::models::ProfileExItemDAO exDao(readerDb);
         std::vector<db::models::ProfileExItem> exItems = exDao.getAll();

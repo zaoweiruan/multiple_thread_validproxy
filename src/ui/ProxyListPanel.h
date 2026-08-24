@@ -42,6 +42,10 @@ public:
                      const std::string& subId);
     void refreshResults();
     void reloadFromDatabase();
+    // Instant in-memory subscription switch (no DB access, same filter
+    // pattern as filterBySearch).  Falls back to reloadFromDatabase()
+    // while the data cache has not been populated yet (startup).
+    void applySubscriptionFilter(const std::string& subId);
     void selectProxyByIndexId(const std::string& indexId);
     void filterBySearch(const wxString& query);
     bool HasSelection() const;
@@ -99,6 +103,9 @@ private:
     std::vector<db::models::ProfileExItem> exItems_;
     std::vector<db::models::Profileitem> allProxies_;  // Unfiltered list for search
     std::string currentSubId_;  // Track current subscription filter for reload
+    // True once a load path has populated allProxies_/exItems_/model maps;
+    // gates the in-memory fast path of applySubscriptionFilter().
+    bool cacheReady_ = false;
 
     struct SortState {
         int column = -1;

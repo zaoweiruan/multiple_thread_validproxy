@@ -108,6 +108,9 @@ ctest -V
 # 5. 运行指定前缀的单项测试
 ctest -R DedupTest -V
 
+# 6. UI 自动化测试一键验收（UI 相关变更交付前必须全绿，规范见 docs/DEV-PROCESS.md）
+.\scripts\build-and-test.bat
+
 ```
 
 ### 4.2 调试命令 (PowerShell 语法)

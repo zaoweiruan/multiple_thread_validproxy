@@ -46,6 +46,7 @@ class ProxyListLoadedEvent;
 class SubListLoadedEvent;
 class StandaloneProxyEvent;
 class RunningDurationsLoadedEvent;
+class LocateProxyEvent;
 
 wxDECLARE_EVENT(wxEVT_PROXY_TEST_PROGRESS, ProxyTestProgressEvent);
 wxDECLARE_EVENT(wxEVT_LOG_MESSAGE, LogMessageEvent);
@@ -58,6 +59,7 @@ wxDECLARE_EVENT(wxEVT_PROXY_LIST_LOADED, ProxyListLoadedEvent);
 wxDECLARE_EVENT(wxEVT_SUB_LIST_LOADED, SubListLoadedEvent);
 wxDECLARE_EVENT(wxEVT_STANDALONE_PROXY, StandaloneProxyEvent);
 wxDECLARE_EVENT(wxEVT_RUNNING_DURATIONS_LOADED, RunningDurationsLoadedEvent);
+wxDECLARE_EVENT(wxEVT_LOCATE_PROXY, LocateProxyEvent);
 
 // ---------------------------------------------------------------
 // ProxyTestProgressEvent — sent during batch testing
@@ -313,6 +315,24 @@ private:
     std::string indexId_, address_, error_;
     int socksPort_;
     bool started_;
+};
+
+// ---------------------------------------------------------------
+// LocateProxyEvent — sent when a row in the standalone monitor
+// dialog is double-clicked, requesting MainFrame to locate (select
+// + scroll into view) the corresponding proxy in ProxyListPanel.
+// ---------------------------------------------------------------
+class LocateProxyEvent : public wxEvent {
+public:
+    explicit LocateProxyEvent(const std::string& indexId = "")
+        : wxEvent(0, wxEVT_LOCATE_PROXY), indexId_(indexId) {}
+
+    wxEvent* Clone() const override { return new LocateProxyEvent(*this); }
+
+    std::string getIndexId() const { return indexId_; }
+
+private:
+    std::string indexId_;
 };
 
 #endif // UI_EVENTS_H

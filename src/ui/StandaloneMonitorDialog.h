@@ -29,6 +29,8 @@ private:
     void onCloseButton(wxCommandEvent& event);
     void onCloseWindow(wxCloseEvent& event);
     void refreshRows();
+    // Double-click a row → locate the proxy in ProxyListPanel and hide.
+    void onItemActivated(wxListEvent& event);
 
     AppController* controller_;
     wxListCtrl* list_;

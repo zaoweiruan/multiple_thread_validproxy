@@ -119,6 +119,7 @@ void ProxyListPanel::updateProxyList(const std::vector<db::models::Profileitem>&
                                       const std::string& subId) {
     currentSubId_ = subId;
     allProxies_ = proxies;
+    cacheReady_ = true;
 
     sortState_.column = -1;
     sortState_.direction = SortDirection::None;
@@ -157,34 +158,23 @@ void ProxyListPanel::loadProxies(std::vector<db::models::Profileitem> proxies,
 }
 
 // -------------------------------------------------------------------
-// Accept pre-fetched proxy data and pre-built maps (no DB read, no
-// O(N) map rebuild on the UI thread).
+// Accept pre-fetched data and pre-built maps (no DB read, no O(N) map
+// rebuild on the UI thread).  The async reader posts the FULL unfiltered
+// profile table; it is kept as the panel cache and the visible subset is
+// derived through applySubscriptionFilter() — the same in-memory path
+// used for instant subscription switching.
 // -------------------------------------------------------------------
 void ProxyListPanel::loadProxies(std::vector<db::models::Profileitem> proxies,
                                   std::vector<db::models::ProfileExItem> exItems,
                                   utils::ProxyListMaps maps,
                                   const std::string& subId) {
     currentSubId_ = subId;
-    allProxies_ = proxies;
-    proxies_ = std::move(proxies);
+    allProxies_ = std::move(proxies);
     exItems_ = std::move(exItems);
-
-    sortState_.column = -1;
-    sortState_.direction = SortDirection::None;
-
-    // Set data pointers without triggering rebuildMaps(); the maps are
-    // already built in the background thread.
-    model_->setDataWithoutRebuild(&proxies_, &exItems_);
     model_->setMaps(std::move(maps));
-    model_->Reset(0);
-    model_->Reset(static_cast<unsigned int>(proxies_.size()));
-    model_->detectIdOffset();
+    cacheReady_ = true;
 
-    if (!proxies_.empty()) {
-        if (!listCtrl_->GetSelection().IsOk()) {
-            selectFirstProxy();
-        }
-    }
+    applySubscriptionFilter(subId);
 }
 
 // -------------------------------------------------------------------
@@ -223,6 +213,50 @@ void ProxyListPanel::refreshResults() {
 void ProxyListPanel::reloadFromDatabase() {
     if (controller_) {
         controller_->loadProxiesAsync(currentSubId_, this);
+    }
+}
+
+// -------------------------------------------------------------------
+// Instant subscription switch: filter the cached full list in memory
+// (same pattern as filterBySearch) instead of re-reading the entire
+// database on every click.  The model lookup maps are keyed by indexId
+// and unaffected by the subid filter, so no rebuildMaps() is needed —
+// only the non-owning pointers must be re-pointed at the reassigned
+// vectors before resetting the view.
+// -------------------------------------------------------------------
+void ProxyListPanel::applySubscriptionFilter(const std::string& subId) {
+    if (!cacheReady_) {
+        // Cache not populated yet (startup) — fall back to async DB reload.
+        reloadFromDatabase();
+        return;
+    }
+
+    currentSubId_ = subId;
+    if (subId.empty()) {
+        proxies_ = allProxies_;  // Restore unfiltered list
+    } else {
+        proxies_.clear();
+        for (const db::models::Profileitem& p : allProxies_) {
+            if (p.subid == subId) {
+                proxies_.push_back(p);
+            }
+        }
+    }
+
+    sortState_.column = -1;
+    sortState_.direction = SortDirection::None;
+
+    model_->setDataWithoutRebuild(&proxies_, &exItems_);
+    // Double-Reset workaround (see filterBySearch): Reset(N) alone may keep
+    // stale m_list entries in some wxWidgets versions.
+    model_->Reset(0);
+    model_->Reset(static_cast<unsigned int>(proxies_.size()));
+    model_->detectIdOffset();
+
+    if (!proxies_.empty()) {
+        if (!listCtrl_->GetSelection().IsOk()) {
+            selectFirstProxy();
+        }
     }
 }
 

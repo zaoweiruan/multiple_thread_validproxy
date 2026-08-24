@@ -228,6 +228,15 @@ MainFrame::MainFrame(const config::AppConfig& cfg, sqlite3* db)
         evt.Skip();
     });
 
+    // ── Locate proxy from standalone monitor dialog double-click ──
+    // The dialog posts LocateProxyEvent (carrying the proxy indexId); select
+    // and scroll it into view in ProxyListPanel.  The dialog hides itself.
+    Bind(wxEVT_LOCATE_PROXY, [this](LocateProxyEvent& evt) {
+        if (proxyPanel_) {
+            proxyPanel_->selectProxyByIndexId(evt.getIndexId());
+        }
+    });
+
     // ── Subscription right-click Test ────────────────────────────
     Bind(wxEVT_SUBSCRIPTION_TEST, &MainFrame::onTestSubscription, this);
 
@@ -269,10 +278,12 @@ MainFrame::MainFrame(const config::AppConfig& cfg, sqlite3* db)
 // Bind subscription selection to filter proxy list
       Bind(wxEVT_SUBSCRIPTION_SELECTED, [this](SubscriptionSelectedEvent& evt) {
           std::string subId = evt.getSubId();
-          if (proxyPanel_ && controller_) {
-              controller_->loadProxiesAsync(subId, this);
+          if (proxyPanel_) {
+              // Instant in-memory switch from the panel cache (no DB read);
+              // falls back to an async reload while the cache is not ready.
+              proxyPanel_->applySubscriptionFilter(subId);
           }
-          setStatusText(0, "Loading subscription: " + wxString(subId));
+          setStatusText(0, "Loaded subscription: " + wxString(subId));
       });
 
 // ── Async proxy list loaded ───────────────────────────────────

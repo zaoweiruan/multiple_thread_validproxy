@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites>
+  <testsuite name="UITests.exe" errors="0" failures="0" skipped="0" tests="25" hostname="tbd" time="5.759" timestamp="2026-08-24T03:47:52Z">
+    <properties>
+      <property name="random-seed" value="2320109182"/>
+    </properties>
+    <testcase classname="UITests.exe.global" name="waitFor returns true immediately" time="0.000" status="run"/>
+    <testcase classname="UITests.exe.global" name="sandbox environment is prepared" time="0.000" status="run"/>
+    <testcase classname="UITests.exe.global" name="waitFor times out with bounded polls" time="0.134" status="run"/>
+    <testcase classname="UITests.exe.global" name="Application starts and shows main window" time="0.728" status="run"/>
+    <testcase classname="UITests.exe.global" name="dump real main window control tree" time="2.384" status="run"/>
+    <testcase classname="UITests.exe.global" name="Search box accepts and echoes text" time="1.269" status="run"/>
+    <testcase classname="UITests.exe.global" name="Log panel clear button invokes" time="1.242" status="run"/>
+    <system-out/>
+    <system-err/>
+  </testsuite>
+</testsuites>
