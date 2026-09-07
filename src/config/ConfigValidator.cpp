@@ -55,6 +55,12 @@ ConfigValidator::ValidationResult ConfigValidator::validate(const AppConfig& con
         }
     }
 
+    if (config.standalone_pool.enabled) {
+        if (config.standalone_pool.socksPort <= 0 || config.standalone_pool.apiPort <= 0) {
+            result.warnings.push_back("standalone_pool.enabled but socksPort/apiPort invalid");
+        }
+    }
+
     return result;
 }
 

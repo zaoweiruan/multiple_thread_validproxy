@@ -4,6 +4,7 @@
 #include "Logger.h"
 #include "Utils.h"
 #include "MainFrame.h"
+#include "TestOnlineResultDialog.h"
 
 #include <wx/sizer.h>
 #include <wx/dataview.h>
@@ -29,14 +30,18 @@ enum {
     ID_CONTEXT_BATCH_RESOLVE_REGION = wxID_HIGHEST + 404,
     ID_CONTEXT_REFRESH        = wxID_HIGHEST + 405,
     ID_HISTORY_TIMER          = wxID_HIGHEST + 406,
+    ID_CONTEXT_ADD_TO_POOL    = wxID_HIGHEST + 407,
+    ID_CONTEXT_TEST_ONLINE_PROXIES = wxID_HIGHEST + 408,
 };
 
 // -------------------------------------------------------------------
 wxBEGIN_EVENT_TABLE(ProxyListPanel, wxPanel)
     EVT_DATAVIEW_ITEM_CONTEXT_MENU(wxID_ANY, ProxyListPanel::onContextMenu)
     EVT_MENU(ID_CONTEXT_TEST_PROXY, ProxyListPanel::onTestProxy)
+    EVT_MENU(ID_CONTEXT_TEST_ONLINE_PROXIES, ProxyListPanel::onTestOnlineProxies)
     EVT_MENU(ID_CONTEXT_EXPORT_SHARE, ProxyListPanel::onExportShareLink)
     EVT_MENU(ID_CONTEXT_START_PROXY, ProxyListPanel::onStartProxy)
+    EVT_MENU(ID_CONTEXT_ADD_TO_POOL, ProxyListPanel::onAddToPool)
     EVT_MENU(ID_CONTEXT_RESOLVE_REGION, ProxyListPanel::onResolveRegion)
     EVT_MENU(ID_CONTEXT_BATCH_RESOLVE_REGION, ProxyListPanel::onBatchResolveRegion)
     EVT_MENU(ID_CONTEXT_REFRESH, ProxyListPanel::onRefreshProxyList)
@@ -94,6 +99,7 @@ ProxyListPanel::ProxyListPanel(wxWindow* parent, AppController* controller,
     Bind(wxEVT_STANDALONE_PROXY, &ProxyListPanel::onStandaloneProxyEvent, this);
     Bind(wxEVT_RUNNING_DURATIONS_LOADED, &ProxyListPanel::onRunningDurationsLoaded, this);
     Bind(wxEVT_DATAVIEW_COLUMN_HEADER_CLICK, &ProxyListPanel::onColumnHeaderClick, this);
+    Bind(wxEVT_TEST_ONLINE_PROXIES, &ProxyListPanel::onTestOnlineProxiesEvent, this);
 
     // Double-click to start proxy
     listCtrl_->Bind(wxEVT_DATAVIEW_ITEM_ACTIVATED, [this](wxDataViewEvent&) {
@@ -405,6 +411,7 @@ void ProxyListPanel::onContextMenu(wxDataViewEvent& event) {
 
     wxMenu menu;
     menu.Append(ID_CONTEXT_TEST_PROXY, "测试此代理");
+    menu.Append(ID_CONTEXT_TEST_ONLINE_PROXIES, "测试在线代理");
     menu.Append(ID_CONTEXT_EXPORT_SHARE, "有效代理分享");
     menu.AppendSeparator();
     menu.Append(ID_CONTEXT_RESOLVE_REGION, "解析地区");
@@ -412,7 +419,15 @@ void ProxyListPanel::onContextMenu(wxDataViewEvent& event) {
     menu.AppendSeparator();
     menu.Append(ID_CONTEXT_REFRESH, "刷新");
     menu.AppendSeparator();
+    // Standalone (single-process) proxy start.
     menu.Append(ID_CONTEXT_START_PROXY, "开启代理");
+    // Dedicated pool entry point: when the standalone pool feature is enabled,
+    // add the selected proxy to the pool (auto-starts the pool if needed). This
+    // is the discoverable "add proxy to pool" action from the proxy list.
+    bool poolEnabled = (controller_ != nullptr && controller_->isProxyPoolEnabled());
+    if (poolEnabled) {
+        menu.Append(ID_CONTEXT_ADD_TO_POOL, "加入代理池");
+    }
     PopupMenu(&menu);
     event.Skip();
 }
@@ -449,6 +464,55 @@ void ProxyListPanel::onTestProxy(wxCommandEvent& event) {
 
     controller_->testSingleProxyAsync(indexId, this);
     (void)event; // id dispatched in menu
+}
+
+// -------------------------------------------------------------------
+void ProxyListPanel::onTestOnlineProxies(wxCommandEvent& WXUNUSED(event)) {
+    if (!controller_) return;
+
+    // Sync toolbar Cancel button state from controller before re-entry check
+    {
+        wxWindow* topLevel = wxGetTopLevelParent(this);
+        if (topLevel && topLevel != this) {
+            static_cast<MainFrame*>(topLevel)->syncToolbarState();
+        }
+    }
+
+    if (controller_->isRunning()) {
+        wxMessageBox(L"操作进行中，请等待完成后再试", L"操作进行中", wxOK | wxICON_WARNING);
+        return;
+    }
+
+    // Test connectivity of all currently-running standalone proxy processes.
+    controller_->testOnlineProxiesAsync(this);
+}
+
+// -------------------------------------------------------------------
+void ProxyListPanel::onTestOnlineProxiesEvent(TestOnlineProxiesEvent& event) {
+    // Refresh proxy list to reflect the latest test results from the history table.
+    refreshResults();
+
+    std::vector<std::string> failedIndexIds = event.takeFailedIndexIds();
+    const int total = event.getTotal();
+    const int success = event.getSuccess();
+    const int failed = event.getFailed();
+
+    wxString msg;
+    if (total <= 0) {
+        msg = L"当前没有正在运行的独立代理进程。";
+        wxMessageBox(msg, L"测试在线代理", wxOK | wxICON_INFORMATION);
+        return;
+    }
+
+    msg = wxString::Format(L"在线代理测试完成：共 %d，成功 %d，失败 %d。", total, success, failed);
+    if (failed > 0) {
+        // Show every failed proxy in a scrollable dialog. A single click on a
+        // failed row locates it in the Subscription + Proxy List panels.
+        TestOnlineResultDialog dlg(this, failedIndexIds, total, success, failed);
+        dlg.ShowModal();
+    } else {
+        wxMessageBox(msg, L"测试在线代理", wxOK | wxICON_INFORMATION);
+    }
 }
 
 // -------------------------------------------------------------------
@@ -551,6 +615,24 @@ void ProxyListPanel::onStartProxy(wxCommandEvent& event) {
 
     if (!controller_) return;
 
+    // When the standalone proxy POOL is running, a double-click injects the
+    // proxy as a dynamic member (tag px-<indexId>) instead of launching a
+    // separate standalone xray process. Unvalidated proxies are still accepted
+    // — the pool's health evaluator surfaces them as dead.
+    if (controller_->isProxyPoolRunning()) {
+        bool ok = controller_->injectProxyToPool(indexId);
+        if (ok) {
+            Logger::write("[UI] Injected proxy into pool: " + indexId, LogLevel::REPORT);
+        } else {
+            Logger::write("[UI] Pool inject failed: " + indexId, LogLevel::ERR);
+            wxMessageDialog dlg(this, "注入代理池失败，请确认代理池正在运行。",
+                                "代理池", wxOK | wxICON_WARNING);
+            dlg.CentreOnScreen();
+            dlg.ShowModal();
+        }
+        return;
+    }
+
     // Reject a duplicate start before any port check: if a standalone proxy
     // using the same derived config file is already running, there is no point
     // in resolving ports for it (it would be refused right after anyway).
@@ -591,6 +673,7 @@ void ProxyListPanel::onStartProxy(wxCommandEvent& event) {
     int actualPort = desiredPort;
 
     if (!utils::isPortAvailable(desiredPort)) {
+        utils::logPortOccupants(desiredPort);
         // Port occupied — find the next free port
         int freePort = utils::findAvailablePort(desiredPort + 1);
         if (freePort < 0) {
@@ -778,4 +861,52 @@ void ProxyListPanel::selectFirstProxy() {
                                    delay, message, failures, proxy->remarks);
         wxQueueEvent(topLevel, selEvt.Clone());
     }
+}
+
+// -------------------------------------------------------------------
+// onAddToPool — context-menu "加入代理池". Adds the selected proxy to the
+// standalone proxy pool. If the pool is not running, it is auto-started first
+// so the entry point is always usable from the proxy list. This is the
+// dedicated "add proxy to pool" action surfaced from the right-click menu.
+// -------------------------------------------------------------------
+void ProxyListPanel::onAddToPool(wxCommandEvent& event) {
+    wxDataViewItem item = listCtrl_->GetSelection();
+    if (!item.IsOk()) {
+        wxMessageDialog dlg(this, "请先在列表中选择一个代理。", "代理池", wxOK | wxICON_INFORMATION);
+        dlg.CentreOnScreen();
+        dlg.ShowModal();
+        return;
+    }
+    unsigned int viewRow = model_->GetRow(item);
+    if (viewRow == static_cast<unsigned int>(-1)) return;
+    std::string indexId = model_->getIndexIdAtRow(viewRow);
+    if (indexId.empty()) return;
+    if (!controller_) return;
+
+    // Auto-start the pool if it is not already running, so this entry point can
+    // be used even when the pool has never been started.
+    if (!controller_->isProxyPoolRunning()) {
+        if (!controller_->startProxyPool()) {
+            wxMessageDialog dlg(this, "代理池启动失败，无法加入代理。请确认 xray 可执行文件已配置且端口可用。",
+                                "代理池", wxOK | wxICON_WARNING);
+            dlg.CentreOnScreen();
+            dlg.ShowModal();
+            return;
+        }
+    }
+    bool ok = controller_->injectProxyToPool(indexId);
+    if (ok) {
+        Logger::write("[UI] Added proxy to pool via context menu: " + indexId, LogLevel::REPORT);
+        wxMessageDialog dlg(this, "已加入代理池：" + wxString(indexId.c_str(), wxConvUTF8),
+                            "代理池", wxOK | wxICON_INFORMATION);
+        dlg.CentreOnScreen();
+        dlg.ShowModal();
+    } else {
+        Logger::write("[UI] Pool inject failed (context menu): " + indexId, LogLevel::ERR);
+        wxMessageDialog dlg(this, "加入代理池失败，请确认代理池正在运行。",
+                            "代理池", wxOK | wxICON_WARNING);
+        dlg.CentreOnScreen();
+        dlg.ShowModal();
+    }
+    (void)event;
 }

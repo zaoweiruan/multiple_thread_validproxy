@@ -28,6 +28,11 @@ tool_config_png       RCDATA "docs/design/ui/icon/png/tool_config.png"
 tool_pipeline_png     RCDATA "docs/design/ui/icon/png/tool_pipeline.png"
 tool_monitoring_proxy_process_png RCDATA "docs/design/ui/icon/png/tool_monitoring_proxy_process.png"
 
+// ── Floating-widget background (circular orb) ───────────────────
+// Loaded by StandaloneFloatingWidget via ToolbarIcons::loadPngFromResource
+// (resource name = basename + "_png" = "float_monitor_process_png").
+float_monitor_process_png  RCDATA "docs/design/ui/icon/png/float_monitor_process_1.png"
+
 // ── Application / frame icon (native ICON group) ────────────────────
 // Creates both RT_ICON (raw DIB data per resolution) and RT_GROUP_ICON
 // (directory of available resolutions) so Windows / wxWidgets can load

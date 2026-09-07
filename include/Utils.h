@@ -29,6 +29,11 @@ namespace utils {
     bool isPrintableAscii(const std::string& s);
     bool isPortAvailable(int port);
     int findAvailablePort(int startPort, int maxAttempts = 100);
+    // Diagnostics: log every TCP endpoint (pid + state + process image name)
+    // currently holding `port`. Used to capture ground truth when a standalone-
+    // proxy start is blocked by a "port occupied" check (see 2026-08-31 port
+    // investigation). Safe to call from any thread.
+    void logPortOccupants(int port);
     bool isPublicAddress(const std::string& address);
     bool isValidUuid(const std::string& id);
     bool isSupportedSsCipher(const std::string& method);

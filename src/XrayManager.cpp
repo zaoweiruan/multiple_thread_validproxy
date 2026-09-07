@@ -11,39 +11,49 @@ XrayManager* XrayManager::instance_ = nullptr;
 std::mutex XrayManager::instanceMutex_;
 
 /**
- * Poll the API port of a newly-started Xray instance until it accepts
- * connections (bounded up to ~5 s in 100 ms steps).
- * Returns true on readiness, false on timeout.
+ * Bounded, crash-aware readiness check for a newly-started Xray instance.
+ *
+ * The wait SUCCEEDS as soon as the gRPC API port accepts a TCP connection
+ * (which also implies the process is alive), so a healthy instance is reported
+ * ready immediately instead of burning the full timeout.
+ *
+ * The wait FAILS immediately (without waiting out the timeout) if the backing
+ * process has already exited — i.e. a startup flash-crash — so we never sit
+ * polling a port that will never open.
+ *
+ * If neither happens within timeoutMs, it returns false (bounded worst case).
  */
-static bool pollApiPortReady(int apiPort, int timeoutMs = 5000, int stepMs = 100) {
+static constexpr int INSTANCE_START_TIMEOUT_MS = 5000;
+static constexpr int INSTANCE_START_STEP_MS = 100;
+
+static bool waitInstanceReady(const XrayInstance* inst, int apiPort,
+                               int timeoutMs = INSTANCE_START_TIMEOUT_MS,
+                               int stepMs = INSTANCE_START_STEP_MS) {
     struct sockaddr_in addr = {};
     addr.sin_family = AF_INET;
     addr.sin_addr.s_addr = inet_addr("127.0.0.1");
     addr.sin_port = htons(static_cast<uint16_t>(apiPort));
 
     for (int elapsed = 0; elapsed < timeoutMs; elapsed += stepMs) {
+        // Crash-aware: if the Xray process has already exited (startup
+        // flash-crash), do NOT keep waiting for an API port that will never
+        // open — abort now instead of burning the rest of the timeout.
+        // isRunning() also logs the death details (exit code + stderr tail) once.
+        if (inst != nullptr && !inst->isRunning()) {
+            Logger::write("[XrayManager] instance process exited before API port became ready (api="
+                          + std::to_string(apiPort) + ")", LogLevel::ERR);
+            return false;
+        }
+
         SOCKET sock = socket(AF_INET, SOCK_STREAM, 0);
-        if (sock == INVALID_SOCKET) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<int64_t>(stepMs)));
-            continue;
+        if (sock != INVALID_SOCKET) {
+            int rc = connect(sock, reinterpret_cast<const sockaddr*>(&addr), sizeof(addr));
+            closesocket(sock);
+            if (rc == 0) {
+                return true;  // API port ready (process confirmed alive above)
+            }
         }
-
-        int rc = connect(sock, reinterpret_cast<const sockaddr*>(&addr), sizeof(addr));
-        closesocket(sock);
-
-        if (rc == 0) {
-            return true;
-        }
-
-        int err = WSAGetLastError();
-        if (err != WSAEWOULDBLOCK && err != WSAEINPROGRESS) {
-            // WSAECONNREFUSED (10061), WSAETIMEDOUT (10060), or similar
-            // — port not yet listening, retry after a short sleep.
-            std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<int64_t>(stepMs)));
-            continue;
-        }
-
-        // Asynchronous in-progress — retry without sleeping.
+        std::this_thread::sleep_for(std::chrono::milliseconds(stepMs));
     }
     return false;
 }
@@ -128,7 +138,7 @@ int XrayManager::start(int count, int startPort, int apiPort) {
 
         std::unique_ptr<XrayInstance> instance = std::make_unique<XrayInstance>(xrayPath_, socksPort, apiPortAddr, configDir_);
         if (instance->start()) {
-            if (!pollApiPortReady(apiPortAddr)) {
+            if (!waitInstanceReady(instance.get(), apiPortAddr)) {
                 Logger::write("XrayManager: API port " + std::to_string(apiPortAddr)
                               + " not ready within timeout for instance " + std::to_string(i), LogLevel::ERR);
                 instance->stop();
@@ -146,8 +156,9 @@ int XrayManager::start(int count, int startPort, int apiPort) {
         }
     }
     
-    // Commit started instances under lock. XrayInstance::start() (2s sleep)
-    // runs above without instancesMutex_ held; only the final move-in is locked.
+    // Commit started instances under lock. XrayInstance::start() (short spawn-grace
+    // poll) and waitInstanceReady (bounded, crash-aware API readiness check) run
+    // above without instancesMutex_ held; only the final move-in is locked.
     {
         std::lock_guard<std::mutex> lock(instancesMutex_);
         for (std::unique_ptr<XrayInstance>& inst : startedInstances) {
@@ -210,10 +221,10 @@ bool XrayManager::evaluateInstanceHealth(int apiPort) {
     // Phase 2 — relaunch with the original config. The same ports yield the
     // same config file path (configDir + "/xray_config_<socksPort>.json"),
     // which XrayInstance::start() regenerates via createConfigFile().
-    // start() sleeps ~2s, so it must NOT run under instancesMutex_.
+    // start() + waitInstanceReady (bounded, crash-aware) must NOT run under instancesMutex_.
     std::unique_ptr<XrayInstance> replacement =
         std::make_unique<XrayInstance>(xrayPath_, socksPort, apiPort, configDir_);
-    if (replacement->start() && pollApiPortReady(apiPort)) {
+    if (replacement->start() && waitInstanceReady(replacement.get(), apiPort)) {
         Logger::write("[XrayManager][evaluateInstanceHealth] relaunched instance with original config (socks=" +
                       std::to_string(socksPort) + ", api=" + std::to_string(apiPort) + ")", LogLevel::WARN);
         std::lock_guard<std::mutex> lock(instancesMutex_);

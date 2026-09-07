@@ -134,6 +134,43 @@ bool SubscriptionListModel::SetValueByRow(const wxVariant& variant, unsigned int
 }
 
 // -------------------------------------------------------------------
+// Convert a view row to the internal data index (compensates the 1-based
+// ID offset bug in some wxWidgets builds). Mirrors ProxyListModel.
+// -------------------------------------------------------------------
+unsigned int SubscriptionListModel::getDataIndex(unsigned int viewRow) const {
+    wxDataViewItem item = GetItem(viewRow);
+    unsigned int id = static_cast<unsigned int>(
+        reinterpret_cast<wxUIntPtr>(item.GetID()));
+    if (!item.IsOk()) {
+        Logger::write("[DIAG] SubscriptionListModel::getDataIndex("
+                      + std::to_string(viewRow)
+                      + "): GetItem returned INVALID item!",
+                      LogLevel::WARN);
+        return id;
+    }
+    // Compensate for 1-based ID bug in some wxWidgets builds
+    if (id >= idOffset_) {
+        id -= idOffset_;
+    }
+    return id;
+}
+
+// -------------------------------------------------------------------
+int SubscriptionListModel::findRowBySubId(const std::string& subId) const {
+    if (!subscriptions_) return -1;
+
+    unsigned int count = GetCount();
+    for (unsigned int viewRow = 0; viewRow < count; ++viewRow) {
+        unsigned int dataIdx = getDataIndex(viewRow);
+        if (dataIdx < subscriptions_->size() &&
+            (*subscriptions_)[dataIdx].id == subId) {
+            return static_cast<int>(viewRow);
+        }
+    }
+    return -1;
+}
+
+// -------------------------------------------------------------------
 int SubscriptionListModel::Compare(const wxDataViewItem& item1,
                                   const wxDataViewItem& item2,
                                   unsigned int col, bool ascending) const {

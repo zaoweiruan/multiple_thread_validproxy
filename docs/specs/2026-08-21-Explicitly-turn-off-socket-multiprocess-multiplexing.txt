@@ -1,0 +1,119 @@
+# 禁止多进程绑定相同IP:Port（禁用端口复用）
+核心：**不要设置 `SO_REUSEADDR=1`**，Windows只要不开启这个选项，跨进程bind同一个`IP+Port`就会直接返回 `EADDRINUSE(WSAEADDRINUSE)`，拒绝绑定。
+
+> Windows 的坑：部分语言/库/框架**默认偷偷开启 SO_REUSEADDR**，你要主动关掉。
+
+## 1、C/C++ 原生socket
+### ❌错误（开启复用，允许多进程绑定）
+```cpp
+int opt = 1;
+setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, (char*)&opt, sizeof(opt)); 
+bind(fd, ...);
+```
+
+### ✅正确：关闭复用，强制独占端口
+```cpp
+// opt=0，关闭SO_REUSEADDR
+int opt = 0;
+setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, (char*)&opt, sizeof(opt));
+bind(fd, ...);
+```
+> ⚠️必须在`bind()`**之前调用setsockopt**，bind之后设置完全无效。
+
+> 注意：Windows没有`SO_REUSEPORT`，不要使用该宏。Linux如果不需要多进程负载均衡，也不要设置`SO_REUSEPORT`。
+
+---
+
+## 2、各语言/框架常见坑（很多库默认开REUSEADDR）
+### Go
+`net.Listen` 在Windows上**默认开启SO_REUSEADDR**！会出现多进程监听同一端口。
+需要用 `syscall` 手动关闭：
+```go
+lcfg := net.ListenConfig{
+	Control: func(network, address string, c syscall.RawConn) error {
+		return c.Control(func(fd uintptr) {
+			// 设置 SO_REUSEADDR = 0
+			syscall.SetsockoptInt(int(fd), syscall.SOL_SOCKET, syscall.SO_REUSEADDR, 0)
+		})
+	},
+}
+ln, err := lcfg.Listen(context.Background(), "tcp", "0.0.0.0:8080")
+```
+
+### Python socket
+```python
+import socket
+s = socket.socket()
+# s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1) # ❌注释/删掉这行！
+s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 0) # ✅显式关闭
+s.bind(("0.0.0.0",8080))
+s.listen()
+```
+
+### libevent / libuv / Boost.Asio
+很多网络库默认打开`SO_REUSEADDR`，需要查找对应选项，显式置0。
+Boost.Asio示例片段：
+```cpp
+acceptor.set_option(boost::asio::socket_base::reuse_address(false));
+```
+
+---
+
+# 3、已经被别人开启复用，系统层面能不能全局禁止？
+✅ **Windows：没有系统全局开关**。SO_REUSEADDR是每个socket的属性，由应用程序自己设置。内核层面无法强制全局禁用。
+> 只要进程自己调用 `setsockopt(SO_REUSEADDR,1)`，内核就允许它绑定。操作系统没有开关拦截。
+
+✅ Linux：
+- `SO_REUSEADDR` 每socket可控；
+- `/proc/sys/net/ipv4/tcp_reuseaddr` 是针对TIME‑WAIT端口复用，**不能阻止SO_REUSEPORT多进程监听**。
+> Linux要禁止多进程同端口监听：不要设置`SO_REUSEPORT`即可。
+
+> 👉关键点：**这是应用层socket选项行为，不是操作系统全局策略。只能改代码，不能靠注册表/netsh直接锁死端口独占。**
+
+## 4、如何检测一个监听socket是否开启了REUSEADDR？
+Windows没有简单netstat查看socket选项，需要工具：
+- Sysinternals **TcpView**：只能看PID、端口，看不到socket选项。
+- 使用 `livekd/windbg` 内核调试查看socket结构（非常麻烦）。
+> 最实用：看源码，确认bind前是否设置SO_REUSEADDR=1。
+
+## 5、端口独占的额外加固手段（防止多进程抢端口）
+即使关闭`SO_REUSEADDR`，也要注意边界场景：
+
+1. **0.0.0.0和127.0.0.1不是隔离的**
+进程A bind `0.0.0.0:8080`，不开复用；进程B bind `127.0.0.1:8080` →依然报WSAEADDRINUSE，这点Windows/Linux行为一致。
+
+2. 如果想要“本机只有我一个程序能占用这个端口”
+    - ① bind前关闭`SO_REUSEADDR`
+    - ② bind失败直接退出，不要忽略错误；
+    - ③ 可选方案：使用**互斥体Mutex（Windows）**做进程单实例，在bind之前先抢占命名互斥体。
+> Mutex是应用层单实例保护，可以防止启动第二个实例，弥补socket层的漏洞。
+
+### Windows C++命名互斥体简单示例（进程单实例保护）
+```cpp
+HANDLE hMutex = CreateMutex(NULL, TRUE, L"Global\\MyApp_Port8080_Lock");
+if(GetLastError() == ERROR_ALREADY_EXISTS)
+{
+    // 已有实例运行，直接退出，不再尝试bind
+    CloseHandle(hMutex);
+    return -1;
+}
+// 拿到互斥体，再执行bind
+// ...程序运行结束 ReleaseMutex + CloseHandle
+```
+
+> ⚠️Global命名互斥体需要管理员权限；普通用户用`Local\\xxx`。
+
+## 6、常见误区
+1. ❌：修改注册表可以关闭端口复用。
+✅：Windows无此注册表项。每个socket独立控制。
+
+2. ❌：netsh可以禁止多进程监听同一个端口。
+✅：netsh只能配置防火墙，**不能修改socket选项行为**。
+
+3. ❌：关掉SO_REUSEADDR就不能快速重启服务（避开TIME_WAIT）
+✅：关掉SO_REUSEADDR后，如果服务崩溃，端口进入TIME_WAIT，你需要等待2MSL才能重新bind。
+> 取舍：
+> - 开启`SO_REUSEADDR=1`：服务重启快，但Windows允许多进程抢占端口；
+> - 关闭`SO_REUSEADDR=0`：严格端口独占，但重启要等TIME_WAIT。
+
+如果你需要，我可以给你一段完整Windows C++ demo，对比开启/关闭SO_REUSEADDR，直观看到bind成功/失败。

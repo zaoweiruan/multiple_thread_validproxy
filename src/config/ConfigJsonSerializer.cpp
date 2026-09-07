@@ -153,6 +153,31 @@ boost::json::object ConfigJsonSerializer::serialize(const AppConfig& config) con
     pmObj["check_interval_ms"] = config.proxy_process_monitor.checkIntervalMs;
     root["proxy_process_monitor"] = pmObj;
 
+    // standalone_pool
+    {
+        boost::json::object spObj;
+        spObj["enabled"] = config.standalone_pool.enabled;
+        spObj["mode"] = config.standalone_pool.mode;
+        spObj["socksPort"] = config.standalone_pool.socksPort;
+        spObj["apiPort"] = config.standalone_pool.apiPort;
+        spObj["balancerStrategy"] = config.standalone_pool.balancerStrategy;
+        boost::json::object obObj;
+        obObj["type"] = config.standalone_pool.observatory.type;
+        obObj["destination"] = config.standalone_pool.observatory.destination;
+        obObj["intervalSec"] = config.standalone_pool.observatory.intervalSec;
+        obObj["samplingCount"] = config.standalone_pool.observatory.samplingCount;
+        obObj["timeoutSec"] = config.standalone_pool.observatory.timeoutSec;
+        spObj["observatory"] = obObj;
+        boost::json::object evObj;
+        evObj["intervalSec"] = config.standalone_pool.evaluate.intervalSec;
+        evObj["reportHealth"] = config.standalone_pool.evaluate.reportHealth;
+        evObj["autoPruneDead"] = config.standalone_pool.evaluate.autoPruneDead;
+        evObj["pruneFailStreak"] = config.standalone_pool.evaluate.pruneFailStreak;
+        evObj["autoOptimize"] = config.standalone_pool.evaluate.autoOptimize;
+        spObj["evaluate"] = evObj;
+        root["standalone_pool"] = spObj;
+    }
+
     return root;
 }
 

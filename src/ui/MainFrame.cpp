@@ -1,6 +1,7 @@
 #include "MainFrame.h"
 #include "ConfigDialog.h"
-#include "StandaloneMonitorDialog.h"
+#include "StandaloneFloatingWidget.h"
+#include "StandalonePoolDialog.h"
 #include "LogPanel.h"
 #include "ProxyDetailPanel.h"
 #include "ProxyListPanel.h"
@@ -51,6 +52,7 @@ enum {
     ID_MENU_AUTOTASK_RUN  = wxID_HIGHEST + 112,
     ID_MENU_AUTOTASK_RESUME = wxID_HIGHEST + 113,
     ID_MENU_STANDALONE_MON  = wxID_HIGHEST + 114,
+    ID_MENU_OPEN_POOL     = wxID_HIGHEST + 115,
     ID_TOOL_UPDATE_ALL    = wxID_HIGHEST + 200,
     ID_TOOL_TEST          = wxID_HIGHEST + 201,
     ID_TOOL_FIND          = wxID_HIGHEST + 202,
@@ -65,6 +67,13 @@ enum {
     ID_SEARCH_TARGET      = wxID_HIGHEST + 300,
     ID_TOOL_DETAIL_TOGGLE = wxID_HIGHEST + 302,
     ID_TOOL_STANDALONE_MON = wxID_HIGHEST + 211,
+
+    // Distinct logical IDs for the network/proxy status timers. Each timer
+    // must have its own id and each Bind must be constrained to that id,
+    // otherwise (both defaulting to wxID_ANY) the most-recently-bound handler
+    // consumes every wxTimerEvent and the other handler never runs.
+    ID_NETMON_TIMER   = wxID_HIGHEST + 400,
+    ID_PROXYMON_TIMER = wxID_HIGHEST + 401,
 };
 
 // -------------------------------------------------------------------
@@ -88,6 +97,7 @@ wxBEGIN_EVENT_TABLE(MainFrame, wxFrame)
     EVT_MENU(ID_MENU_AUTOTASK_RESUME, MainFrame::onMenuAutoTaskResume)
     EVT_MENU(ID_MENU_ABOUT,       MainFrame::onMenuAbout)
     EVT_MENU(ID_MENU_STANDALONE_MON, MainFrame::onMenuStandaloneMonitor)
+    EVT_MENU(ID_MENU_OPEN_POOL, MainFrame::onMenuOpenPool)
     // Toolbar
     EVT_MENU(ID_TOOL_UPDATE_ALL,  MainFrame::onToolUpdateAll)
     EVT_MENU(ID_TOOL_TEST,        MainFrame::onToolTest)
@@ -121,6 +131,9 @@ MainFrame::MainFrame(const config::AppConfig& cfg, sqlite3* db)
     // Route AppController's wxQueueEvent notifications (standalone proxy
     // start/stop, dangling adoption) to this frame's event table.
     controller_->setTopWindow(this);
+
+    // Pool member health snapshots posted by AppController's proxy pool.
+    Bind(wxEVT_POOL_MEMBERS_UPDATED, &MainFrame::onPoolMembersUpdated, this);
 
     Logger::write("[MainFrame] After controller creation, initializing icon", LogLevel::DEBUG);
 
@@ -232,8 +245,27 @@ MainFrame::MainFrame(const config::AppConfig& cfg, sqlite3* db)
     // The dialog posts LocateProxyEvent (carrying the proxy indexId); select
     // and scroll it into view in ProxyListPanel.  The dialog hides itself.
     Bind(wxEVT_LOCATE_PROXY, [this](LocateProxyEvent& evt) {
+        // Resolve the proxy's owning subscription first. An empty subId means
+        // the proxy has no assigned subscription, which maps to "全部" view.
+        std::string subId;
+        if (controller_) {
+            subId = controller_->getSubIdByProxyIndexId(evt.getIndexId());
+        }
+        // Switch the ProxyListPanel view to the owning subscription so the
+        // target proxy is actually present in the (filtered) list before we
+        // try to select it. Without this, selectProxyByIndexId searches only
+        // the currently displayed subscription and may not find the row.
+        if (proxyPanel_) {
+            proxyPanel_->applySubscriptionFilter(subId);
+        }
+        // Now locate the proxy row in the (correct) view.
         if (proxyPanel_) {
             proxyPanel_->selectProxyByIndexId(evt.getIndexId());
+        }
+        // Locate the owning subscription row in the Subscription panel too,
+        // so the user sees which subscription the failed proxy belongs to.
+        if (subPanel_ && !subId.empty()) {
+            subPanel_->selectSubBySubId(subId);
         }
     });
 
@@ -285,6 +317,14 @@ MainFrame::MainFrame(const config::AppConfig& cfg, sqlite3* db)
           }
           setStatusText(0, "Loaded subscription: " + wxString(subId));
       });
+
+// Reload full proxy list (all proxies) after the subscription list refreshes
+Bind(wxEVT_SUBSCRIPTION_REFRESH, [this](SubscriptionRefreshEvent&) {
+    if (proxyPanel_ && controller_) {
+        controller_->loadProxiesAsync("", this);
+    }
+    setStatusText(0, "Refresh: loaded all proxies");
+});
 
 // ── Async proxy list loaded ───────────────────────────────────
 Bind(wxEVT_PROXY_LIST_LOADED, [this](ProxyListLoadedEvent& evt) {
@@ -398,8 +438,8 @@ void MainFrame::startMonitoring() {
 
     // 2) Network status timer (2s poll) — started only after the frame is
     //    visible so the status bar has its final field widths.
-    netMonTimer_ = new wxTimer(this);
-    Bind(wxEVT_TIMER, &MainFrame::onNetMonTimer, this);
+    netMonTimer_ = new wxTimer(this, ID_NETMON_TIMER);
+    Bind(wxEVT_TIMER, &MainFrame::onNetMonTimer, this, ID_NETMON_TIMER);
     netMonTimer_->Start(2000);
 
     // 3) Create network status indicator panel on status bar field 1
@@ -494,6 +534,14 @@ void MainFrame::startMonitoring() {
     }
     repositionProxyMonPanel();
 
+    // Startup activation: create + show the floating widget when the proxy
+    // process monitor is enabled in config.
+    if (config_.proxy_process_monitor.enabled) {
+        floatingWidget_ = new StandaloneFloatingWidget(config_, controller_, this);
+        floatingWidget_->setActive(true);
+        syncFloatingWidgetControls();
+    }
+
     statusBar_->Bind(wxEVT_SIZE, [this](wxSizeEvent& evt) {
         evt.Skip();
         repositionNetMonPanel();
@@ -513,6 +561,16 @@ MainFrame::~MainFrame() {
         proxyMonTimer_->Stop();
         delete proxyMonTimer_;
         proxyMonTimer_ = nullptr;
+    }
+
+    if (floatingWidget_) {
+        delete floatingWidget_;
+        floatingWidget_ = nullptr;
+    }
+
+    if (poolDialog_) {
+        poolDialog_->Destroy();
+        poolDialog_ = nullptr;
     }
 
      // Step 1: AUI must be torn down before any panel/frame member is destroyed
@@ -649,16 +707,18 @@ void MainFrame::initMenuBar() {
     bar->Append(fileMenu, "&File");
     Logger::write("[MainFrame] initMenuBar step 4: fileMenu appended", LogLevel::DEBUG);
 
-    wxMenu* proxyMenu = new wxMenu;
-    proxyMenu->Append(ID_MENU_FIND_PROXY, "Find First Working Proxy\tCtrl+F");
-    proxyMenu->Append(ID_MENU_FIND_BEST,  "Find Best Proxy\tCtrl+Shift+F");
-    proxyMenu->AppendSeparator();
-    proxyMenu->Append(ID_MENU_DEDUP,      "Remove Duplicates");
-    proxyMenu->Append(ID_MENU_EXPORT,     "Export Share Links");
-    proxyMenu->Append(ID_MENU_GEN_CONFIG, "Generate Config…");
-    proxyMenu->AppendSeparator();
-    proxyMenu->Append(ID_MENU_STANDALONE_MON, L"独立代理监控…\tCtrl+M");
-    bar->Append(proxyMenu, "&Proxy");
+    proxyMenu_ = new wxMenu;
+    proxyMenu_->Append(ID_MENU_FIND_PROXY, "Find First Working Proxy\tCtrl+F");
+    proxyMenu_->Append(ID_MENU_FIND_BEST,  "Find Best Proxy\tCtrl+Shift+F");
+    proxyMenu_->AppendSeparator();
+    proxyMenu_->Append(ID_MENU_DEDUP,      "Remove Duplicates");
+    proxyMenu_->Append(ID_MENU_EXPORT,     "Export Share Links");
+    proxyMenu_->Append(ID_MENU_GEN_CONFIG, "Generate Config…");
+    proxyMenu_->AppendSeparator();
+    proxyMenu_->Append(ID_MENU_STANDALONE_MON, L"独立代理监控…\tCtrl+M", "显示/隐藏独立代理悬浮窗", wxITEM_CHECK);
+    proxyMenu_->Append(ID_MENU_OPEN_POOL, L"代理池…", "打开独立代理池管理（单进程动态成员）");
+    proxyMenu_->Check(ID_MENU_STANDALONE_MON, config_.proxy_process_monitor.enabled);
+    bar->Append(proxyMenu_, "&Proxy");
 
     wxMenu* taskMenu = new wxMenu;
     taskMenu->Append(ID_MENU_AUTOTASK_RUN,  L"执行自动任务\tCtrl+T");
@@ -705,7 +765,8 @@ void MainFrame::initToolBar() {
     m_toolbar->AddTool(ID_TOOL_DEDUP, "去重", ToolbarIcons::load("tool_dedup"), "去重");
     m_toolbar->AddTool(ID_TOOL_IMPORT, "导入", ToolbarIcons::load("tool_import"), "增加新订阅");
     m_toolbar->AddTool(ID_TOOL_AUTOTASK, "自动任务", ToolbarIcons::load("tool_pipeline"), "自动任务");
-    m_toolbar->AddTool(ID_TOOL_STANDALONE_MON, "监控代理", ToolbarIcons::load("tool_monitoring_proxy_process"), "监控代理");
+    m_toolbar->AddTool(ID_TOOL_STANDALONE_MON, "监控代理", ToolbarIcons::load("tool_monitoring_proxy_process"), "监控代理", wxITEM_CHECK);
+    m_toolbar->ToggleTool(ID_TOOL_STANDALONE_MON, config_.proxy_process_monitor.enabled);
     m_toolbar->AddTool(ID_TOOL_CONFIG, "配置", ToolbarIcons::load("tool_config"), "配置");
 
     // ── Search box: left-shifted by 150px from center ──
@@ -891,8 +952,8 @@ void MainFrame::startProxyMonitor(int intervalMs) {
         proxyMonTimer_->Stop();
         delete proxyMonTimer_;
     }
-    proxyMonTimer_ = new wxTimer(this);
-    Bind(wxEVT_TIMER, &MainFrame::onProxyMonTimer, this);
+    proxyMonTimer_ = new wxTimer(this, ID_PROXYMON_TIMER);
+    Bind(wxEVT_TIMER, &MainFrame::onProxyMonTimer, this, ID_PROXYMON_TIMER);
     proxyMonTimer_->Start(intervalMs);
     updateProxyMonStatus(true, 0);
 }
@@ -1018,12 +1079,47 @@ void MainFrame::onMenuGenerateConfig(wxCommandEvent&) {
 }
 
 void MainFrame::onMenuStandaloneMonitor(wxCommandEvent&) {
-    // Lazy-create once; the dialog hides itself on close and is reused.
-    if (!monitorDialog_) {
-        monitorDialog_ = new StandaloneMonitorDialog(this, controller_);
+    if (!config_.proxy_process_monitor.enabled) {
+        wxMessageBox(L"监控代理进程未在配置中启用", L"提示",
+                     wxOK | wxICON_INFORMATION);
+        return;
     }
-    monitorDialog_->Show(true);
-    monitorDialog_->Raise();
+    if (!floatingWidget_) {
+        floatingWidget_ = new StandaloneFloatingWidget(config_, controller_, this);
+    }
+    floatingWidget_->toggleActive();
+    syncFloatingWidgetControls();
+}
+
+void MainFrame::onMenuOpenPool(wxCommandEvent&) {
+    if (!controller_->isProxyPoolEnabled()) {
+        wxMessageBox(L"代理池未在配置中启用（standalone_pool.enabled=false）",
+                     L"提示", wxOK | wxICON_INFORMATION);
+        return;
+    }
+    if (!poolDialog_) {
+        poolDialog_ = new StandalonePoolDialog(this, controller_);
+    }
+    poolDialog_->setMembers(controller_->getPoolMembers());
+    poolDialog_->Show();
+    poolDialog_->Raise();
+}
+
+void MainFrame::onPoolMembersUpdated(PoolMembersUpdatedEvent& event) {
+    if (poolDialog_) {
+        poolDialog_->setMembers(event.takeMembers());
+    }
+    event.Skip();
+}
+
+void MainFrame::syncFloatingWidgetControls() {
+    const bool on = floatingWidget_ && floatingWidget_->isActive();
+    if (m_toolbar) {
+        m_toolbar->ToggleTool(ID_TOOL_STANDALONE_MON, on);
+    }
+    if (proxyMenu_) {
+        proxyMenu_->Check(ID_MENU_STANDALONE_MON, on);
+    }
 }
 
 void MainFrame::onMenuConfig(wxCommandEvent&) {
@@ -1076,6 +1172,13 @@ void MainFrame::onMenuConfig(wxCommandEvent&) {
                 stopProxyMonitor();
             }
         }
+
+        // Hot-apply the new config to the floating widget (interval restart,
+        // hide when monitoring is disabled) and re-sync the toggle controls.
+        if (floatingWidget_) {
+            floatingWidget_->applySettings(cfg);
+        }
+        syncFloatingWidgetControls();
 
         // Apply log level changes
         Logger::setFileLevel(Logger::stringToLevel(cfg.log_file_level));

@@ -1,5 +1,6 @@
 #include "ProxyConnectivityVerifier.h"
 
+#include "Logger.h"
 #include "UrlFetcher.h"
 
 #ifndef WIN32_LEAN_AND_MEAN
@@ -42,9 +43,36 @@ bool ConnectivityVerifier::verifyWithProbe(ProbeFn probe, int maxAttempts,
 }
 
 bool ConnectivityVerifier::waitForPort(int port, int timeoutMs) {
+    return waitForPort(port, timeoutMs, nullptr);
+}
+
+bool ConnectivityVerifier::waitForPort(int port, int timeoutMs, void* processHandle) {
     const int intervalMs = 200;
     const int maxIter = (timeoutMs <= 0) ? 1 : (timeoutMs / intervalMs + 1);
     for (int iter = 0; iter < maxIter; ++iter) {
+        // Crash-aware: if the backing xray/sing-box process has already exited
+        // (flash-crash), the SOCKS port will never open — stop polling and fail
+        // fast instead of burning the entire timeout window (the
+        // "启动闪崩却长时间等待" bug).
+        HANDLE h = static_cast<HANDLE>(processHandle);
+        if (h != nullptr && h != INVALID_HANDLE_VALUE) {
+            if (WaitForSingleObject(h, 0) == WAIT_OBJECT_0) {
+                // Surface the real exit code so the log shows WHY the proxy died
+                // (config error, address-in-use, missing asset, ...), not just that
+                // it died. The xray/sing-box stderr text is captured by the caller
+                // (see AppController::startStandaloneProxy).
+                std::string extra;
+                DWORD code = 0;
+                if (GetExitCodeProcess(h, &code) && code != STILL_ACTIVE) {
+                    extra = " (exitCode=" + std::to_string(code) + ")";
+                }
+                Logger::write("[ConnectivityVerifier] backing process exited before SOCKS "
+                              "port " + std::to_string(port) + " became ready (flash-crash)" + extra
+                              + "; bailing out early instead of waiting the full timeout",
+                              LogLevel::ERR);
+                return false;
+            }
+        }
         SOCKET s = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
         if (s != INVALID_SOCKET) {
             sockaddr_in addr{};

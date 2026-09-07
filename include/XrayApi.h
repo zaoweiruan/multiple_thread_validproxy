@@ -16,6 +16,13 @@ class XrayApiDirectTest;  // forward decl for friend access in test builds
 
 namespace xray {
 
+struct OutboundStatus {
+    std::string tag;
+    bool alive = false;
+    long long delayMs = -1;
+    std::string lastError;
+};
+
 class XrayApi {
 public:
     XrayApi(const std::string& xrayPath, const std::string& serverAddr);
@@ -33,6 +40,14 @@ public:
     bool addOutboundDirect(const std::string& outboundJson, const std::string& tag, std::string& resultOutput);
     bool removeOutboundDirect(const std::string& tag);
     bool listOutboundsDirect(std::string& output);
+
+    // Observatory health: returns per-outbound alive/delay. Empty request;
+    // path /xray.app.observatory.command.ObservatoryService/GetOutboundStatus.
+    bool getOutboundStatusDirect(std::vector<OutboundStatus>& out);
+
+    // Full gRPC method path for Observatory GetOutboundStatus. Exposed so
+    // tests can lock the (corrected) service path.
+    static const char* observatoryStatusPath();
 
     // Lifecycle health hook: invoked when grpcConnect fails twice consecutively
     // against the same server address. The caller (e.g. ProxyBatchTester worker)

@@ -1659,6 +1659,60 @@ TEST_F(XrayApiDirectTest, ValidateSplitHTTPSettingsNonSplitHTTPPasses) {
     EXPECT_TRUE(XrayApi::validateSplitHTTPSettings("[]", errorOut));
 }
 
+// ---- Observatory GetOutboundStatus gRPC path -----------------------------
+
+TEST_F(XrayApiDirectTest, ObservatoryStatusPathIsCorrect) {
+    // Verified at runtime via gRPC reflection + direct probe against
+    // Xray 26.3.27: the observatory command service is registered as
+    //   xray.core.app.observatory.command.ObservatoryService
+    // (legacy "xray.core.app..." prefix). The plain proto package form
+    // "xray.app.observatory.command.ObservatoryService" is NOT registered,
+    // so getOutboundStatusDirect must target the runtime name to avoid
+    // "unknown service".
+    EXPECT_STREQ(XrayApi::observatoryStatusPath(),
+                 "/xray.core.app.observatory.command.ObservatoryService/GetOutboundStatus");
+    std::string p = XrayApi::observatoryStatusPath();
+    EXPECT_NE(p.find("core.app.observatory.command"), std::string::npos)
+        << "must target the runtime-registered xray.core.app prefix";
+    EXPECT_NE(p.find("observatory.command"), std::string::npos)
+        << "must target the observatory command service";
+}
+
+// ---- parseOutboundJson contract used by StandaloneProxyPool ------------
+
+// StandaloneProxyPool now wraps the built outbound as {"outbounds":[ob]} with
+// the pool tag "px-<id>". parseOutboundJson (used by addOutboundDirect) must
+// extract the tag and the correct protobuf typeUrl from that wrapped form.
+TEST_F(XrayApiDirectTest, ParseOutboundJsonWrappedFormVless) {
+    const std::string json =
+        R"({"outbounds":[{"tag":"px-123","protocol":"vless",)"
+        R"("settings":{"vnext":[{"address":"1.2.3.4","port":443,)"
+        R"("users":[{"id":"11111111-1111-1111-1111-111111111111"}]}]}}]})";
+    std::string tag, typeUrl, value;
+    ASSERT_TRUE(parseOutboundJson(json, tag, typeUrl, value));
+    EXPECT_EQ(tag, "px-123");
+    EXPECT_EQ(typeUrl, "xray.proxy.vless.outbound.Config");
+}
+
+TEST_F(XrayApiDirectTest, ParseOutboundJsonWrappedFormFreedom) {
+    const std::string json =
+        R"({"outbounds":[{"tag":"px-9","protocol":"freedom",)"
+        R"("settings":{"domainStrategy":0}}]})";
+    std::string tag, typeUrl, value;
+    ASSERT_TRUE(parseOutboundJson(json, tag, typeUrl, value));
+    EXPECT_EQ(tag, "px-9");
+    EXPECT_EQ(typeUrl, "xray.proxy.freedom.Config");
+}
+
+TEST_F(XrayApiDirectTest, ParseOutboundJsonRejectsBareObject) {
+    // Guard: a bare outbound (the old StandaloneProxyPool output) must NOT be
+    // accepted, confirming the wrapper is now required (and injected).
+    const std::string json =
+        R"({"tag":"px-1","protocol":"vless","settings":{}})";
+    std::string tag, typeUrl, value;
+    EXPECT_FALSE(parseOutboundJson(json, tag, typeUrl, value));
+}
+
 #else
 // When USE_GRPC_API is OFF, we still need a placeholder test so ctest passes.
 #include <gtest/gtest.h>

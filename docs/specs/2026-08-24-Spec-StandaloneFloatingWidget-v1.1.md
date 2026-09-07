@@ -1,7 +1,7 @@
 ---
 title: "feat: 可配置悬浮窗监控独立代理进程 (StandaloneFloatingWidget) — v1.1 统一接管版"
 type: feat
-status: draft
+status: completed
 date: 2026-08-24
 origin: "用户需求演进：v1.0 draft 评审后修订 — 配置并入 proxy_process_monitor 复用 enabled/checkIntervalMs；悬浮窗替代 StandaloneMonitorDialog；鼠标悬停展开详情"
 supersedes: "docs/specs/2026-08-24-Spec-StandaloneFloatingWidget-v1.0.md (draft, 已废弃)"
@@ -9,8 +9,9 @@ supersedes: "docs/specs/2026-08-24-Spec-StandaloneFloatingWidget-v1.0.md (draft,
 
 # Spec: StandaloneFloatingWidget v1.1 — 统一接管独立代理进程监控
 
-> **评审状态**: 📝 **draft — 待评审**。本文档为 v1.0 的修订版（v1.0 已废弃），**未实施任何代码变更**。
-> 评审通过后按 §7 实施计划逐任务执行（TDD），并回写 status: completed。
+> **实施状态**: ✅ **completed（2026-08-24）**。已按 §7 逐任务 TDD 实施并通过验证：构建 0 error；`FloatingWidgetStateTest` 7/7 与 `ConfigReaderTest` 43/43 通过；非 UI 单测 32/36 全绿。UI 自动化冒烟 `UI_FLOATINGWIDGET` 已写入 `tests/ui/TestStandaloneFloatingWidget.cpp`，需在 GUI 沙箱环境经 `build-and-test.bat` 验收（无显示环境下与 `UI_MAINWINDOW`/`UI_SEARCH`/`UI_CLEAR` 同因无法启动应用而跳过，非代码缺陷）。
+>
+> **实施更正（与初稿差异）**: ① 源码中 `targetProcessNames` **从未存在**（配置段仅有 `enabled`+`checkIntervalMs`），故 U1「去 targetProcessNames」为**无操作**；② 状态栏 `proxyMonPanel_` 早已使用 `getRunningStandaloneCount()`，故 U4「数据源切换」为**无操作**；③ 间隔钳制边界以 `ProxyProcessMonitorConfigParser` 实际代码为准 = **[5000, 300000]**（非初稿误写的 [500, 60000]）；④ 详情控件沿用 `wxListCtrl`（与旧对话框一致、低风险），非初稿设想的 `wxDataViewCtrl`。
 
 ---
 
@@ -279,7 +280,7 @@ void StandaloneFloatingWidget::onLeaveWindow(wxMouseEvent& event) {
 |---|---|
 | 成员 | 删除 `monitorDialog_`；新增 `StandaloneFloatingWidget* floatingWidget_{nullptr};` |
 | `onMenuStandaloneMonitor` | 改调 `floatingWidget_->toggleActive()`（原 show dialog 逻辑删除）；`cfg.proxy_process_monitor.enabled==false` 时禁用菜单项/提示 |
-| 入口绑定 | Ctrl+M（`ID_MENU_STANDALONE_MON = wxID_HIGHEST+114`）、工具栏 `ID_TOOL_STANDALONE_MON`、Proxy 菜单项全部指向新 handler |
+| 入口绑定 | Ctrl+M（`ID_MENU_STANDALONE_MON = wxID_HIGHEST+114`）、工具栏 `ID_TOOL_STANDALONE_MON`、Proxy 菜单项全部指向 `onMenuStandaloneMonitor`→`toggleActive()`；**工具栏按钮与菜单项设为 checkable，状态随 `active_` 反显；`cfg.proxy_process_monitor.enabled==false` 时置灰禁用**（详情靠悬停，按钮不负责展开） |
 | 启动激活 | GUI 就绪（`startMonitoring()` 路径）后：`if (cfg.proxy_process_monitor.enabled) floatingWidget_->Show(true)`（active_ 默认 true） |
 | 状态栏数据源 | `onProxyMonTimer`（MainFrame.cpp:871）改调 `controller_->getRunningStandaloneCount()` 取代原名称监控计数；绿点 `N>0` |
 | 配置热应用 | `onMenuConfig` 保存回调后调 `floatingWidget_->applySettings(config_)`（现有 onMenuConfig 已对比 netMon 设置，同模式扩展） |
@@ -304,6 +305,7 @@ void StandaloneFloatingWidget::onLeaveWindow(wxMouseEvent& event) {
 | ① | 数据来源 / 子系统关系 | **B 彻底统一**：悬浮窗取代 `targetProcessNames` 监控；状态栏计数改由 `getRunningStandaloneCount()` 同源驱动；`targetProcessNames` 废弃 |
 | ② | 状态栏 `proxyMonPanel_` 去留 | **保留**（仅改数据源为同源计数） |
 | ③ | 配置粒度 | **完全复用、零新增键**；透明度/置顶/悬停硬编码默认（置顶=true、悬停展开=true、透明度=不透明以规避分层窗口怪异，单常量可改） |
+| ④ | 工具栏「监控代理」按钮语义 | **checkable 主开关**：与 Ctrl+M / Proxy 菜单项一致调 `toggleActive()`；按钮与菜单项 checkable 反显 `active_`；`cfg.proxy_process_monitor.enabled==false` 时置灰禁用；详情靠悬停展开，按钮仅负责悬浮窗整体开/关 |
 
 ### 6.2 残留微决策（建议默认，可推翻）
 

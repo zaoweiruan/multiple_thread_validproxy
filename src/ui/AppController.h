@@ -23,6 +23,7 @@
 #include "NetworkMonitor.h"
 #include "ProcessExitListener.h"
 #include "ProxyRuntimeHistory.h"
+#include "StandaloneProxyPool.h"
 
 class wxEvtHandler;
 class wxWindow;
@@ -85,6 +86,9 @@ void loadProxiesAsync(const std::string& subId, wxEvtHandler* handler);
 std::unordered_map<std::string, int> countProxiesBySubId();
 std::unordered_map<std::string, int> countValidProxiesBySubId();
 std::optional<db::models::Profileitem> getProxyByIndexId(const std::string& indexId);
+// Returns the owning subscription id (Subitem.id) for a proxy indexId, or an
+// empty string when the proxy does not exist or has no assigned subscription.
+std::string getSubIdByProxyIndexId(const std::string& indexId);
 std::vector<db::models::ProfileExItem> loadProxyResults();
 
 // Live elapsed time (ms) of in-progress standalone sessions, keyed by
@@ -112,6 +116,7 @@ std::vector<StandaloneMonitorRow> getWatchedStandaloneMonitors();
 void testSubscriptionAsync(const std::string& subId, wxEvtHandler* wxHandler);
 void testSingleProxyAsync(const std::string& indexId, wxEvtHandler* wxHandler);
 void testAllProxiesAsync(wxEvtHandler* wxHandler);
+void testOnlineProxiesAsync(wxEvtHandler* wxHandler);
 void cancelTest();
 bool isTestCancelled() const;
 
@@ -155,7 +160,26 @@ bool isTestCancelled() const;
     // this controller, e.g. left over from a previous GUI session). Each is
     // registered in standaloneProxies_ and watched so its exit is recorded in
     // the runtime history. Called when the watch mechanism starts (GUI ready).
-    void adoptDanglingStandaloneProxies();
+     void adoptDanglingStandaloneProxies();
+
+     // Standalone proxy POOL (single xray process, dynamic member injection via
+     // balancer+observatory). Phase 1 = empty pool + double-click inject.
+     bool isProxyPoolEnabled() const;
+     bool startProxyPool();
+     void stopProxyPool();
+     bool isProxyPoolRunning() const;
+     // Inject a profile (by indexId) into the running pool as member px-<indexId>.
+     bool injectProxyToPool(const std::string& indexId);
+     // Remove a pool member. graceful=true defers handler removal to the
+     // evaluator (two-phase); false removes immediately.
+     bool removePoolMember(int indexId, bool graceful);
+      std::vector<proxy::PoolMemberView> getPoolMembers() const;
+      // Candidate proxies for the "add to pool" picker (capped). Returns basic
+      // profile rows (IndexId / ConfigType / Address / Remarks) loaded from the DB.
+      std::vector<db::models::Profileitem> getPoolCandidateProfiles(int limit = 300);
+     void setPoolReportHealth(bool on);
+     void setPoolAutoPruneDead(bool on);
+     void setPoolAutoOptimize(bool on);
 
     // Batch region resolution (after testing)
     int resolveRegionsForValidProxies(const std::string& subId = "");
@@ -175,6 +199,7 @@ private:
   void doTestSubscription(const std::string& subId, wxEvtHandler* wxHandler);
   void doTestSingleProxy(const std::string& indexId, wxEvtHandler* wxHandler);
   void doTestAllProxies(wxEvtHandler* wxHandler);
+  void doTestOnlineProxies(wxEvtHandler* wxHandler);
   void doFindFirstProxy(wxEvtHandler* wxHandler);
   void doFindBestProxy(wxEvtHandler* wxHandler);
   void doSyncDatabases(wxEvtHandler* wxHandler);
@@ -197,6 +222,12 @@ std::thread workerThread_;
   // Standalone proxy state
   mutable std::mutex standaloneMutex_;
   std::unordered_map<std::string, StandaloneProxyInfo> standaloneProxies_;
+
+  // Standalone proxy POOL (single xray process, dynamic members)
+  mutable std::mutex poolMutex_;
+  std::shared_ptr<proxy::StandaloneProxyPool> proxyPool_;
+  int poolSocksPort_ = 0;  // reserved via PortManager; freed on stop
+  int poolApiPort_ = 0;
 
   // Top-level window for event dispatch / shutdown
   wxWindow* topWindow_{nullptr};

@@ -64,7 +64,15 @@ public:
     int Compare(const wxDataViewItem& item1, const wxDataViewItem& item2,
                 unsigned int col, bool ascending) const override;
 
+    // Locate the view row for a subscription id; returns -1 if not found.
+    // Mirrors ProxyListModel::findRowByIndexId.
+    int findRowBySubId(const std::string& subId) const;
+
 private:
+    // Convert a view row to the internal data index (compensates the 1-based
+    // ID offset). Mirrors ProxyListModel::getDataIndex.
+    unsigned int getDataIndex(unsigned int viewRow) const;
+
     // Non-owning pointers to the data owned by SubscriptionPanel
     std::vector<db::models::Subitem>* subscriptions_ = nullptr;
     std::unordered_map<std::string, int>* proxyCounts_ = nullptr;

@@ -12,10 +12,19 @@ boost::json::object StreamSettingsBuilder::build(const db::models::Profileitem& 
         streamSettings["network"] = p.network;
     }
     
-    if (!p.streamsecurity.empty()) {
-        streamSettings["security"] = p.streamsecurity;
+    // Normalize streamsecurity: v2rayN stores "false" to mean "no security",
+    // which is NOT a valid Xray security value and causes Xray to fail with
+    // `Unknown security "false"`. Valid Xray values: "none", "tls", "reality",
+    // "xtls". Treat "false" (and any other invalid value) as "no security" by
+    // omitting the security field entirely (Xray defaults to "none").
+    const std::string security = p.streamsecurity;
+    const bool hasValidSecurity = (security == "tls" || security == "reality" ||
+                                   security == "xtls" || security == "none");
+
+    if (!security.empty() && hasValidSecurity) {
+        streamSettings["security"] = security;
         
-        if (p.streamsecurity == "tls") {
+        if (security == "tls") {
             boost::json::object tlsSettings;
             tlsSettings["allowInsecure"] = (p.allowinsecure == "1");
             if (!p.sni.empty()) {
@@ -67,7 +76,7 @@ boost::json::object StreamSettingsBuilder::build(const db::models::Profileitem& 
                 tlsSettings["allowInsecure"] = false;
             }
             streamSettings["tlsSettings"] = tlsSettings;
-        } else if (p.streamsecurity == "reality") {
+        } else if (security == "reality") {
             boost::json::object realitySettings;
             if (p.publickey.empty()) {
                 throw std::runtime_error("REALITY配置错误：publicKey不能为空");
@@ -127,19 +136,21 @@ boost::json::object StreamSettingsBuilder::build(const db::models::Profileitem& 
     }
 
     if (p.network == "xhttp") {
+        // XHTTP (SplitHTTP) config: `host` and `mode` are TOP-LEVEL fields of
+        // xhttpSettings. xray (infra/conf SplitHTTPConfig.Build) hard-errors with
+        // `"headers" can't contain "host"` if `host` is placed inside `headers`,
+        // and only reads `mode` from the top level (valid: auto/packet-up/
+        // stream-up/stream-one; empty defaults to auto). See xray-core
+        // infra/conf/transport_internet.go.
         boost::json::object xhttpSettings;
         if (!p.path.empty()) {
             xhttpSettings["path"] = p.path;
         }
         if (!p.requesthost.empty()) {
-            boost::json::object headers;
-            headers["host"] = p.requesthost;
-            xhttpSettings["headers"] = headers;
+            xhttpSettings["host"] = p.requesthost;
         }
         if (!p.headertype.empty()) {
-            boost::json::object headers;
-            headers["mode"] = p.headertype;
-            xhttpSettings["headers"] = headers;
+            xhttpSettings["mode"] = p.headertype;
         }
         streamSettings["xhttpSettings"] = xhttpSettings;
     }

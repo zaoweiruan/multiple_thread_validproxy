@@ -33,6 +33,10 @@ inline const wchar_t* const SearchCtrlClass = L"wxWindowNR";
 //   proxy result list: Region / Latency ↕ / Health ↕ / Type / Host ↕ ...
 inline const wchar_t* const DataViewCtrlName       = L"dataviewCtrl";
 inline const wchar_t* const DataViewInnerClass     = L"wxDataView";
+
+// Floating standalone-monitor widget (SetName on the top-level wxFrame).
+// The only locator allowed for asserting its presence/absence.
+inline const wchar_t* const FloatingWidgetName = L"StandaloneFloatingWidget";
 inline const wchar_t* const SubscriptionHeaderName = L"启用";
 inline const wchar_t* const ResultHeaderName       = L"Region";
 
@@ -41,5 +45,24 @@ inline const wchar_t* const LogClearButtonName = L"清空日志窗口";
 inline const wchar_t* const LogStatsButtonName = L"日志统计";
 inline const wchar_t* const LogOpenButtonName  = L"打开日志";
 
-}
-}
+// Standalone proxy pool dialog (SetTitle "独立代理池" in StandalonePoolDialog.cpp).
+// Opened via the "代理" menu -> "代理池…" (MainFrame ID_MENU_OPEN_POOL).
+// The only locators allowed for asserting the dialog's presence / controls.
+inline const wchar_t* const PoolDialogName        = L"独立代理池";
+inline const wchar_t* const PoolStartStopBtnName  = L"启动池";   // idle label
+inline const wchar_t* const PoolStopBtnName       = L"停止池";   // running label
+inline const wchar_t* const PoolRefreshBtnName    = L"刷新";
+inline const wchar_t* const PoolDeleteBtnName     = L"删除选中"; // 删除选中
+// "添加代理" button inside the pool dialog — the entry point that opens the
+// AddPoolMemberDialog picker for injecting existing proxies into the pool.
+inline const wchar_t* const PoolAddBtnName         = L"添加代理";
+// AddPoolMemberDialog title (the picker opened by 添加代理).
+inline const wchar_t* const PoolPickerName         = L"选择代理";
+// Right-click "加入代理池" entry on the proxy list (only shown when the pool
+// feature is enabled in config).
+inline const wchar_t* const ProxyListAddToPoolMenuName = L"加入代理池";
+// WM_COMMAND id mirrored from MainFrame.cpp (wxID_HIGHEST(6000) + 115 = 6115).
+inline constexpr unsigned int PoolOpenCmd = 6000 + 115; // 6115
+
+} // namespace ids
+} // namespace uitest

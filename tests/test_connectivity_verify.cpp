@@ -398,6 +398,59 @@ TEST(ConnectivityVerifyTest, WaitForPort_BecomesAvailable) {
     binder.join();
 }
 
+// Regression for the "启动闪崩却长时间等待" bug: when the backing xray/sing-box
+// process flashes and exits before the SOCKS port ever opens, waitForPort must
+// detect the process death and bail out immediately instead of polling until the
+// full timeout elapses.
+TEST(ConnectivityVerifyTest, WaitForPort_CrashAwareBailsEarlyOnFlashCrash) {
+    WinsockGuard wsa;
+    // A port nothing is listening on (so connect always fails).
+    int port = 0;
+    SOCKET probe = bindLoopback(port);
+    ASSERT_NE(probe, INVALID_SOCKET);
+    closesocket(probe); // release: nothing listening now
+
+    // Launch a process that exits immediately (flash-crash stand-in) and keep
+    // its handle so waitForPort can observe the early death.
+    STARTUPINFOA si = {};
+    si.cb = sizeof(si);
+    PROCESS_INFORMATION pi = {};
+    char cmd[] = "cmd.exe /c exit 0";
+    ASSERT_TRUE(CreateProcessA(nullptr, cmd, nullptr, nullptr, FALSE, 0, nullptr, nullptr, &si,
+                               &pi))
+        << "failed to spawn flash-crash stand-in";
+    CloseHandle(pi.hThread);
+    Sleep(50); // let the stand-in actually exit
+    EXPECT_EQ(WaitForSingleObject(pi.hProcess, 0), WAIT_OBJECT_0)
+        << "stand-in process did not exit as expected";
+
+    const int timeoutMs = 8000; // would block the whole window if NOT crash-aware
+    const auto start = std::chrono::steady_clock::now();
+    const bool ready = proxy::ConnectivityVerifier::waitForPort(port, timeoutMs, pi.hProcess);
+    const long long elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now() - start).count();
+
+    EXPECT_FALSE(ready);        // port never opened
+    EXPECT_LT(elapsedMs, 2000); // but bailed early, not after 8s
+    CloseHandle(pi.hProcess);
+}
+
+// Passing nullptr must preserve the legacy behaviour (no crash-check): a closed
+// port blocks until the timeout window instead of returning instantly.
+TEST(ConnectivityVerifyTest, WaitForPort_NullHandleNoEarlyBail) {
+    WinsockGuard wsa;
+    int port = 0;
+    SOCKET l = bindLoopback(port);
+    ASSERT_NE(l, INVALID_SOCKET);
+    closesocket(l); // nothing listening
+
+    const auto start = std::chrono::steady_clock::now();
+    EXPECT_FALSE(proxy::ConnectivityVerifier::waitForPort(port, 500, nullptr));
+    const long long elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now() - start).count();
+    EXPECT_GE(elapsedMs, 400); // ~500ms window respected (no early bail)
+}
+
 // RetryPolicy: a failed probe must be followed by retryDelayMs before the next
 // attempt, so the total window covers the proxy process startup time (the xray
 // process needs several seconds before it is fully ready). Regression test for

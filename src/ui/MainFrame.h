@@ -22,7 +22,8 @@ class wxSearchCtrl;
 class wxChoice;
 class ConfigDialog;
 class TrayIcon;
-class StandaloneMonitorDialog;
+class StandaloneFloatingWidget;
+class StandalonePoolDialog;
 
 enum class OperationType {
     NONE,
@@ -84,6 +85,9 @@ private:
     void onMenuAutoTaskResume(wxCommandEvent& event);
     void onMenuAbout(wxCommandEvent& event);
     void onMenuStandaloneMonitor(wxCommandEvent& event);
+    void onMenuOpenPool(wxCommandEvent& event);
+    void onPoolMembersUpdated(PoolMembersUpdatedEvent& event);
+    void syncFloatingWidgetControls();
     void onToolUpdateAll(wxCommandEvent& event);
     void onToolTest(wxCommandEvent& event);
     void onToolFind(wxCommandEvent& event);
@@ -112,14 +116,16 @@ private:
     // Members
      wxAuiManager* auiManager_{nullptr};
      wxSplitterWindow* splitter_{nullptr};  // Resizable splitter for subscription/proxy panels
-     AppController* controller_;
-     wxMenuBar* menuBar_{nullptr};
+    AppController* controller_;
+    wxMenuBar* menuBar_{nullptr};
+    wxMenu* proxyMenu_{nullptr};
     SubscriptionPanel* subPanel_{nullptr};
     ProxyListPanel* proxyPanel_{nullptr};
     ProxyDetailPanel* detailPanel_{nullptr};
     LogPanel* logPanel_{nullptr};
     ConfigDialog* configDialog_{nullptr};
-    StandaloneMonitorDialog* monitorDialog_{nullptr};  // Lazy, reused (hidden on close)
+    StandaloneFloatingWidget* floatingWidget_{nullptr};  // Lazy, toggled via Ctrl+M / toolbar / menu
+    StandalonePoolDialog* poolDialog_{nullptr};           // Lazy, opened via 代理池 menu
     wxAuiToolBar* m_toolbar{nullptr};  // Toolbar pointer for AUI management
     TrayIcon* trayIcon_{nullptr};
     sqlite3* db_;

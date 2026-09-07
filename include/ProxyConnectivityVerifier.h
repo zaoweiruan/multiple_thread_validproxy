@@ -29,6 +29,14 @@ public:
     // ready) before running the full connectivity probe (Spec R2 §3.3.2).
     static bool waitForPort(int port, int timeoutMs);
 
+    // Crash-aware variant: also bails out early if the backing xray/sing-box
+    // process (processHandle) has already exited before the port opened. This
+    // prevents a long idle wait on a flash-crash — the "启动闪崩却长时间等待"
+    // bug — instead of burning the entire timeout window polling a port that
+    // will never open. Pass nullptr to disable the check (HANDLE is void* on
+    // Windows, so a bare pointer is used here to avoid leaking windows.h).
+    static bool waitForPort(int port, int timeoutMs, void* processHandle);
+
 private:
     ConnectivityVerifier() = delete;
 };

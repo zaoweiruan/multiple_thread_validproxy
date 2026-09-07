@@ -25,6 +25,7 @@ public:
     void loadSubscriptions(const std::vector<db::models::Subitem>& subs,
                            const std::unordered_map<std::string, int>& proxyCounts);
     std::string getSelectedSubId() const;
+    void selectSubBySubId(const std::string& subId);
     const std::vector<db::models::Subitem>& getSubscriptions() const { return subs_; }
     void RefreshContextMenu();
     void filterBySearch(const wxString& query);

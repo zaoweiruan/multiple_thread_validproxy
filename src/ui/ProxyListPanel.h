@@ -56,11 +56,14 @@ private:
 
     void onContextMenu(wxDataViewEvent& event);
     void onTestProxy(wxCommandEvent& event);
+    void onTestOnlineProxies(wxCommandEvent& event);
+    void onTestOnlineProxiesEvent(TestOnlineProxiesEvent& event);
     void onRefreshProxyList(wxCommandEvent& event);
     void onExportShareLink(wxCommandEvent& event);
     void onResolveRegion(wxCommandEvent& event);
     void onBatchResolveRegion(wxCommandEvent& event);
     void onStartProxy(wxCommandEvent& event);
+    void onAddToPool(wxCommandEvent& event);
     void onProxyTestProgress(ProxyTestProgressEvent& event);
     void onColumnHeaderClick(wxDataViewEvent& event);
     // Resolve a model column index (as returned by wxDataViewEvent::GetColumn)

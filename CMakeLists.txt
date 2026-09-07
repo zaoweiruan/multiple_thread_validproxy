@@ -1,6 +1,11 @@
 cmake_minimum_required(VERSION 3.20)
 project(multiple_thread_validproxy VERSION 1.0.3 LANGUAGES CXX)
 
+# iphlpapi provides GetExtendedTcpTable (used by utils::isPortAvailable to
+# detect occupied ports via the system TCP table). Link it for every target
+# defined below that compiles src/Utils.cpp.
+link_libraries(iphlpapi)
+
 # ===== Git tag version detection (overrides project() VERSION) =====
 include(cmake/GetGitVersion.cmake)
 get_git_version()
@@ -202,6 +207,8 @@ set(CORE_SOURCES
     src/ProxyScorer.cpp
     src/ProxyConnectivityVerifier.cpp
     src/ui/UiOperationRunner.cpp
+    src/StandaloneProxyPool.cpp
+    src/ProxyHealthEvaluator.cpp
 )
 
 # ===== CLI target (CONSOLE subsystem) =====
@@ -256,6 +263,8 @@ if(wxWidgets_FOUND)
         src/ui/Events.cpp
         src/ui/AppController.h
         src/ui/AppController.cpp
+        src/StandaloneProxyLogForwarder.cpp
+        src/StandaloneConfigPort.cpp
         src/ui/MainFrame.h
         src/ui/MainFrame.cpp
         src/ui/SubscriptionListModel.h
@@ -272,8 +281,14 @@ if(wxWidgets_FOUND)
         src/ui/LogPanel.cpp
         src/ui/ConfigDialog.h
         src/ui/ConfigDialog.cpp
-        src/ui/StandaloneMonitorDialog.h
-        src/ui/StandaloneMonitorDialog.cpp
+        src/ui/StandaloneFloatingWidget.h
+        src/ui/StandaloneFloatingWidget.cpp
+        src/ui/StandalonePoolDialog.h
+        src/ui/StandalonePoolDialog.cpp
+        src/ui/AddPoolMemberDialog.h
+        src/ui/AddPoolMemberDialog.cpp
+        src/ui/TestOnlineResultDialog.h
+        src/ui/TestOnlineResultDialog.cpp
         src/ui/TrayIcon.h
         src/ui/TrayIcon.cpp
         src/ui/UIApp.h
@@ -456,6 +471,8 @@ add_executable(test_connectivity_verify tests/test_connectivity_verify.cpp
     src/ProxyConnectivityVerifier.cpp
     src/UrlFetcher.cpp
     src/ProxyTester.cpp
+    src/Logger.cpp
+    src/LoggerInstance.cpp
 )
 target_include_directories(test_connectivity_verify PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(test_connectivity_verify PRIVATE
@@ -470,6 +487,38 @@ set_target_properties(test_connectivity_verify PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
 )
 add_test(NAME ConnectivityVerifyTest COMMAND test_connectivity_verify)
+
+add_executable(test_standalone_proxy_log_forwarder
+    tests/test_standalone_proxy_log_forwarder.cpp
+    src/StandaloneProxyLogForwarder.cpp
+)
+target_include_directories(test_standalone_proxy_log_forwarder PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(test_standalone_proxy_log_forwarder PRIVATE
+    gtest_main
+    gtest
+)
+set_target_properties(test_standalone_proxy_log_forwarder PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+)
+add_test(NAME StandaloneProxyLogForwarderTest COMMAND test_standalone_proxy_log_forwarder)
+
+add_executable(test_standalone_config_port
+    tests/test_standalone_config_port.cpp
+    src/StandaloneConfigPort.cpp
+)
+target_include_directories(test_standalone_config_port PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(test_standalone_config_port PRIVATE gtest_main gtest
+    ${VCPKG_ROOT}/installed/x64-mingw-static/lib/libboost_json-gcc14-mt-x64-1_91.a
+    -lws2_32
+)
+set_target_properties(test_standalone_config_port PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+)
+add_test(NAME StandaloneConfigPortTest COMMAND test_standalone_config_port)
 
 add_executable(test_dedup tests/test_dedup.cpp)
 target_include_directories(test_dedup PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
@@ -559,6 +608,9 @@ add_test(NAME UriCodecTest COMMAND test_uri_codec)
 # -- AutoTaskManager unit tests --
 add_executable(test_autotask tests/test_autotask.cpp src/AutoTaskManager.cpp ${CORE_SOURCES})
 target_include_directories(test_autotask PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+if(USE_GRPC_API)
+    target_compile_definitions(test_autotask PRIVATE USE_GRPC_API=1)
+endif()
 target_link_libraries(test_autotask PRIVATE gtest_main gtest
     ${VCPKG_ROOT}/installed/x64-mingw-static/lib/libsqlite3.a
     ${VCPKG_ROOT}/installed/x64-mingw-static/lib/libboost_json-gcc14-mt-x64-1_91.a
@@ -575,7 +627,7 @@ set_target_properties(test_autotask PROPERTIES
 add_test(NAME AutoTaskTest COMMAND test_autotask)
 
 # -- Utils unit tests (pure functions, no external deps beyond gtest) --
-add_executable(test_utils tests/test_utils.cpp src/Utils.cpp)
+add_executable(test_utils tests/test_utils.cpp src/Utils.cpp src/Logger.cpp src/LoggerInstance.cpp)
 target_include_directories(test_utils PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(test_utils PRIVATE gtest_main gtest -lws2_32)
 set_target_properties(test_utils PROPERTIES
@@ -599,6 +651,17 @@ set_target_properties(test_config_reader PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
 )
 add_test(NAME ConfigReaderTest COMMAND test_config_reader)
+
+# -- FloatingWidget pure-policy unit tests (no wx, no external deps beyond gtest) --
+add_executable(test_floating_widget_state tests/test_floating_widget_state.cpp)
+target_include_directories(test_floating_widget_state PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(test_floating_widget_state PRIVATE gtest_main gtest)
+set_target_properties(test_floating_widget_state PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+)
+add_test(NAME FloatingWidgetStateTest COMMAND test_floating_widget_state)
 
 # -- ConfigGenerator unit tests (SQLite + boost_json, now delegates to extracted components) --
 add_executable(test_config_generator
@@ -638,6 +701,51 @@ set_target_properties(test_config_generator PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
 )
 add_test(NAME ConfigGeneratorTest COMMAND test_config_generator)
+
+# -- Standalone Proxy Pool unit tests (offline: config JSON + parser + pool construction) --
+add_executable(test_standalone_proxy_pool
+    tests/TestStandaloneProxyPool.cpp
+    src/ConfigGenerator.cpp
+    src/StandaloneProxyPool.cpp
+    src/PortManager.cpp
+    src/ProxyHealthEvaluator.cpp
+    src/XrayInstance.cpp
+    src/XrayApi.cpp
+    src/ProfileitemDAO.cpp
+    src/ProfileExItemDAO.cpp
+    src/utils/DnsCache.cpp
+    src/Logger.cpp
+    src/LoggerInstance.cpp
+    src/Utils.cpp
+    src/config/ProfileConfigRepository.cpp
+    src/config/ProfileNormalizer.cpp
+    src/config/StreamSettingsBuilder.cpp
+    src/config/OutboundBuilderFactory.cpp
+    src/config/XrayConfigAssembler.cpp
+    src/config/outbound/VLESSOutboundBuilder.cpp
+    src/config/outbound/VMessOutboundBuilder.cpp
+    src/config/outbound/SSOutboundBuilder.cpp
+    src/config/outbound/TrojanOutboundBuilder.cpp
+    src/config/outbound/SOCKSOutboundBuilder.cpp
+    src/config/outbound/HTTPOutboundBuilder.cpp
+    src/config/outbound/Hysteria2OutboundBuilder.cpp
+    src/config/outbound/TUICOutboundBuilder.cpp
+    src/config/outbound/WireGuardOutboundBuilder.cpp
+)
+target_include_directories(test_standalone_proxy_pool PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_compile_definitions(test_standalone_proxy_pool PRIVATE USE_GRPC_API=1)
+target_link_libraries(test_standalone_proxy_pool PRIVATE gtest_main gtest
+    ${VCPKG_ROOT}/installed/x64-mingw-static/lib/libsqlite3.a
+    ${VCPKG_ROOT}/installed/x64-mingw-static/lib/libboost_json-gcc14-mt-x64-1_91.a
+    CURL::libcurl
+    -lws2_32
+)
+set_target_properties(test_standalone_proxy_pool PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+)
+add_test(NAME StandaloneProxyPoolTest COMMAND test_standalone_proxy_pool)
 
 # -- Delete Subscription tests --
 add_executable(test_delete_subscription tests/test_delete_subscription.cpp     src/ProfileitemDAO.cpp
@@ -878,6 +986,28 @@ set_target_properties(fake_xray_helper PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
 )
 
+# -- XrayManager crash-aware, bounded startup regression test --
+# Verifies that XrayManager::start() fails fast (does NOT block for the full
+# readiness timeout) when the backing process flash-crashes shortly after spawn
+# but before its API port opens. Uses the same fake_xray_helper "latecrash" mode.
+add_executable(test_xray_manager_startup
+    tests/test_xray_manager_startup.cpp
+    src/XrayManager.cpp
+    src/XrayInstance.cpp
+    src/PortManager.cpp
+    src/Utils.cpp
+    src/Logger.cpp
+    src/LoggerInstance.cpp
+)
+target_include_directories(test_xray_manager_startup PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(test_xray_manager_startup PRIVATE gtest_main gtest -lws2_32)
+set_target_properties(test_xray_manager_startup PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+)
+add_test(NAME XrayManagerStartupTest COMMAND test_xray_manager_startup)
+
 # -- TestResultQueue unit tests (retry logic, concurrent enqueue) --
 add_executable(test_result_queue tests/test_result_queue_test.cpp
     src/Logger.cpp src/LoggerInstance.cpp)
@@ -1024,6 +1154,9 @@ if(wxWidgets_FOUND AND BUILD_UI_TESTS)
             tests/ui/TestMainWindow.cpp
             tests/ui/TestSearch.cpp
             tests/ui/TestClear.cpp
+            tests/ui/TestStandaloneFloatingWidget.cpp
+            tests/ui/TestStandaloneProxyPool.cpp
+            tests/ui/TestStandalonePortClose.cpp
         )
         add_executable(UITests ${UI_FRAMEWORK_SOURCES} ${UI_TEST_SOURCES})
         target_include_directories(UITests PRIVATE
@@ -1031,7 +1164,7 @@ if(wxWidgets_FOUND AND BUILD_UI_TESTS)
         target_link_libraries(UITests PRIVATE
             Catch2::Catch2
             uiautomationcore oleaut32 uuid
-            user32 gdi32 gdiplus shell32)
+            user32 gdi32 gdiplus shell32 ws2_32 iphlpapi)
         set_target_properties(UITests PROPERTIES
             RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
             RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
@@ -1043,7 +1176,13 @@ if(wxWidgets_FOUND AND BUILD_UI_TESTS)
         add_test(NAME UI_MAINWINDOW COMMAND UITests "[mainwindow]")
         add_test(NAME UI_SEARCH     COMMAND UITests "[search]")
         add_test(NAME UI_CLEAR      COMMAND UITests "[clear]")
+        add_test(NAME UI_FLOATINGWIDGET COMMAND UITests "[floatingwidget]")
+        add_test(NAME UI_POOL COMMAND UITests "[pooldialog]")
+        add_test(NAME UI_PORTCLOSE COMMAND UITests "[portclose]")
         set_tests_properties(UI_MAINWINDOW UI_SEARCH UI_CLEAR PROPERTIES
+            TIMEOUT 120
+            WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+        set_tests_properties(UI_FLOATINGWIDGET UI_POOL UI_PORTCLOSE PROPERTIES
             TIMEOUT 120
             WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
     endif()

@@ -1,0 +1,18 @@
+Filters: [floatingwidget]
+Randomness seeded to: 546434536
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+UITests.exe is a Catch2 v3.15.3 host application.
+Run with -? for options
+
+-------------------------------------------------------------------------------
+Floating widget keeps free-drop position after re-show
+-------------------------------------------------------------------------------
+E:/eclipse_workspace/multiple_thread_validproxy/tests/ui/TestStandaloneFloatingWidget.cpp:199
+...............................................................................
+
+E:/eclipse_workspace/multiple_thread_validproxy/tests/ui/TestStandaloneFloatingWidget.cpp:202: FAILED:
+  REQUIRE( fx.mainWindow().valid() )
+with expansion:
+  false
+

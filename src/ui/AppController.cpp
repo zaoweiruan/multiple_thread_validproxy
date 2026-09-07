@@ -10,18 +10,22 @@ using ui::ScopeGuard;
 #include "SubitemUpdaterV2.h"
 #include "Profileexitem.h"
 #include "ProxyBatchTester.h"
+#include "ProxyTester.h"
 #include "ConfigGenerator.h"
 #include "config/OutboundBuilderFactory.h"
 #include "config/SingBoxOutboundBuilderFactory.h"
 #include "ShareLink.h"
+#include "PortManager.h"
 #include "AutoTaskManager.h"
 #include "Utils.h"
 #include "Logger.h"
 #include "RegionBatchResolver.h"
 #include "ProcessInspector.h"
+#include "ProcessExitListener.h"
 #include "UrlFetcher.h"
 #include "ProxyConnectivityVerifier.h"
 #include "ProxyScorer.h"
+#include "StandaloneConfigPort.h"
 
 #include <wx/app.h>
 #include <wx/event.h>
@@ -331,6 +335,39 @@ std::optional<db::models::Profileitem> AppController::getProxyByIndexId(const st
     return dao.getByIndexId(indexId);
 }
 
+std::string AppController::getSubIdByProxyIndexId(const std::string& indexId) {
+    if (!db_ || indexId.empty()) return "";
+    db::models::ProfileitemDAO dao(db_);
+    std::optional<db::models::Profileitem> proxy = dao.getByIndexId(indexId);
+    if (!proxy.has_value()) return "";
+    return proxy->subid;
+}
+
+std::vector<db::models::Profileitem> AppController::getPoolCandidateProfiles(int limit) {
+    std::vector<db::models::Profileitem> out;
+    if (!db_) return out;
+    const int cap = (limit > 0 && limit <= 1000) ? limit : 300;
+    db::models::ProfileitemDAO dao(db_);
+    sqlite3_stmt* stmt = nullptr;
+    // Plain, schema-robust query: just grab up to `cap` profile IndexIds. The
+    // picker only needs the basic Profileitem rows (IndexId / ConfigType /
+    // Address / Remarks); no join against ProfileExItem so it works even when the
+    // test DB has no extended rows.
+    std::string sql = "SELECT IndexId FROM ProfileItem LIMIT " + std::to_string(cap);
+    if (sqlite3_prepare_v2(db_, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
+        return out;
+    }
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        const char* idx = (const char*)sqlite3_column_text(stmt, 0);
+        if (idx) {
+            auto p = dao.getByIndexId(idx);
+            if (p) out.push_back(*p);
+        }
+    }
+    sqlite3_finalize(stmt);
+    return out;
+}
+
 std::vector<db::models::ProfileExItem> AppController::loadProxyResults() {
     db::models::ProfileExItemDAO dao(db_);
     std::vector<db::models::ProfileExItem> items = dao.getAll();
@@ -433,6 +470,12 @@ void AppController::testAllProxiesAsync(wxEvtHandler* wxHandler) {
         AsyncOperationGuard guard{workerThread_, isRunning_, cancelRequested_, wxHandler};
         if (!guard.isAllowed()) return;
     workerThread_ = std::thread(&AppController::doTestAllProxies, this, wxHandler);
+}
+
+void AppController::testOnlineProxiesAsync(wxEvtHandler* wxHandler) {
+        AsyncOperationGuard guard{workerThread_, isRunning_, cancelRequested_, wxHandler};
+        if (!guard.isAllowed()) return;
+    workerThread_ = std::thread(&AppController::doTestOnlineProxies, this, wxHandler);
 }
 
 void AppController::cancelTest() {
@@ -608,6 +651,11 @@ bool AppController::isStandaloneProxyRunning(const std::string& indexId) const {
     return proc::ProcessInspector::isProcessRunningWithConfig(configFileName);
 }
 
+namespace {
+// (readFileTail removed — xray/sing-box output is now streamed to the local log
+//  directly via an anonymous pipe + detached reader thread in startStandaloneProxy.)
+} // namespace
+
 bool AppController::startStandaloneProxy(const std::string& indexId, int overridePort) {
     std::unique_lock<std::mutex> lock(standaloneMutex_);
 
@@ -631,12 +679,69 @@ bool AppController::startStandaloneProxy(const std::string& indexId, int overrid
     // process launch). The config file name is derived from the index id, so the
     // probe catches both a prior run from this same startStandaloneProxy call and
     // any externally-launched process using an identical config file name.
+    //
+    // Unlike the pre-3649905 behavior (which killed ALL xray/sing-box processes
+    // by name), cleanup here is scoped to THIS indexId's config only: we locate
+    // the exact process(es) whose command line references
+    // "standalone_<indexId>-xray.json" / "-singbox.json" and, after user consent,
+    // terminate only those specific PIDs before starting a fresh instance.
     const std::string configFileName = "standalone_" + indexId + (useSingBox ? "-singbox.json" : "-xray.json");
-    if (proc::ProcessInspector::isProcessRunningWithConfig(configFileName)) {
-        Logger::write("[StandaloneProxy] A proxy using config '" + configFileName
-                      + "' is already running. Please stop it before starting a new one.",
-                      LogLevel::ERR);
-        return false;
+    std::vector<proc::ProcessInfo> existingProcs;
+    {
+        const char* exeNames[] = { "xray.exe", "sing-box.exe" };
+        for (int e = 0; e < 2; ++e) {
+            std::vector<proc::ProcessInfo> procs =
+                proc::ProcessInspector::enumerateByName(exeNames[e]);
+            for (std::size_t i = 0; i < procs.size(); ++i) {
+                if (procs[i].commandLine.empty()) {
+                    continue;  // PEB read failed - cannot confirm config match
+                }
+                if (proc::ProcessInspector::extractConfigFileName(procs[i].commandLine)
+                        == configFileName) {
+                    existingProcs.push_back(procs[i]);
+                }
+            }
+        }
+    }
+    if (!existingProcs.empty()) {
+        Logger::write("[StandaloneProxy] Found " + std::to_string(existingProcs.size())
+                      + " existing process(es) using config '" + configFileName
+                      + "'. Asking user whether to terminate before restarting.",
+                      LogLevel::INFO);
+        // Release the mutex while the modal dialog is shown (deadlock guard:
+        // the dialog pumps messages and must not run while standaloneMutex_ is held).
+        lock.unlock();
+        const int answer = wxMessageBox(
+            "已发现使用该配置的独立代理进程仍在运行。\n是否关闭旧进程后重新启动？",
+            "独立代理已存在", wxYES_NO | wxICON_QUESTION, topWindow_);
+        lock.lock();
+        if (answer != wxYES) {
+            Logger::write("[StandaloneProxy] User declined to terminate the existing "
+                          "process; aborting start.", LogLevel::INFO);
+            return false;
+        }
+        // Terminate each matching process (scoped to this indexId's config only).
+        for (std::size_t i = 0; i < existingProcs.size(); ++i) {
+            HANDLE hProcess = OpenProcess(PROCESS_TERMINATE, FALSE, existingProcs[i].pid);
+            if (!hProcess) {
+                Logger::write("[StandaloneProxy] OpenProcess failed for pid "
+                              + std::to_string(existingProcs[i].pid), LogLevel::ERR);
+                continue;
+            }
+            const BOOL ok = TerminateProcess(hProcess, 1);
+            WaitForSingleObject(hProcess, 5000);
+            CloseHandle(hProcess);
+            Logger::write("[StandaloneProxy] Terminated existing standalone process pid "
+                          + std::to_string(existingProcs[i].pid)
+                          + (ok ? " (ok)" : " (failed)"), LogLevel::INFO);
+        }
+        // Re-check after termination; if a matching process still runs (e.g. access
+        // denied), abort rather than risk a port conflict.
+        if (proc::ProcessInspector::isProcessRunningWithConfig(configFileName)) {
+            Logger::write("[StandaloneProxy] Existing process could not be terminated; "
+                          "aborting start.", LogLevel::ERR);
+            return false;
+        }
     }
 
     // Use override port if provided, otherwise use configured SOCKS port
@@ -718,16 +823,13 @@ bool AppController::startStandaloneProxy(const std::string& indexId, int overrid
     boost::json::value templateVal = boost::json::parse(templateContent);
     boost::json::object configObj = templateVal.as_object();
 
-    // Replace the SOCKS inbound port with the dynamically allocated port
-    // Xray uses "inbounds[].port", sing-box uses "inbounds[].listen_port"
-    if (configObj.contains("inbounds") && !configObj["inbounds"].as_array().empty()) {
-        boost::json::object& inbound = configObj["inbounds"].as_array()[0].as_object();
-        if (inbound.contains("listen_port")) {
-            inbound["listen_port"] = socksPort;  // sing-box format
-        } else if (inbound.contains("port")) {
-            inbound["port"] = socksPort;  // Xray format
-        }
-    }
+    // Replace the SOCKS inbound port with the dynamically allocated port.
+    // IMPORTANT: the SOCKS inbound is NOT always inbounds[0] -- xray templates
+    // put the gRPC "api" dokodemo-door inbound first. We must locate the SOCKS
+    // inbound by protocol/type, otherwise we clobber the wrong inbound and leave
+    // the real proxy listening on its template port, which also made the
+    // floating-widget display show the wrong port.
+    standalone_config::applySocksPort(configObj, socksPort);
 
     // Replace the outbounds array with our generated one
     configObj["outbounds"] = outboundsArr;
@@ -802,17 +904,37 @@ bool AppController::startStandaloneProxy(const std::string& indexId, int overrid
     std::vector<char> cmdBuf(cmd.begin(), cmd.end());
     cmdBuf.push_back('\0');
 
-    // Set environment variable (inherited by child)
+    // Set environment variable (inherited by the child via its environment block)
     SetEnvironmentVariableA(envVarName.c_str(), assetDir.c_str());
 
+    // Launch in its OWN console window so xray/sing-box output (config parse
+    // errors, "address already in use", panic stacks) is shown directly to the
+    // user. No stdout/stderr redirection: the output goes to the visible window.
+    // On failure the return value (GetLastError for CreateProcess, or the process
+    // exit code on early crash) is logged below — see logCrashReason.
     BOOL created = CreateProcessA(nullptr, cmdBuf.data(), nullptr, nullptr, FALSE,
-                                   CREATE_NEW_CONSOLE,  // Show proxy process in its own console window
-                                   nullptr, nullptr, &si, &pi);
+                                  CREATE_NEW_CONSOLE, nullptr, nullptr, &si, &pi);
     if (!created) {
         DWORD err = GetLastError();
-        Logger::write("[StandaloneProxy] CreateProcess failed: " + std::to_string(err), LogLevel::ERR);
+        Logger::write("[StandaloneProxy] 启动失败: CreateProcess 返回值=0(FALSE), GetLastError="
+                      + std::to_string(err), LogLevel::ERR);
         return false;
     }
+
+    // Helper: log the process exit code so the failure reason is also captured in
+    // the application's local log. xray/sing-box stdout/stderr (incl. crash reasons)
+    // is shown in the independent proxy console window; here we record the exit code.
+    auto logCrashReason = [&](const std::string& where) {
+        DWORD code = 0;
+        const bool exited =
+            (GetExitCodeProcess(pi.hProcess, &code) && code != STILL_ACTIVE);
+        std::string msg = "[StandaloneProxy] " + where + " for " + indexId
+                          + " (SOCKS5 :" + std::to_string(socksPort) + ")";
+        msg += exited ? (", exitCode=" + std::to_string(code))
+                     : ", exitCode=STILL_ACTIVE(unknown)";
+        msg += "; xray/sing-box 输出（含崩溃原因）见独立代理控制台窗口";
+        Logger::write(msg, LogLevel::ERR);
+    };
 
     // Store process info (no Job Object — process runs independently from parent)
     StandaloneProxyInfo info;
@@ -834,20 +956,31 @@ bool AppController::startStandaloneProxy(const std::string& indexId, int overrid
         // process takes several seconds to start listening, so probing too early
         // always fails with connection refused. Budget 3x the test timeout.
         const bool portReady = proxy::ConnectivityVerifier::waitForPort(
-            socksPort, config_.test_timeout_ms * 3);
+            socksPort, config_.test_timeout_ms * 3, pi.hProcess);
         if (!portReady) {
-            Logger::write("[StandaloneProxy] SOCKS port never became ready for " + indexId
-                          + " on SOCKS5 :" + std::to_string(socksPort), LogLevel::WARN);
-            exDao_.updateTestResult(indexId, -1, false, "port never ready");
-            // Release lock before modal dialog — wxMessageBox pumps WM_TIMER
-            // which triggers onProxyMonTimer → getRunningStandaloneCount →
-            // same-thread deadlock on standaloneMutex_.
+            const bool dead = (WaitForSingleObject(pi.hProcess, 0) == WAIT_OBJECT_0);
+            if (dead) {
+                logCrashReason("flash-crash (process exited before SOCKS port ready)");
+            } else {
+                Logger::write("[StandaloneProxy] SOCKS port never became ready for " + indexId
+                              + " on SOCKS5 :" + std::to_string(socksPort)
+                              + " (process alive, timeout)", LogLevel::WARN);
+            }
+            exDao_.updateTestResult(indexId, -1, false, dead ? "process crashed" : "port never ready");
+            // Release lock before modal dialog — see deadlock note above.
             lock.unlock();
-            const int rc = wxMessageBox("代理已启动但连通性验证失败，是否关闭该进程？",
-                                        "连通性验证失败", wxYES_NO | wxCANCEL, topWindow_);
+            const std::string msg = dead
+                ? ("代理进程闪崩（SOCKS 端口从未就绪）。崩溃原因见独立代理控制台窗口")
+                : "代理进程已启动，但 SOCKS 端口在超时内未就绪。";
+            const int rc = wxMessageBox(msg, "代理启动失败", wxYES_NO | wxCANCEL, topWindow_);
             lock.lock();
             if (rc == wxYES) {
-                TerminateProcess(pi.hProcess, 1);
+                const BOOL termOk = TerminateProcess(pi.hProcess, 1);
+                if (!termOk) {
+                    const DWORD termErr = GetLastError();
+                    Logger::write("[StandaloneProxy] TerminateProcess FAILED (err=" + std::to_string(termErr)
+                                  + ") for " + indexId, LogLevel::ERR);
+                }
                 WaitForSingleObject(pi.hProcess, 5000);
                 CloseHandle(pi.hProcess);
                 standaloneProxies_.erase(indexId);
@@ -859,6 +992,39 @@ bool AppController::startStandaloneProxy(const std::string& indexId, int overrid
             info.running = false;
             info.managed = false;
             Logger::write("[StandaloneProxy] Proxy left unmanaged (port never ready) for " + indexId,
+                          LogLevel::WARN);
+            return true;
+        }
+
+        // Crash-aware gate: the SOCKS port may have opened, then the process died
+        // before we ran the connectivity probe. Don't run a pointless test against a
+        // dead proxy — report the crash instead of a misleading "connectivity FAILED".
+        if (WaitForSingleObject(pi.hProcess, 0) == WAIT_OBJECT_0) {
+            logCrashReason("port opened then crashed before connectivity test");
+            exDao_.updateTestResult(indexId, -1, false, "process crashed after port ready");
+            lock.unlock();
+            const int rc = wxMessageBox(
+                "代理进程在连通性验证前闪崩。崩溃原因见独立代理控制台窗口",
+                "代理启动失败", wxYES_NO | wxCANCEL, topWindow_);
+            lock.lock();
+            if (rc == wxYES) {
+                const BOOL termOk = TerminateProcess(pi.hProcess, 1);
+                if (!termOk) {
+                    const DWORD termErr = GetLastError();
+                    Logger::write("[StandaloneProxy] TerminateProcess FAILED (err=" + std::to_string(termErr)
+                                  + ") for " + indexId, LogLevel::ERR);
+                }
+                WaitForSingleObject(pi.hProcess, 5000);
+                CloseHandle(pi.hProcess);
+                standaloneProxies_.erase(indexId);
+                Logger::write("[StandaloneProxy] Terminated crashed process for " + indexId,
+                              LogLevel::INFO);
+                return false;
+            }
+            StandaloneProxyInfo& info = standaloneProxies_[indexId];
+            info.running = false;
+            info.managed = false;
+            Logger::write("[StandaloneProxy] Proxy left unmanaged (crashed after port ready) for " + indexId,
                           LogLevel::WARN);
             return true;
         }
@@ -878,7 +1044,12 @@ bool AppController::startStandaloneProxy(const std::string& indexId, int overrid
                                         "连通性验证失败", wxYES_NO | wxCANCEL, topWindow_);
             lock.lock();
             if (rc == wxYES) {
-                TerminateProcess(pi.hProcess, 1);
+                const BOOL termOk = TerminateProcess(pi.hProcess, 1);
+                if (!termOk) {
+                    const DWORD termErr = GetLastError();
+                    Logger::write("[StandaloneProxy] TerminateProcess FAILED (err=" + std::to_string(termErr)
+                                  + ") for " + indexId, LogLevel::ERR);
+                }
                 WaitForSingleObject(pi.hProcess, 5000);
                 CloseHandle(pi.hProcess);
                 standaloneProxies_.erase(indexId);
@@ -961,9 +1132,17 @@ bool AppController::startStandaloneProxy(const std::string& indexId, int overrid
             },
             // TakeoverFn (R6 auto-takeover): when the old process exits but a new one
             // with the same config file is detected, take over the new process.
-            [this, &configFileNameCopy, &pi, indexId](
+            [this, &configFileNameCopy, indexId](
                 int oldPid, const std::string& oldIndexId, int64_t oldHistoryId,
                 const std::string& cfName) -> bool {
+                // If the proxy was manually stopped (running=false), do NOT takeover.
+                {
+                    std::lock_guard<std::mutex> lock(standaloneMutex_);
+                    auto it = standaloneProxies_.find(indexId);
+                    if (it == standaloneProxies_.end() || !it->second.running) {
+                        return false;
+                    }
+                }
                 // Find any new xray/sing-box process using the same config file
                 const std::string exeName =
                     (cfName.find("-singbox.json") != std::string::npos)
@@ -988,10 +1167,20 @@ bool AppController::startStandaloneProxy(const std::string& indexId, int overrid
                     if (!newHandle) {
                         continue;
                     }
-                    // Close the old handle
-                    if (pi.hProcess) {
-                        CloseHandle(pi.hProcess);
-                        pi.hProcess = nullptr;
+                    // Close the old handle from standaloneProxies_ (pi is a
+                    // stack-local in startStandaloneProxy and must NOT be
+                    // accessed here — it is already destroyed).
+                    HANDLE oldHandle = nullptr;
+                    {
+                        std::lock_guard<std::mutex> lock(standaloneMutex_);
+                        auto it = standaloneProxies_.find(indexId);
+                        if (it != standaloneProxies_.end()) {
+                            oldHandle = it->second.processHandle;
+                            it->second.processHandle = nullptr;
+                        }
+                    }
+                    if (oldHandle) {
+                        CloseHandle(oldHandle);
                     }
                     // Insert new history start for the takeover session
                     // (fallback must be datetime-formatted: stored as started_at)
@@ -1127,6 +1316,11 @@ int AppController::getRunningStandaloneCount() const {
     return count;
 }
 
+// Forward declaration: readStandaloneInboundPort is defined later in this file
+// (after getWatchedStandaloneMonitors) but is needed here to re-read the actual
+// listening port from the on-disk config, avoiding stale in-memory socksPort.
+static int readStandaloneInboundPort(const std::string& configPath);
+
 std::vector<StandaloneMonitorRow> AppController::getWatchedStandaloneMonitors() {
     // Pass 1: copy watched entries under the lock. Only running && managed
     // entries are shown — matches the "currently watched" semantics of the
@@ -1136,6 +1330,8 @@ std::vector<StandaloneMonitorRow> AppController::getWatchedStandaloneMonitors() 
         int socksPort;
         int64_t historyId;
         std::string fallbackStartedAt;
+        std::string configFileName;  // 用于从磁盘配置文件重新读取实际监听端口
+        std::string configPath;      // 权威完整配置路径（start/adopt 时记录）
     };
     std::vector<WatchedEntry> watched;
     {
@@ -1150,6 +1346,8 @@ std::vector<StandaloneMonitorRow> AppController::getWatchedStandaloneMonitors() 
             e.socksPort = it->second.socksPort;
             e.historyId = it->second.runtimeHistoryId;
             e.fallbackStartedAt = it->second.startedAt;
+            e.configFileName = it->second.configFileName;
+            e.configPath = it->second.configPath;
             watched.push_back(e);
         }
     }
@@ -1173,7 +1371,30 @@ std::vector<StandaloneMonitorRow> AppController::getWatchedStandaloneMonitors() 
     for (std::size_t j = 0; j < watched.size(); ++j) {
         StandaloneMonitorRow row;
         row.indexId = watched[j].indexId;
-        row.socksPort = watched[j].socksPort;
+        // 从磁盘配置文件重新读取实际监听端口，避免使用内存中可能过时的 socksPort
+        //（例如进程崩溃后端口已释放，或外部进程修改了配置文件）。
+        // 优先使用记录下的权威完整配置路径（configPath，来自 start/adopt 的 cmdline
+        // 权威解析）；仅当其为空或读取失败时，才回退到两处已知目录布局探测，
+        // 最后才回退到内存值。
+        {
+            int diskPort = 0;
+            std::string diskPath = watched[j].configPath;
+            if (!diskPath.empty()) {
+                diskPort = readStandaloneInboundPort(diskPath);
+            }
+            if (diskPort <= 0) {
+                const std::string exeDir = utils::getExecutableDir();
+                const std::string dirs[2] = {
+                    exeDir + "\\config\\",
+                    exeDir + "\\worker\\config\\"
+                };
+                for (int di = 0; di < 2 && diskPort <= 0; ++di) {
+                    diskPath = dirs[di] + watched[j].configFileName;
+                    diskPort = readStandaloneInboundPort(diskPath);
+                }
+            }
+            row.socksPort = (diskPort > 0) ? diskPort : watched[j].socksPort;
+        }
         // Host = ProfileItem.Address (spec v1.1); "-" rendered by the dialog
         // when the profile has been deleted or the address is empty.
         std::optional<db::models::Profileitem> profile =
@@ -1226,11 +1447,14 @@ static int readStandaloneInboundPort(const std::string& configPath) {
         it->value().as_array().empty()) {
         return 0;
     }
-    const boost::json::value& first = it->value().as_array().at(0);
-    if (!first.is_object()) {
+    const boost::json::array& arr = it->value().as_array();
+    int idx = standalone_config::findSocksInboundIndex(arr);
+    int target = (idx >= 0) ? idx : 0;
+    if (target < 0 || target >= static_cast<int>(arr.size()) ||
+        !arr[target].is_object()) {
         return 0;
     }
-    const boost::json::object& inbound = first.as_object();
+    const boost::json::object& inbound = arr[target].as_object();
     boost::json::object::const_iterator p = inbound.find("listen_port");
     if (p != inbound.end() && p->value().is_int64()) {
         return static_cast<int>(p->value().as_int64());
@@ -1287,8 +1511,13 @@ void AppController::adoptDanglingStandaloneProxies() {
                 }
             }
 
+            // Must include PROCESS_TERMINATE so that stopStandaloneProxy() /
+            // shutdownStandaloneProxies() can actually kill this adopted orphan.
+            // Without it, TerminateProcess fails with ERROR_ACCESS_DENIED and the
+            // orphan squats its port forever (bug: adopted xray never cleaned up).
             HANDLE hProcess = OpenProcess(
-                PROCESS_QUERY_INFORMATION | SYNCHRONIZE, FALSE, procs[i].pid);
+                PROCESS_QUERY_INFORMATION | SYNCHRONIZE | PROCESS_TERMINATE,
+                FALSE, procs[i].pid);
             if (!hProcess) {
                 continue;
             }
@@ -1358,29 +1587,38 @@ void AppController::adoptDanglingStandaloneProxies() {
 
             // Resolve the SOCKS inbound port from the on-disk config so the
             // monitor dialog and logs can show it for adopted processes too.
-            // Dangling processes may have been started by the worker copy
-            // (bin\worker\validproxy.exe), whose configs live under
-            // <exeDir>\worker\config\ — probe both known layouts.
-            const std::string adoptedExeDir = utils::getExecutableDir();
-            const std::string adoptedDirs[2] = {
-                adoptedExeDir + "\\config\\",
-                adoptedExeDir + "\\worker\\config\\"
-            };
+            // Step (a) is authoritative: derive the full config path from the
+            // launching command line (cmdline `-c`) and read the port directly.
+            // The process was launched from exactly that file, so this is the
+            // ground truth even when the same indexId has configs in multiple
+            // directories (e.g. bin\config vs bin\worker\config produced by the
+            // bin\worker\validproxy.exe work copy). Directory probing earlier
+            // could hit a stale copy and report a port nothing is listening on.
             int adoptedPort = 0;
-            for (int di = 0; di < 2 && adoptedPort <= 0; ++di) {
-                adoptedPort = readStandaloneInboundPort(
-                    adoptedDirs[di] + configFileName);
+            std::string adoptedConfigPath;
+            const std::string fullPath =
+                proc::ProcessInspector::extractConfigFullPath(procs[i].commandLine);
+            if (!fullPath.empty()) {
+                adoptedPort = readStandaloneInboundPort(fullPath);
+                if (adoptedPort > 0) {
+                    adoptedConfigPath = fullPath;
+                }
             }
-            // Step (b): an external program may launch the proxy with its config in
-            // a non-standard directory (not <exeDir>\config nor <exeDir>\worker\config).
-            // Derive the full config path from the launching command line and read the
-            // port directly. This stays authoritative (no listener ambiguity) for both
-            // xray (single inbound) and sing-box (many DNS inbounds).
+            // Step (b): fallback — a bare-filename `-c` (no directory) or a launch
+            // without a readable path can't be located from the command line, so
+            // probe the two known on-disk layouts under the executable's directory.
             if (adoptedPort <= 0) {
-                const std::string fullPath =
-                    proc::ProcessInspector::extractConfigFullPath(procs[i].commandLine);
-                if (!fullPath.empty()) {
-                    adoptedPort = readStandaloneInboundPort(fullPath);
+                const std::string adoptedExeDir = utils::getExecutableDir();
+                const std::string adoptedDirs[2] = {
+                    adoptedExeDir + "\\config\\",
+                    adoptedExeDir + "\\worker\\config\\"
+                };
+                for (int di = 0; di < 2 && adoptedPort <= 0; ++di) {
+                    adoptedPort = readStandaloneInboundPort(
+                        adoptedDirs[di] + configFileName);
+                    if (adoptedPort > 0) {
+                        adoptedConfigPath = adoptedDirs[di] + configFileName;
+                    }
                 }
             }
             if (adoptedPort <= 0) {
@@ -1393,6 +1631,7 @@ void AppController::adoptDanglingStandaloneProxies() {
                 StandaloneProxyInfo& info = standaloneProxies_[indexId];
                 info.indexId = indexId;
                 info.configFileName = configFileName;
+                info.configPath = adoptedConfigPath;
                 info.socksPort = adoptedPort;
                 info.processHandle = hProcess;
                 info.running = true;
@@ -1418,46 +1657,256 @@ void AppController::adoptDanglingStandaloneProxies() {
 }
 
 bool AppController::stopStandaloneProxy(const std::string& indexId) {
-    std::lock_guard<std::mutex> lock(standaloneMutex_);
-    auto it = standaloneProxies_.find(indexId);
-    if (it == standaloneProxies_.end() || !it->second.running) {
-        return false;
-    }
-    HANDLE hProcess = it->second.processHandle;
-    if (hProcess) {
-        TerminateProcess(hProcess, 1);
-        CloseHandle(hProcess);
+    // Snapshot the watch key and process handle under the lock, then clear
+    // the map entry BEFORE terminating the process. This prevents the
+    // ProcessExitListener thread's notifyFn from re-acquiring standaloneMutex_
+    // while we are still holding it (which would deadlock during unwatch join).
+    proc::ProcessExitListener::WatchKey key = 0;
+    HANDLE hProcess = nullptr;
+    int socksPort = -1;
+    {
+        std::lock_guard<std::mutex> lock(standaloneMutex_);
+        auto it = standaloneProxies_.find(indexId);
+        if (it == standaloneProxies_.end() || !it->second.running) {
+            return false;
+        }
+        key = it->second.watchKey;
+        hProcess = it->second.processHandle;
+        socksPort = it->second.socksPort;
         it->second.processHandle = nullptr;
-    }
-    if (it->second.watchKey != 0) {
-        exitListener_->unwatch(it->second.watchKey);
+        it->second.running = false;
         it->second.watchKey = 0;
     }
-    it->second.running = false;
-    Logger::write("[StandaloneProxy] Stopped " + indexId + " on SOCKS5 :"
-                  + std::to_string(it->second.socksPort), LogLevel::REPORT);
-    return true;
+
+    // Terminate the process WITHOUT holding standaloneMutex_. The listener
+    // thread may call notifyFn concurrently; notifyFn grabs standaloneMutex_
+    // only to mark running=false and queue a UI event — both safe because we
+    // already cleared the entry above.
+    bool terminated = false;
+    if (hProcess) {
+        const BOOL termOk = TerminateProcess(hProcess, 1);
+        if (!termOk) {
+            const DWORD err = GetLastError();
+            Logger::write("[StandaloneProxy] TerminateProcess FAILED (err="
+                          + std::to_string(err) + ") for " + indexId, LogLevel::ERR);
+        } else {
+            // Bounded wait for the process to actually exit. TerminateProcess is
+            // asynchronous: the OS may still report the SOCKS port as LISTEN in
+            // GetExtendedTcpTable for a short window (<200ms) until the kernel
+            // reclaims the listening socket. Waiting here guarantees that by the
+            // time this call returns, the port is free, so an immediate restart of
+            // another proxy does NOT trip isPortAvailable()'s "port occupied ->
+            // use shifted port" prompt. The 3s is only a worst-case bound; a clean
+            // termination returns far sooner.
+            WaitForSingleObject(hProcess, 3000);
+            terminated = true;
+        }
+        CloseHandle(hProcess);
+    }
+
+    // Unwatch AFTER termination: the listener thread is either already dead
+    // (process exited) or about to exit; join will not block indefinitely.
+    if (key != 0) {
+        exitListener_->unwatch(key);
+    }
+
+    if (terminated) {
+        Logger::write("[StandaloneProxy] Stopped " + indexId + " on SOCKS5 :"
+                      + std::to_string(socksPort), LogLevel::REPORT);
+    } else {
+        Logger::write("[StandaloneProxy] Stop FAILED for " + indexId
+                      + " on SOCKS5 :" + std::to_string(socksPort)
+                      + " (processHandle=" + std::to_string(reinterpret_cast<intptr_t>(hProcess))
+                      + ")", LogLevel::ERR);
+    }
+    return terminated;
 }
 
 void AppController::shutdownStandaloneProxies() {
     shutdownRequested_.store(true);
+    stopProxyPool();
     std::lock_guard<std::mutex> lock(standaloneMutex_);
+    // Deprecated (per user directive): on app exit we NO LONGER auto-terminate
+    // standalone proxy processes. Each standalone xray is left RUNNING as an
+    // orphan so it can be re-adopted by the next session's
+    // adoptDanglingStandaloneProxies(), and can only ever be closed manually
+    // (via stopStandaloneProxy). Here we only release OUR bookkeeping safely:
+    // - unwatch the exit watcher so a later process exit cannot call back into
+    //   a torn-down app;
+    // - close OUR process-handle reference (this does NOT kill the xray).
+    // The standalone proxies themselves keep listening on their fixed ports and
+    // are picked up again on the next app start.
     for (auto& kv : standaloneProxies_) {
-        if (kv.second.running && kv.second.processHandle) {
-            TerminateProcess(kv.second.processHandle, 1);
+        if (kv.second.watchKey != 0) {
+            exitListener_->unwatch(kv.second.watchKey);
+            kv.second.watchKey = 0;
+        }
+        if (kv.second.processHandle) {
             CloseHandle(kv.second.processHandle);
             kv.second.processHandle = nullptr;
-            kv.second.running = false;
-            if (kv.second.watchKey != 0) {
-                exitListener_->unwatch(kv.second.watchKey);
-                kv.second.watchKey = 0;
-            }
         }
+        kv.second.running = false;
     }
     standaloneProxies_.clear();
     if (exitListener_) {
         exitListener_->shutdown();
     }
+}
+
+// ---------------------------------------------------------------
+// Standalone proxy POOL
+// ---------------------------------------------------------------
+bool AppController::isProxyPoolEnabled() const {
+    return config_.standalone_pool.enabled;
+}
+
+bool AppController::startProxyPool() {
+    if (!config_.standalone_pool.enabled) return false;
+    {
+        std::lock_guard<std::mutex> lock(poolMutex_);
+        if (proxyPool_) return true;
+    }
+    std::string xrayPath = config_.proxy.xray_executable;
+    if (xrayPath.empty()) {
+        Logger::write("[AppController] proxy pool not started: proxy.xray_executable not configured",
+                      LogLevel::ERR);
+        return false;
+    }
+    // Ensure the pool's xray can load geoip.dat/geosite.dat for the CN/private
+    // direct routing rules and the DNS geosite matchers. Inherited by the child
+    // xray via CreateProcessW, mirroring the standalone proxy asset-dir setup.
+    {
+        std::string assetDir = config_.proxy.xray_asset_dir;
+        if (assetDir.empty()) {
+            std::error_code ec2;
+            assetDir = std::filesystem::path(xrayPath).parent_path().parent_path().string();
+        }
+        if (!assetDir.empty()) {
+            SetEnvironmentVariableA("XRAY_LOCATION_ASSET", assetDir.c_str());
+        }
+    }
+    std::string configDir = utils::getExecutableDir() + "/config";
+    std::error_code ec;
+    if (!std::filesystem::exists(configDir) && !std::filesystem::create_directories(configDir, ec)) {
+        Logger::write("[AppController] cannot create pool config dir: " + configDir, LogLevel::ERR);
+        return false;
+    }
+    // Resolve pool listen ports via PortManager so the pool never collides with
+    // an already-running standalone proxy / Xray instance (both allocate via the
+    // same manager). The configured socksPort/apiPort are only *desired* hints.
+    // Retry several times: on each attempt we shift the *desired* base port so a
+    // transiently-busy port (e.g. a just-exited xray still racing to release its
+    // listener, or an external process) is skipped instead of being handed to a
+    // fresh xray that would fail to listen and force a noisy restart.
+    const int kMaxAttempts = 5;
+    for (int attempt = 0; attempt < kMaxAttempts; ++attempt) {
+        config::StandalonePoolConfig poolCfg = config_.standalone_pool;
+        // Reuse the global test url so the pool's observatory probes the same
+        // endpoint the rest of the app uses (fixes the frozen-field health bug).
+        poolCfg.probeUrl = config_.test_url;
+        if (attempt > 0) {
+            // Shift the scan window past the port that was busy on the last try.
+            poolCfg.socksPort = 10809 + attempt;
+            poolCfg.apiPort = 10810 + attempt;
+        }
+        if (!proxy::resolvePoolPorts(poolCfg)) {
+            Logger::write("[AppController] no free port available for proxy pool (attempt "
+                          + std::to_string(attempt) + ")", LogLevel::ERR);
+            continue;
+        }
+        std::shared_ptr<proxy::StandaloneProxyPool> pool(
+            new proxy::StandaloneProxyPool(poolCfg, xrayPath, configDir));
+        pool->onMembersChanged = [this](const std::vector<proxy::PoolMemberView>& members) {
+            if (topWindow_) {
+                wxQueueEvent(topWindow_, new PoolMembersUpdatedEvent(members));
+            }
+        };
+        if (!pool->start()) {
+            Logger::write("[AppController] proxy pool start failed (attempt "
+                          + std::to_string(attempt) + "), socks=" + std::to_string(poolCfg.socksPort)
+                          + " api=" + std::to_string(poolCfg.apiPort), LogLevel::ERR);
+            PortManager::freePort(poolCfg.socksPort);
+            PortManager::freePort(poolCfg.apiPort);
+            continue;
+        }
+        {
+            std::lock_guard<std::mutex> lock(poolMutex_);
+            proxyPool_ = pool;
+            poolSocksPort_ = poolCfg.socksPort;
+            poolApiPort_ = poolCfg.apiPort;
+        }
+        Logger::write("[AppController] proxy pool started (socks=" + std::to_string(poolCfg.socksPort)
+                      + ", api=" + std::to_string(poolCfg.apiPort) + ")", LogLevel::INFO);
+        return true;
+    }
+    Logger::write("[AppController] proxy pool start gave up after "
+                  + std::to_string(kMaxAttempts) + " attempts", LogLevel::ERR);
+    return false;
+}
+
+void AppController::stopProxyPool() {
+    std::shared_ptr<proxy::StandaloneProxyPool> pool;
+    int socks = 0, api = 0;
+    {
+        std::lock_guard<std::mutex> lock(poolMutex_);
+        pool = proxyPool_;
+        proxyPool_.reset();
+        socks = poolSocksPort_;
+        api = poolApiPort_;
+        poolSocksPort_ = 0;
+        poolApiPort_ = 0;
+    }
+    if (pool) pool->stop();
+    if (socks > 0) PortManager::freePort(socks);
+    if (api > 0) PortManager::freePort(api);
+}
+
+bool AppController::isProxyPoolRunning() const {
+    std::lock_guard<std::mutex> lock(poolMutex_);
+    return proxyPool_ && proxyPool_->isRunning();
+}
+
+bool AppController::injectProxyToPool(const std::string& indexId) {
+    std::shared_ptr<proxy::StandaloneProxyPool> pool;
+    {
+        std::lock_guard<std::mutex> lock(poolMutex_);
+        pool = proxyPool_;
+    }
+    if (!pool) return false;
+    std::optional<db::models::Profileitem> profile = getProxyByIndexId(indexId);
+    if (!profile) return false;
+    return pool->injectMember(*profile);
+}
+
+bool AppController::removePoolMember(int indexId, bool graceful) {
+    std::shared_ptr<proxy::StandaloneProxyPool> pool;
+    {
+        std::lock_guard<std::mutex> lock(poolMutex_);
+        pool = proxyPool_;
+    }
+    if (!pool) return false;
+    return pool->removeMember(indexId, graceful);
+}
+
+std::vector<proxy::PoolMemberView> AppController::getPoolMembers() const {
+    std::lock_guard<std::mutex> lock(poolMutex_);
+    if (!proxyPool_) return std::vector<proxy::PoolMemberView>();
+    return proxyPool_->getMembers();
+}
+
+void AppController::setPoolReportHealth(bool on) {
+    std::lock_guard<std::mutex> lock(poolMutex_);
+    if (proxyPool_) proxyPool_->setReportHealth(on);
+}
+
+void AppController::setPoolAutoPruneDead(bool on) {
+    std::lock_guard<std::mutex> lock(poolMutex_);
+    if (proxyPool_) proxyPool_->setAutoPruneDead(on);
+}
+
+void AppController::setPoolAutoOptimize(bool on) {
+    std::lock_guard<std::mutex> lock(poolMutex_);
+    if (proxyPool_) proxyPool_->setAutoOptimize(on);
 }
 
 // ---------------------------------------------------------------
@@ -1628,6 +2077,64 @@ void AppController::doTestAllProxies(wxEvtHandler* wxHandler) {
             wxQueueEvent(wxHandler, new StatusUpdateEvent(0, std::string("ERR:") + e.what()));
         }
         Logger::write(std::string("All proxies batch test error: ") + e.what(), LogLevel::ERR);
+    }
+}
+
+void AppController::doTestOnlineProxies(wxEvtHandler* wxHandler) {
+    // Scope guard: reset isRunning_ on every exit path (including early returns and exceptions)
+    ScopeGuard<std::atomic<bool>> _guard{isRunning_};
+
+    try {
+        // Show testing progress in status bar field 0
+        if (wxHandler) {
+            wxQueueEvent(wxHandler, new StatusUpdateEvent(0, "Testing online proxies..."));
+        }
+
+        std::vector<StandaloneMonitorRow> monitors = getWatchedStandaloneMonitors();
+        int total = 0;
+        int success = 0;
+        int failed = 0;
+        std::vector<std::string> failedIndexIds;
+
+        for (const StandaloneMonitorRow& mon : monitors) {
+            if (cancelRequested_.load()) break;
+            total++;
+
+            int port = mon.socksPort;
+            if (port <= 0) {
+                failed++;
+                failedIndexIds.push_back(mon.indexId);
+                exDao_.updateTestResult(mon.indexId, -1, false, "socks port unknown");
+                continue;
+            }
+
+            ProxyTester tester(nullptr, config_.test_url, config_.test_timeout_ms);
+            TestResult r = tester.test(port, &cancelRequested_, nullptr);
+            if (r.success) {
+                success++;
+            } else {
+                failed++;
+                failedIndexIds.push_back(mon.indexId);
+            }
+            exDao_.updateTestResult(mon.indexId, r.latencyMs, r.success, r.errorMsg);
+        }
+
+        if (wxHandler) {
+            wxQueueEvent(wxHandler, new StatusUpdateEvent(2, total > 0 ? "Online proxies test completed" : "No online proxies found"));
+        }
+        // Report totals and failed list back to the panel
+        if (wxHandler) {
+            wxQueueEvent(wxHandler, new TestOnlineProxiesEvent(failedIndexIds, total, success, failed));
+        }
+
+        Logger::write(std::string("Online proxies test finished: total=") + std::to_string(total) +
+                          ", success=" + std::to_string(success) + ", failed=" + std::to_string(failed),
+                      LogLevel::REPORT);
+    } catch (const std::exception& e) {
+        if (wxHandler) {
+            wxQueueEvent(wxHandler, new StatusUpdateEvent(0, std::string("ERR:") + e.what()));
+        }
+        Logger::write(std::string("Online proxies test error: ") + e.what(), LogLevel::ERR);
     }
 }
 

@@ -7,6 +7,32 @@
 
 namespace config {
 
+// Standalone proxy pool configuration (single Xray process, dynamic member injection)
+struct StandalonePoolConfig {
+    bool enabled = false;
+    std::string mode = "pool";                    // "pool" | "select"
+    int socksPort = 10809;
+    int apiPort = 10810;
+    std::string balancerStrategy = "leastPing";  // "random" | "leastPing" | "leastLoad"
+    std::string probeUrl;                          // probe URL for the observatory; when set,
+                                                   // buildPoolConfig reuses it (config.json test.url)
+                                                   // instead of observatory.destination.
+    struct {
+        std::string type = "http";                // "http" | "ping"
+        std::string destination = "https://www.google.com";
+        int intervalSec = 5;
+        int samplingCount = 10;
+        int timeoutSec = 5;
+    } observatory;
+    struct {
+        int intervalSec = 10;
+        bool reportHealth = true;                 // a
+        bool autoPruneDead = false;               // b
+        int pruneFailStreak = 3;                  // b 阈值
+        bool autoOptimize = false;                // c
+    } evaluate;
+};
+
 struct AppConfig {
     std::string database_path;
     std::string sql_query;
@@ -88,6 +114,8 @@ struct AppConfig {
         double scoring_stability_weight = 0.3;
         double scoring_history_weight = 0.5;
     } proxy;
+
+    StandalonePoolConfig standalone_pool;
 };
 
 class ConfigReader {

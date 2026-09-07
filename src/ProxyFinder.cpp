@@ -347,8 +347,15 @@ bool ProxyFinder::injectProxyToXray(const std::string& indexId) {
     
     xrayApi.removeOutbound(tag);
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    
-    if (!xrayApi.addOutbound(config.outbound_json, tag, addResult)) {
+
+    // Prefer the direct gRPC path (correct AddOutboundRequest protobuf). The
+    // subprocess `addOutbound` pipes raw JSON to `xray api ado`, which expects
+    // an AddOutboundRequest protobuf, so it cannot succeed for outbound JSON.
+    bool ok = xrayApi.addOutboundDirect(config.outbound_json, tag, addResult);
+    if (!ok) {
+        ok = xrayApi.addOutbound(config.outbound_json, tag, addResult);
+    }
+    if (!ok) {
         Logger::write("[ProxyFinder] Failed to inject outbound via Xray API: " + xrayApi.getLastError(), LogLevel::ERR);
         return false;
     }

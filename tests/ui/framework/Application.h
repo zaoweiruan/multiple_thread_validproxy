@@ -29,9 +29,15 @@ public:
     bool running() const;
     void terminate();                    // WM_CLOSE, then TerminateProcess fallback
 
+    // Path of the file that captured the child's stdout/stderr (see start()).
+    // Useful for test diagnostics when the app fails to come up.
+    const std::wstring& stderrPath() const { return stderrPath_; }
+
 private:
     PROCESS_INFORMATION pi_{};
     HWND hwnd_ = nullptr;
+    HANDLE stderrHandle_ = nullptr;      // redirected child stderr (see start())
+    std::wstring stderrPath_;
 };
 
 // Absolute-path helpers rooted at the repo directory. Paths MUST be absolute:

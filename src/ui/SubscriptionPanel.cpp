@@ -276,6 +276,24 @@ std::string SubscriptionPanel::getSelectedSubId() const {
     return "";
 }
 
+// -------------------------------------------------------------------
+// Select and scroll into view the subscription row with the given id.
+// Used to locate a proxy's owning subscription from the test-result dialog.
+// -------------------------------------------------------------------
+void SubscriptionPanel::selectSubBySubId(const std::string& subId) {
+    if (!model_ || !listCtrl_ || subId.empty()) return;
+
+    int viewRow = model_->findRowBySubId(subId);
+    if (viewRow < 0) return;
+
+    wxDataViewItem item = model_->GetItem(static_cast<unsigned int>(viewRow));
+    if (!item.IsOk()) return;
+
+    listCtrl_->EnsureVisible(item);
+    listCtrl_->Select(item);
+    listCtrl_->EnsureVisible(item);
+}
+
 void SubscriptionPanel::onSelectionChanged(wxDataViewEvent& event) {
     (void)event;
     wxDataViewItem sel = listCtrl_->GetSelection();
@@ -336,7 +354,26 @@ void SubscriptionPanel::onContextMenu(wxDataViewEvent&) {
 }
 
 void SubscriptionPanel::onRefreshSubscription(wxCommandEvent&) {
+    // Sync toolbar Cancel button state from controller before re-entry check
+    {
+        wxWindow* topLevel = wxGetTopLevelParent(this);
+        if (topLevel && topLevel != this) {
+            static_cast<MainFrame*>(topLevel)->syncToolbarState();
+        }
+    }
+    if (controller_ && controller_->isRunning()) {
+        wxMessageBox(L"操作进行中，请等待完成后再试", L"操作进行中", wxOK | wxICON_WARNING);
+        return;
+    }
     loadSubscriptions();
+    // Notify MainFrame so it reloads the full proxy list (all proxies)
+    {
+        wxWindow* topLevel = wxGetTopLevelParent(this);
+        if (topLevel) {
+            SubscriptionRefreshEvent evt;
+            wxPostEvent(topLevel, evt);
+        }
+    }
 }
 
 void SubscriptionPanel::onEditSubscription(wxCommandEvent&) {

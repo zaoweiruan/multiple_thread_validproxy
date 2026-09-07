@@ -12,6 +12,7 @@
 #include "ProfileExItem.h"
 #include "Subitem.h"
 #include "Utils.h"
+#include "StandaloneProxyPool.h"
 
 // ---------------------------------------------------------------
 // Custom event IDs — range starting from wxID_HIGHEST + 1
@@ -47,6 +48,9 @@ class SubListLoadedEvent;
 class StandaloneProxyEvent;
 class RunningDurationsLoadedEvent;
 class LocateProxyEvent;
+class PoolMembersUpdatedEvent;
+class SubscriptionRefreshEvent;
+class TestOnlineProxiesEvent;
 
 wxDECLARE_EVENT(wxEVT_PROXY_TEST_PROGRESS, ProxyTestProgressEvent);
 wxDECLARE_EVENT(wxEVT_LOG_MESSAGE, LogMessageEvent);
@@ -60,6 +64,9 @@ wxDECLARE_EVENT(wxEVT_SUB_LIST_LOADED, SubListLoadedEvent);
 wxDECLARE_EVENT(wxEVT_STANDALONE_PROXY, StandaloneProxyEvent);
 wxDECLARE_EVENT(wxEVT_RUNNING_DURATIONS_LOADED, RunningDurationsLoadedEvent);
 wxDECLARE_EVENT(wxEVT_LOCATE_PROXY, LocateProxyEvent);
+wxDECLARE_EVENT(wxEVT_POOL_MEMBERS_UPDATED, PoolMembersUpdatedEvent);
+wxDECLARE_EVENT(wxEVT_SUBSCRIPTION_REFRESH, SubscriptionRefreshEvent);
+wxDECLARE_EVENT(wxEVT_TEST_ONLINE_PROXIES, TestOnlineProxiesEvent);
 
 // ---------------------------------------------------------------
 // ProxyTestProgressEvent — sent during batch testing
@@ -164,6 +171,18 @@ public:
 
 private:
     std::string subId_;
+};
+
+// ---------------------------------------------------------------
+// SubscriptionRefreshEvent — sent after the subscription list is
+// refreshed, telling MainFrame to reload the proxy list (all proxies)
+// ---------------------------------------------------------------
+class SubscriptionRefreshEvent : public wxEvent {
+public:
+    explicit SubscriptionRefreshEvent()
+        : wxEvent(0, wxEVT_SUBSCRIPTION_REFRESH) {}
+
+    wxEvent* Clone() const override { return new SubscriptionRefreshEvent(*this); }
 };
 
 // ---------------------------------------------------------------
@@ -333,6 +352,54 @@ public:
 
 private:
     std::string indexId_;
+};
+
+// ---------------------------------------------------------------
+// PoolMembersUpdatedEvent — posted by AppController whenever the standalone
+// proxy pool's membership/health snapshot changes (after each evaluation
+// cycle). Carries a copy of the current member views for the UI to render.
+// ---------------------------------------------------------------
+class PoolMembersUpdatedEvent : public wxEvent {
+public:
+    explicit PoolMembersUpdatedEvent(std::vector<proxy::PoolMemberView> members = std::vector<proxy::PoolMemberView>())
+        : wxEvent(0, wxEVT_POOL_MEMBERS_UPDATED),
+          members_(std::move(members)) {}
+
+    wxEvent* Clone() const override { return new PoolMembersUpdatedEvent(*this); }
+
+    std::vector<proxy::PoolMemberView> takeMembers() { return std::move(members_); }
+
+private:
+    std::vector<proxy::PoolMemberView> members_;
+};
+
+// ---------------------------------------------------------------
+// TestOnlineProxiesEvent — posted by AppController after the "Test
+// Online Proxies" batch connectivity test against all currently
+// running standalone proxy processes completes. Carries the list of
+// failed proxy indexIds plus summary counts so the ProxyListPanel can
+// refresh and notify the user which proxies are offline/unreachable.
+// ---------------------------------------------------------------
+class TestOnlineProxiesEvent : public wxEvent {
+public:
+    TestOnlineProxiesEvent(std::vector<std::string> failedIndexIds = std::vector<std::string>(),
+                           int total = 0,
+                           int success = 0,
+                           int failed = 0)
+        : wxEvent(0, wxEVT_TEST_ONLINE_PROXIES),
+          failedIndexIds_(std::move(failedIndexIds)),
+          total_(total), success_(success), failed_(failed) {}
+
+    wxEvent* Clone() const override { return new TestOnlineProxiesEvent(*this); }
+
+    std::vector<std::string> takeFailedIndexIds() { return std::move(failedIndexIds_); }
+    int getTotal() const { return total_; }
+    int getSuccess() const { return success_; }
+    int getFailed() const { return failed_; }
+
+private:
+    std::vector<std::string> failedIndexIds_;
+    int total_, success_, failed_;
 };
 
 #endif // UI_EVENTS_H
