@@ -129,7 +129,6 @@ cmake --build build --parallel 8 && .\scripts\run_coverage.ps1
 
 # 4. Logger 级别控制（在 bin/config.json 中设置）
 # log.file_level: "TRACE" | "DEBUG" | "INFO" | "REPORT" | "WARN" | "ERR"
-# log.network_failures: true  （网络失败日志从 INFO 降级为 TRACE）
 ```
 
 ### 4.3 CLI 工具参数速查表

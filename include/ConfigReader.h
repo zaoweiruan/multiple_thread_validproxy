@@ -43,7 +43,6 @@ struct AppConfig {
     std::string test_url;
     int test_timeout_ms = 5000;
     bool log_enabled = true;
-    bool log_network_failures = false;
     std::string log_console_level;
     std::string log_file_level;
     std::string accelerator_url;

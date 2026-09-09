@@ -2,26 +2,32 @@
 #include "MainFrame.h"
 #include <wx/artprov.h>
 
+// ID_TRAY_EXIT 数值 = wxID_HIGHEST + 1002，已被 UI 测试路径研究
+// (WM_COMMAND 模拟退出) 记录为稳定常量，不得改动。
+enum {
+    ID_TRAY_EXIT = wxID_HIGHEST + 1002,
+};
+
 // -------------------------------------------------------------------
 wxBEGIN_EVENT_TABLE(TrayIcon, wxTaskBarIcon)
     EVT_TASKBAR_LEFT_DCLICK(TrayIcon::onLeftDClick)
-    EVT_MENU(wxID_ANY, TrayIcon::onMenuShow)
-    EVT_MENU(wxID_ANY, TrayIcon::onMenuHide)
-    EVT_MENU(wxID_ANY, TrayIcon::onMenuExit)
+    EVT_MENU(ID_TRAY_EXIT, TrayIcon::onMenuExit)
 wxEND_EVENT_TABLE()
-
-enum {
-    ID_TRAY_SHOW = wxID_HIGHEST + 1000,
-    ID_TRAY_HIDE,
-    ID_TRAY_EXIT,
-};
 
 // -------------------------------------------------------------------
 TrayIcon::TrayIcon(MainFrame* frame)
     : frame_(frame)
 {
-    // Use a built-in wxWidgets icon
-    wxIcon icon = wxArtProvider::GetIcon(wxART_INFORMATION, wxART_OTHER, wxSize(16, 16));
+    // 托盘图标使用主图标（icon.ico → 资源 "icon_ico"），与 MainFrame 一致；
+    // 加载失败时回退内置 wxArtProvider 图标（保证托盘必须可用）。
+#ifdef __WXMSW__
+    wxIcon icon("icon_ico", wxBITMAP_TYPE_ICO_RESOURCE);
+#else
+    wxIcon icon;
+#endif
+    if (!icon.IsOk()) {
+        icon = wxArtProvider::GetIcon(wxART_INFORMATION, wxART_OTHER, wxSize(16, 16));
+    }
     SetIcon(icon, "validproxy");
 }
 
@@ -33,11 +39,10 @@ TrayIcon::~TrayIcon() {
 }
 
 wxMenu* TrayIcon::CreatePopupMenu() {
+    // 菜单精简为仅「退出」——「显示/隐藏」被双击切换取代
+    // (Spec: docs/design/2026-09-04-Design-TrayIcon-DoubleClickToggle-v1.0.md)
     wxMenu* menu = new wxMenu();
-    menu->Append(ID_TRAY_SHOW, "&Show Window");
-    menu->Append(ID_TRAY_HIDE, "&Hide Window");
-    menu->AppendSeparator();
-    menu->Append(ID_TRAY_EXIT, "E&xit");
+    menu->Append(ID_TRAY_EXIT, "退&出");
     return menu;
 }
 
@@ -46,23 +51,21 @@ void TrayIcon::showBalloon(const wxString& title, const wxString& msg) {
 }
 
 void TrayIcon::onLeftDClick(wxTaskBarIconEvent&) {
+    // 与 StandaloneFloatingWidget::toggleMainFrameMaximize 语义一致：
+    // 最大化 → Iconize(true) → MainFrame::onIconize 隐藏到托盘；
+    // 否则（窗口化/最小化/托盘隐藏）→ Show + Maximize 恢复最大化。
+    // 无需防抖：EVT_TASKBAR_LEFT_DCLICK 是单一原生事件源，
+    // 不同于悬浮窗手动双击与系统消息并存的路径。
     if (frame_) {
-        frame_->Show(true);
-        frame_->Raise();
-        frame_->Iconize(false);
-    }
-}
-
-void TrayIcon::onMenuShow(wxCommandEvent&) {
-    if (frame_) {
-        frame_->Show(true);
-        frame_->Raise();
-    }
-}
-
-void TrayIcon::onMenuHide(wxCommandEvent&) {
-    if (frame_) {
-        frame_->Show(false);
+        if (frame_->IsMaximized()) {
+            frame_->Iconize(true);
+        } else {
+            if (!frame_->IsShown()) {
+                frame_->Show(true);
+                frame_->Raise();
+            }
+            frame_->Maximize(true);
+        }
     }
 }
 

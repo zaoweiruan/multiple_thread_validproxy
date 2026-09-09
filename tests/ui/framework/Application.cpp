@@ -29,7 +29,10 @@ static void killProcessTree(DWORD rootPid) {
     for (const auto& kv : parentOf) {
         DWORD cur = kv.first;
         bool isDesc = false;
-        while (cur != 0) {
+        // Windows parent chains occasionally form cycles (e.g. after service
+        // host restarts or PID reuse). Guard the walk so a cycle cannot make
+        // teardown spin forever; real chains are shallow (well under 64).
+        for (std::size_t hops = 0; cur != 0 && hops < 64; ++hops) {
             if (cur == rootPid) { isDesc = true; break; }
             auto it = parentOf.find(cur);
             if (it == parentOf.end()) break;
@@ -101,6 +104,13 @@ bool AppProcess::start(const std::wstring& exePath, const std::wstring& configPa
     // (1) Tell the app to convert asserts into log-only (no modal dialog) so a
     //     stray assert cannot block UI-test initialization. Inherited by child.
     ::SetEnvironmentVariableW(L"VALIDPROXY_ASSERT_LOG", L"1");
+
+    // (1b) Disable dangling-standalone adoption in the sandbox app: adoption
+    //     of a production standalone xray (visible system-wide) makes the
+    //     app's main thread stall inside the event-driven refreshResults()
+    //     sync DB read and hangs all behavior/UIA tests. Production never
+    //     sets this variable. Inherited by child.
+    ::SetEnvironmentVariableW(L"VALIDPROXY_NO_ADOPT", L"1");
 
     BOOL ok = ::CreateProcessW(nullptr,          // application name from cmdline
                                 buf.data(),       // mutable command line

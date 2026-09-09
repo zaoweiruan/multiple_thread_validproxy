@@ -432,9 +432,17 @@ void MainFrame::startMonitoring() {
     //    GUI session.  Run in a background thread so the main window remains
     //    responsive; the controller's DB handle is SQLITE_OPEN_FULLMUTEX and
     //    all UI notifications go through wxQueueEvent.
-    std::thread([this]() {
-        controller_->adoptDanglingStandaloneProxies();
-    }).detach();
+    //    UI-test gate (VALIDPROXY_NO_ADOPT=1): sandbox test apps must not
+    //    adopt a production standalone xray they see on the system — the
+    //    adoption heartbeat writes + the StandaloneProxyEvent-driven
+    //    refreshResults() sync DB read stall the main thread and hang the
+    //    test app (follows the VALIDPROXY_ASSERT_LOG=1 env precedent).
+    char adoptEnv[2] = {0};
+    if (GetEnvironmentVariableA("VALIDPROXY_NO_ADOPT", adoptEnv, 2) == 0) {
+        std::thread([this]() {
+            controller_->adoptDanglingStandaloneProxies();
+        }).detach();
+    }
 
     // 2) Network status timer (2s poll) — started only after the frame is
     //    visible so the status bar has its final field widths.
@@ -589,11 +597,12 @@ MainFrame::~MainFrame() {
         controller_ = nullptr;
     }
 
-    // Step 3: TrayIcon — already deleted in onClose() via RemoveIcon() + delete,
-    //            so here we only null the dangling pointer to prevent double-free
+    // Step 3: TrayIcon — onClose() only removed the shell icon (safe inside the
+    // popup-menu nested loop handler-push context); the object itself must be
+    // freed HERE in the destructor, which runs in the OUTER event loop AFTER the
+    // tray menu returned and its handler was popped from m_win. Deleting the
+    // tray inside the menu's nested loop hangs it; deleting here is safe.
     if (trayIcon_) {
-        // onClose() has already removed it from the shell and freed it
-        // (left over if onClose path was never called, e.g. programmatic delete)
         delete trayIcon_;
         trayIcon_ = nullptr;
     }
@@ -931,10 +940,15 @@ void MainFrame::onNetMonTimer(wxTimerEvent&) {
 
 void MainFrame::onProxyMonTimer(wxTimerEvent&) {
     if (!controller_) return;
-    // Scan and adopt dangling standalone proxies in background
-    std::thread([this]() {
-        controller_->adoptDanglingStandaloneProxies();
-    }).detach();
+    // Scan and adopt dangling standalone proxies in background.
+    // UI-test gate (VALIDPROXY_NO_ADOPT=1): skip adoption in sandbox test
+    // apps — see the comment in startMonitoring() for the hang rationale.
+    char adoptEnv[2] = {0};
+    if (GetEnvironmentVariableA("VALIDPROXY_NO_ADOPT", adoptEnv, 2) == 0) {
+        std::thread([this]() {
+            controller_->adoptDanglingStandaloneProxies();
+        }).detach();
+    }
     // Update alive count in status bar
     int aliveCount = controller_->getRunningStandaloneCount();
     updateProxyMonStatus(true, aliveCount);
@@ -980,11 +994,13 @@ void MainFrame::onClose(wxCloseEvent& event) {
     // If the tray icon remains registered after the frame is destroyed,
     // the shell can send notifications to the now-freed hidden window,
     // and wxWidgets' message loop pumps those forever → process hangs.
+    // NOTE: only RemoveIcon() here — deleting the TrayIcon object inside the
+    // popup-menu nested message loop context hangs the loop; the object is
+    // freed later in ~MainFrame (outer event loop), after the menu returned
+    // and its handler was popped from the tray's hidden window.
     if (trayIcon_) {
         Logger::write("[MainFrame][onClose] RemoveTrayIcon before frame destroy", LogLevel::DEBUG);
         trayIcon_->RemoveIcon();
-        delete trayIcon_;
-        trayIcon_ = nullptr;
     }
 
     event.Skip();  // Allow frame destruction to proceed
@@ -992,7 +1008,11 @@ void MainFrame::onClose(wxCloseEvent& event) {
 
 void MainFrame::onIconize(wxIconizeEvent& event) {
     if (event.IsIconized() && trayIcon_) {
-        // TODO: hide to tray
+        // 最小化时隐藏到托盘（不进任务栏）；恢复由托盘左键双击完成
+        // (TrayIcon::onLeftDClick → Show+Maximize 切换语义)。
+        Hide();
+        // 不调用 event.Skip()：吃掉最小化事件，避免任务栏出现最小化窗口
+        return;
     }
     event.Skip();
 }

@@ -490,7 +490,17 @@ void StandaloneFloatingWidget::toggleMainFrameMaximize() {
     if (frame->IsMaximized()) {
         frame->Iconize(true);  // 最大化 → 最小化
     } else {
-        // 窗口化 / 最小化 → 最大化。wxMSW 下 Maximize(true) 会取消最小化并最大化。
+        // 窗口化 / 最小化 / 托盘隐藏 → 最大化。wxMSW 下对已最小化窗口直接
+        // Maximize(true) 是空操作（ShowWindow(SW_MAXIMIZE) 被忽略），必须先
+        // Restore 取消最小化；对已 Hide 到托盘（最小化后 onIconize 隐藏）的
+        // 窗口还需先 Show+Raise 才能可见并最大化（与托盘双击恢复语义一致）。
+        if (!frame->IsShown()) {
+            frame->Show(true);
+            frame->Raise();
+        }
+        if (frame->IsIconized()) {
+            frame->Restore();
+        }
         frame->Maximize(true);
     }
 }

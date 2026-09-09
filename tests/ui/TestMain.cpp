@@ -2,6 +2,7 @@
 #include <catch2/catch_session.hpp>
 #include <windows.h>
 #include <filesystem>
+#include <cstdio>
 #include <string>
 #include <vector>
 #include "framework/ArtifactsListener.h"   // registers failure-artifact listener

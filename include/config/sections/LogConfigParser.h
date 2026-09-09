@@ -25,12 +25,8 @@ inline void LogConfigParser::parse(const boost::json::value& root, AppConfig& co
             Logger::write("WARNING: config.log.enabled has wrong type (expected bool), using default", LogLevel::WARN);
             config.log_enabled = true;
         } else { config.log_enabled = true; }
-        if (log.contains("network_failures") && log.at("network_failures").is_bool()) {
-            config.log_network_failures = log.at("network_failures").as_bool();
-        } else if (log.contains("network_failures")) {
-            Logger::write("WARNING: config.log.network_failures has wrong type (expected bool), using default", LogLevel::WARN);
-            config.log_network_failures = false;
-        } else { config.log_network_failures = false; }
+        // network_failures key removed (Spec 附录A): unknown keys are silently
+        // ignored; the stale-key regression fixture lives in test_config_reader_load.cpp full.json.
         if (log.contains("console_level") && log.at("console_level").is_string()) {
             config.log_console_level = log.at("console_level").as_string().c_str();
         } else if (log.contains("console_level")) {
@@ -47,7 +43,6 @@ inline void LogConfigParser::parse(const boost::json::value& root, AppConfig& co
         Logger::write("WARNING: config.log has wrong type (expected object), using default", LogLevel::WARN);
     } else {
         config.log_enabled = true;
-        config.log_network_failures = false;
         config.log_console_level = "INFO";
         config.log_file_level = "DEBUG";
     }

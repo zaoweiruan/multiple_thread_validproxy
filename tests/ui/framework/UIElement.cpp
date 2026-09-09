@@ -86,6 +86,21 @@ UiElement UiElement::findBy(const UiElement& scope, const Locator& loc,
     return UiElement(resultRaw);   // transfer ownership
 }
 
+UiElement UiElement::fromHwnd(HWND hwnd) {
+    // Desktop-wide FindFirst searches stall intermittently when any window on
+    // the system is slow to answer WM_GETOBJECT; resolving a known HWND directly
+    // avoids that whole class of flakiness.
+    IUIAutomation* ua = Uia::instance().com();
+    if (!ua || !hwnd || !::IsWindow(hwnd)) return UiElement();
+    IUIAutomationElement* raw = nullptr;
+    const HRESULT hr = ua->ElementFromHandle(hwnd, &raw);
+    if (FAILED(hr) || !raw) {
+        if (raw) raw->Release();
+        return UiElement();
+    }
+    return UiElement(raw);
+}
+
 bool UiElement::click() {
     if (!element_.get()) return false;
     IUnknown* unk = nullptr;         // MinGW header: IUnknown** out-param, not VARIANT

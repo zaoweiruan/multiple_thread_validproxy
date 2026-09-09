@@ -81,6 +81,15 @@ ConfigDialog::ConfigDialog(wxWindow* parent, const config::AppConfig& cfg)
         propGrid_->SetPropertyAttribute("proxy_singbox_executable", wxPG_DIALOG_TITLE, L"选择 Sing-box 可执行文件");
     }
     {
+        // singbox_asset_dir：geoip.dat / geosite.dat 等 Sing-box 资源目录（与
+        // proxy.xray_asset_dir 对应；此前仅存在于 struct/序列化器，无 UI 属性）
+        wxFileProperty* sbAssetProp = new wxFileProperty(L"Sing-box资源目录", "proxy_singbox_asset_dir", cfg.proxy.singbox_asset_dir);
+        propGrid_->Append(sbAssetProp);
+        propGrid_->SetPropertyAttribute("proxy_singbox_asset_dir", wxPG_FILE_SHOW_FULL_PATH, (long)1);
+        sbAssetProp->ChangeFlag(wxPGFlags::ShowFullFileName, true);
+        propGrid_->SetPropertyAttribute("proxy_singbox_asset_dir", wxPG_DIALOG_TITLE, L"选择 Sing-box 资源目录");
+    }
+    {
         wxFileProperty* sbTmplProp = new wxFileProperty(L"Sing-box配置模板", "proxy_singbox_template_config_path", cfg.proxy.singbox_template_config_path);
         propGrid_->Append(sbTmplProp);
         propGrid_->SetPropertyAttribute("proxy_singbox_template_config_path", wxPG_FILE_SHOW_FULL_PATH, (long)1);
@@ -98,7 +107,8 @@ ConfigDialog::ConfigDialog(wxWindow* parent, const config::AppConfig& cfg)
     // --- 日志 配置 ---
     propGrid_->Append(new wxPropertyCategory(L"日志"));
     // log_enabled removed - always true (default)
-    propGrid_->Append(new wxBoolProperty(L"网络错误日志", "log_network_failures", cfg.log_network_failures));
+    // log_network_failures removed (Spec 附录A): the flag only gated 3 batch-test
+    // startup INFO lines; output is now controlled purely by log levels (DEBUG).
     wxArrayString levelChoices;
     levelChoices.Add("TRACE"); levelChoices.Add("DEBUG"); levelChoices.Add("INFO");
     levelChoices.Add("REPORT"); levelChoices.Add("WARN"); levelChoices.Add("ERROR");
@@ -180,6 +190,34 @@ ConfigDialog::ConfigDialog(wxWindow* parent, const config::AppConfig& cfg)
     propGrid_->Append(new wxBoolProperty(L"启用", "proxy_process_monitor_enabled", cfg.proxy_process_monitor.enabled));
     propGrid_->Append(new wxIntProperty(L"检测间隔(毫秒)", "proxy_process_monitor_check_interval_ms", cfg.proxy_process_monitor.checkIntervalMs));
 
+    // --- 独立代理池 配置 ---
+    // 方案甲：mode / observatory.type / observatory.samplingCount 三个预留字段（零运行时
+    // 消费方）不在 UI 暴露，后端往返由 loadConfig() 起底的 editedConfig_ 原值透传。
+    // 端口为期望值：实际监听端口由 PortManager 在池启动时分配（见 spec §4.1 脚注）。
+    propGrid_->Append(new wxPropertyCategory(L"独立代理池"));
+    propGrid_->Append(new wxBoolProperty(L"启用", "pool_enabled", cfg.standalone_pool.enabled));
+    propGrid_->Append(new wxIntProperty(L"SOCKS 端口(期望值)", "pool_socks_port", cfg.standalone_pool.socksPort));
+    propGrid_->Append(new wxIntProperty(L"API 端口(期望值)", "pool_api_port", cfg.standalone_pool.apiPort));
+    {
+        // balancerStrategy 白名单必须与 StandalonePoolConfigParser.h 一致
+        wxArrayString strategyChoices;
+        strategyChoices.Add(L"random");
+        strategyChoices.Add(L"leastPing");
+        strategyChoices.Add(L"leastLoad");
+        propGrid_->Append(new wxEnumProperty(L"均衡策略", "pool_balancer_strategy", strategyChoices));
+        propGrid_->SetPropertyValue("pool_balancer_strategy", wxString(cfg.standalone_pool.balancerStrategy));
+    }
+    // 观测探测地址：仅当 test.url 为空时作为探测 URL 兜底（AppController.cpp:1806 用
+    // test_url 覆盖 probeUrl）
+    propGrid_->Append(new wxStringProperty(L"观测探测地址(兜底)", "pool_obs_destination", wxString(cfg.standalone_pool.observatory.destination)));
+    propGrid_->Append(new wxIntProperty(L"观测间隔(秒)", "pool_obs_interval", cfg.standalone_pool.observatory.intervalSec));
+    propGrid_->Append(new wxIntProperty(L"观测超时(秒)", "pool_obs_timeout", cfg.standalone_pool.observatory.timeoutSec));
+    propGrid_->Append(new wxIntProperty(L"评估间隔(秒)", "pool_eval_interval", cfg.standalone_pool.evaluate.intervalSec));
+    propGrid_->Append(new wxBoolProperty(L"报告健康结果", "pool_eval_report_health", cfg.standalone_pool.evaluate.reportHealth));
+    propGrid_->Append(new wxBoolProperty(L"自动剔除失效成员", "pool_eval_auto_prune", cfg.standalone_pool.evaluate.autoPruneDead));
+    propGrid_->Append(new wxIntProperty(L"剔除阈值(连续失败次数)", "pool_eval_prune_streak", cfg.standalone_pool.evaluate.pruneFailStreak));
+    propGrid_->Append(new wxBoolProperty(L"自动优化(预留记录式)", "pool_eval_auto_optimize", cfg.standalone_pool.evaluate.autoOptimize));
+
     propGrid_->SetPropertyAttributeAll(wxPG_BOOL_USE_CHECKBOX, true);
 
     topSizer->Add(propGrid_, 1, wxEXPAND | wxALL, 8);
@@ -259,12 +297,28 @@ void ConfigDialog::loadConfig(const config::AppConfig& cfg) {
     propGrid_->SetPropertyValue("proxy_xray_asset_dir", wxString(cfg.proxy.xray_asset_dir));
     propGrid_->SetPropertyValue("proxy_template_config_path", wxString(cfg.proxy.template_config_path));
     propGrid_->SetPropertyValue("proxy_singbox_executable", wxString(cfg.proxy.singbox_executable));
+    propGrid_->SetPropertyValue("proxy_singbox_asset_dir", wxString(cfg.proxy.singbox_asset_dir));
 
     propGrid_->SetPropertyValue("proxy_singbox_template_config_path", wxString(cfg.proxy.singbox_template_config_path));
 
     // ProxyProcessMonitor fields
     propGrid_->SetPropertyValue("proxy_process_monitor_enabled", cfg.proxy_process_monitor.enabled);
     propGrid_->SetPropertyValue("proxy_process_monitor_check_interval_ms", cfg.proxy_process_monitor.checkIntervalMs);
+
+    // StandalonePool fields (方案甲：12 项；mode/type/samplingCount 不经 UI，由
+    // editedConfig_ = cfg 起底原值透传)
+    propGrid_->SetPropertyValue("pool_enabled", cfg.standalone_pool.enabled);
+    propGrid_->SetPropertyValue("pool_socks_port", cfg.standalone_pool.socksPort);
+    propGrid_->SetPropertyValue("pool_api_port", cfg.standalone_pool.apiPort);
+    propGrid_->SetPropertyValue("pool_balancer_strategy", wxString(cfg.standalone_pool.balancerStrategy));
+    propGrid_->SetPropertyValue("pool_obs_destination", wxString(cfg.standalone_pool.observatory.destination));
+    propGrid_->SetPropertyValue("pool_obs_interval", cfg.standalone_pool.observatory.intervalSec);
+    propGrid_->SetPropertyValue("pool_obs_timeout", cfg.standalone_pool.observatory.timeoutSec);
+    propGrid_->SetPropertyValue("pool_eval_interval", cfg.standalone_pool.evaluate.intervalSec);
+    propGrid_->SetPropertyValue("pool_eval_report_health", cfg.standalone_pool.evaluate.reportHealth);
+    propGrid_->SetPropertyValue("pool_eval_auto_prune", cfg.standalone_pool.evaluate.autoPruneDead);
+    propGrid_->SetPropertyValue("pool_eval_prune_streak", cfg.standalone_pool.evaluate.pruneFailStreak);
+    propGrid_->SetPropertyValue("pool_eval_auto_optimize", cfg.standalone_pool.evaluate.autoOptimize);
 }
 
 bool ConfigDialog::saveConfig() {
@@ -284,7 +338,6 @@ bool ConfigDialog::saveConfig() {
 
     // Log fields - log_enabled always true (removed from UI)
     editedConfig_.log_enabled = true;
-    editedConfig_.log_network_failures = propGrid_->GetPropertyValueAsBool("log_network_failures");
     editedConfig_.log_console_level = propGrid_->GetPropertyValueAsString("log_console_level").ToStdString();
     editedConfig_.log_file_level = propGrid_->GetPropertyValueAsString("log_file_level").ToStdString();
 
@@ -367,6 +420,7 @@ bool ConfigDialog::saveConfig() {
     editedConfig_.proxy.xray_asset_dir = propGrid_->GetPropertyValueAsString("proxy_xray_asset_dir").ToStdString();
     editedConfig_.proxy.template_config_path = propGrid_->GetPropertyValueAsString("proxy_template_config_path").ToStdString();
     editedConfig_.proxy.singbox_executable = propGrid_->GetPropertyValueAsString("proxy_singbox_executable").ToStdString();
+    editedConfig_.proxy.singbox_asset_dir = propGrid_->GetPropertyValueAsString("proxy_singbox_asset_dir").ToStdString();
 
     editedConfig_.proxy.singbox_template_config_path = propGrid_->GetPropertyValueAsString("proxy_singbox_template_config_path").ToStdString();
 
@@ -376,6 +430,21 @@ bool ConfigDialog::saveConfig() {
     // Clamp to valid range
     if (editedConfig_.proxy_process_monitor.checkIntervalMs < 5000) editedConfig_.proxy_process_monitor.checkIntervalMs = 5000;
     if (editedConfig_.proxy_process_monitor.checkIntervalMs > 300000) editedConfig_.proxy_process_monitor.checkIntervalMs = 300000;
+
+    // StandalonePool fields (方案甲：12 项读回；mode/type/samplingCount 不经 UI，
+    // 保留 loadConfig() 起底的原值；probeUrl 为运行期派生值，不落盘不读回)
+    editedConfig_.standalone_pool.enabled = propGrid_->GetPropertyValueAsBool("pool_enabled");
+    editedConfig_.standalone_pool.socksPort = static_cast<int>(propGrid_->GetPropertyValueAsInt("pool_socks_port"));
+    editedConfig_.standalone_pool.apiPort = static_cast<int>(propGrid_->GetPropertyValueAsInt("pool_api_port"));
+    editedConfig_.standalone_pool.balancerStrategy = propGrid_->GetPropertyValueAsString("pool_balancer_strategy").ToStdString();
+    editedConfig_.standalone_pool.observatory.destination = propGrid_->GetPropertyValueAsString("pool_obs_destination").ToStdString();
+    editedConfig_.standalone_pool.observatory.intervalSec = static_cast<int>(propGrid_->GetPropertyValueAsInt("pool_obs_interval"));
+    editedConfig_.standalone_pool.observatory.timeoutSec = static_cast<int>(propGrid_->GetPropertyValueAsInt("pool_obs_timeout"));
+    editedConfig_.standalone_pool.evaluate.intervalSec = static_cast<int>(propGrid_->GetPropertyValueAsInt("pool_eval_interval"));
+    editedConfig_.standalone_pool.evaluate.reportHealth = propGrid_->GetPropertyValueAsBool("pool_eval_report_health");
+    editedConfig_.standalone_pool.evaluate.autoPruneDead = propGrid_->GetPropertyValueAsBool("pool_eval_auto_prune");
+    editedConfig_.standalone_pool.evaluate.pruneFailStreak = static_cast<int>(propGrid_->GetPropertyValueAsInt("pool_eval_prune_streak"));
+    editedConfig_.standalone_pool.evaluate.autoOptimize = propGrid_->GetPropertyValueAsBool("pool_eval_auto_optimize");
 
     // AutoTask fields
     editedConfig_.auto_task.steps = stepOrder_;
@@ -518,6 +587,43 @@ bool ConfigDialog::validateConfig() {
         editedConfig_.proxy_process_monitor.checkIntervalMs > 300000) {
         wxMessageBox("代理进程监控检测间隔必须在 5000 到 300000 毫秒之间", "验证错误", wxOK | wxICON_ERROR);
         return false;
+    }
+
+    // StandalonePool validation — 仅在启用时强制（关闭时不校验数值细节）
+    if (editedConfig_.standalone_pool.enabled) {
+        if (editedConfig_.standalone_pool.socksPort < 1024 || editedConfig_.standalone_pool.socksPort > 65535) {
+            wxMessageBox("代理池 SOCKS 端口必须在 1024 到 65535 之间", "验证错误", wxOK | wxICON_ERROR);
+            return false;
+        }
+        if (editedConfig_.standalone_pool.apiPort < 1024 || editedConfig_.standalone_pool.apiPort > 65535) {
+            wxMessageBox("代理池 API 端口必须在 1024 到 65535 之间", "验证错误", wxOK | wxICON_ERROR);
+            return false;
+        }
+        if (editedConfig_.standalone_pool.observatory.intervalSec < 1 || editedConfig_.standalone_pool.observatory.intervalSec > 300) {
+            wxMessageBox("观测间隔必须在 1 到 300 秒之间", "验证错误", wxOK | wxICON_ERROR);
+            return false;
+        }
+        if (editedConfig_.standalone_pool.observatory.timeoutSec < 1 || editedConfig_.standalone_pool.observatory.timeoutSec > 60) {
+            wxMessageBox("观测超时必须在 1 到 60 秒之间", "验证错误", wxOK | wxICON_ERROR);
+            return false;
+        }
+        const std::string& poolDest = editedConfig_.standalone_pool.observatory.destination;
+        if (!poolDest.empty() && !utils::isValidUrlFormat(poolDest)) {
+            wxMessageBox("代理池观测探测地址格式无效: " + wxString(poolDest), "URL格式错误", wxOK | wxICON_WARNING);
+            return false;
+        }
+        if (poolDest.empty() && editedConfig_.test_url.empty()) {
+            // 兜底探测地址与 test.url 双空：探测将无 URL 可用，警告但不阻断
+            wxMessageBox("代理池观测探测地址与测试URL均为空，池启动后探测可能失败", "配置警告", wxOK | wxICON_WARNING);
+        }
+        if (editedConfig_.standalone_pool.evaluate.intervalSec < 1 || editedConfig_.standalone_pool.evaluate.intervalSec > 600) {
+            wxMessageBox("评估间隔必须在 1 到 600 秒之间", "验证错误", wxOK | wxICON_ERROR);
+            return false;
+        }
+        if (editedConfig_.standalone_pool.evaluate.pruneFailStreak < 1) {
+            wxMessageBox("剔除阈值必须大于等于 1", "验证错误", wxOK | wxICON_ERROR);
+            return false;
+        }
     }
     return true;
 }

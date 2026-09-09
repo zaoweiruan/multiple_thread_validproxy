@@ -86,6 +86,22 @@ UiElement findNamed(const UiElement& scope, const wchar_t* name,
                              pid, timeoutMs);
 }
 
+// Resolve the dialog via Win32 enumeration (never stalls on WM_GETOBJECT),
+// then wrap the HWND with ElementFromHandle — avoids desktop-wide FindFirst
+// which stalls intermittently when any system window is slow to answer UIA.
+UiElement waitForPoolDialog(DWORD pid, int timeoutMs = 8000) {
+    const DWORD start = ::GetTickCount();
+    while (static_cast<int>(::GetTickCount() - start) < timeoutMs) {
+        HWND h = findPoolDialogHwnd(pid);
+        if (h) {
+            UiElement el = UiElement::fromHwnd(h);
+            if (el.valid()) return el;
+        }
+        ::Sleep(100);
+    }
+    return UiElement();
+}
+
 bool waitForNamed(const UiElement& scope, const wchar_t* name,
                   DWORD pid, int timeoutMs = 6000) {
     return findNamed(scope, name, pid, timeoutMs).valid();
@@ -194,8 +210,7 @@ TEST_CASE("Proxy pool dialog opens via menu and exposes key controls",
     openPoolDialog(hMain);
 
     // (1) Window opens: dialog reachable by its pinned UIA Name under desktop.
-    UiElement desk(Uia::instance().acquireDesktop());
-    UiElement dialog = findNamed(desk, ids::PoolDialogName, fx.pid(), 8000);
+    UiElement dialog = waitForPoolDialog(fx.pid());
     REQUIRE(dialog.valid());
 
     // (2) Key controls reachable inside the dialog subtree.
@@ -222,8 +237,7 @@ TEST_CASE("Proxy pool health-report checkbox toggles via UIA",
 
     openPoolDialog(hMain);
 
-    UiElement desk(Uia::instance().acquireDesktop());
-    UiElement dialog = findNamed(desk, ids::PoolDialogName, fx.pid(), 8000);
+    UiElement dialog = waitForPoolDialog(fx.pid());
     REQUIRE(dialog.valid());
 
     UiElement chk = findNamed(dialog, L"上报健康", fx.pid());
@@ -276,14 +290,16 @@ TEST_CASE("Proxy pool add-entry opens picker and pool starts", "[pooldialog][add
 
     openPoolDialog(hMain);
 
-    UiElement desk(Uia::instance().acquireDesktop());
-    UiElement dialog = findNamed(desk, ids::PoolDialogName, fx.pid(), 8000);
+    UiElement dialog = waitForPoolDialog(fx.pid());
     REQUIRE(dialog.valid());
 
     // Key controls reachable (gates 1-2).
     CHECK(waitForNamed(dialog, ids::PoolStartStopBtnName, fx.pid())); // 启动池
     CHECK(waitForNamed(dialog, ids::PoolRefreshBtnName,    fx.pid())); // 刷新
     CHECK(waitForNamed(dialog, ids::PoolDeleteBtnName,     fx.pid())); // 删除选中
+
+    // Picker polling below scopes from the desktop; keep its own root element.
+    UiElement desk(Uia::instance().acquireDesktop());
 
     // NEW: dedicated add-to-pool entry point must exist.
     UiElement addBtn = findNamed(dialog, ids::PoolAddBtnName, fx.pid());

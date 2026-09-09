@@ -37,7 +37,6 @@ TEST_F(ConfigReaderTest, SaveRoundTrip) {
     original.test_url = "https://test.com";
     original.test_timeout_ms = 3000;
     original.log_enabled = false;
-    original.log_network_failures = true;
     original.log_console_level = "WARN";
     original.log_file_level = "INFO";
     original.accelerator_url = "https://cdn.acc.com/";
@@ -87,7 +86,6 @@ TEST_F(ConfigReaderTest, SaveRoundTrip_FieldCompleteness) {
     original.test_url = "https://fc.example.com";
     original.test_timeout_ms = 3000;
     original.log_enabled = false;
-    original.log_network_failures = true;
     original.log_console_level = "WARN";
     original.log_file_level = "ERROR";
     original.accelerator_url = "https://fc.acc.com/";
@@ -136,7 +134,6 @@ TEST_F(ConfigReaderTest, SaveRoundTrip_FieldCompleteness) {
     EXPECT_EQ(loaded->test_url, original.test_url);
     EXPECT_EQ(loaded->test_timeout_ms, original.test_timeout_ms);
     EXPECT_EQ(loaded->log_enabled, original.log_enabled);
-    EXPECT_EQ(loaded->log_network_failures, original.log_network_failures);
     EXPECT_EQ(loaded->log_console_level, original.log_console_level);
     EXPECT_EQ(loaded->log_file_level, original.log_file_level);
     EXPECT_EQ(loaded->accelerator_url, original.accelerator_url);

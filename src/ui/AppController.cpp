@@ -86,12 +86,6 @@ AppController::~AppController() {
     // running until the OS kills it — the worker may still access XrayManager
     // or xray instances after release() destroys the singleton, causing zombies.
     if (workerThread_.joinable()) {
-        // DIAGNOSTIC INSTRUMENTATION (Phase 3/4 test per systematic-debugging skill)
-        // Measures real elapsed time from destructor entry to join completion or 5s timeout.
-        // REMOVE after hypothesis verification.
-        std::chrono::steady_clock::time_point joinWaitStart = std::chrono::steady_clock::now();
-        Logger::write("[AppController] Destructor: starting 5s join wait for workerThread_", LogLevel::DEBUG);
-
         // Wait up to 5 seconds for thread to finish gracefully
         // If thread doesn't respond, detach it to allow process exit
         std::future<void> fut = std::async(std::launch::async, [this]() {
@@ -100,14 +94,8 @@ AppController::~AppController() {
             }
         });
         if (fut.wait_for(std::chrono::seconds(5)) != std::future_status::ready) {
-            long long elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(
-                std::chrono::steady_clock::now() - joinWaitStart).count();
-            Logger::write("[AppController] Destructor: 5s timeout fired after " + std::to_string(elapsedMs) + " ms — detaching", LogLevel::WARN);
+            Logger::write("[AppController] Destructor: worker thread join timed out, detaching", LogLevel::WARN);
             workerThread_.detach();
-        } else {
-            long long elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(
-                std::chrono::steady_clock::now() - joinWaitStart).count();
-            Logger::write("[AppController] Destructor: worker thread joined successfully after " + std::to_string(elapsedMs) + " ms", LogLevel::DEBUG);
         }
     }
 

@@ -385,6 +385,8 @@ TEST_F(ConfigReaderLoadTest, SectionDefaults_Test) {
 }
 
 TEST_F(ConfigReaderLoadTest, SectionDefaults_Log) {
+    // network_failures key removed (Spec 附录A): the stale key in this fixture
+    // must be silently ignored by the parser (regression fixture).
     writeConfig("sec_log.json", R"({
         "log": {
             "enabled": false,
@@ -396,7 +398,6 @@ TEST_F(ConfigReaderLoadTest, SectionDefaults_Log) {
     std::optional<AppConfig> result = ConfigReader::load(configPath("sec_log.json"));
     ASSERT_TRUE(result.has_value());
     EXPECT_FALSE(result->log_enabled);
-    EXPECT_TRUE(result->log_network_failures);
     EXPECT_EQ(result->log_console_level, "WARN");
     EXPECT_EQ(result->log_file_level, "INFO");
 }
@@ -569,7 +570,6 @@ TEST_F(ConfigReaderLoadTest, SaveRoundTripInLoad) {
         },
         "log": {
             "enabled": false,
-            "network_failures": true,
             "console_level": "WARN",
             "file_level": "ERROR"
         },
@@ -618,7 +618,6 @@ TEST_F(ConfigReaderLoadTest, SaveRoundTripInLoad) {
     EXPECT_EQ(reloaded->test_url, original->test_url);
     EXPECT_EQ(reloaded->test_timeout_ms, original->test_timeout_ms);
     EXPECT_EQ(reloaded->log_enabled, original->log_enabled);
-    EXPECT_EQ(reloaded->log_network_failures, original->log_network_failures);
     EXPECT_EQ(reloaded->log_console_level, original->log_console_level);
     EXPECT_EQ(reloaded->log_file_level, original->log_file_level);
     EXPECT_EQ(reloaded->accelerator_url, original->accelerator_url);

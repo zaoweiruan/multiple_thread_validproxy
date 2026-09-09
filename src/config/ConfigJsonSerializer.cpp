@@ -28,7 +28,6 @@ boost::json::object ConfigJsonSerializer::serialize(const AppConfig& config) con
     // log
     boost::json::object logObj;
     logObj["enabled"] = config.log_enabled;
-    logObj["network_failures"] = config.log_network_failures;
     logObj["console_level"] = config.log_console_level;
     logObj["file_level"] = config.log_file_level;
     root["log"] = logObj;

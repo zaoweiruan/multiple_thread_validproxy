@@ -43,9 +43,10 @@ public:
     // PID-filtered lookup under the desktop so we never bind another
     // instance's controls.
     UiElement mainWindow() const {
-        return UiElement::findBy(desktop(),
-                                 Locator{ UIA_NamePropertyId, ids::MainWindowName },
-                                 app_.pid(), kFindTimeoutMs);
+        // Resolve the known HWND directly — desktop-wide UIA name search stalls
+        // intermittently (cross-process WM_GETOBJECT), which made mainWindow()
+        // flaky. AppProcess already holds the exact HWND from EnumWindows.
+        return UiElement::fromHwnd(app_.mainWindow());
     }
     DWORD pid() const { return app_.pid(); }
     const AppProcess& app() const { return app_; }

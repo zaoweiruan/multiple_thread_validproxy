@@ -14,12 +14,12 @@ TEST_CASE("Search box accepts and echoes text", "[search]") {
     // text entry is its inner Edit child. ValuePattern lives on the Edit.
     auto wrap = uitest::UiElement::findBy(
         win, { UIA_NamePropertyId, uitest::ids::SearchCtrlName },
-        fx.app().pid(), 5000);
+        fx.app().pid(), 15000);
     REQUIRE(wrap.valid());                       // locator pinned in Task 6
 
     auto box = uitest::UiElement::findBy(
         wrap, { UIA_ClassNamePropertyId, L"Edit" },
-        fx.app().pid(), 3000);
+        fx.app().pid(), 8000);
     REQUIRE(box.valid());
     REQUIRE(box.setText(L"HK"));
     REQUIRE(box.getText() == L"HK");

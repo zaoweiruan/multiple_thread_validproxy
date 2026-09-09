@@ -1157,6 +1157,7 @@ if(wxWidgets_FOUND AND BUILD_UI_TESTS)
             tests/ui/TestStandaloneFloatingWidget.cpp
             tests/ui/TestStandaloneProxyPool.cpp
             tests/ui/TestStandalonePortClose.cpp
+            tests/ui/TestExitAssert.cpp
         )
         add_executable(UITests ${UI_FRAMEWORK_SOURCES} ${UI_TEST_SOURCES})
         target_include_directories(UITests PRIVATE
@@ -1179,10 +1180,11 @@ if(wxWidgets_FOUND AND BUILD_UI_TESTS)
         add_test(NAME UI_FLOATINGWIDGET COMMAND UITests "[floatingwidget]")
         add_test(NAME UI_POOL COMMAND UITests "[pooldialog]")
         add_test(NAME UI_PORTCLOSE COMMAND UITests "[portclose]")
+        add_test(NAME UI_EXITASSERT COMMAND UITests "[exitassert]")
         set_tests_properties(UI_MAINWINDOW UI_SEARCH UI_CLEAR PROPERTIES
             TIMEOUT 120
             WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
-        set_tests_properties(UI_FLOATINGWIDGET UI_POOL UI_PORTCLOSE PROPERTIES
+        set_tests_properties(UI_FLOATINGWIDGET UI_POOL UI_PORTCLOSE UI_EXITASSERT PROPERTIES
             TIMEOUT 120
             WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
     endif()

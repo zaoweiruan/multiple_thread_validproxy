@@ -24,6 +24,8 @@
 
 ## 三、本会话引用
 
+| 2026-09-07 | **配置编辑窗口与 config.json 同步（独立代理池 12 属性 + singbox_asset_dir + 附录A 移除网络错误日志项）** — 调研→规格（docs/specs/2026-09-07-Spec-ConfigDialog-PoolSync-v1.0.md 主文+附录A）→方案甲（隐藏3预留字段）→实施计划（docs/plans/2026-09-07-Plan-ConfigDialog-PoolSync-v1.0.md）已评审通过；实施进行中（Task 0-5） | docs/plans/2026-09-07-Plan-ConfigDialog-PoolSync-v1.0.md |
+
 > 每轮会话开始时，将前一轮的已关闭条目移至 `docs/project-knowledge.md §7` 或 `docs/bugfix/`。
 > 格式: 条目简述 → `docs/bugfix/YYYY-MM-DD-xxx.md`
 | 2026-09-03 | **`wxgui-analyzer` 图片分析模型链** — 主模型 `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free`，第一备降 `stepfun/step-3.7-flash:free` → minimax/minimax-m3:free → openrouter/free（详见 `docs/model-config.md` 多模态模型选用建议） | `docs/model-config.md` |

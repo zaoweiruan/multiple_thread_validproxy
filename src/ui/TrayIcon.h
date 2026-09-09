@@ -20,8 +20,6 @@ private:
     wxMenu* CreatePopupMenu() override;
 
     void onLeftDClick(wxTaskBarIconEvent& event);
-    void onMenuShow(wxCommandEvent& event);
-    void onMenuHide(wxCommandEvent& event);
     void onMenuExit(wxCommandEvent& event);
 
     MainFrame* frame_;

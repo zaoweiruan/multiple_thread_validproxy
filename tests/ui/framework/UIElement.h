@@ -39,6 +39,10 @@ public:
     static UiElement findBy(const UiElement& scope, const Locator& loc,
                             DWORD pidFilter, int timeoutMs, int pollMs = 150);
 
+    // Direct element for a known HWND — no desktop-wide enumeration, no
+    // name/pid matching (the HWND is already unique to the target window).
+    static UiElement fromHwnd(HWND hwnd);
+
     bool click();                          // UIA_InvokePattern; false if unsupported
     bool setText(const wchar_t* text);     // UIA_ValuePattern
     std::wstring getText();                // UIA_ValuePattern current value
