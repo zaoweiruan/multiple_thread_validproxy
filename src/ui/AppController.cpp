@@ -1,5 +1,6 @@
 #include "AppController.h"
 #include "Events.h"
+#include "UnifiedMonitorRows.h"
 #include "ui/AsyncOperationGuard.h"
 #include "ui/ScopeGuard.h"
 #include "service/DatabaseConnectionService.h"
@@ -66,6 +67,13 @@ AppController::AppController(sqlite3* db, const config::AppConfig& cfg)
 }
 
 AppController::~AppController() {
+    // The proxy pool's evaluator thread calls back into this controller
+    // (onMembersChanged captures `this` and posts wx events to topWindow_).
+    // It MUST be stopped and joined before anything else in this destructor
+    // tears down state the evaluator depends on (DB handle, topWindow_,
+    // XrayManager). stopProxyPool() is idempotent (mutex + reset + null check).
+    stopProxyPool();
+
     netMon_.Stop();
 
     // Standalone proxy processes run independently — NOT terminated here,
@@ -1355,6 +1363,7 @@ std::vector<StandaloneMonitorRow> AppController::getWatchedStandaloneMonitors() 
 
     const std::string now = utils::getCurrentTimestampFormatted();
     db::models::ProfileitemDAO profileDao(db_);
+    db::models::ProfileExItemDAO exDao(db_);
     std::vector<StandaloneMonitorRow> rows;
     for (std::size_t j = 0; j < watched.size(); ++j) {
         StandaloneMonitorRow row;
@@ -1407,9 +1416,35 @@ std::vector<StandaloneMonitorRow> AppController::getWatchedStandaloneMonitors() 
         if (row.durationMs < 0) {
             row.durationMs = 0;
         }
+        // 读取 ProfileExItem.delay 作为独立代理的最后测试延迟
+        std::optional<db::models::ProfileExItem> ex = exDao.getByIndexId(watched[j].indexId);
+        if (ex.has_value() && utils::isDelayValid(ex->delay)) {
+            try {
+                row.lastDelayMs = std::stoll(ex->delay);
+            } catch (...) {
+                row.lastDelayMs = -1;
+            }
+        } else {
+            row.lastDelayMs = -1;
+        }
         rows.push_back(row);
     }
     return rows;
+}
+
+// ---------------------------------------------------------------
+// Unified snapshot for the floating monitor panel: standalone watched
+// proxies first, then proxy-pool members. Each source is snapshotted
+// under its own mutex (no cross-lock ordering dependency).
+// ---------------------------------------------------------------
+std::vector<UnifiedMonitorRow> AppController::getUnifiedMonitorRows() {
+    // Standalone watched proxies (running && managed), then proxy-pool members.
+    // Each source is snapshotted under its own mutex (no cross-lock ordering
+    // dependency); the pure merge logic lives in UnifiedMonitorRows.h so it can
+    // be unit-tested without linking the full AppController dependency chain.
+    const std::vector<StandaloneMonitorRow> standalone = getWatchedStandaloneMonitors();
+    const std::vector<proxy::PoolMemberView> members = getPoolMembers();
+    return buildUnifiedMonitorRows(standalone, members);
 }
 
 // ---------------------------------------------------------------
@@ -1866,7 +1901,7 @@ bool AppController::injectProxyToPool(const std::string& indexId) {
     return pool->injectMember(*profile);
 }
 
-bool AppController::removePoolMember(int indexId, bool graceful) {
+bool AppController::removePoolMember(long long indexId, bool graceful) {
     std::shared_ptr<proxy::StandaloneProxyPool> pool;
     {
         std::lock_guard<std::mutex> lock(poolMutex_);
@@ -1895,6 +1930,13 @@ void AppController::setPoolAutoPruneDead(bool on) {
 void AppController::setPoolAutoOptimize(bool on) {
     std::lock_guard<std::mutex> lock(poolMutex_);
     if (proxyPool_) proxyPool_->setAutoOptimize(on);
+}
+
+void AppController::probePoolNow() {
+    std::lock_guard<std::mutex> lock(poolMutex_);
+    if (proxyPool_) {
+        proxyPool_->probeNow();
+    }
 }
 
 // ---------------------------------------------------------------

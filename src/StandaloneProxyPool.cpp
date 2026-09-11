@@ -83,7 +83,9 @@ bool StandaloneProxyPool::injectMember(const db::models::Profileitem& profile) {
         return false;
     }
     PoolMember m;
-    m.indexId = std::atoi(profile.indexid.c_str());
+    // 2026-09-11 真实 indexId 为 int64 级字符串（如 5720942700011514210），旧 std::atoi 截断
+    // 导致 members_ map 键与 View 均为垃圾值（bugfix #82）；改用 std::atoll 保真。
+    m.indexId = std::atoll(profile.indexid.c_str());
     m.tag = tag;
     m.profile = profile;
     m.state = MemberLifecycleState::ACTIVE;
@@ -102,11 +104,11 @@ bool StandaloneProxyPool::injectMember(const db::models::Profileitem& profile) {
     return true;
 }
 
-bool StandaloneProxyPool::removeMember(int indexId, bool graceful) {
+bool StandaloneProxyPool::removeMember(long long indexId, bool graceful) {
     bool found = false;
     {
         std::lock_guard<std::mutex> lock(membersMutex_);
-        std::map<int, PoolMember>::iterator it = members_.find(indexId);
+        std::map<long long, PoolMember>::iterator it = members_.find(indexId);
         if (it != members_.end()) {
             found = true;
             if (!graceful) {
@@ -141,11 +143,14 @@ void StandaloneProxyPool::setAutoOptimize(bool on) {
 
 void StandaloneProxyPool::snapshotMembers(std::vector<PoolMemberView>& out) const {
     std::lock_guard<std::mutex> lock(membersMutex_);
-    for (std::map<int, PoolMember>::const_iterator it = members_.begin(); it != members_.end(); ++it) {
+    const int port = cfg_.socksPort;
+    const DWORD pid = (instance_ && instance_->isRunning()) ? instance_->getPid() : 0;
+    for (std::map<long long, PoolMember>::const_iterator it = members_.begin(); it != members_.end(); ++it) {
         const PoolMember& m = it->second;
         PoolMemberView v;
         v.indexId = m.indexId;
         v.tag = m.tag;
+        v.host = m.profile.address;
         if (m.state == MemberLifecycleState::ACTIVE) v.state = "active";
         else if (m.state == MemberLifecycleState::REMOVE_REQUESTED) v.state = "remove-requested";
         else v.state = "draining";
@@ -154,6 +159,8 @@ void StandaloneProxyPool::snapshotMembers(std::vector<PoolMemberView>& out) cons
         v.lastError = m.lastError;
         v.failStreak = m.failStreak;
         v.probed = m.probed;
+        v.socksPort = port;
+        v.pid = pid;
         out.push_back(v);
     }
 }
@@ -169,7 +176,7 @@ void StandaloneProxyPool::reinjectAll() {
     std::vector<PoolMember> snapshot;
     {
         std::lock_guard<std::mutex> lock(membersMutex_);
-        for (std::map<int, PoolMember>::iterator it = members_.begin(); it != members_.end(); ++it) {
+        for (std::map<long long, PoolMember>::iterator it = members_.begin(); it != members_.end(); ++it) {
             snapshot.push_back(it->second);
         }
     }
@@ -219,7 +226,7 @@ std::vector<MemberHealth> StandaloneProxyPool::doProbe() {
     std::vector<MemberProbeTarget> targets;
     {
         std::lock_guard<std::mutex> lock(membersMutex_);
-        for (std::map<int, PoolMember>::const_iterator it = members_.begin();
+        for (std::map<long long, PoolMember>::const_iterator it = members_.begin();
              it != members_.end(); ++it) {
             const PoolMember& m = it->second;
             if (m.state != MemberLifecycleState::ACTIVE) continue;
@@ -246,8 +253,9 @@ void StandaloneProxyPool::mergeHealth(const std::vector<MemberHealth>& health) {
     for (std::size_t i = 0; i < health.size(); ++i) {
         const std::string& t = health[i].tag;
         if (t.find("px-") != 0) continue;
-        int id = std::atoi(t.substr(3).c_str());
-        std::map<int, PoolMember>::iterator it = members_.find(id);
+        // bugfix #82: 真实 indexId 为 int64 级数字串，atoi 会截断导致 find 永远 miss
+        long long id = std::atoll(t.substr(3).c_str());
+        std::map<long long, PoolMember>::iterator it = members_.find(id);
         if (it == members_.end()) continue;
         it->second.probed = health[i].tested;
         if (health[i].tested) {
@@ -275,7 +283,7 @@ void StandaloneProxyPool::evaluatorLoop() {
 
             // Policy (b): autoPruneDead — mark dead members for graceful removal.
             if (autoPruneDead_) {
-                for (std::map<int, PoolMember>::iterator it = members_.begin(); it != members_.end(); ++it) {
+                for (std::map<long long, PoolMember>::iterator it = members_.begin(); it != members_.end(); ++it) {
                     if (it->second.state == MemberLifecycleState::ACTIVE &&
                         it->second.failStreak >= cfg_.evaluate.pruneFailStreak) {
                         it->second.state = MemberLifecycleState::REMOVE_REQUESTED;
@@ -287,7 +295,7 @@ void StandaloneProxyPool::evaluatorLoop() {
             // Policy (c): autoOptimize — Phase 1 record-only (no OverrideBalancerTarget,
             // no remove+add rebalance). Mark preferred members for analytics.
             if (autoOptimize_) {
-                for (std::map<int, PoolMember>::iterator it = members_.begin(); it != members_.end(); ++it) {
+                for (std::map<long long, PoolMember>::iterator it = members_.begin(); it != members_.end(); ++it) {
                     if (it->second.state == MemberLifecycleState::ACTIVE && it->second.lastAlive) {
                         it->second.statsRecorded = true;
                     }
@@ -296,8 +304,8 @@ void StandaloneProxyPool::evaluatorLoop() {
 
             // Two-phase graceful removal: perform HandlerService RemoveHandler now
             // (coordinated with probe, not mid-injection).
-            std::vector<int> done;
-            for (std::map<int, PoolMember>::iterator it = members_.begin(); it != members_.end(); ++it) {
+            std::vector<long long> done;
+            for (std::map<long long, PoolMember>::iterator it = members_.begin(); it != members_.end(); ++it) {
                 if (it->second.state == MemberLifecycleState::REMOVE_REQUESTED) {
                     if (api_->removeOutbound(it->second.tag)) {
                         it->second.state = MemberLifecycleState::DRAINING;

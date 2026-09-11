@@ -18,6 +18,9 @@ ProcessExitListener::WatchKey ProcessExitListener::watch(
     HeartbeatFn heartbeatFn, int heartbeatIntervalMs,
     int64_t baselineElapsedMs) {
     std::lock_guard<std::mutex> lock(mutex_);
+    // Defensive: once shutdown has been requested, never start a new watcher
+    // thread — it would capture callbacks into a caller that is going away.
+    if (shutdownRequested_.load()) { return 0; }
     WatchKey key = nextKey_++;
     auto w = std::make_unique<Watcher>();
     w->processHandle = processHandle;
@@ -34,6 +37,9 @@ ProcessExitListener::WatchKey ProcessExitListener::watch(
     if (heartbeatIntervalMs > 0) { w->heartbeatIntervalMs = heartbeatIntervalMs; }
     w->baselineElapsedMs = baselineElapsedMs;
     w->threadStartTime = std::chrono::steady_clock::now();
+    // Auto-reset wake event used by shutdown()/unwatch() to break a watcher
+    // out of a long WaitForMultipleObjects immediately.
+    w->wakeEvent = CreateEventW(nullptr, FALSE, FALSE, nullptr);
     watchers_[key] = std::move(w);
     watchers_[key]->thread = std::thread([this, key]() {
         Watcher* w = nullptr;
@@ -44,8 +50,15 @@ ProcessExitListener::WatchKey ProcessExitListener::watch(
             w = it->second.get();
         }
         const DWORD intervalMs = static_cast<DWORD>(w->heartbeatIntervalMs);
+        HANDLE waitHandles[2] = { w->processHandle, w->wakeEvent };
+        // Fallback: if the wake event could not be created, wait on the
+        // process handle alone so watching still works (just without the
+        // instant-shutdown wake path).
+        const bool hasWakeEvent = (w->wakeEvent != nullptr);
         for (;;) {
-            DWORD waitResult = WaitForSingleObject(w->processHandle, intervalMs);
+            DWORD waitResult = hasWakeEvent
+                ? WaitForMultipleObjects(2, waitHandles, FALSE, intervalMs)
+                : WaitForSingleObject(w->processHandle, intervalMs);
             if (waitResult == WAIT_OBJECT_0) {
                 DWORD exitCode = 0;
                 GetExitCodeProcess(w->processHandle, &exitCode);
@@ -72,22 +85,52 @@ ProcessExitListener::WatchKey ProcessExitListener::watch(
 }
 
 void ProcessExitListener::unwatch(WatchKey key) {
-    std::lock_guard<std::mutex> lock(mutex_);
-    auto it = watchers_.find(key);
-    if (it == watchers_.end()) { return; }
-    it->second->running.store(false);
-    if (it->second->thread.joinable()) { it->second->thread.join(); }
-    watchers_.erase(it);
+    // Move the whole Watcher (thread + callbacks + handles) out under the
+    // lock, then wake + join OUTSIDE the lock. Erasing from the map before
+    // the join would free the Watcher while its thread still loops on the
+    // raw pointer — the same UAF class this listener was fixed against.
+    std::unique_ptr<Watcher> w;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        auto it = watchers_.find(key);
+        if (it == watchers_.end()) { return; }
+        w = std::move(it->second);
+        watchers_.erase(it);
+    }
+    w->running.store(false);
+    if (w->wakeEvent) { SetEvent(w->wakeEvent); }
+    if (w->thread.joinable()) { w->thread.join(); }
+    // w destroyed here, after the join.
 }
 
 void ProcessExitListener::shutdown() {
     shutdownRequested_.store(true);
-    std::lock_guard<std::mutex> lock(mutex_);
-    for (auto& kv : watchers_) {
-        kv.second->running.store(false);
-        if (kv.second->thread.joinable()) { kv.second->thread.detach(); }
+    // Move watchers out under the lock, then join their threads OUTSIDE the
+    // lock. The old detach+clear sequence freed the Watcher objects while
+    // the detached threads were still looping on them (freed std::function
+    // heartbeatFn / running flag / process handle) — the source of the
+    // close-time execute-AV crash. Joining under the lock would deadlock
+    // with a watcher thread that has not yet passed its initial lock scope.
+    std::map<WatchKey, std::unique_ptr<Watcher>> pending;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        pending = std::move(watchers_);
+        watchers_.clear();
+        for (auto& kv : pending) {
+            kv.second->running.store(false);
+        }
     }
-    watchers_.clear();
+    for (auto& kv : pending) {
+        kv.second->running.store(false);
+        if (kv.second->wakeEvent) { SetEvent(kv.second->wakeEvent); }
+    }
+    // pending destruction closes each Watcher (handles + callbacks) only
+    // after its thread has been joined.
+    for (auto& kv : pending) {
+        if (kv.second->thread.joinable()) {
+            kv.second->thread.join();
+        }
+    }
 }
 
 void ProcessExitListener::handleProcessExit(Watcher* w, DWORD exitCode) {

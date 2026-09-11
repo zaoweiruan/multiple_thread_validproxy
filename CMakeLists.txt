@@ -283,8 +283,6 @@ if(wxWidgets_FOUND)
         src/ui/ConfigDialog.cpp
         src/ui/StandaloneFloatingWidget.h
         src/ui/StandaloneFloatingWidget.cpp
-        src/ui/StandalonePoolDialog.h
-        src/ui/StandalonePoolDialog.cpp
         src/ui/AddPoolMemberDialog.h
         src/ui/AddPoolMemberDialog.cpp
         src/ui/TestOnlineResultDialog.h
@@ -871,6 +869,30 @@ if(wxWidgets_FOUND)
     )
     copy_wx_dlls(test_log_statistics_event)
     add_test(NAME LogStatisticsEventTest COMMAND test_log_statistics_event)
+endif()
+
+# -- UnifiedMonitorRows unit test (pure merge function; requires wxWidgets for AppController.h types) --
+if(wxWidgets_FOUND)
+    add_executable(test_unified_monitor_rows
+        tests/test_unified_monitor_rows.cpp
+    )
+    target_include_directories(test_unified_monitor_rows PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/ui
+    )
+    target_link_libraries(test_unified_monitor_rows PRIVATE
+        gtest_main gtest
+        wx::wxbase
+        wx::wxcore
+    )
+    target_compile_definitions(test_unified_monitor_rows PRIVATE HAS_WXWIDGETS=1)
+    set_target_properties(test_unified_monitor_rows PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
+        RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
+        RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+    )
+    copy_wx_dlls(test_unified_monitor_rows)
+    add_test(NAME UnifiedMonitorRowsTest COMMAND test_unified_monitor_rows)
 endif()
 
 # -- ShareUriBuilders unit tests (6 protocol URI builders, no external deps beyond gtest) --

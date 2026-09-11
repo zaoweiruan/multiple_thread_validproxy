@@ -89,6 +89,7 @@
 > **构建规范**: CMake 构建输出仅写入 `bin/` 和 `tests/` 目录。**不得**在构建过程中自动写入 `bin/worker/` 目录。
 > `bin/worker/` 是运行时工作目录（存放 `guindb.db`、`validproxy.exe` 副本等），由用户手动或有明确意图的脚本维护。
 > 构建时自动复制到此目录会因文件锁定（运行中的 `validproxy.exe`）导致 `POST_BUILD` 阶段失败。
+> **调试/修复验证红线**：验证一律使用 `bin/` 下的最新构建产物；`bin/worker/validproxy.exe` 是陈旧副本（非构建输出），**禁止**将其作为调试、修复验证或问题复现的对象。
 
 ```powershell
 # 1. 配置并生成 Debug 模式构建流

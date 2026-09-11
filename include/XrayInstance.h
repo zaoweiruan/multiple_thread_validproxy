@@ -16,6 +16,7 @@ public:
     bool isRunning() const;
     int getSocksPort() const;
     int getApiPort() const;
+    DWORD getPid() const;
     std::string getConfigPath() const;
     // Supply a complete xray config JSON; when set, createConfigFile() writes
     // this verbatim instead of the built-in default (used by StandaloneProxyPool).

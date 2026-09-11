@@ -1,6 +1,8 @@
 // tests/ui/framework/Application.cpp
 #include "framework/Application.h"
 #include "framework/Wait.h"
+#include "UIIds.h"
+#include <cwchar>
 #include <vector>
 #include <unordered_map>
 #include <tlhelp32.h>
@@ -131,12 +133,26 @@ static BOOL CALLBACK enumProc(HWND hwnd, LPARAM lp) {
     DWORD pid = 0;
     ::GetWindowThreadProcessId(hwnd, &pid);
     if (pid == ctx->pid && ::IsWindowVisible(hwnd)) {
-        // Top-level app window: has a title or is an app window per GW_OWNER.
         wchar_t title[256] = L"";
         ::GetWindowTextW(hwnd, title, 256);
-        if (title[0] != L'\0' || ::GetWindow(hwnd, GW_OWNER) == nullptr) {
+        // Top-level app window: has a title and is not a known helper window.
+        // Helper exclusions (2026-09-11 close-crash fixes):
+        //  - untitled top-levels (e.g. wxTaskBarIcon's hidden helper m_win);
+        //  - the floating widget: it is topmost and often enumerated FIRST,
+        //    but its WM_CLOSE is intercepted by the app (hide-only), so posting
+        //    a close there is silently dropped and the app would never exit.
+        if (title[0] == L'\0') return TRUE;
+        if (std::wcscmp(title, ids::FloatingWidgetName) == 0) return TRUE;
+        // Exact main-frame title wins immediately (stop enumeration).
+        if (std::wcscmp(title, ids::MainWindowName) == 0) {
             ctx->hwnd = hwnd;
             return FALSE;                    // stop enumeration
+        }
+        // Otherwise remember the first qualifying candidate (original
+        // first-visible-titled-top-level semantics) and keep scanning for
+        // the exact main-frame title.
+        if (ctx->hwnd == nullptr) {
+            ctx->hwnd = hwnd;
         }
     }
     return TRUE;

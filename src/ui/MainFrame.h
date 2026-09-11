@@ -23,7 +23,6 @@ class wxChoice;
 class ConfigDialog;
 class TrayIcon;
 class StandaloneFloatingWidget;
-class StandalonePoolDialog;
 
 enum class OperationType {
     NONE,
@@ -85,8 +84,6 @@ private:
     void onMenuAutoTaskResume(wxCommandEvent& event);
     void onMenuAbout(wxCommandEvent& event);
     void onMenuStandaloneMonitor(wxCommandEvent& event);
-    void onMenuOpenPool(wxCommandEvent& event);
-    void onPoolMembersUpdated(PoolMembersUpdatedEvent& event);
     void syncFloatingWidgetControls();
     void onToolUpdateAll(wxCommandEvent& event);
     void onToolTest(wxCommandEvent& event);
@@ -125,7 +122,6 @@ private:
     LogPanel* logPanel_{nullptr};
     ConfigDialog* configDialog_{nullptr};
     StandaloneFloatingWidget* floatingWidget_{nullptr};  // Lazy, toggled via Ctrl+M / toolbar / menu
-    StandalonePoolDialog* poolDialog_{nullptr};           // Lazy, opened via 代理池 menu
     wxAuiToolBar* m_toolbar{nullptr};  // Toolbar pointer for AUI management
     TrayIcon* trayIcon_{nullptr};
     sqlite3* db_;

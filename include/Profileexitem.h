@@ -100,6 +100,7 @@ public:
   explicit ProfileExItemDAO(sqlite3* db);
   static void migrateTable(sqlite3* db);
   std::vector<ProfileExItem> getAll();
+  std::optional<ProfileExItem> getByIndexId(const std::string& indexId);
 
   // ---- Message field: only two kinds of info (test time + startup time) ----
 

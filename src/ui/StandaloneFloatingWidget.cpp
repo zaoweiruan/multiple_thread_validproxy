@@ -1,4 +1,5 @@
 #include "StandaloneFloatingWidget.h"
+#include "AddPoolMemberDialog.h"
 #include "AppController.h"
 #include "Events.h"
 #include "TestOnlineResultDialog.h"
@@ -24,11 +25,14 @@
 namespace {
 
 enum ColumnId {
-    COL_RUNTIME_MIN = 0,
-    COL_HOST,
-    COL_SOCKS_PORT,
-    COL_INDEX_ID,
-    COL_PID
+    COL_TYPE = 0,          // 类型：独立 / 代理池
+    COL_INDEX_ID,          // 标识：独立代理 indexId / 池成员 px-<indexId>
+    COL_HOST,              // Host：profile address
+    COL_SOCKS_PORT,        // 监听端口
+    COL_STATE,             // 状态：运行中 / active / remove-requested / draining
+    COL_DELAY_MS,          // 延迟(ms)
+    COL_FAIL_STREAK,       // 失败次数
+    COL_PID                // PID
 };
 
 // 悬浮窗右键菜单项唯一 ID。必须独占且互不相同，且不得使用 wxID_ANY：
@@ -36,7 +40,8 @@ enum ColumnId {
 // 上的所有菜单事件，导致点击「关闭代理」的同时也触发「测试在线代理」。
 enum MenuId {
     ID_MENU_CLOSE_PROXY = wxID_HIGHEST + 500,
-    ID_MENU_TEST_ONLINE = wxID_HIGHEST + 501
+    ID_MENU_TEST_ONLINE = wxID_HIGHEST + 501,
+    ID_MENU_LOCATE_PROXY = wxID_HIGHEST + 503
 };
 
 } // namespace
@@ -241,11 +246,14 @@ StandaloneFloatingWidget::StandaloneFloatingWidget(const config::AppConfig& cfg,
 
     list_ = new wxListCtrl(this, wxID_ANY, wxDefaultPosition, wxDefaultSize,
                            wxLC_REPORT | wxLC_SINGLE_SEL);
-    list_->InsertColumn(COL_RUNTIME_MIN, L"运行时长(分)", wxLIST_FORMAT_RIGHT, 100);
-    list_->InsertColumn(COL_HOST, L"Host", wxLIST_FORMAT_LEFT, 140);
-    list_->InsertColumn(COL_SOCKS_PORT, L"监听端口", wxLIST_FORMAT_RIGHT, 90);
-    list_->InsertColumn(COL_INDEX_ID, L"索引ID", wxLIST_FORMAT_LEFT, 220);
-    list_->InsertColumn(COL_PID, L"PID", wxLIST_FORMAT_RIGHT, 90);
+    list_->InsertColumn(COL_TYPE, L"类型", wxLIST_FORMAT_LEFT, 60);
+    list_->InsertColumn(COL_INDEX_ID, L"标识", wxLIST_FORMAT_LEFT, 200);
+    list_->InsertColumn(COL_HOST, L"Host", wxLIST_FORMAT_LEFT, 130);
+    list_->InsertColumn(COL_SOCKS_PORT, L"监听端口", wxLIST_FORMAT_RIGHT, 80);
+    list_->InsertColumn(COL_STATE, L"状态", wxLIST_FORMAT_LEFT, 90);
+    list_->InsertColumn(COL_DELAY_MS, L"延迟(ms)", wxLIST_FORMAT_RIGHT, 80);
+    list_->InsertColumn(COL_FAIL_STREAK, L"失败次数", wxLIST_FORMAT_RIGHT, 60);
+    list_->InsertColumn(COL_PID, L"PID", wxLIST_FORMAT_RIGHT, 80);
     // Win10 Fluent 配色：白色内容区 + 深色文字。
     list_->SetBackgroundColour(wxColour(255, 255, 255));       // #FFFFFF
     list_->SetTextColour(wxColour(50, 49, 48));                // #323130
@@ -257,12 +265,50 @@ StandaloneFloatingWidget::StandaloneFloatingWidget(const config::AppConfig& cfg,
     slider_->SetToolTip(L"鼠标离开后自动收起延迟");
     slider_->Hide();
 
+    // ---- v1.4 代理池统一监控：状态文本 + 池控制按钮 + 评估开关 ----
+    poolStatusText_ = new wxStaticText(this, wxID_ANY, L"代理池状态: 未运行");
+    poolStatusText_->SetForegroundColour(wxColour(50, 49, 48));  // #323130
+    poolStatusText_->SetBackgroundColour(wxColour(245, 246, 247)); // #F5F6F7，与 Panel 背景一致，去除深灰色填充
+
+    startStopBtn_ = new wxButton(this, wxID_ANY, L"启动池");
+    addBtn_ = new wxButton(this, wxID_ANY, L"添加代理");
+    refreshBtn_ = new wxButton(this, wxID_ANY, L"刷新");
+
+    reportChk_ = new wxCheckBox(this, wxID_ANY, L"上报健康");
+    pruneChk_ = new wxCheckBox(this, wxID_ANY, L"自动剔除死亡");
+    optimizeChk_ = new wxCheckBox(this, wxID_ANY, L"自动优化");
+    reportChk_->SetBackgroundColour(wxColour(245, 246, 247));
+    pruneChk_->SetBackgroundColour(wxColour(245, 246, 247));
+    optimizeChk_->SetBackgroundColour(wxColour(245, 246, 247));
+    reportChk_->SetValue(cfg_.standalone_pool.evaluate.reportHealth);
+    pruneChk_->SetValue(cfg_.standalone_pool.evaluate.autoPruneDead);
+    optimizeChk_->SetValue(cfg_.standalone_pool.evaluate.autoOptimize);
+
+    wxBoxSizer* poolBtnRow = new wxBoxSizer(wxHORIZONTAL);
+    poolBtnRow->Add(startStopBtn_, 0, wxRIGHT, 6);
+    poolBtnRow->Add(addBtn_, 0, wxRIGHT, 6);
+    poolBtnRow->Add(refreshBtn_, 0, 0, 0);
+
+    wxBoxSizer* poolChkRow = new wxBoxSizer(wxHORIZONTAL);
+    poolChkRow->Add(reportChk_, 0, wxRIGHT, 12);
+    poolChkRow->Add(pruneChk_, 0, wxRIGHT, 12);
+    poolChkRow->Add(optimizeChk_, 0, 0, 0);
+
     wxBoxSizer* panelSizer = new wxBoxSizer(wxVERTICAL);
     panelSizer->Add(list_, 1, wxEXPAND | wxALL, 6);
+    panelSizer->Add(poolStatusText_, 0, wxEXPAND | wxLEFT | wxRIGHT | wxTOP, 6);
+    panelSizer->Add(poolBtnRow, 0, wxEXPAND | wxLEFT | wxRIGHT | wxTOP, 6);
+    panelSizer->Add(poolChkRow, 0, wxEXPAND | wxLEFT | wxRIGHT | wxTOP, 6);
     panelSizer->Add(slider_, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, 6);
     SetSizer(panelSizer);
 
     Bind(wxEVT_TIMER, &StandaloneFloatingWidget::onTimer, this);
+    // 拦截外部 WM_CLOSE 广播（测试框架结束任务/系统关机广播会向所有顶层
+    // 窗口发 WM_CLOSE）：本窗生命周期完全归属 MainFrame（~MainFrame 统一
+    // raw delete），自身绝不自毁，否则 Destroy() 进入 wxPendingDelete 延迟
+    // 删除链后会与 ~MainFrame 的 delete 形成双删除（UAF 崩溃，见
+    // docs/bugfix/2026-09-11-Bugfix-FloatingWidget-CloseDoubleDelete-v1.0.md）。
+    Bind(wxEVT_CLOSE_WINDOW, &StandaloneFloatingWidget::onClose, this);
     Bind(wxEVT_PAINT, &StandaloneFloatingWidget::onPaint, this);
     Bind(wxEVT_LEFT_DOWN, &StandaloneFloatingWidget::onLeftDown, this);
     Bind(wxEVT_LEFT_UP, &StandaloneFloatingWidget::onLeftUp, this);
@@ -275,6 +321,14 @@ StandaloneFloatingWidget::StandaloneFloatingWidget(const config::AppConfig& cfg,
     Bind(wxEVT_TEST_ONLINE_PROXIES, &StandaloneFloatingWidget::onTestOnlineProxiesEvent, this);
     Bind(wxEVT_ACTIVATE, &StandaloneFloatingWidget::onActivate, this);
     slider_->Bind(wxEVT_SLIDER, &StandaloneFloatingWidget::onSlider, this);
+    startStopBtn_->Bind(wxEVT_BUTTON, &StandaloneFloatingWidget::onStartStopPool, this);
+    addBtn_->Bind(wxEVT_BUTTON, &StandaloneFloatingWidget::onAddPoolMember, this);
+    refreshBtn_->Bind(wxEVT_BUTTON, &StandaloneFloatingWidget::onRefreshPool, this);
+    reportChk_->Bind(wxEVT_CHECKBOX, &StandaloneFloatingWidget::onToggleReport, this);
+    pruneChk_->Bind(wxEVT_CHECKBOX, &StandaloneFloatingWidget::onTogglePrune, this);
+    optimizeChk_->Bind(wxEVT_CHECKBOX, &StandaloneFloatingWidget::onToggleOptimize, this);
+    // 池成员更新事件：MainFrame 不再转发，悬浮窗自消费（timer 兜底全量刷新）。
+    Bind(wxEVT_POOL_MEMBERS_UPDATED, &StandaloneFloatingWidget::onPoolMembersUpdated, this);
     list_->Bind(wxEVT_LIST_ITEM_ACTIVATED, &StandaloneFloatingWidget::onItemActivated, this);
     // Single-click on a row also locates the proxy, reusing the same
     // LocateProxyEvent -> MainFrame chain as the test-result dialog.
@@ -316,6 +370,20 @@ bool StandaloneFloatingWidget::Show(bool show) {
 
 void StandaloneFloatingWidget::applySettings(const config::AppConfig& newCfg) {
     cfg_ = newCfg;
+
+    // 代理池控件状态：独立于监控开关，依 standalone_pool.enabled 灰化。
+    const bool poolEnabled = cfg_.standalone_pool.enabled;
+    if (startStopBtn_) { startStopBtn_->Enable(poolEnabled); }
+    if (addBtn_) { addBtn_->Enable(poolEnabled); }
+    if (refreshBtn_) { refreshBtn_->Enable(poolEnabled); }
+    if (reportChk_) { reportChk_->Enable(poolEnabled); }
+    if (pruneChk_) { pruneChk_->Enable(poolEnabled); }
+    if (optimizeChk_) { optimizeChk_->Enable(poolEnabled); }
+    // 回填 evaluate 三开关（配置热应用后保持 UI 与配置一致）。
+    if (reportChk_) { reportChk_->SetValue(cfg_.standalone_pool.evaluate.reportHealth); }
+    if (pruneChk_) { pruneChk_->SetValue(cfg_.standalone_pool.evaluate.autoPruneDead); }
+    if (optimizeChk_) { optimizeChk_->SetValue(cfg_.standalone_pool.evaluate.autoOptimize); }
+
     if (!cfg_.proxy_process_monitor.enabled) {
         active_ = false;
         Show(false);
@@ -345,6 +413,13 @@ void StandaloneFloatingWidget::toggleActive() {
 void StandaloneFloatingWidget::setActive(bool on) {
     active_ = on;
     Show(active_ && cfg_.proxy_process_monitor.enabled);
+}
+
+void StandaloneFloatingWidget::onClose(wxCloseEvent&) {
+    // 仅隐藏，保留对象存活；整体退出由主窗口 / ~MainFrame 掌控。
+    // 不调用 Destroy()/event.Skip()：避免进入 wxPendingDelete 延迟删除链
+    // 与 ~MainFrame 的 raw delete 形成双删除。
+    Show(false);
 }
 
 void StandaloneFloatingWidget::onTimer(wxTimerEvent& event) {
@@ -547,9 +622,16 @@ void StandaloneFloatingWidget::onContextMenu(wxContextMenuEvent& WXUNUSED(event)
         }
         contextMenuSel_ = sel;
         if (sel >= 0 && sel < static_cast<long>(rows_.size())) {
+            // 统一右键（bugfix #82）：池行与独立行菜单一致——「关闭代理」+
+            // 「定位到代理列表」；池行的「关闭代理」在 onMenuCloseProxy 内
+            // 按行类型分支为从池中优雅移除成员。
             menu.Append(ID_MENU_CLOSE_PROXY, L"关闭代理");
             menu.Bind(wxEVT_MENU, &StandaloneFloatingWidget::onMenuCloseProxy, this,
                       ID_MENU_CLOSE_PROXY);
+            // 任意选中行：定位到代理列表。
+            menu.Append(ID_MENU_LOCATE_PROXY, L"定位到代理列表");
+            menu.Bind(wxEVT_MENU, &StandaloneFloatingWidget::onMenuLocateProxy, this,
+                      ID_MENU_LOCATE_PROXY);
         }
     }
     menu.Append(ID_MENU_TEST_ONLINE, L"测试在线代理");
@@ -571,6 +653,19 @@ void StandaloneFloatingWidget::onMenuCloseProxy(wxCommandEvent&) {
     }
     const std::string indexId = rows_[static_cast<std::size_t>(sel)].indexId;
     const int64_t pid = rows_[static_cast<std::size_t>(sel)].pid;
+
+    // 统一菜单（bugfix #82）：池行「关闭代理」= 从池中优雅移除成员
+    // （graceful=true 交由 evaluator 两阶段移除 outbound）；独立行走
+    // 原有 stopStandaloneProxy + pid 兜底终止逻辑。
+    if (rows_[static_cast<std::size_t>(sel)].type == MonitorType::Pool) {
+        if (indexId.empty()) {
+            return;
+        }
+        controller_->removePoolMember(std::stoll(indexId), true);
+        refreshRows();
+        return;
+    }
+
     if (indexId.empty() && pid < 0) {
         return;
     }
@@ -608,6 +703,139 @@ void StandaloneFloatingWidget::onMenuCloseProxy(wxCommandEvent&) {
                      L"提示", wxOK | wxICON_WARNING, this);
     }
     refreshRows();
+}
+
+// 代理池统一监控（v1.4）：启动/停止池按钮。
+void StandaloneFloatingWidget::onStartStopPool(wxCommandEvent&) {
+    if (!controller_) {
+        return;
+    }
+    if (controller_->isProxyPoolRunning()) {
+        controller_->stopProxyPool();
+    } else {
+        if (!controller_->startProxyPool()) {
+            wxMessageBox(L"代理池启动失败", L"提示",
+                         wxOK | wxICON_WARNING, this);
+        }
+    }
+    refreshRows();
+}
+
+// 代理池统一监控（v1.4）：添加代理按钮。池未运行时先启动池，
+// 再弹出 AddPoolMemberDialog 选择候选代理，逐个注入并汇总成功数。
+void StandaloneFloatingWidget::onAddPoolMember(wxCommandEvent&) {
+    if (!controller_) {
+        return;
+    }
+    if (!controller_->isProxyPoolRunning()) {
+        if (!controller_->startProxyPool()) {
+            wxMessageBox(L"代理池启动失败，无法添加代理…", L"提示",
+                         wxOK | wxICON_WARNING, this);
+            return;
+        }
+    }
+    AddPoolMemberDialog dlg(this, controller_);
+    if (dlg.ShowModal() != wxID_OK) {
+        return;
+    }
+    const std::vector<std::string>& selected = dlg.getSelectedIndexIds();
+    int added = 0;
+    for (std::size_t i = 0; i < selected.size(); ++i) {
+        if (controller_->injectProxyToPool(selected[i])) {
+            ++added;
+        }
+    }
+    if (added > 0) {
+        wxMessageBox(wxString::Format(L"已添加 %d 个代理到代理池。", added),
+                     L"提示", wxOK | wxICON_INFORMATION, this);
+    } else {
+        wxMessageBox(L"没有代理被成功加入代理池。", L"提示",
+                     wxOK | wxICON_WARNING, this);
+    }
+    refreshRows();
+}
+
+// 代理池统一监控（v1.4）：刷新按钮。池运行时触发一次健康探测，
+// 随后全量刷新列表（timer 也会周期性刷新，此处提供手动触发）。
+void StandaloneFloatingWidget::onRefreshPool(wxCommandEvent&) {
+    if (!controller_) {
+        return;
+    }
+    if (controller_->isProxyPoolRunning()) {
+        controller_->probePoolNow();
+    }
+    refreshRows();
+}
+
+// 代理池统一监控（v1.4）：上报健康 checkbox。
+void StandaloneFloatingWidget::onToggleReport(wxCommandEvent& event) {
+    if (controller_) {
+        controller_->setPoolReportHealth(reportChk_->GetValue());
+    }
+    event.Skip();
+}
+
+// 代理池统一监控（v1.4）：自动剔除死亡 checkbox。
+void StandaloneFloatingWidget::onTogglePrune(wxCommandEvent& event) {
+    if (controller_) {
+        controller_->setPoolAutoPruneDead(pruneChk_->GetValue());
+    }
+    event.Skip();
+}
+
+// 代理池统一监控（v1.4）：自动优化 checkbox。
+void StandaloneFloatingWidget::onToggleOptimize(wxCommandEvent& event) {
+    if (controller_) {
+        controller_->setPoolAutoOptimize(optimizeChk_->GetValue());
+    }
+    event.Skip();
+}
+
+// 右键菜单「定位到代理列表」：任意选中行可用，复用 LocateProxyEvent。
+void StandaloneFloatingWidget::onMenuLocateProxy(wxCommandEvent&) {
+    if (!controller_ || !locateTarget_) {
+        return;
+    }
+    const long sel = contextMenuSel_;
+    if (sel < 0) {
+        return;
+    }
+    const wxString indexId = list_->GetItemText(sel, COL_INDEX_ID);
+    if (indexId.empty()) {
+        return;
+    }
+    wxQueueEvent(locateTarget_, new LocateProxyEvent(indexId.ToStdString()));
+}
+
+// 池成员更新事件：MainFrame 不再转发，悬浮窗自消费。事件可能先于
+// 悬浮窗创建到达（此时未 Bind），timer 周期性全量刷新兜底。
+void StandaloneFloatingWidget::onPoolMembersUpdated(PoolMembersUpdatedEvent& event) {
+    event.Skip();
+    if (!controller_ || !list_ || mode_ != Mode::Panel) {
+        return;
+    }
+    refreshRows();
+}
+
+// 更新池状态文本：运行状态 + 成员数 + 在线代理数。
+void StandaloneFloatingWidget::updatePoolStatusText() {
+    if (!poolStatusText_) {
+        return;
+    }
+    const bool running = controller_ && controller_->isProxyPoolRunning();
+    int memberCount = 0;
+    int aliveCount = 0;
+    for (std::size_t i = 0; i < rows_.size(); ++i) {
+        if (rows_[i].type == MonitorType::Pool) {
+            ++memberCount;
+            if (rows_[i].lastAlive) {
+                ++aliveCount;
+            }
+        }
+    }
+    poolStatusText_->SetLabel(wxString::Format(
+        L"代理池状态: %s 成员数: %d 在线代理: %d",
+        running ? L"运行中" : L"未运行", memberCount, aliveCount));
 }
 
 // 右键菜单「测试在线代理」：复用 AppController::testOnlineProxiesAsync 的
@@ -680,40 +908,85 @@ void StandaloneFloatingWidget::onItemSelected(wxListEvent& event) {
 }
 
 void StandaloneFloatingWidget::refreshRows() {
-    if (!controller_) {
+    if (!controller_ || !list_) {
         return;
     }
     list_->DeleteAllItems();
 
-    rows_ = controller_->getWatchedStandaloneMonitors();
+    rows_ = controller_->getUnifiedMonitorRows();
     for (std::size_t i = 0; i < rows_.size(); ++i) {
         const long index = list_->InsertItem(
             static_cast<long>(i), wxString(L""));
 
-        const double minutes =
-            static_cast<double>(rows_[i].durationMs) / 60000.0;
-        list_->SetItem(index, COL_RUNTIME_MIN,
-                      wxString::Format(L"%.1f", minutes));
+        // 类型列：独立 / 代理池
+        list_->SetItem(index, COL_TYPE,
+                      rows_[i].type == MonitorType::Pool
+                          ? wxString(L"代理池")
+                          : wxString(L"独立"));
 
-        list_->SetItem(index, COL_HOST,
-                      rows_[i].host.empty()
-                          ? wxString(L"-")
-                          : wxString(rows_[i].host));
-
-        list_->SetItem(index, COL_SOCKS_PORT,
-                      rows_[i].socksPort > 0
-                          ? wxString(std::to_string(rows_[i].socksPort))
-                          : wxString(L"-"));
-
+        // 标识列：统一显示真实 indexId（bugfix #82：池行旧实现显示 px-tag 内部
+        // 标识，且 tag 由 int 截断值拼接；现显示与独立行一致的完整 indexId）
         list_->SetItem(index, COL_INDEX_ID,
                       rows_[i].indexId.empty()
                           ? wxString(L"-")
                           : wxString(rows_[i].indexId));
 
+        // Host 列：profile address
+        list_->SetItem(index, COL_HOST,
+                      rows_[i].host.empty()
+                          ? wxString(L"-")
+                          : wxString(rows_[i].host));
+
+        // 监听端口列
+        list_->SetItem(index, COL_SOCKS_PORT,
+                      rows_[i].socksPort > 0
+                          ? wxString(std::to_string(rows_[i].socksPort))
+                          : wxString(L"-"));
+
+        // 状态列：独立行原样；池行映射为可读文本
+        wxString stateText;
+        if (rows_[i].type == MonitorType::Pool) {
+            if (rows_[i].state == "active") {
+                stateText = L"运行中";
+            } else if (rows_[i].state == "remove-requested") {
+                stateText = L"待移除";
+            } else if (rows_[i].state == "draining") {
+                stateText = L"排空中";
+            } else {
+                stateText = wxString(rows_[i].state);
+            }
+        } else {
+            stateText = rows_[i].state.empty()
+                            ? wxString(L"-")
+                            : wxString(rows_[i].state);
+        }
+        list_->SetItem(index, COL_STATE, stateText);
+
+        // 延迟列：仅池行有值
+        list_->SetItem(index, COL_DELAY_MS,
+                      rows_[i].lastDelayMs > 0
+                          ? wxString(std::to_string(rows_[i].lastDelayMs))
+                          : wxString(L"-"));
+
+        // 失败次数列：独立行 "-"；池行显示连续失败次数
+        list_->SetItem(index, COL_FAIL_STREAK,
+                      rows_[i].type == MonitorType::Pool
+                          ? wxString(std::to_string(rows_[i].failStreak))
+                          : wxString(L"-"));
+
+        // PID 列：仅独立行有值
         list_->SetItem(index, COL_PID,
                       rows_[i].pid >= 0
                           ? wxString(std::to_string(rows_[i].pid))
                           : wxString(L"-"));
+    }
+
+    updatePoolStatusText();
+
+    // 同步启动/停止池按钮文字
+    if (startStopBtn_ && controller_) {
+        const bool running = controller_->isProxyPoolRunning();
+        startStopBtn_->SetLabel(running ? L"停止池" : L"启动池");
     }
 
     if (mode_ == Mode::Orb) {
@@ -740,19 +1013,36 @@ void StandaloneFloatingWidget::applyShape(const wxPoint& keepCenter) {
     if (mode_ == Mode::Orb) {
         w = h = FromDIP(radius_ * 2);
         SetSize(w, h);
+        // Orb 模式：隐藏全部子控件（列表、滑杆 + 代理池控制区），
+        // 避免 0 尺寸 HWND 残留在 UIA 树中（UIA 会裁剪宽度/高度为 0 的元素，
+        // 造成自动化测试在 Orb 模式下误以为 "启动池" 已可达）。
         list_->Hide();
         slider_->Hide();
+        if (startStopBtn_) startStopBtn_->Hide();
+        if (addBtn_) addBtn_->Hide();
+        if (refreshBtn_) refreshBtn_->Hide();
+        if (reportChk_) reportChk_->Hide();
+        if (pruneChk_) pruneChk_->Hide();
+        if (optimizeChk_) optimizeChk_->Hide();
 #ifdef __WXMSW__
         // Orb 模式：开启 WS_EX_LAYERED，由 UpdateLayeredWindow 逐像素 alpha 渲染。
         SetWindowLongPtr(hwnd, GWL_EXSTYLE,
                          GetWindowLongPtr(hwnd, GWL_EXSTYLE) | WS_EX_LAYERED);
 #endif
     } else {
-        w = FromDIP(380);
-        h = FromDIP(300);
+        // Panel 模式：统一监控面板（独立代理 + 代理池），600×480 容纳
+        // 顶部池状态/按钮/checkbox 区与 8 列成员表。
+        w = FromDIP(600);
+        h = FromDIP(480);
         SetSize(w, h);
         list_->Show();
         slider_->Show();
+        if (startStopBtn_) startStopBtn_->Show();
+        if (addBtn_) addBtn_->Show();
+        if (refreshBtn_) refreshBtn_->Show();
+        if (reportChk_) reportChk_->Show();
+        if (pruneChk_) pruneChk_->Show();
+        if (optimizeChk_) optimizeChk_->Show();
         Layout();
 #ifdef __WXMSW__
         // Panel 模式：关闭 WS_EX_LAYERED，恢复 wxWidgets 正常绘制，

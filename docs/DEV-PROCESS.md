@@ -152,6 +152,7 @@ supersedes: (可选) ["被替代的文档名"]
 ### 数据隔离红线
 
 - 测试只允许触碰 `test/ui-sandbox/`；**严禁读写 `bin/worker/guindb.db` 与 `test/guindb.db`**
+- **调试/修复验证一律使用 `bin/` 下的最新构建产物**；`bin/worker/validproxy.exe` 为陈旧副本（非构建输出），禁止作为调试、验证或复现对象（2026-09-11 AppHang 排查教训：曾误将 bin/worker 陈旧副本纳入排查范围）
 - GUI 以真实 `bin\validproxy.exe -c <沙箱配置>` 启动；测试进程只依赖 Win32/UIA/COM，不链接 wxWidgets
 - 失败产物（PNG 截图 + UTF-8 控件树 dump）自动输出至 `test-results/ui-artifacts/`
 

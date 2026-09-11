@@ -31,7 +31,7 @@ enum class MemberLifecycleState {
 };
 
 struct PoolMember {
-    int indexId;
+    long long indexId;
     std::string tag;                 // px-<indexId>
     db::models::Profileitem profile; // snapshot used to (re)build outbound JSON
     MemberLifecycleState state;
@@ -45,14 +45,17 @@ struct PoolMember {
 };
 
 struct PoolMemberView {
-    int indexId;
+    long long indexId;
     std::string tag;
+    std::string host;               // member proxy address (profile.address)
     std::string state;
     long long lastDelayMs;
     bool lastAlive;
     std::string lastError;
     int failStreak;
     bool probed = false;            // true once the health evaluator has measured this member
+    int socksPort = 0;              // pool listen port (0 = unknown)
+    DWORD pid = 0;                  // pool xray process pid (0 = unknown)
 };
 
 // Resolve socks/api listen ports for the pool via PortManager so the pool
@@ -83,7 +86,7 @@ public:
     bool injectMember(const db::models::Profileitem& profile);
     // Remove a member. graceful=true defers the actual handler removal to the
     // evaluator (two-phase); graceful=false removes immediately.
-    bool removeMember(int indexId, bool graceful);
+    bool removeMember(long long indexId, bool graceful);
     std::vector<PoolMemberView> getMembers() const;
 
     void setReportHealth(bool on);
@@ -116,7 +119,7 @@ private:
     std::unique_ptr<xray::XrayApi> api_;
     ProxyHealthEvaluator evaluator_;
     mutable std::mutex membersMutex_;
-    std::map<int, PoolMember> members_;
+    std::map<long long, PoolMember> members_;
     std::atomic<bool> running_;
     std::atomic<bool> reportHealth_;
     std::atomic<bool> autoPruneDead_;

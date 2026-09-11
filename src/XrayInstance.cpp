@@ -273,6 +273,14 @@ int XrayInstance::getApiPort() const {
     return apiPort_;
 }
 
+DWORD XrayInstance::getPid() const {
+    std::lock_guard<std::mutex> lock(stateMutex_);
+    if (processHandle_ == nullptr) {
+        return 0;
+    }
+    return GetProcessId(processHandle_);
+}
+
 std::string XrayInstance::getConfigPath() const {
     return configPath_;
 }

@@ -94,6 +94,18 @@ private:
         std::thread thread;
         std::atomic<bool> running{true};
         std::chrono::steady_clock::time_point threadStartTime;
+        // Auto-reset wake event: shutdown()/unwatch() set running=false and then
+        // SetEvent this handle so a watcher blocked inside a long
+        // WaitForMultipleObjects (heartbeat interval up to 30s) returns at once
+        // instead of keeping the join waiting for the full interval.
+        HANDLE wakeEvent = nullptr;
+
+        ~Watcher() {
+            if (wakeEvent) {
+                CloseHandle(wakeEvent);
+                wakeEvent = nullptr;
+            }
+        }
     };
 
     void handleProcessExit(Watcher* w, DWORD exitCode);

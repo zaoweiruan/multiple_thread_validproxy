@@ -379,3 +379,98 @@ TEST_F(ProcessExitListenerTest, Heartbeat_IncludesBaseline) {
     // Baseline (60000) + at least one interval => strictly greater than baseline.
     EXPECT_GT(observedElapsedMs, baselineMs);
 }
+
+// ---- shutdown() must JOIN watcher threads (not detach) ----
+// Regression for the close-time crash: shutdown() used to detach watcher
+// threads and immediately free the Watcher objects, leaving detached threads
+// running on freed memory (freed std::function heartbeatFn => execute-AV).
+// The fix must join all watcher threads BEFORE their Watcher objects die.
+TEST_F(ProcessExitListenerTest, ShutdownJoinsWatcherThreads_NoUafNoHeartbeatAfter) {
+    // Never-signaled event handle = simulated long-running process.
+    HANDLE h = makeSignaledHandle();
+    ResetEvent(h);
+
+    std::atomic<int> heartbeatCount{0};
+
+    listener.watch(
+        h, "idx-shutdown-join", 99,
+        [](sqlite3*, const std::string&, const std::string&) -> int64_t { return -1; },
+        [](int64_t, sqlite3*) -> bool { return true; },
+        []() -> std::vector<std::pair<int64_t, std::string>> { return {}; },
+        [](sqlite3*, const std::string&, int64_t, const std::string&, int, int64_t) -> bool {
+            return true;
+        },
+        [](const std::string&, int64_t) {},
+        /*takeoverFn=*/nullptr,
+        /*configFileName=*/"",
+        /*heartbeatFn=*/[&](const std::string&, int64_t, int64_t) {
+            heartbeatCount.fetch_add(1);
+        },
+        /*heartbeatIntervalMs=*/30,
+        /*baselineElapsedMs=*/0);
+
+    // Let at least one heartbeat cycle fire so we know the thread is running.
+    std::this_thread::sleep_for(std::chrono::milliseconds(150));
+    EXPECT_GE(heartbeatCount.load(), 1)
+        << "watcher thread should have fired at least one heartbeat before shutdown";
+
+    // Shutdown must join the watcher thread. If shutdown() were still the old
+    // detach+clear, the detached thread would keep touching freed Watcher
+    // memory; with the join fix, the thread is dead once shutdown() returns.
+    listener.shutdown();
+    const int joinedCount = heartbeatCount.load();
+
+    // A detached thread (if any) would keep firing beats on freed Watcher
+    // memory; a joined thread cannot. Give ample time to observe either.
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+
+    // No heartbeat may fire after shutdown() returned: the watcher thread was
+    // joined inside shutdown() and is provably dead.
+    EXPECT_EQ(heartbeatCount.load(), joinedCount)
+        << "heartbeat fired after shutdown() returned => thread outlived shutdown";
+
+    // shutdown() must be idempotent (also called again by TearDown).
+    listener.shutdown();
+    CloseHandle(h);
+}
+
+// shutdown() followed by listener destruction must be safe even while a
+// watcher is mid-wait on a long heartbeat interval (close-time scenario:
+// user closes the app while standalone proxies are being watched).
+TEST_F(ProcessExitListenerTest, ShutdownThenDestroy_LongIntervalWatch_NoCrash) {
+    proc::ProcessExitListener* dyn = new proc::ProcessExitListener();
+    HANDLE h = makeSignaledHandle();
+    ResetEvent(h);
+    std::atomic<int> heartbeatCount{0};
+
+    // Long interval: the watcher thread sits in WaitForSingleObject(30000ms)
+    // when shutdown() arrives — join must still complete promptly because
+    // the fix must not rely on the wait timing out.
+    const std::chrono::steady_clock::time_point t0 = std::chrono::steady_clock::now();
+    dyn->watch(
+        h, "idx-long", 100,
+        [](sqlite3*, const std::string&, const std::string&) -> int64_t { return -1; },
+        [](int64_t, sqlite3*) -> bool { return true; },
+        []() -> std::vector<std::pair<int64_t, std::string>> { return {}; },
+        [](sqlite3*, const std::string&, int64_t, const std::string&, int, int64_t) -> bool {
+            return true;
+        },
+        [](const std::string&, int64_t) {},
+        nullptr, "",
+        [&](const std::string&, int64_t, int64_t) { heartbeatCount.fetch_add(1); },
+        /*heartbeatIntervalMs=*/30000,
+        /*baselineElapsedMs=*/0);
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    dyn->shutdown();
+    const std::chrono::steady_clock::time_point t1 = std::chrono::steady_clock::now();
+    const long long shutdownMs = std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count();
+    // If shutdown relied on WaitForSingleObject timing out, it would block
+    // ~30s. The join must complete via the running=false flag path far
+    // sooner. Allow generous slack (e.g. 5s) for CI scheduling jitter.
+    EXPECT_LT(shutdownMs, 5000)
+        << "shutdown() blocked too long; watcher join must not wait out the full interval";
+
+    delete dyn;  // ~ProcessExitListener -> shutdown() again (idempotent path)
+    CloseHandle(h);
+}

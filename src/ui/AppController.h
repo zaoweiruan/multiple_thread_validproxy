@@ -54,6 +54,33 @@ struct StandaloneMonitorRow {
     int64_t durationMs = 0;  // live elapsed time
     int socksPort = 0;       // 0 = port unknown (config parse failed)
     int64_t pid = -1;        // -1 = history row missing
+    long long lastDelayMs = -1; // last test delay (ms); -1 = unknown / not tested
+};
+
+// ---------------------------------------------------------------
+// UnifiedMonitorRow — one row of the unified floating-widget monitor.
+// Merges standalone watched proxies (StandaloneMonitorRow) with proxy-pool
+// members (proxy::PoolMemberView) so the floating panel can render both
+// kinds in a single list with a "type" column.
+// ---------------------------------------------------------------
+enum class MonitorType {
+    Standalone,
+    Pool
+};
+
+struct UnifiedMonitorRow {
+    MonitorType type = MonitorType::Standalone;
+    std::string indexId;      // standalone: proxy indexId; pool: std::to_string(PoolMemberView::indexId)
+    std::string tag;          // pool: "px-<indexId>"; standalone: empty
+    std::string host;         // profile address; empty when unknown
+    int socksPort = 0;        // 0 = port unknown
+    int64_t pid = -1;         // -1 = unknown (pool rows always -1)
+    int64_t durationMs = 0;   // standalone: live elapsed time; pool: 0
+    std::string state;        // standalone: "运行中"; pool: "active"/"remove-requested"/"draining"
+    long long lastDelayMs = -1; // pool: last probe delay; standalone: -1
+    bool lastAlive = false;   // pool: last probe alive flag; standalone: false
+    int failStreak = 0;       // pool: consecutive failures; standalone: 0
+    std::string lastError;    // pool: last probe error; standalone: empty
 };
 
 class AppController {
@@ -109,6 +136,11 @@ void getRunningDurationsAsync(wxEvtHandler* handler);
 // Copies the watched set under standaloneMutex_, then joins with in-progress
 // history rows for pid/startedAt. Safe to call from the UI thread.
 std::vector<StandaloneMonitorRow> getWatchedStandaloneMonitors();
+
+// Unified snapshot for the floating monitor panel: standalone watched proxies
+// first, then proxy-pool members. Each source is snapshotted under its own
+// mutex (no cross-lock ordering dependency). Safe to call from the UI thread.
+std::vector<UnifiedMonitorRow> getUnifiedMonitorRows();
 
 // ---------------------------------------------------------------
 // Testing / Cancellation
@@ -172,14 +204,16 @@ bool isTestCancelled() const;
      bool injectProxyToPool(const std::string& indexId);
      // Remove a pool member. graceful=true defers handler removal to the
      // evaluator (two-phase); false removes immediately.
-     bool removePoolMember(int indexId, bool graceful);
-      std::vector<proxy::PoolMemberView> getPoolMembers() const;
+     bool removePoolMember(long long indexId, bool graceful);
+     std::vector<proxy::PoolMemberView> getPoolMembers() const;
       // Candidate proxies for the "add to pool" picker (capped). Returns basic
       // profile rows (IndexId / ConfigType / Address / Remarks) loaded from the DB.
       std::vector<db::models::Profileitem> getPoolCandidateProfiles(int limit = 300);
      void setPoolReportHealth(bool on);
      void setPoolAutoPruneDead(bool on);
      void setPoolAutoOptimize(bool on);
+     // Trigger an immediate health probe of the running pool (no-op when idle).
+     void probePoolNow();
 
     // Batch region resolution (after testing)
     int resolveRegionsForValidProxies(const std::string& subId = "");

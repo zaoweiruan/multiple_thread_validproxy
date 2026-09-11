@@ -17,6 +17,9 @@
 #include <filesystem>
 #include <fstream>
 #include <thread>
+#include <atomic>
+#include <future>
+#include <chrono>
 
 #include "ConfigReader.h"
 #include "config/sections/StandalonePoolConfigParser.h"
@@ -289,6 +292,72 @@ TEST(StandaloneProxyPool, ConstructionBoundaryNoStart) {
     EXPECT_FALSE(pool.isRunning());
 }
 
+// 2026-09-11 Bugfix-PoolEvaluator-RecursiveLock-Hang:
+// evaluatorLoop must NOT call notifyChanged() while holding membersMutex_.
+// notifyChanged() → snapshotMembers() → lock(membersMutex_) is a same-thread
+// recursive lock; with MinGW's SRWLOCK-backed non-recursive std::mutex this
+// deadlocks the evaluator thread permanently, which then blocks the UI 5s
+// monitor timer on the same mutex → AppHangB1 (Windows kills the app).
+//
+// Regression pattern: wire onMembersChanged, start() the pool, and assert the
+// callback fires within a bounded wait (pre-fix: evaluator freezes on its
+// first notifyChanged, callback count stays 0). stop() is guarded by
+// std::async + wait_for so a frozen evaluator fails the test instead of
+// hanging the test process (mirrors the pre-fix AppHang).
+TEST(StandaloneProxyPool, EvaluatorNoRecursiveLockOnNotify) {
+    const char* xrayExe = std::getenv("XRAY_REAL_EXE");
+    if (xrayExe == nullptr || xrayExe[0] == '\0') {
+        GTEST_SKIP() << "XRAY_REAL_EXE not set; skipping live pool test";
+    }
+
+    static int s_hangCounter = 0;
+    std::filesystem::path cfgDir =
+        std::filesystem::temp_directory_path() /
+        ("standalone_pool_hang_" + std::to_string(++s_hangCounter));
+    std::filesystem::create_directories(cfgDir);
+
+    config::StandalonePoolConfig cfg;
+    cfg.enabled = true;
+    cfg.socksPort = 20130;
+    cfg.apiPort = 20131;
+    cfg.evaluate.intervalSec = 1;   // fast cycle for the test
+    ASSERT_TRUE(proxy::resolvePoolPorts(cfg));
+
+    proxy::StandaloneProxyPool pool(cfg, xrayExe, cfgDir.string());
+
+    std::atomic<int> notifyCount{0};
+    pool.onMembersChanged = [&notifyCount](const std::vector<proxy::PoolMemberView>&) {
+        notifyCount.fetch_add(1);
+    };
+
+    ASSERT_TRUE(pool.start()) << "pool.start() must succeed against real xray";
+
+    // Bounded wait: pre-fix the evaluator freezes inside its first cycle
+    // (mergeHealth → notifyChanged → recursive lock) so the callback never
+    // fires and this loop times out with count==0.
+    bool notified = false;
+    for (int i = 0; i < 40; ++i) {          // up to ~4s
+        if (notifyCount.load() >= 1) { notified = true; break; }
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+    EXPECT_TRUE(notified)
+        << "onMembersChanged never fired — evaluator deadlocked on membersMutex_";
+
+    // stop() must complete promptly. Pre-fix, stop() joins the frozen
+    // evaluator thread and hangs forever (AppHang). Guard with a bounded
+    // async so the failure surfaces as a test failure, not a hang.
+    std::future<void> stopTask = std::async(std::launch::async, [&pool]() { pool.stop(); });
+    std::future_status st = stopTask.wait_for(std::chrono::seconds(5));
+    ASSERT_EQ(st, std::future_status::ready)
+        << "pool.stop() did not return within 5s — evaluator thread frozen";
+
+    PortManager::freePort(cfg.socksPort);
+    PortManager::freePort(cfg.apiPort);
+    PortManager::clearPorts();
+    std::error_code ec;
+    std::filesystem::remove_all(cfgDir, ec);
+}
+
 // ---- pool port resolution (collision avoidance) -------------------------
 
 TEST(StandaloneProxyPool, ResolvePoolPortsAvoidsInUsePort) {
@@ -340,6 +409,9 @@ TEST(StandaloneProxyPool, ResolvePoolPortsKeepsFreeDesiredPort) {
 //       (verified at runtime via gRPC reflection on Xray 26.3.27; the plain
 //       proto form "xray.app.observatory.command..." is NOT registered and
 //       returned status=12 "unknown service").
+//
+// Requires a real xray binary via the XRAY_REAL_EXE env var. Otherwise it is
+// skipped so CI stays green (matches test_xray_manager_startup convention).
 //
 // Requires a real xray binary via the XRAY_REAL_EXE env var. Otherwise it is
 // skipped so CI stays green (matches test_xray_manager_startup convention).

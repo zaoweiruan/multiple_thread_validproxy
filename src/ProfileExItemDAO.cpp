@@ -55,6 +55,25 @@ std::vector<ProfileExItem> ProfileExItemDAO::getAll() {
     return result;
   }
 
+std::optional<ProfileExItem> ProfileExItemDAO::getByIndexId(const std::string& indexId) {
+    const char* sql = "SELECT * FROM ProfileExItem WHERE IndexId = ? LIMIT 1;";
+
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+      Logger::write("SQL错误: " + std::string(sqlite3_errmsg(db_)), LogLevel::ERR);
+      return std::nullopt;
+    }
+
+    sqlite3_bind_text(stmt, 1, indexId.c_str(), -1, SQLITE_STATIC);
+    std::optional<ProfileExItem> result = std::nullopt;
+    if (sqlite3_step(stmt) == SQLITE_ROW) {
+      result = ProfileExItem::fromStmt(stmt);
+    }
+
+    sqlite3_finalize(stmt);
+    return result;
+  }
+
 std::string ProfileExItemDAO::currentTimeString() {
     std::time_t now = std::time(nullptr);
     std::tm local = {};

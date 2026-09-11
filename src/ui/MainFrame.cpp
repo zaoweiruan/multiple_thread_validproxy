@@ -1,7 +1,6 @@
 #include "MainFrame.h"
 #include "ConfigDialog.h"
 #include "StandaloneFloatingWidget.h"
-#include "StandalonePoolDialog.h"
 #include "LogPanel.h"
 #include "ProxyDetailPanel.h"
 #include "ProxyListPanel.h"
@@ -52,7 +51,6 @@ enum {
     ID_MENU_AUTOTASK_RUN  = wxID_HIGHEST + 112,
     ID_MENU_AUTOTASK_RESUME = wxID_HIGHEST + 113,
     ID_MENU_STANDALONE_MON  = wxID_HIGHEST + 114,
-    ID_MENU_OPEN_POOL     = wxID_HIGHEST + 115,
     ID_TOOL_UPDATE_ALL    = wxID_HIGHEST + 200,
     ID_TOOL_TEST          = wxID_HIGHEST + 201,
     ID_TOOL_FIND          = wxID_HIGHEST + 202,
@@ -97,7 +95,6 @@ wxBEGIN_EVENT_TABLE(MainFrame, wxFrame)
     EVT_MENU(ID_MENU_AUTOTASK_RESUME, MainFrame::onMenuAutoTaskResume)
     EVT_MENU(ID_MENU_ABOUT,       MainFrame::onMenuAbout)
     EVT_MENU(ID_MENU_STANDALONE_MON, MainFrame::onMenuStandaloneMonitor)
-    EVT_MENU(ID_MENU_OPEN_POOL, MainFrame::onMenuOpenPool)
     // Toolbar
     EVT_MENU(ID_TOOL_UPDATE_ALL,  MainFrame::onToolUpdateAll)
     EVT_MENU(ID_TOOL_TEST,        MainFrame::onToolTest)
@@ -132,8 +129,7 @@ MainFrame::MainFrame(const config::AppConfig& cfg, sqlite3* db)
     // start/stop, dangling adoption) to this frame's event table.
     controller_->setTopWindow(this);
 
-    // Pool member health snapshots posted by AppController's proxy pool.
-    Bind(wxEVT_POOL_MEMBERS_UPDATED, &MainFrame::onPoolMembersUpdated, this);
+    
 
     Logger::write("[MainFrame] After controller creation, initializing icon", LogLevel::DEBUG);
 
@@ -576,11 +572,6 @@ MainFrame::~MainFrame() {
         floatingWidget_ = nullptr;
     }
 
-    if (poolDialog_) {
-        poolDialog_->Destroy();
-        poolDialog_ = nullptr;
-    }
-
      // Step 1: AUI must be torn down before any panel/frame member is destroyed
      // (AUI holds references to managed panes — pointers must be valid here)
      if (auiManager_) {
@@ -725,7 +716,6 @@ void MainFrame::initMenuBar() {
     proxyMenu_->Append(ID_MENU_GEN_CONFIG, "Generate Config…");
     proxyMenu_->AppendSeparator();
     proxyMenu_->Append(ID_MENU_STANDALONE_MON, L"独立代理监控…\tCtrl+M", "显示/隐藏独立代理悬浮窗", wxITEM_CHECK);
-    proxyMenu_->Append(ID_MENU_OPEN_POOL, L"代理池…", "打开独立代理池管理（单进程动态成员）");
     proxyMenu_->Check(ID_MENU_STANDALONE_MON, config_.proxy_process_monitor.enabled);
     bar->Append(proxyMenu_, "&Proxy");
 
@@ -795,6 +785,9 @@ void MainFrame::initToolBar() {
                                    wxTE_PROCESS_ENTER);
     m_searchBox->ShowSearchButton(true);
     m_searchBox->ShowCancelButton(true);
+    // Pin the UIA Name so the UI test suite can locate the search box
+    // (TestSearch.cpp looks up NameProperty == "searchCtrl").
+    m_searchBox->SetName("searchCtrl");
     m_toolbar->AddControl(m_searchBox);
     m_toolbar->AddStretchSpacer(1);  // Push toggle detail to right edge
 
@@ -1109,27 +1102,6 @@ void MainFrame::onMenuStandaloneMonitor(wxCommandEvent&) {
     }
     floatingWidget_->toggleActive();
     syncFloatingWidgetControls();
-}
-
-void MainFrame::onMenuOpenPool(wxCommandEvent&) {
-    if (!controller_->isProxyPoolEnabled()) {
-        wxMessageBox(L"代理池未在配置中启用（standalone_pool.enabled=false）",
-                     L"提示", wxOK | wxICON_INFORMATION);
-        return;
-    }
-    if (!poolDialog_) {
-        poolDialog_ = new StandalonePoolDialog(this, controller_);
-    }
-    poolDialog_->setMembers(controller_->getPoolMembers());
-    poolDialog_->Show();
-    poolDialog_->Raise();
-}
-
-void MainFrame::onPoolMembersUpdated(PoolMembersUpdatedEvent& event) {
-    if (poolDialog_) {
-        poolDialog_->setMembers(event.takeMembers());
-    }
-    event.Skip();
 }
 
 void MainFrame::syncFloatingWidgetControls() {

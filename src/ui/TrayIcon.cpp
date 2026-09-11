@@ -1,6 +1,8 @@
 #include "TrayIcon.h"
 #include "MainFrame.h"
 #include <wx/artprov.h>
+#include <algorithm>
+#include <vector>
 
 // ID_TRAY_EXIT 数值 = wxID_HIGHEST + 1002，已被 UI 测试路径研究
 // (WM_COMMAND 模拟退出) 记录为稳定常量，不得改动。
@@ -28,7 +30,38 @@ TrayIcon::TrayIcon(MainFrame* frame)
     if (!icon.IsOk()) {
         icon = wxArtProvider::GetIcon(wxART_INFORMATION, wxART_OTHER, wxSize(16, 16));
     }
+
+    // 差分捕获 wxTaskBarIcon 内部懒创建的辅助窗口 m_win（wxTaskBarIconWindow
+    // 是无父、无标题的顶层 wxFrame，为 Shell_NotifyIcon 提供 HWND）。
+    // m_win 为 wxTaskBarIcon 私有成员，无公开 API 可引用，故对全局
+    // wxTopLevelWindows 列表做 SetIcon 前后快照差分，新增项即 m_win。
+    // 根因：WM_CLOSE 广播（UI 测试 terminate / 任务管理器"结束任务" / 系统
+    // 关机注销）命中 m_win 时走 wxFrame 默认 Destroy() 进入 wxPendingDelete，
+    // 而 ~wxTaskBarIcon 仍会 raw delete m_win → 双删除 UAF。
+    // 修复：拦截其 wxEVT_CLOSE_WINDOW（无捕获空 lambda，不 Skip）——吞掉
+    // 外部关闭请求，m_win 只允许经 ~wxTaskBarIcon 释放。
+    // 详见 docs/bugfix/2026-09-11-Bugfix-TrayIcon-HelperWindow-DoubleDelete-v1.0.md
+    std::vector<wxWindow*> topLevelBefore;
+    for (wxWindowList::compatibility_iterator node = wxTopLevelWindows.GetFirst();
+         node; node = node->GetNext()) {
+        topLevelBefore.push_back(node->GetData());
+    }
+
     SetIcon(icon, "validproxy");
+
+    for (wxWindowList::compatibility_iterator node = wxTopLevelWindows.GetFirst();
+         node; node = node->GetNext()) {
+        wxWindow* win = node->GetData();
+        if (std::find(topLevelBefore.begin(), topLevelBefore.end(), win)
+            == topLevelBefore.end()) {
+            win->Bind(wxEVT_CLOSE_WINDOW,
+                      [](wxCloseEvent&) {
+                          // 有意吞掉：m_win 生命周期完全归属 ~wxTaskBarIcon
+                          // 的 raw delete，外部关闭一律不进入默认 Destroy。
+                          // 不调用 event.Skip()，保持窗口存活。
+                      });
+        }
+    }
 }
 
 TrayIcon::~TrayIcon() {

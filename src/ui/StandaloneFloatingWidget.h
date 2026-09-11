@@ -9,6 +9,9 @@
 #include <wx/image.h>
 #include <wx/region.h>
 #include <wx/sizer.h>
+#include <wx/button.h>
+#include <wx/checkbox.h>
+#include <wx/stattext.h>
 
 #include <string>
 #include <vector>
@@ -63,6 +66,7 @@ private:
     enum class Mode { Orb, Panel };
 
     void onTimer(wxTimerEvent& event);
+    void onClose(wxCloseEvent& event);
     void onEnterWindow(wxMouseEvent& event);
     void onLeaveWindow(wxMouseEvent& event);
     void onLeftDown(wxMouseEvent& event);
@@ -80,6 +84,17 @@ private:
     void onMenuTestOnline(wxCommandEvent& event);
     void onTestOnlineProxiesEvent(TestOnlineProxiesEvent& event);
     void onActivate(wxActivateEvent& event);
+
+    // --- 代理池统一监控（v1.4）---
+    void onStartStopPool(wxCommandEvent& event);
+    void onAddPoolMember(wxCommandEvent& event);
+    void onRefreshPool(wxCommandEvent& event);
+    void onToggleReport(wxCommandEvent& event);
+    void onTogglePrune(wxCommandEvent& event);
+    void onToggleOptimize(wxCommandEvent& event);
+    void onMenuLocateProxy(wxCommandEvent& event);
+    void onPoolMembersUpdated(PoolMembersUpdatedEvent& event);
+    void updatePoolStatusText();
 
 #ifdef __WXMSW__
     // 分层窗口逐像素 alpha：整颗悬浮球均可命中测试，保证可拖动/悬停。
@@ -107,7 +122,15 @@ private:
     wxTimer hoverTimer_;
     wxListCtrl* list_{nullptr};
     CustomColorSlider* slider_{nullptr};
-    std::vector<StandaloneMonitorRow> rows_;
+    std::vector<UnifiedMonitorRow> rows_;
+    // --- 代理池统一监控控件（v1.4）---
+    wxStaticText* poolStatusText_{nullptr};
+    wxButton* startStopBtn_{nullptr};
+    wxButton* addBtn_{nullptr};
+    wxButton* refreshBtn_{nullptr};
+    wxCheckBox* reportChk_{nullptr};
+    wxCheckBox* pruneChk_{nullptr};
+    wxCheckBox* optimizeChk_{nullptr};
     long contextMenuSel_{-1};  // 右键菜单弹出时选中的行，供 onMenuCloseProxy 使用
     bool active_{false};
     bool hovering_{false};
