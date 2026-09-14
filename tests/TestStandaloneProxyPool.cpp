@@ -184,9 +184,12 @@ TEST(StandaloneProxyPool, ConfigParserDefaultsWhenAbsent) {
     config::AppConfig cfg;
     bool defEnabled = cfg.standalone_pool.enabled;
     std::string defMode = cfg.standalone_pool.mode;
+    int defProbeWorkers = cfg.standalone_pool.evaluate.probeWorkers;
     config::StandalonePoolConfigParser().parse(boost::json::object{}, cfg, "");
     EXPECT_EQ(cfg.standalone_pool.enabled, defEnabled);
     EXPECT_EQ(cfg.standalone_pool.mode, defMode);
+    EXPECT_EQ(cfg.standalone_pool.evaluate.probeWorkers, defProbeWorkers)
+        << "probeWorkers must keep its default when absent";
 }
 
 TEST(StandaloneProxyPool, ConfigParserOverrides) {
@@ -210,7 +213,8 @@ TEST(StandaloneProxyPool, ConfigParserOverrides) {
                 "reportHealth": false,
                 "autoPruneDead": true,
                 "pruneFailStreak": 4,
-                "autoOptimize": true
+                "autoOptimize": true,
+                "probeWorkers": 5
             }
         }
     })").as_object();
@@ -232,6 +236,8 @@ TEST(StandaloneProxyPool, ConfigParserOverrides) {
     EXPECT_TRUE(cfg.standalone_pool.evaluate.autoPruneDead);
     EXPECT_EQ(cfg.standalone_pool.evaluate.pruneFailStreak, 4);
     EXPECT_TRUE(cfg.standalone_pool.evaluate.autoOptimize);
+    EXPECT_EQ(cfg.standalone_pool.evaluate.probeWorkers, 5)
+        << "probeWorkers must be parsed from evaluate block";
 }
 
 TEST(StandaloneProxyPool, ConfigParserRejectsInvalidEnum) {
@@ -243,13 +249,16 @@ TEST(StandaloneProxyPool, ConfigParserRejectsInvalidEnum) {
         "standalone_pool": {
             "mode": "bogus",
             "balancerStrategy": "bogus",
-            "observatory": { "type": "bogus" }
+            "observatory": { "type": "bogus" },
+            "evaluate": { "probeWorkers": 0 }
         }
     })").as_object();
     config::StandalonePoolConfigParser().parse(root, cfg, "");
     EXPECT_EQ(cfg.standalone_pool.mode, "pool") << "invalid mode must be ignored";
     EXPECT_EQ(cfg.standalone_pool.balancerStrategy, "leastPing") << "invalid strategy ignored";
     EXPECT_EQ(cfg.standalone_pool.observatory.type, "http") << "invalid observatory type ignored";
+    EXPECT_EQ(cfg.standalone_pool.evaluate.probeWorkers, 2)
+        << "non-positive probeWorkers must keep the default";
 }
 
 // ---- pool construction (offline) ------------------------------------------

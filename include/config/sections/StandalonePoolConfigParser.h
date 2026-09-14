@@ -82,6 +82,10 @@ inline void StandalonePoolConfigParser::parse(const boost::json::value& root, Ap
         if (ev.contains("autoOptimize") && ev.at("autoOptimize").is_bool()) {
             config.standalone_pool.evaluate.autoOptimize = ev.at("autoOptimize").as_bool();
         }
+        if (ev.contains("probeWorkers") && ev.at("probeWorkers").is_int64()) {
+            int v = static_cast<int>(ev.at("probeWorkers").as_int64());
+            if (v > 0) config.standalone_pool.evaluate.probeWorkers = v;
+        }
     }
 }
 

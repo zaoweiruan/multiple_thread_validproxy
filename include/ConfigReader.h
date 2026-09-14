@@ -30,6 +30,7 @@ struct StandalonePoolConfig {
         bool autoPruneDead = false;               // b
         int pruneFailStreak = 3;                  // b 阈值
         bool autoOptimize = false;                // c
+        int probeWorkers = 2;                     // 常驻 Xray 探针 worker 数（非直连成员健康探测）
     } evaluate;
 };
 
