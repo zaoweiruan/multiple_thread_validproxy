@@ -324,7 +324,7 @@ void StandaloneProxyPool::evaluatorLoop() {
             std::vector<PoolMemberView> snap;
             snapshotMembers(snap);
             Logger::write("[StandaloneProxyPool] health: " + std::to_string(snap.size()) + " members",
-                          LogLevel::REPORT);
+                          LogLevel::DEBUG);
         }
 
         notifyChanged();

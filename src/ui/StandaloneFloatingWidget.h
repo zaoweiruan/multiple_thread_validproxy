@@ -15,6 +15,7 @@
 
 #include <string>
 #include <vector>
+#include <optional>
 
 #include "ConfigReader.h"   // config::AppConfig
 #include "AppController.h"  // StandaloneMonitorRow
@@ -141,6 +142,10 @@ private:
     int hideDelayMs_{FloatingWidgetPolicy::HideDelayDefaults::kDefaultMs};
     int hoverExpandDelayMs_{FloatingWidgetPolicy::HoverExpandDefaults::kDefaultMs};
     FloatingWidgetPolicy::DockEdge dockEdge_{FloatingWidgetPolicy::DockEdge::Right};
+    // bugfix 2026-09-14 (#85): 展开前球中心快照。Panel 展开时 600×480 面板可能被
+    // clampToScreen 钳制（面板中心 ≠ 球中心）；收回 Orb 时用快照中心替代当前
+    // （被钳制后）面板中心，球回到原始位置而非漂移至屏幕中部。
+    std::optional<wxPoint> savedOrbCenter_;
     wxPoint dragOffset_;
     wxPoint dragStartPos_;  // 记录按下位置，用于区分点击 vs 拖拽
     wxLongLong lastToggleTime_{0}; // 最近一次切换主窗最大化的时刻(ms)，防抖

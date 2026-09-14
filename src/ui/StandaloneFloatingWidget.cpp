@@ -2,6 +2,7 @@
 #include "AddPoolMemberDialog.h"
 #include "AppController.h"
 #include "Events.h"
+#include "Logger.h"
 #include "TestOnlineResultDialog.h"
 #include "ToolbarIcons.h"
 
@@ -431,8 +432,10 @@ void StandaloneFloatingWidget::onTimer(wxTimerEvent& event) {
             return;
         }
         hovering_ = false;
+        // bugfix 2026-09-14: 收回悬浮球时保留当前位置（setMode→applyShape 内部
+        // keepCenter 已保位）；不再 positionForCurrentEdge() 重新停靠到屏幕边缘
+        // 中央，否则展开后自动收回会丢弃用户的自由落点。
         setMode(Mode::Orb);
-        positionForCurrentEdge();
     } else if (&event.GetTimer() == &hoverTimer_) {
         // 悬停 dwell 结束：若仍在悬浮球上且未拖动，展开面板。
         if (mode_ == Mode::Orb && hovering_ && !dragging_) {
@@ -879,8 +882,9 @@ void StandaloneFloatingWidget::onTestOnlineProxiesEvent(TestOnlineProxiesEvent& 
 void StandaloneFloatingWidget::onActivate(wxActivateEvent& event) {
     if (!event.GetActive() && mode_ == Mode::Panel && !dragging_) {
         // 窗口失去激活状态（用户点击了外部），关闭面板回到 Orb。
+        // bugfix 2026-09-14: 保留当前位置收回（keepCenter），不重新停靠边缘
+        // 中央，与 hideTimer 自动收回路径行为一致。
         setMode(Mode::Orb);
-        positionForCurrentEdge();
     }
     event.Skip();
 }
@@ -999,8 +1003,21 @@ void StandaloneFloatingWidget::setMode(Mode m, bool force) {
         return;
     }
     const wxPoint oldCenter = GetScreenPosition() + GetSize() / 2;
+    // bugfix 2026-09-14 (#85): Orb→Panel 展开时保存球中心快照；Panel→Orb 收回时
+    // 用快照替代当前（可能被 clampToScreen 钳制后）面板中心，避免边缘球展开
+    // 收回后漂移至屏幕中部而非原始位置。
+    if (mode_ == Mode::Orb && m == Mode::Panel) {
+        savedOrbCenter_ = oldCenter;
+    }
     mode_ = m;
-    applyShape(oldCenter);
+    wxPoint keep = oldCenter;
+    if (mode_ == Mode::Orb && savedOrbCenter_) {
+        keep = *savedOrbCenter_;
+    }
+    applyShape(keep);
+    if (mode_ == Mode::Orb) {
+        savedOrbCenter_.reset();
+    }
 }
 
 void StandaloneFloatingWidget::applyShape(const wxPoint& keepCenter) {
@@ -1024,6 +1041,10 @@ void StandaloneFloatingWidget::applyShape(const wxPoint& keepCenter) {
         if (reportChk_) reportChk_->Hide();
         if (pruneChk_) pruneChk_->Hide();
         if (optimizeChk_) optimizeChk_->Hide();
+        // bugfix 2026-09-14 (OrbHitZone): poolStatusText_ 是统一变更新增的第 8 个
+        // 池控件，此前唯一遗漏 Hide——Orb 模式其 HWND 仍横亘球上部截获鼠标命中，
+        // 造成悬停/单击仅下半球有效的死区。
+        if (poolStatusText_) poolStatusText_->Hide();
 #ifdef __WXMSW__
         // Orb 模式：开启 WS_EX_LAYERED，由 UpdateLayeredWindow 逐像素 alpha 渲染。
         SetWindowLongPtr(hwnd, GWL_EXSTYLE,
@@ -1043,6 +1064,8 @@ void StandaloneFloatingWidget::applyShape(const wxPoint& keepCenter) {
         if (reportChk_) reportChk_->Show();
         if (pruneChk_) pruneChk_->Show();
         if (optimizeChk_) optimizeChk_->Show();
+        // bugfix 2026-09-14 (OrbHitZone): 与 Orb 分支对称，池状态文本恢复显示。
+        if (poolStatusText_) poolStatusText_->Show();
         Layout();
 #ifdef __WXMSW__
         // Panel 模式：关闭 WS_EX_LAYERED，恢复 wxWidgets 正常绘制，
