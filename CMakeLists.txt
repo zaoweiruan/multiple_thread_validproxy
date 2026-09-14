@@ -209,6 +209,7 @@ set(CORE_SOURCES
     src/ui/UiOperationRunner.cpp
     src/StandaloneProxyPool.cpp
     src/ProxyHealthEvaluator.cpp
+    src/ProxyProbePool.cpp
 )
 
 # ===== CLI target (CONSOLE subsystem) =====
@@ -707,6 +708,7 @@ add_executable(test_standalone_proxy_pool
     src/StandaloneProxyPool.cpp
     src/PortManager.cpp
     src/ProxyHealthEvaluator.cpp
+    src/ProxyProbePool.cpp
     src/XrayInstance.cpp
     src/XrayApi.cpp
     src/ProfileitemDAO.cpp
@@ -744,6 +746,49 @@ set_target_properties(test_standalone_proxy_pool PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
 )
 add_test(NAME StandaloneProxyPoolTest COMMAND test_standalone_proxy_pool)
+
+# -- Proxy Probe Pool unit tests (resident xray probe workers) --
+add_executable(test_proxy_probe_pool
+    tests/TestProxyProbePool.cpp
+    src/ProxyProbePool.cpp
+    src/XrayInstance.cpp
+    src/XrayApi.cpp
+    src/PortManager.cpp
+    src/Utils.cpp
+    src/Logger.cpp
+    src/LoggerInstance.cpp
+    src/config/ProfileConfigRepository.cpp
+    src/config/ProfileNormalizer.cpp
+    src/config/StreamSettingsBuilder.cpp
+    src/config/OutboundBuilderFactory.cpp
+    src/config/XrayConfigAssembler.cpp
+    src/config/outbound/VLESSOutboundBuilder.cpp
+    src/config/outbound/VMessOutboundBuilder.cpp
+    src/config/outbound/SSOutboundBuilder.cpp
+    src/config/outbound/TrojanOutboundBuilder.cpp
+    src/config/outbound/SOCKSOutboundBuilder.cpp
+    src/config/outbound/HTTPOutboundBuilder.cpp
+    src/config/outbound/Hysteria2OutboundBuilder.cpp
+    src/config/outbound/TUICOutboundBuilder.cpp
+    src/config/outbound/WireGuardOutboundBuilder.cpp
+    src/ProfileitemDAO.cpp
+    src/ProfileExItemDAO.cpp
+    src/utils/DnsCache.cpp
+)
+target_include_directories(test_proxy_probe_pool PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_compile_definitions(test_proxy_probe_pool PRIVATE USE_GRPC_API=1)
+target_link_libraries(test_proxy_probe_pool PRIVATE gtest_main gtest
+    ${VCPKG_ROOT}/installed/x64-mingw-static/lib/libsqlite3.a
+    ${VCPKG_ROOT}/installed/x64-mingw-static/lib/libboost_json-gcc14-mt-x64-1_91.a
+    CURL::libcurl
+    -lws2_32
+)
+set_target_properties(test_proxy_probe_pool PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+)
+add_test(NAME ProxyProbePoolTest COMMAND test_proxy_probe_pool)
 
 # -- Delete Subscription tests --
 add_executable(test_delete_subscription tests/test_delete_subscription.cpp     src/ProfileitemDAO.cpp

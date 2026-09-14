@@ -4,6 +4,8 @@
 #include <vector>
 #include <string>
 
+#include "Profileitem.h"
+
 namespace proxy {
 
 // A member to be health-checked: enough of its upstream proxy config to build
@@ -17,6 +19,9 @@ struct MemberProbeTarget {
     std::string port;
     std::string username;   // p.security
     std::string password;   // p.id
+    // Full upstream profile. Used by the resident xray probe pool to build the
+    // outbound to inject (vmess/vless/trojan/ss/hysteria2/tuic/wireguard).
+    db::models::Profileitem profile;
 };
 
 // Per-member health snapshot returned by a single probe.
