@@ -751,6 +751,7 @@ add_test(NAME StandaloneProxyPoolTest COMMAND test_standalone_proxy_pool)
 add_executable(test_proxy_probe_pool
     tests/TestProxyProbePool.cpp
     src/ProxyProbePool.cpp
+    src/ProxyHealthEvaluator.cpp
     src/XrayInstance.cpp
     src/XrayApi.cpp
     src/PortManager.cpp

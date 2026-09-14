@@ -8,6 +8,11 @@
 
 namespace proxy {
 
+// Forward declaration: the resident xray probe pool (ProxyProbePool.h) is
+// wired in via setProbePool() to avoid a circular include (ProxyProbePool.h
+// includes ProxyHealthEvaluator.h for MemberProbeTarget/MemberHealth).
+class ProxyProbePool;
+
 // A member to be health-checked: enough of its upstream proxy config to build
 // a direct cURL proxy URL. configtype matches db::models::Profileitem.configtype
 // (4 = SOCKS, 10 = HTTP, ...). For SOCKS/HTTP the xray builder maps
@@ -40,13 +45,18 @@ struct MemberHealth {
 // pool member frozen at its injection state (active / -1 / 否 / failStreak 0).
 //
 // Protocols that require xray to speak (vmess/vless/trojan/ss/hysteria2/tuic/
-// wireguard) cannot be probed with a bare cURL proxy URL; those return
-// tested=false and must be measured via a separate xray-side probe (out of
-// scope for this iteration). SOCKS (4) and HTTP (10) are probed directly.
+// wireguard) cannot be probed with a bare cURL proxy URL; when a resident
+// ProxyProbePool is attached via setProbePool() those are routed to the pool's
+// xray workers instead. Without a pool they return tested=false. SOCKS (4) and
+// HTTP (10) are always probed directly.
 class ProxyHealthEvaluator {
 public:
     ProxyHealthEvaluator();
     ~ProxyHealthEvaluator();
+
+    // Attach a resident xray probe pool. Non-direct protocols (vmess/vless/
+    // trojan/ss/hysteria2/tuic/wireguard) are routed to it when running.
+    void setProbePool(ProxyProbePool* pool);
 
     // Probe each target's upstream proxy. Returns one MemberHealth per target
     // (tag always set; tested/alive filled only for directly-probeable types).
@@ -56,6 +66,8 @@ public:
                                     long totalTimeoutMs);
 
 private:
+    // Resident xray probe pool for non-direct protocols (nullptr = disabled).
+    ProxyProbePool* probePool_ = nullptr;
     // Build a cURL proxy URL for a SOCKS/HTTP target (empty if unsupported).
     static std::string proxyUrlFor(const MemberProbeTarget& t);
     // Probe a single SOCKS/HTTP target through its upstream proxy.

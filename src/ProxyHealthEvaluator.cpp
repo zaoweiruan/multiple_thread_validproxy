@@ -1,4 +1,5 @@
 #include "ProxyHealthEvaluator.h"
+#include "ProxyProbePool.h"
 #include "CurlEasyHandle.h"
 
 #include <curl/curl.h>
@@ -10,6 +11,10 @@ ProxyHealthEvaluator::ProxyHealthEvaluator() {
 }
 
 ProxyHealthEvaluator::~ProxyHealthEvaluator() {
+}
+
+void ProxyHealthEvaluator::setProbePool(ProxyProbePool* pool) {
+    probePool_ = pool;
 }
 
 std::string ProxyHealthEvaluator::proxyUrlFor(const MemberProbeTarget& t) {
@@ -79,12 +84,23 @@ std::vector<MemberHealth> ProxyHealthEvaluator::probe(const std::vector<MemberPr
             result.push_back(probeSocksHttp(t, testUrl, connectTimeoutMs, totalTimeoutMs));
         } else {
             // Protocols that require xray to speak the wire protocol cannot be
-            // measured with a bare cURL proxy URL. Leave tested=false so the
-            // pool does not overwrite their state with a false negative.
+            // measured with a bare cURL proxy URL. When a resident probe pool
+            // is attached and running, route the member to its xray workers;
+            // otherwise leave tested=false so the pool does not overwrite the
+            // member's state with a false negative.
             MemberHealth h;
             h.tag = t.tag;
             h.tested = false;
-            h.lastError = "protocol requires xray-side probe (not directly probeable)";
+            if (probePool_ != nullptr && probePool_->isRunning()) {
+                bool ok = probePool_->probeMember(t, testUrl, connectTimeoutMs,
+                                                  totalTimeoutMs, h);
+                if (!ok) {
+                    h.tested = false;
+                    h.lastError = "xray probe worker unavailable";
+                }
+            } else {
+                h.lastError = "protocol requires xray-side probe (not directly probeable)";
+            }
             result.push_back(h);
         }
     }

@@ -118,3 +118,39 @@ TEST_F(ProxyProbePoolTest, LiveProbeMemberInjectsAndProbes) {
     pool.stop();
     EXPECT_FALSE(pool.isRunning());
 }
+
+TEST_F(ProxyProbePoolTest, EvaluatorWithoutProbePoolLeavesNonDirectUntested) {
+    proxy::ProxyHealthEvaluator evaluator;
+    std::vector<proxy::MemberProbeTarget> targets;
+    targets.push_back(makeTarget(makeVlessProfile()));
+
+    std::vector<proxy::MemberHealth> health =
+        evaluator.probe(targets, "https://www.google.com", 3000, 10000);
+
+    ASSERT_EQ(health.size(), 1u);
+    EXPECT_FALSE(health[0].tested);
+    EXPECT_EQ(health[0].tag, "px-900012356");
+}
+
+TEST_F(ProxyProbePoolTest, LiveEvaluatorWithProbePoolRoutesNonDirectToPool) {
+    if (xrayExe_.empty()) {
+        GTEST_SKIP() << "XRAY_REAL_EXE not set; skipping live evaluator wiring test";
+    }
+
+    proxy::ProxyProbePool pool(xrayExe_, 1, tempDir_.string());
+    ASSERT_TRUE(pool.start());
+
+    proxy::ProxyHealthEvaluator evaluator;
+    evaluator.setProbePool(&pool);
+    std::vector<proxy::MemberProbeTarget> targets;
+    targets.push_back(makeTarget(makeVlessProfile()));
+
+    std::vector<proxy::MemberHealth> health =
+        evaluator.probe(targets, "https://www.google.com", 3000, 10000);
+
+    pool.stop();
+
+    ASSERT_EQ(health.size(), 1u);
+    EXPECT_TRUE(health[0].tested);
+    EXPECT_EQ(health[0].tag, "px-900012356");
+}
