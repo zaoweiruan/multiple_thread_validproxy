@@ -481,10 +481,10 @@ void AppController::testAllProxiesAsync(wxEvtHandler* wxHandler) {
     workerThread_ = std::thread(&AppController::doTestAllProxies, this, wxHandler);
 }
 
-void AppController::testOnlineProxiesAsync(wxEvtHandler* wxHandler) {
+void AppController::testOnlineProxiesAsync(wxEvtHandler* wxHandler, bool silent) {
         AsyncOperationGuard guard{workerThread_, isRunning_, cancelRequested_, wxHandler};
         if (!guard.isAllowed()) return;
-    workerThread_ = std::thread(&AppController::doTestOnlineProxies, this, wxHandler);
+    workerThread_ = std::thread(&AppController::doTestOnlineProxies, this, wxHandler, silent);
 }
 
 void AppController::cancelTest() {
@@ -2133,13 +2133,14 @@ void AppController::doTestAllProxies(wxEvtHandler* wxHandler) {
     }
 }
 
-void AppController::doTestOnlineProxies(wxEvtHandler* wxHandler) {
+void AppController::doTestOnlineProxies(wxEvtHandler* wxHandler, bool silent) {
     // Scope guard: reset isRunning_ on every exit path (including early returns and exceptions)
     ScopeGuard<std::atomic<bool>> _guard{isRunning_};
 
     try {
-        // Show testing progress in status bar field 0
-        if (wxHandler) {
+        // Show testing progress in status bar field 0 (skipped for the silent
+        // periodic probe so it never disturbs the UI).
+        if (wxHandler && !silent) {
             wxQueueEvent(wxHandler, new StatusUpdateEvent(0, "Testing online proxies..."));
         }
 
@@ -2157,6 +2158,8 @@ void AppController::doTestOnlineProxies(wxEvtHandler* wxHandler) {
             if (port <= 0) {
                 failed++;
                 failedIndexIds.push_back(mon.indexId);
+                Logger::write("[OnlineProbe] test failed: " + mon.indexId + ": socks port unknown",
+                              LogLevel::WARN);
                 exDao_.updateTestResult(mon.indexId, -1, false, "socks port unknown");
                 continue;
             }
@@ -2168,15 +2171,18 @@ void AppController::doTestOnlineProxies(wxEvtHandler* wxHandler) {
             } else {
                 failed++;
                 failedIndexIds.push_back(mon.indexId);
+                Logger::write("[OnlineProbe] test failed: " + mon.indexId + ": " + r.errorMsg,
+                              LogLevel::WARN);
             }
             exDao_.updateTestResult(mon.indexId, r.latencyMs, r.success, r.errorMsg);
         }
 
-        if (wxHandler) {
+        // Periodic silent probe: no status-bar chatter, no result event.
+        if (wxHandler && !silent) {
             wxQueueEvent(wxHandler, new StatusUpdateEvent(2, total > 0 ? "Online proxies test completed" : "No online proxies found"));
         }
-        // Report totals and failed list back to the panel
-        if (wxHandler) {
+        // Report totals and failed list back to the panel (manual trigger only)
+        if (wxHandler && !silent) {
             wxQueueEvent(wxHandler, new TestOnlineProxiesEvent(failedIndexIds, total, success, failed));
         }
 
@@ -2184,7 +2190,7 @@ void AppController::doTestOnlineProxies(wxEvtHandler* wxHandler) {
                           ", success=" + std::to_string(success) + ", failed=" + std::to_string(failed),
                       LogLevel::REPORT);
     } catch (const std::exception& e) {
-        if (wxHandler) {
+        if (wxHandler && !silent) {
             wxQueueEvent(wxHandler, new StatusUpdateEvent(0, std::string("ERR:") + e.what()));
         }
         Logger::write(std::string("Online proxies test error: ") + e.what(), LogLevel::ERR);

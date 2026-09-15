@@ -149,7 +149,7 @@ std::vector<UnifiedMonitorRow> getUnifiedMonitorRows();
 void testSubscriptionAsync(const std::string& subId, wxEvtHandler* wxHandler);
 void testSingleProxyAsync(const std::string& indexId, wxEvtHandler* wxHandler);
 void testAllProxiesAsync(wxEvtHandler* wxHandler);
-void testOnlineProxiesAsync(wxEvtHandler* wxHandler);
+void testOnlineProxiesAsync(wxEvtHandler* wxHandler, bool silent = false);
 void cancelTest();
 bool isTestCancelled() const;
 
@@ -235,7 +235,7 @@ private:
   void doTestSubscription(const std::string& subId, wxEvtHandler* wxHandler);
   void doTestSingleProxy(const std::string& indexId, wxEvtHandler* wxHandler);
   void doTestAllProxies(wxEvtHandler* wxHandler);
-  void doTestOnlineProxies(wxEvtHandler* wxHandler);
+  void doTestOnlineProxies(wxEvtHandler* wxHandler, bool silent);
   void doFindFirstProxy(wxEvtHandler* wxHandler);
   void doFindBestProxy(wxEvtHandler* wxHandler);
   void doSyncDatabases(wxEvtHandler* wxHandler);

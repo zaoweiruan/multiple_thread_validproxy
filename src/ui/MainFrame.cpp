@@ -945,6 +945,12 @@ void MainFrame::onProxyMonTimer(wxTimerEvent&) {
     // Update alive count in status bar
     int aliveCount = controller_->getRunningStandaloneCount();
     updateProxyMonStatus(true, aliveCount);
+
+    // Periodic silent probe of watched standalone proxies: reuses the online
+    // test machinery (ProxyTester local-port end-to-end + updateTestResult +
+    // WARN log on failure). isRunning_ inside AppController prevents overlap
+    // with a manual trigger or another test. Never closes the process.
+    controller_->testOnlineProxiesAsync(this, true);
 }
 
 void MainFrame::updateProxyMonStatus(bool enabled, int aliveCount) {
