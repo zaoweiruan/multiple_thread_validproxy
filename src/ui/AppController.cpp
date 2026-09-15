@@ -482,6 +482,16 @@ void AppController::testAllProxiesAsync(wxEvtHandler* wxHandler) {
 }
 
 void AppController::testOnlineProxiesAsync(wxEvtHandler* wxHandler, bool silent) {
+        // If a silent periodic probe is already running and the user requests
+        // a manual run, cancel the silent one and wait for it to finish so
+        // the manual request can take over (avoids the "Operation Busy" dialog).
+        if (!silent && isRunning_ && workerThread_.joinable()) {
+            cancelRequested_ = true;
+            workerThread_.join();
+            isRunning_ = false;
+            cancelRequested_ = false;
+        }
+
         AsyncOperationGuard guard{workerThread_, isRunning_, cancelRequested_, wxHandler};
         if (!guard.isAllowed()) return;
     workerThread_ = std::thread(&AppController::doTestOnlineProxies, this, wxHandler, silent);
@@ -2207,9 +2217,17 @@ void AppController::doTestOnlineProxies(wxEvtHandler* wxHandler, bool silent) {
             wxQueueEvent(wxHandler, new TestOnlineProxiesEvent(failedIndexIds, total, success, failed));
         }
 
-        Logger::write(std::string("Online proxies test finished: total=") + std::to_string(total) +
-                          ", success=" + std::to_string(success) + ", failed=" + std::to_string(failed),
-                      LogLevel::REPORT);
+        // Log only on failure (REPORT); a fully-successful probe stays quiet
+        // (DEBUG) so periodic probes do not spam the log.
+        if (failed > 0) {
+            Logger::write(std::string("Online proxies test finished: total=") + std::to_string(total) +
+                              ", success=" + std::to_string(success) + ", failed=" + std::to_string(failed),
+                          LogLevel::REPORT);
+        } else {
+            Logger::write(std::string("Online proxies test finished: total=") + std::to_string(total) +
+                              ", success=" + std::to_string(success) + ", failed=0",
+                          LogLevel::DEBUG);
+        }
     } catch (const std::exception& e) {
         if (wxHandler && !silent) {
             wxQueueEvent(wxHandler, new StatusUpdateEvent(0, std::string("ERR:") + e.what()));
