@@ -13,6 +13,8 @@ StandaloneProxyPool::StandaloneProxyPool(const config::StandalonePoolConfig& cfg
                                          const std::string& xrayPath,
                                          const std::string& configDir)
     : cfg_(cfg),
+      xrayPath_(xrayPath),
+      configDir_(configDir),
       instance_(std::make_shared<XrayInstance>(xrayPath, cfg.socksPort, cfg.apiPort, configDir)),
       api_(new xray::XrayApi(xrayPath, std::string("127.0.0.1:") + std::to_string(cfg.apiPort))),
       running_(false),
@@ -37,6 +39,16 @@ bool StandaloneProxyPool::start() {
     reportHealth_ = cfg_.evaluate.reportHealth;
     autoPruneDead_ = cfg_.evaluate.autoPruneDead;
     autoOptimize_ = cfg_.evaluate.autoOptimize;
+    // Start the resident probe workers (non-direct member health probing).
+    // Failure is non-fatal for the pool: the evaluator keeps reported
+    // tested=false on such members (and start failure here is logged as WARN
+    // rather than aborting the pool, since direct protocols still probe fine).
+    probePool_.reset(new ProxyProbePool(xrayPath_, cfg_.evaluate.probeWorkers, configDir_));
+    if (!probePool_->start()) {
+        Logger::write("[StandaloneProxyPool] probe workers failed to start; "
+                      "non-direct members will report untested", LogLevel::WARN);
+    }
+    evaluator_.setProbePool(probePool_.get());
     evaluatorThread_ = std::thread(&StandaloneProxyPool::evaluatorLoop, this);
     Logger::write("[StandaloneProxyPool] started", LogLevel::INFO);
     return true;
@@ -47,6 +59,11 @@ void StandaloneProxyPool::stop() {
     running_ = false;
     if (evaluatorThread_.joinable()) {
         evaluatorThread_.join();
+    }
+    evaluator_.setProbePool(nullptr);
+    if (probePool_) {
+        probePool_->stop();
+        probePool_.reset();
     }
     instance_->stop();
 }
@@ -237,6 +254,7 @@ std::vector<MemberHealth> StandaloneProxyPool::doProbe() {
             t.port = m.profile.port;
             t.username = m.profile.security;   // user = security (SOCKS/HTTP builders)
             t.password = m.profile.id;         // pass = id
+            t.profile = m.profile;             // full snapshot for probe-pool outbound injection
             targets.push_back(t);
         }
     }

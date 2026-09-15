@@ -16,6 +16,7 @@
 #include "XrayApi.h"
 #include "Profileitem.h"
 #include "ProxyHealthEvaluator.h"
+#include "ProxyProbePool.h"
 
 namespace proxy {
 
@@ -115,9 +116,17 @@ private:
     void mergeHealth(const std::vector<MemberHealth>& health);
 
     config::StandalonePoolConfig cfg_;
+    std::string xrayPath_;
+    std::string configDir_;
     std::shared_ptr<XrayInstance> instance_;
     std::unique_ptr<xray::XrayApi> api_;
     ProxyHealthEvaluator evaluator_;
+    // Resident xray workers used to health-probe non-direct members
+    // (vmess/vless/trojan/ss/hysteria2/tuic/wireguard) that cannot be measured
+    // with a bare cURL proxy URL. Null when the pool runs without probe
+    // workers (evaluate.probeWorkers <= 0 disallowed by parser, but start
+    // failure keeps this null-safe via evaluator probePool_ check).
+    std::unique_ptr<ProxyProbePool> probePool_;
     mutable std::mutex membersMutex_;
     std::map<long long, PoolMember> members_;
     std::atomic<bool> running_;
