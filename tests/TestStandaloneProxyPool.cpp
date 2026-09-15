@@ -497,4 +497,97 @@ TEST(StandaloneProxyPool, LiveInjectionAndObservatoryPath) {
     std::filesystem::remove_all(cfgDir, ec);
 }
 
+// ---- dead member writeback (2026-09-15) ----------------------------------
+// isDeadMember is a pure predicate used by the evaluator removal path to
+// decide whether a removed member should be written back to ProfileExItem
+// (delay=-1 + history reset) via the onMemberRemoved callback.
+
+TEST(StandaloneProxyPool, IsDeadMemberByFailStreak) {
+    proxy::PoolMember m;
+    m.failStreak = 3;
+    m.lastAlive = true;
+    EXPECT_TRUE(proxy::StandaloneProxyPool::isDeadMember(m, 3))
+        << "failStreak reaching the prune threshold marks the member dead";
+    EXPECT_FALSE(proxy::StandaloneProxyPool::isDeadMember(m, 4))
+        << "failStreak below the prune threshold is not dead";
+}
+
+TEST(StandaloneProxyPool, IsDeadMemberByLastAlive) {
+    proxy::PoolMember m;
+    m.failStreak = 0;
+    m.lastAlive = false;
+    EXPECT_TRUE(proxy::StandaloneProxyPool::isDeadMember(m, 3))
+        << "a member whose last probe was not alive is dead regardless of streak";
+}
+
+TEST(StandaloneProxyPool, IsDeadMemberHealthy) {
+    proxy::PoolMember m;
+    m.failStreak = 1;
+    m.lastAlive = true;
+    EXPECT_FALSE(proxy::StandaloneProxyPool::isDeadMember(m, 3))
+        << "a healthy member (low streak, alive) is not dead";
+}
+
+// Live integration test (opt-in): a dead member removed by the evaluator
+// (autoPruneDead) must fire onMemberRemoved with its indexId. Requires a real
+// xray binary via XRAY_REAL_EXE; skipped otherwise so CI stays green.
+TEST(StandaloneProxyPool, DeadMemberRemovalTriggersCallback) {
+    const char* xrayExe = std::getenv("XRAY_REAL_EXE");
+    if (xrayExe == nullptr || xrayExe[0] == '\0') {
+        GTEST_SKIP() << "XRAY_REAL_EXE not set; skipping live pool test";
+    }
+
+    static int s_deadCounter = 0;
+    std::filesystem::path cfgDir =
+        std::filesystem::temp_directory_path() /
+        ("standalone_pool_dead_" + std::to_string(++s_deadCounter));
+    std::filesystem::create_directories(cfgDir);
+
+    config::StandalonePoolConfig cfg;
+    cfg.enabled = true;
+    cfg.socksPort = 20140;
+    cfg.apiPort = 20141;
+    cfg.balancerStrategy = "leastPing";
+    cfg.observatory.destination = "https://www.google.com";
+    cfg.observatory.intervalSec = 1;
+    cfg.evaluate.intervalSec = 1;      // fast cycle for the test
+    cfg.evaluate.pruneFailStreak = 1;  // one failed probe → prune
+    cfg.observatory.timeoutSec = 2;    // short probe timeout
+    ASSERT_TRUE(proxy::resolvePoolPorts(cfg));
+
+    proxy::StandaloneProxyPool pool(cfg, xrayExe, cfgDir.string());
+    pool.setAutoPruneDead(true);
+
+    std::atomic<long long> removedId{0};
+    pool.onMemberRemoved = [&removedId](long long id) { removedId.store(id); };
+
+    ASSERT_TRUE(pool.start()) << "pool.start() must succeed against real xray";
+
+    // Unreachable member (TEST-NET-3): the probe fails → failStreak reaches
+    // the threshold → autoPruneDead marks REMOVE_REQUESTED → the evaluator
+    // removes it and fires onMemberRemoved.
+    db::models::Profileitem profile;
+    profile.indexid = "900012356";
+    profile.configtype = "4";          // SOCKS5 outbound
+    profile.address = "203.0.113.9";   // TEST-NET-3, unreachable
+    profile.port = "8080";
+    ASSERT_TRUE(pool.injectMember(profile))
+        << "injectMember must succeed via gRPC addOutboundDirect";
+
+    bool removed = false;
+    for (int i = 0; i < 60; ++i) {     // up to ~30s
+        if (removedId.load() == 900012356LL) { removed = true; break; }
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    }
+    EXPECT_TRUE(removed)
+        << "onMemberRemoved must fire for the dead member (autoPruneDead path)";
+
+    pool.stop();
+    PortManager::freePort(cfg.socksPort);
+    PortManager::freePort(cfg.apiPort);
+    PortManager::clearPorts();
+    std::error_code ec;
+    std::filesystem::remove_all(cfgDir, ec);
+}
+
 } // namespace

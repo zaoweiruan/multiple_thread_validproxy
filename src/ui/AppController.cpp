@@ -1857,6 +1857,16 @@ bool AppController::startProxyPool() {
                 wxQueueEvent(topWindow_, new PoolMembersUpdatedEvent(members));
             }
         };
+        // Dead members removed from the pool are written back to ProfileExItem
+        // exactly like a failed standalone-proxy test (delay=-1 + history reset
+        // so the health score drops to 0), keeping the proxy list in sync with
+        // the pool's death verdict.
+        pool->onMemberRemoved = [this](long long indexId) {
+            if (!db_) return;
+            db::models::ProfileExItemDAO dao(db_);
+            dao.updateTestResult(std::to_string(indexId), -1, false,
+                                 "pool member removed (dead)");
+        };
         if (!pool->start()) {
             Logger::write("[AppController] proxy pool start failed (attempt "
                           + std::to_string(attempt) + "), socks=" + std::to_string(poolCfg.socksPort)

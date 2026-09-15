@@ -102,6 +102,16 @@ public:
     // Invoked after every evaluation cycle with a fresh snapshot (UI refresh).
     std::function<void(const std::vector<PoolMemberView>&)> onMembersChanged;
 
+    // Invoked when a dead member is removed from the pool (autoPruneDead or
+    // graceful removal of a member whose last probe failed). The caller
+    // (AppController) writes the failure back to ProfileExItem so the proxy
+    // list reflects the pool's death verdict (delay=-1 + history reset).
+    std::function<void(long long indexId)> onMemberRemoved;
+
+    // Pure predicate: a member is "dead" when its fail streak reached the
+    // prune threshold or its last probe was not alive. Exposed for tests.
+    static bool isDeadMember(const PoolMember& m, int pruneFailStreak);
+
 private:
     void evaluatorLoop();
     void snapshotMembers(std::vector<PoolMemberView>& out) const;

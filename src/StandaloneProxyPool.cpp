@@ -121,6 +121,10 @@ bool StandaloneProxyPool::injectMember(const db::models::Profileitem& profile) {
     return true;
 }
 
+bool StandaloneProxyPool::isDeadMember(const PoolMember& m, int pruneFailStreak) {
+    return m.failStreak >= pruneFailStreak || !m.lastAlive;
+}
+
 bool StandaloneProxyPool::removeMember(long long indexId, bool graceful) {
     bool found = false;
     {
@@ -129,7 +133,10 @@ bool StandaloneProxyPool::removeMember(long long indexId, bool graceful) {
         if (it != members_.end()) {
             found = true;
             if (!graceful) {
-                api_->removeOutbound(it->second.tag);
+                if (api_) api_->removeOutbound(it->second.tag);
+                if (isDeadMember(it->second, cfg_.evaluate.pruneFailStreak) && onMemberRemoved) {
+                    onMemberRemoved(it->second.indexId);
+                }
                 members_.erase(it);
             } else if (it->second.state == MemberLifecycleState::ACTIVE) {
                 it->second.state = MemberLifecycleState::REMOVE_REQUESTED;
@@ -334,7 +341,13 @@ void StandaloneProxyPool::evaluatorLoop() {
                 }
             }
             for (std::size_t k = 0; k < done.size(); ++k) {
-                members_.erase(done[k]);
+                std::map<long long, PoolMember>::iterator it = members_.find(done[k]);
+                if (it != members_.end()) {
+                    if (isDeadMember(it->second, cfg_.evaluate.pruneFailStreak) && onMemberRemoved) {
+                        onMemberRemoved(it->second.indexId);
+                    }
+                    members_.erase(it);
+                }
             }
         }
 
