@@ -234,6 +234,9 @@ std::vector<UnifiedMonitorRow> getUnifiedMonitorRows();
 | UI 自动化测试重写范围大 | 交付延期 | 定位符迁移与用例改写并行；`PoolPickerName` 不动降低风险 |
 | 池未启用时按钮误触 | 启动失败提示噪音 | 按钮区灰化 + `isProxyPoolEnabled()` 前置校验（沿用现状提示） |
 | 双击最大化与单击定位共存冲突 | 交互歧义 | 沿用现状防抖；右键菜单新增显式「定位到代理列表」 |
+| 探针池 worker 数配置不当 | 过小=探测吞吐不足、评估周期拉长；过大=常驻 xray 实例资源占用 | `evaluate.probeWorkers` 默认 2；按成员数/intervalSec 调优；空闲 worker 复用 |
+| 探针池端口占用 | worker 的 socks/api 端口冲突导致探测失败 | worker 端口经 PortManager 动态分配，失败释放重试 |
+| gRPC 注入失败回退 | 探针实例注入成员 outbound 失败导致该成员无探测数据 | 注入失败标记 tested=false 下轮重试；configtype 4/10 成员回退直连 cURL 探测 |
 
 ## 7. 分阶段实施建议
 
