@@ -339,26 +339,39 @@ std::string AppController::getSubIdByProxyIndexId(const std::string& indexId) {
     return proxy->subid;
 }
 
-std::vector<db::models::Profileitem> AppController::getPoolCandidateProfiles(int limit) {
-    std::vector<db::models::Profileitem> out;
+std::vector<pool_candidate::PoolCandidateItem> AppController::getPoolCandidateProfiles(int limit) {
+    std::vector<pool_candidate::PoolCandidateItem> out;
     if (!db_) return out;
     const int cap = (limit > 0 && limit <= 1000) ? limit : 300;
-    db::models::ProfileitemDAO dao(db_);
     sqlite3_stmt* stmt = nullptr;
-    // Plain, schema-robust query: just grab up to `cap` profile IndexIds. The
-    // picker only needs the basic Profileitem rows (IndexId / ConfigType /
-    // Address / Remarks); no join against ProfileExItem so it works even when the
-    // test DB has no extended rows.
-    std::string sql = "SELECT IndexId FROM ProfileItem LIMIT " + std::to_string(cap);
+    // Join ProfileExItem to (a) filter to valid proxies only (delay > 0) and
+    // (b) carry the extended columns the picker displays (delay / message /
+    // start_count / crash_count). p.* keeps the first 36 columns identical to
+    // Profileitem::fromStmt; the extra columns sit at 36+ and are read manually.
+    std::string sql =
+        "SELECT p.*, e.Delay, e.Message, e.start_count, e.crash_count "
+        "FROM ProfileItem p "
+        "INNER JOIN ProfileExItem e ON p.IndexId = e.IndexId "
+        "WHERE CAST(e.delay AS INTEGER) > 0 "
+        "LIMIT " + std::to_string(cap);
     if (sqlite3_prepare_v2(db_, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
         return out;
     }
     while (sqlite3_step(stmt) == SQLITE_ROW) {
-        const char* idx = (const char*)sqlite3_column_text(stmt, 0);
-        if (idx) {
-            auto p = dao.getByIndexId(idx);
-            if (p) out.push_back(*p);
-        }
+        db::models::Profileitem p = db::models::Profileitem::fromStmt(stmt);
+        pool_candidate::PoolCandidateItem item;
+        item.indexid = p.indexid;
+        item.configtype = p.configtype;
+        item.address = p.address;
+        item.remarks = p.remarks;
+        item.region = p.region;
+        const char* delay = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 36));
+        item.delay = delay ? delay : "";
+        const char* msg = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 37));
+        item.message = msg ? msg : "";
+        item.start_count = sqlite3_column_int(stmt, 38);
+        item.crash_count = sqlite3_column_int(stmt, 39);
+        out.push_back(item);
     }
     sqlite3_finalize(stmt);
     return out;

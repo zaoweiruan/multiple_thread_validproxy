@@ -145,6 +145,7 @@ set(CORE_SOURCES
     src/update/Importer.cpp
     src/UrlFetcher.cpp
     src/Utils.cpp
+    src/PoolCandidate.cpp
     src/utils/Base64Utils.cpp
     src/utils/DnsCache.cpp
 
@@ -635,6 +636,17 @@ set_target_properties(test_utils PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
 )
 add_test(NAME UtilsTest COMMAND test_utils)
+
+# -- PoolCandidate unit tests (sort comparator + health formula, pure functions) --
+add_executable(test_pool_candidate tests/test_pool_candidate.cpp src/PoolCandidate.cpp src/Utils.cpp src/Logger.cpp src/LoggerInstance.cpp)
+target_include_directories(test_pool_candidate PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(test_pool_candidate PRIVATE gtest_main gtest -lws2_32)
+set_target_properties(test_pool_candidate PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+)
+add_test(NAME PoolCandidateTest COMMAND test_pool_candidate)
 
 # -- ConfigReader unit tests (includes load() tests with error reporter override) --
 add_executable(test_config_reader tests/test_config_reader.cpp tests/test_config_reader_load.cpp

@@ -24,6 +24,7 @@
 #include "ProcessExitListener.h"
 #include "ProxyRuntimeHistory.h"
 #include "StandaloneProxyPool.h"
+#include "PoolCandidate.h"
 
 class wxEvtHandler;
 class wxWindow;
@@ -206,9 +207,10 @@ bool isTestCancelled() const;
      // evaluator (two-phase); false removes immediately.
      bool removePoolMember(long long indexId, bool graceful);
      std::vector<proxy::PoolMemberView> getPoolMembers() const;
-      // Candidate proxies for the "add to pool" picker (capped). Returns basic
-      // profile rows (IndexId / ConfigType / Address / Remarks) loaded from the DB.
-      std::vector<db::models::Profileitem> getPoolCandidateProfiles(int limit = 300);
+      // Candidate proxies for the "add to pool" picker (capped). Returns only
+      // valid proxies (ProfileExItem.delay > 0) with extended columns
+      // (delay / message / start_count / crash_count) for the picker UI.
+      std::vector<pool_candidate::PoolCandidateItem> getPoolCandidateProfiles(int limit = 300);
      void setPoolReportHealth(bool on);
      void setPoolAutoPruneDead(bool on);
      void setPoolAutoOptimize(bool on);
