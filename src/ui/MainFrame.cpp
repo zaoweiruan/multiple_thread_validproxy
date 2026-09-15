@@ -1450,6 +1450,13 @@ void MainFrame::onStatusUpdate(StatusUpdateEvent& event) {
         if (proxyPanel_) {
             proxyPanel_->reloadFromDatabase();
         }
+    } else if (text == "ONLINE_PROBE_DONE") {
+        // Periodic standalone-proxy probe finished: it wrote ProfileExItem
+        // (Delay/Health/Message), so refresh those columns in the proxy list.
+        // The floating-widget panel refreshes itself on its own timer.
+        if (proxyPanel_) {
+            proxyPanel_->refreshResults();
+        }
     } else {
         setStatusText(0, text);
     }

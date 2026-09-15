@@ -2158,8 +2158,15 @@ void AppController::doTestOnlineProxies(wxEvtHandler* wxHandler, bool silent) {
             if (port <= 0) {
                 failed++;
                 failedIndexIds.push_back(mon.indexId);
-                Logger::write("[OnlineProbe] test failed: " + mon.indexId + ": socks port unknown",
-                              LogLevel::WARN);
+                // Thresholded WARN: frequent failures pile up in consecutive_failures;
+                // only log once the standalone_pool prune threshold is reached.
+                std::optional<db::models::ProfileExItem> exBad =
+                    exDao_.getByIndexId(mon.indexId);
+                int curBad = exBad ? exBad->consecutive_failures : 0;
+                if (curBad + 1 >= config_.standalone_pool.evaluate.pruneFailStreak) {
+                    Logger::write("[OnlineProbe] test failed: " + mon.indexId
+                                  + ": socks port unknown", LogLevel::WARN);
+                }
                 exDao_.updateTestResult(mon.indexId, -1, false, "socks port unknown");
                 continue;
             }
@@ -2171,10 +2178,24 @@ void AppController::doTestOnlineProxies(wxEvtHandler* wxHandler, bool silent) {
             } else {
                 failed++;
                 failedIndexIds.push_back(mon.indexId);
-                Logger::write("[OnlineProbe] test failed: " + mon.indexId + ": " + r.errorMsg,
-                              LogLevel::WARN);
+                // Thresholded WARN: reuse standalone_pool.evaluate.pruneFailStreak
+                // (default 3); updateTestResult below already bumps
+                // consecutive_failures by 1, so pre-read it for the comparison.
+                std::optional<db::models::ProfileExItem> ex =
+                    exDao_.getByIndexId(mon.indexId);
+                int cur = ex ? ex->consecutive_failures : 0;
+                if (cur + 1 >= config_.standalone_pool.evaluate.pruneFailStreak) {
+                    Logger::write("[OnlineProbe] test failed: " + mon.indexId
+                                  + ": " + r.errorMsg, LogLevel::WARN);
+                }
             }
             exDao_.updateTestResult(mon.indexId, r.latencyMs, r.success, r.errorMsg);
+        }
+
+        // Periodic silent probe: no status-bar chatter, no result event — but
+        // still notify the UI to refresh the Delay/Health/Message columns once.
+        if (wxHandler && silent && total > 0) {
+            wxQueueEvent(wxHandler, new StatusUpdateEvent(0, "ONLINE_PROBE_DONE"));
         }
 
         // Periodic silent probe: no status-bar chatter, no result event.
