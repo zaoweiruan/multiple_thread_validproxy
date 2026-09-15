@@ -74,6 +74,18 @@ bool StandaloneProxyPool::isRunning() const {
 
 bool StandaloneProxyPool::injectMember(const db::models::Profileitem& profile) {
     if (!running_) return false;
+    // Reject duplicate indexIds up front: Xray would refuse the second
+    // addOutboundDirect with "existing tag found: px-<id>", but an explicit
+    // check gives a clear WARN log and skips the wasted gRPC call.
+    const long long indexId = std::atoll(profile.indexid.c_str());
+    {
+        std::lock_guard<std::mutex> lock(membersMutex_);
+        if (members_.find(indexId) != members_.end()) {
+            Logger::write("[StandaloneProxyPool] inject rejected: " + profile.indexid
+                          + " already in pool", LogLevel::WARN);
+            return false;
+        }
+    }
     const std::string tag = std::string("px-") + profile.indexid;
     config::OutboundBuilderFactory factory;
     // Build the outbound object and pin its tag to the pool member tag so the

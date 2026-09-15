@@ -590,4 +590,55 @@ TEST(StandaloneProxyPool, DeadMemberRemovalTriggersCallback) {
     std::filesystem::remove_all(cfgDir, ec);
 }
 
+// Live integration test (opt-in): injecting the same indexId twice must be
+// rejected on the second call (explicit duplicate guard, WARN log) while a
+// different indexId still injects fine. Requires XRAY_REAL_EXE; skipped
+// otherwise so CI stays green.
+TEST(StandaloneProxyPool, DuplicateInjectRejected) {
+    const char* xrayExe = std::getenv("XRAY_REAL_EXE");
+    if (xrayExe == nullptr || xrayExe[0] == '\0') {
+        GTEST_SKIP() << "XRAY_REAL_EXE not set; skipping live pool test";
+    }
+
+    static int s_dupCounter = 0;
+    std::filesystem::path cfgDir =
+        std::filesystem::temp_directory_path() /
+        ("standalone_pool_dup_" + std::to_string(++s_dupCounter));
+    std::filesystem::create_directories(cfgDir);
+
+    config::StandalonePoolConfig cfg;
+    cfg.enabled = true;
+    cfg.socksPort = 20150;
+    cfg.apiPort = 20151;
+    cfg.balancerStrategy = "leastPing";
+    cfg.observatory.destination = "https://www.google.com";
+    ASSERT_TRUE(proxy::resolvePoolPorts(cfg));
+
+    proxy::StandaloneProxyPool pool(cfg, xrayExe, cfgDir.string());
+    ASSERT_TRUE(pool.start()) << "pool.start() must succeed against real xray";
+
+    db::models::Profileitem profile;
+    profile.indexid = "900012357";
+    profile.configtype = "4";          // SOCKS5 outbound
+    profile.address = "1.2.3.4";
+    profile.port = "8080";
+
+    ASSERT_TRUE(pool.injectMember(profile))
+        << "first injection of an indexId must succeed";
+    EXPECT_FALSE(pool.injectMember(profile))
+        << "second injection of the same indexId must be rejected (duplicate guard)";
+
+    db::models::Profileitem other = profile;
+    other.indexid = "900012358";
+    EXPECT_TRUE(pool.injectMember(other))
+        << "a different indexId must still inject successfully";
+
+    pool.stop();
+    PortManager::freePort(cfg.socksPort);
+    PortManager::freePort(cfg.apiPort);
+    PortManager::clearPorts();
+    std::error_code ec;
+    std::filesystem::remove_all(cfgDir, ec);
+}
+
 } // namespace
