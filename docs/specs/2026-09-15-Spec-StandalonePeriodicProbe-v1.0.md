@@ -58,14 +58,21 @@ void testOnlineProxiesAsync(wxEvtHandler* wxHandler, bool silent = false);
 
 - `testOnlineProxiesAsync`：透传 `silent` 给 `doTestOnlineProxies`。
 - `doTestOnlineProxies(wxEvtHandler* wxHandler, bool silent)`：
-  - 循环内失败分支追加 WARN 日志：
+  - 循环内失败分支按**连续失败阈值**输出 WARN 日志（复用 `standalone_pool.evaluate.pruneFailStreak`，默认 3）：
     ```cpp
     if (!r.success) {
-        Logger::write("[OnlineProbe] test failed: " + mon.indexId
-                      + ": " + r.errorMsg, LogLevel::WARN);
+        // 达阈值才 WARN（连续失败次数由 updateTestResult 内部累计，此处预读判断）
+        auto ex = exDao_.getByIndexId(mon.indexId);
+        int cur = ex ? ex->consecutive_failures : 0;
+        if (cur + 1 >= config_.standalone_pool.evaluate.pruneFailStreak) {
+            Logger::write("[OnlineProbe] test failed: " + mon.indexId
+                          + ": " + r.errorMsg, LogLevel::WARN);
+        }
     }
     ```
-  - `silent=true` 时跳过 `StatusUpdateEvent`（"Testing online proxies..." / "completed"）与 `TestOnlineProxiesEvent`（周期触发不弹窗）；手动（默认 false）行为不变。
+    未达阈值不生成 WARN（仅 `updateTestResult` 内部 `consecutive_failures+1`；成功时重置 0）。
+  - 周期探活（`silent=true`）完成且存在在线代理时，发 `StatusUpdateEvent(0, "ONLINE_PROBE_DONE")` 触发 UI 刷新。
+  - `silent=true` 时跳过 `StatusUpdateEvent`（进度文本）与 `TestOnlineProxiesEvent`（周期触发不弹窗）；手动（默认 false）行为不变。
   - 其余逻辑（`updateTestResult`、不关闭进程）不变。
 
 ### 4.2 `MainFrame`：周期触发
@@ -85,6 +92,29 @@ void MainFrame::onProxyMonTimer(wxTimerEvent&) {
 - `proxy_probe` 由 `proxy_process_monitor.enabled` 控制（`onProxyMonTimer` 仅在启用时运行）。
 - `isRunning_` 防重入：周期触发与手动触发、批量测试互不叠加（若上一轮未完成则跳过本轮）。
 - 不新增 timer / 不新增配置。
+
+### 4.3 `MainFrame`：UI 刷新（`ONLINE_PROBE_DONE`）
+
+**`src/ui/MainFrame.cpp`**（`onStatusUpdate` 新增分支）：
+
+```cpp
+void MainFrame::onStatusUpdate(StatusUpdateEvent& event) {
+    wxString text = event.getText();
+    if (text == "DEDUP_OK") {
+        // ... 现有 ...
+    } else if (text == "ONLINE_PROBE_DONE") {
+        // Periodic standalone-proxy probe updated ProfileExItem: refresh the
+        // Delay/Health/Message columns (proxy list). The floating-widget panel
+        // refreshes itself on its own timer.
+        if (proxyPanel_) proxyPanel_->refreshResults();
+    }
+    // ...
+}
+```
+
+- 复用现有字符串命令通道（先例：`DEDUP_OK` / `REGION_RESOLVE_DONE`）。
+- `refreshResults()` 仅重读 ProfileExItem 测试结果列（时延/健康度/Message）——探活只改这些。
+- 悬浮窗 Panel 自带周期刷新（自动读取新 `getUnifiedMonitorRows()`），无需额外处理。
 
 ## 5. 与池评估的差异
 
