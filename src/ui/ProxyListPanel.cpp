@@ -624,11 +624,7 @@ void ProxyListPanel::onStartProxy(wxCommandEvent& event) {
         if (ok) {
             Logger::write("[UI] Injected proxy into pool: " + indexId, LogLevel::REPORT);
         } else {
-            Logger::write("[UI] Pool inject failed: " + indexId, LogLevel::ERR);
-            wxMessageDialog dlg(this, "注入代理池失败，请确认代理池正在运行。",
-                                "代理池", wxOK | wxICON_WARNING);
-            dlg.CentreOnScreen();
-            dlg.ShowModal();
+            Logger::write("[UI] Pool inject failed: " + indexId, LogLevel::WARN);
         }
         return;
     }
@@ -902,11 +898,7 @@ void ProxyListPanel::onAddToPool(wxCommandEvent& event) {
         dlg.CentreOnScreen();
         dlg.ShowModal();
     } else {
-        Logger::write("[UI] Pool inject failed (context menu): " + indexId, LogLevel::ERR);
-        wxMessageDialog dlg(this, "加入代理池失败，请确认代理池正在运行。",
-                            "代理池", wxOK | wxICON_WARNING);
-        dlg.CentreOnScreen();
-        dlg.ShowModal();
+        Logger::write("[UI] Pool inject failed (context menu): " + indexId, LogLevel::WARN);
     }
     (void)event;
 }

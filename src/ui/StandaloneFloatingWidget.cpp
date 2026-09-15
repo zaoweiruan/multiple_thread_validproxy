@@ -751,9 +751,6 @@ void StandaloneFloatingWidget::onAddPoolMember(wxCommandEvent&) {
     if (added > 0) {
         wxMessageBox(wxString::Format(L"已添加 %d 个代理到代理池。", added),
                      L"提示", wxOK | wxICON_INFORMATION, this);
-    } else {
-        wxMessageBox(L"没有代理被成功加入代理池。", L"提示",
-                     wxOK | wxICON_WARNING, this);
     }
     refreshRows();
 }
