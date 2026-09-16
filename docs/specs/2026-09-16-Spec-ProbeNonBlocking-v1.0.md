@@ -52,23 +52,36 @@ std::thread probeThread_;
 // 析构时对 probeThread_ 做有界 join/detach（与 workerThread_ 同模式）
 ```
 
-**`src/ui/AppController.cpp` — `testOnlineProxiesAsync`**：
+**`src/ui/AppController.cpp` — `testOnlineProxiesAsync`**（最终实现，见 §8）：
 ```cpp
 void AppController::testOnlineProxiesAsync(wxEvtHandler* wxHandler, bool silent) {
     if (silent) {
-        // 后台周期探活：独立线程，不占共享 isRunning_（用户操作优先）。
-        // 若用户操作在跑、或上一轮探活尚未结束 → 静默跳过本轮。
-        if (isRunning_ || probeThread_.joinable()) {
+        // 周期 silent 探活：独立线程，不占共享 workerThread_/isRunning_
+        // （用户操作优先）。用户在跑其它操作、或上一轮探活尚未结束 →
+        // 静默跳过本轮。
+        if (isRunning_ || onlineProbeRunning_) {
             Logger::write("[OnlineProbe] skipped: user operation running "
                           "or previous probe still in flight", LogLevel::DEBUG);
             return;
         }
+        // 上一轮探活已结束但尚未 join（std::thread 完成后 joinable() 仍
+        // true，直到 join/detach 为止）：此处快速回收，否则后续周期探活
+        // 会被残留 joinable 状态永久跳过。
+        if (probeThread_.joinable()) {
+            probeThread_.join();
+        }
         onlineProbeRunning_ = true;   // 复用既有标志（config 保存判断用）
+        // 探活独立线程不消费/复位 cancelRequested_（AsyncOperationGuard 仅
+        // 服务用户操作路径）。断连或 cancelTest() 残留的 true 会让每轮探活
+        // 线程在循环首行立即退出 → 周期探活静默停摆。此处置位安全：上方已
+        // 保证 isRunning_==false；且本函数在 UI 线程执行，与用户操作串行。
+        cancelRequested_ = false;
         probeThread_ = std::thread(&AppController::doTestOnlineProxies, this, wxHandler, true);
         return;
     }
+
     // 手动「测试在线代理」：优先取消正在运行的探活（可中断后台任务），
-    // 再走共享 workerThread_（移动用户操作占 isRunning_）。
+    // 再走共享 workerThread_（用户操作占 isRunning_，原逻辑不变）。
     if (probeThread_.joinable()) {
         cancelRequested_ = true;
         probeThread_.join();
@@ -80,12 +93,12 @@ void AppController::testOnlineProxiesAsync(wxEvtHandler* wxHandler, bool silent)
 }
 ```
 
-**`doTestOnlineProxies`**：**零改动**——现有两个 ScopeGuard 对两条路径均已正确复位：
-- silent 路径（probeThread_）：`ScopeGuard{onlineProbeRunning_}` 复位探活标志；`ScopeGuard{isRunning_}` 复位 false（本来 false，无害）
-- 手动路径（workerThread_）：`ScopeGuard{isRunning_}` 复位 guard 置位的 true；`ScopeGuard{onlineProbeRunning_}` 复位 false（无害）
+**`doTestOnlineProxies`**：**非零改动（与初稿偏离，见 §8.1）**——`isRunning_` 复位改为**仅手动路径**的 `std::optional<ScopeGuard> runningGuard`：
+- silent 路径（probeThread_）：只置 `ScopeGuard{onlineProbeRunning_}` 复位探活标志；**不**复位 `isRunning_`（探活不占该标志，若照旧复位会误清探活期间用户操作置位的标志 → 用户操作守卫被提前释放 = UB）
+- 手动路径（workerThread_）：`runningGuard.emplace(isRunning_)` 复位 guard 置位的 true；`_probeGuard{onlineProbeRunning_}` 复位 false（无害）
 
 **竞态分析**：
-- silent 探活与手动测试互斥由 `probeThread_.joinable()` + 手动优先取消保证（同一 UI 线程顺序调用，无 data race）
+- silent 探活与手动测试互斥由**活标志 `onlineProbeRunning_`** + 手动优先取消保证（同一 UI 线程顺序调用，无 data race）；`probeThread_.joinable()` **不能**直接判"上一轮未结束"（已结束未 join 时仍 true，见 §8.2），仅用于快速回收残留 thread
 - `cancelRequested_` 取消探活：doTestOnlineProxies 循环每代理前检查 `cancelRequested_.load()` → 快速退出；在途 cURL 经 progress callback 中止（最长 test_timeout_ms=5000ms）
 - 探活与手动测试不与彼此并发：手动先 join 探活；探活启动前检查 `isRunning_`
 
@@ -102,13 +115,13 @@ public:
 };
 ```
 
-**`src/ui/AppController.cpp` — `doTestOnlineProxies`**：silent 完成 && total>0：
+**`src/ui/AppController.cpp` — `doTestOnlineProxies`**：silent 完成 && 有受测行：
 ```cpp
-if (wxHandler && silent && total > 0) {
+if (wxHandler && silent && !monitorIndexIds.empty()) {
     wxQueueEvent(wxHandler, new OnlineProbeFinishedEvent(monitorIndexIds));  // 受测 indexId 列表
 }
 ```
-（替代原 `StatusUpdateEvent("ONLINE_PROBE_DONE")`；`monitorIndexIds` 在循环中收集所有受测 indexId）
+（**完全替代**原 `StatusUpdateEvent("ONLINE_PROBE_DONE")`，`onStatusUpdate` 中该分支已删除；`monitorIndexIds` 在循环中收集所有受测 indexId——含 port<=0 分支写入 -1 的行）
 
 **`src/ui/MainFrame.cpp`**：
 - Bind `wxEVT_ONLINE_PROBE_FINISHED` → `onOnlineProbeFinished`
@@ -147,6 +160,15 @@ bool updateResultsFor(const std::vector<db::models::ProfileExItem>& rows);
 // 有变化时 data-view 依赖 notifyHistoryChanged() 使受影响行重查询。
 ```
 
+**最终实现修正（与初稿偏离，见 §8）**：
+
+- **增量方法落地形态**：`updateResultsFor` 最终拆为 `updateResultFor`（单数，按 indexId 逐行更新并返回是否变化）+ `notifyTestResultChangedFor`（仅通知受影响行重查询）；`ProxyListPanel::refreshResultsFor(indexIds)` 经 `AppController::loadProxyResultsFor` 小查询后逐行调用二者。
+- **MainFrame 守卫修正**（探活不再占 `isRunning_` 后）：
+  - 配置保存守卫**改回仅 `isRunning()`**——初稿 `&& !isOnlineProbeRunning()` 在「探活+用户操作并存」（isRunning_=true 且 onlineProbeRunning_=true）时会绕过保存守卫 → 用户操作进行中保存配置 = 与 worker 读 config_ 竞态（UB）
+  - **DB 切换守卫追加 `|| isOnlineProbeRunning()`**——探活线程经 `exDao_` 持有旧 `db_` 指针，切库 `switchDatabase()` 交换 db_ 期间探活仍读写旧指针 → UAF 防护，切库需探活空闲
+- **silent 启动前复位 `cancelRequested_`**：探活独立线程不消费该标志（AsyncOperationGuard 仅服务用户操作路径），断连 / cancelTest() 残留的 true 会让每轮探活循环首行即退出 → 周期探活静默停摆；silent 分支启动线程前 `cancelRequested_ = false`（安全：已保证 isRunning_==false，UI 线程串行）。
+- **`ONLINE_PROBE_DONE` 已完全移除**：`onStatusUpdate` 中该分支删除，由 `wxEVT_ONLINE_PROBE_FINISHED` 唯一路径触发增量刷新；`Events.h` 注释保留历史说明。
+
 ### 3.3 不变项
 
 - 手动测试/代理启动/停止/池事件 → 全量 `refreshResults()`（低频，保留）
@@ -163,6 +185,7 @@ bool updateResultsFor(const std::vector<db::models::ProfileExItem>& rows);
 | 手动测试时探活正在跑 | guard 拒绝（"Operation Busy"） | **取消探活 → 手动立即启动** |
 | 手动测试/启动/停止事件 UI | 全量刷新 | 不变（低频） |
 | 探活与手动并发 | 互斥（guard） | 互斥（手动优先 join 探活） |
+| **探活+用户操作并存**（isRunning_=true 且 onlineProbeRunning_=true，探活先占、用户操作随后允许） | 互斥/拒绝 | **并存**：保存配置拒绝（守卫仅查 isRunning()）、切库拒绝（守卫追加 `\|\| isOnlineProbeRunning()`）；手动「测试在线代理」仍优先取消探活 |
 
 ## 5. 验证
 
@@ -171,7 +194,7 @@ bool updateResultsFor(const std::vector<db::models::ProfileExItem>& rows);
    - 探活独立线程日志（手动操作时探活跳过 DEBUG）
    - 手动测试取消探活顺序（cancel → join → 手动启动）
 3. 增量刷新正确性：探活完成只更新受测行 delay/health/message
-4. `test_config_reader` 43/43（不受影响）
+4. `test_config_reader` 43/43、`test_proxy_list_model` **21/21**（新增 6 用例：`UpdateResultFor_FirstSeenIndexId_StoresAndReturnsTrue` / `SameValuesAgain_ReturnsFalse` / `PartialChange_UpdatesOnlyChangedField` / `NotifyTestResultChangedFor_ExistingIndexId_NotifiesThatRow` / `MissingIndexId_DoesNotNotify` / `NoData_DoesNotCrash`）
 5. UI 冒烟：代理列表滚动/配置保存/自动任务在探活周期内可正常操作
 
 ## 6. 阶段 2 预告（另行立项）
@@ -185,3 +208,48 @@ bool updateResultsFor(const std::vector<db::models::ProfileExItem>& rows);
 | 手动 join 探活最长阻塞 test_timeout_ms（5s） | 探活可中断（cancelRequested_），实际 <1s；手动操作低频 |
 | 探活与 loadProxyResultsFor 并发 DB 读 | SQLite FULLMUTEX + 读-读不互斥；探活写 updateTestResult 与 UI 小查询短暂排队（毫秒级） |
 | old config.json 无 probeWorkers | 默认 2（既有）
+
+---
+
+## 8. 实施偏离记录（2026-09-16 最终实现）
+
+阶段 1 已实现（提交 `66f9635..7ef1456`，9 commits；全量回归：test_config_reader 43/43、test_proxy_list_model 21/21、validproxy/validproxy-cli/UITests 构建 0 error）。初稿设计与最终实现存在以下偏离（保留原设计意图，此处汇总）：
+
+### 8.1 §3.1「doTestOnlineProxies 零改动」不成立
+
+silent 探活不再占 `isRunning_` 后，`doTestOnlineProxies` 内既有 `ScopeGuard{isRunning_}` 会在探活期间用户操作置位该标志时**误清用户操作守卫**。最终实现：
+
+```cpp
+std::optional<ui::ScopeGuard<std::atomic<bool>>> runningGuard;
+if (!silent) {
+    runningGuard.emplace(isRunning_);
+}
+ui::ScopeGuard<std::atomic<bool>> _probeGuard{onlineProbeRunning_};
+```
+
+仅 silent==false（手动路径）才 emplace `runningGuard`；silent 路径只复位 `onlineProbeRunning_`。
+
+### 8.2 §3.1「probeThread_.joinable() 判上一轮未结束」不正确
+
+`std::thread::joinable()` 在线程已结束但未 join 时仍返回 true → 用其判"上一轮未结束"会让每轮周期探活被残留 joinable 状态永久跳过。最终实现以**活标志 `onlineProbeRunning_`**（探活线程 ScopeGuard 复位）判定上一轮是否在跑；`joinable()` 仅用于快速回收已结束未 join 的线程（`if (probeThread_.joinable()) probeThread_.join();`）。
+
+### 8.3 §3.2 MainFrame/DB 守卫补充
+
+- 配置保存守卫改回仅 `isRunning()`（原 `&& !isOnlineProbeRunning()` 在探活+用户操作并存时绕过守卫 → 与 worker 读 config_ 竞态 UB）
+- DB 切换守卫追加 `|| isOnlineProbeRunning()`（探活经 exDao_ 持有旧 db_ 指针，切库需探活空闲 → UAF 防护）
+
+### 8.4 §3.2 silent 启动前复位 cancelRequested_
+
+探活独立线程不消费 `cancelRequested_`（AsyncOperationGuard 仅服务用户操作路径），断连 / cancelTest() 残留会让每轮探活线程在循环首行立即退出（探活静默停摆）。silent 分支启动线程前 `cancelRequested_ = false`（安全：已保证 isRunning_==false，且 UI 线程串行）。
+
+### 8.5 新事件替代
+
+`ONLINE_PROBE_DONE` 已**完全移除**（`onStatusUpdate` 分支删除），由 `OnlineProbeFinishedEvent`（携带受测 indexId 列表）唯一路径触发增量刷新；`Events.h` 注释保留历史说明。
+
+### 8.6 §4 行为对照新增"探活+用户操作并存"状态
+
+isRunning_=true 且 onlineProbeRunning_=true（探活先占、用户操作随后允许）——保存配置拒绝、切库拒绝；手动「测试在线代理」仍优先取消探活。
+
+### 8.7 测试补充
+
+`tests/test_proxy_list_model.cpp` 新增 6 用例（15 → 21/21）：`UpdateResultFor_FirstSeenIndexId_StoresAndReturnsTrue`、`UpdateResultFor_SameValuesAgain_ReturnsFalse`、`UpdateResultFor_PartialChange_UpdatesOnlyChangedField`、`NotifyTestResultChangedFor_ExistingIndexId_NotifiesThatRow`、`NotifyTestResultChangedFor_MissingIndexId_DoesNotNotify`、`NotifyTestResultChangedFor_NoData_DoesNotCrash`；`test_config_reader` 43/43 不受影响。
