@@ -482,16 +482,6 @@ void AppController::testAllProxiesAsync(wxEvtHandler* wxHandler) {
 }
 
 void AppController::testOnlineProxiesAsync(wxEvtHandler* wxHandler, bool silent) {
-        // If a silent periodic probe is already running and the user requests
-        // a manual run, cancel the silent one and wait for it to finish so
-        // the manual request can take over (avoids the "Operation Busy" dialog).
-        if (!silent && isRunning_ && workerThread_.joinable()) {
-            cancelRequested_ = true;
-            workerThread_.join();
-            isRunning_ = false;
-            cancelRequested_ = false;
-        }
-
         // For silent periodic probes, pass nullptr as the guard handler so a
         // rejection does NOT pop up the "Operation Busy" dialog — the probe
         // is simply skipped and retried on the next timer tick.  Manual
@@ -499,7 +489,16 @@ void AppController::testOnlineProxiesAsync(wxEvtHandler* wxHandler, bool silent)
         // busy notification when another operation is in progress.
         wxEvtHandler* guardHandler = silent ? nullptr : wxHandler;
         AsyncOperationGuard guard{workerThread_, isRunning_, cancelRequested_, guardHandler};
-        if (!guard.isAllowed()) return;
+        if (!guard.isAllowed()) {
+            // Silent periodic probe rejected by another in-flight operation:
+            // leave a DEBUG trace only (no dialog, no REPORT/ERR noise) so the
+            // skip is diagnosable.  The probe is retried on the next timer tick.
+            if (silent) {
+                Logger::write("[OnlineProbe] skipped: another operation in progress",
+                              LogLevel::DEBUG);
+            }
+            return;
+        }
     workerThread_ = std::thread(&AppController::doTestOnlineProxies, this, wxHandler, silent);
 }
 

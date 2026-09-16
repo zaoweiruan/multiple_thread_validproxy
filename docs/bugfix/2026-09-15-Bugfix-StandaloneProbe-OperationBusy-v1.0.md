@@ -89,24 +89,23 @@ if (workerThread_.joinable()) {
 
 ```cpp
 void AppController::testOnlineProxiesAsync(wxEvtHandler* wxHandler, bool silent) {
-    // If a silent periodic probe is already running and the user requests
-    // a manual run, cancel the silent one and wait for it to finish so
-    // the manual request can take over (avoids the "Operation Busy" dialog).
-    if (!silent && isRunning_ && workerThread_.joinable()) {
-        cancelRequested_ = true;
-        workerThread_.join();
-        isRunning_ = false;
-        cancelRequested_ = false;
-    }
-
-    // For silent periodic probes, pass nullptr as the guard handler so a
-    // rejection does NOT pop up the "Operation Busy" dialog — the probe
-    // is simply skipped and retried on the next timer tick.  Manual
-    // (non-silent) calls keep the original handler so the user sees the
-    // busy notification when another operation is in progress.
-    wxEvtHandler* guardHandler = silent ? nullptr : wxHandler;
-    AsyncOperationGuard guard{workerThread_, isRunning_, cancelRequested_, guardHandler};
-    if (!guard.isAllowed()) return;
+        // For silent periodic probes, pass nullptr as the guard handler so a
+        // rejection does NOT pop up the "Operation Busy" dialog — the probe
+        // is simply skipped and retried on the next timer tick.  Manual
+        // (non-silent) calls keep the original handler so the user sees the
+        // busy notification when another operation is in progress.
+        wxEvtHandler* guardHandler = silent ? nullptr : wxHandler;
+        AsyncOperationGuard guard{workerThread_, isRunning_, cancelRequested_, guardHandler};
+        if (!guard.isAllowed()) {
+            // Silent periodic probe rejected by another in-flight operation:
+            // leave a DEBUG trace only (no dialog, no REPORT/ERR noise) so the
+            // skip is diagnosable.  The probe is retried on the next timer tick.
+            if (silent) {
+                Logger::write("[OnlineProbe] skipped: another operation in progress",
+                              LogLevel::DEBUG);
+            }
+            return;
+        }
     workerThread_ = std::thread(&AppController::doTestOnlineProxies, this, wxHandler, silent);
 }
 ```
@@ -115,20 +114,19 @@ void AppController::testOnlineProxiesAsync(wxEvtHandler* wxHandler, bool silent)
 
 | 场景 | 修复前 | 修复后 |
 |------|--------|--------|
-| **silent 探活被拒**（有其他操作运行） | 弹出 "Operation Busy" ❌ | 静默跳过，等下一轮 timer ✅ |
-| **手动测试被拒**（有其他操作运行） | 弹出 "Operation Busy" ✅ | 不变（仍弹窗） ✅ |
-| **手动测试优先于 silent** | 被拒 ❌ | 取消 silent，启动手动 ✅ |
+| **silent 探活被拒**（有其他操作运行） | 弹出 "Operation Busy" ❌ | 静默跳过（仅 DEBUG 日志），等下一轮 timer ✅ |
+
+> **历史澄清**：首次修复（commit `171b660`）曾尝试「手动测试优先于 silent」（cancel + join 预取消块）。经代码审核（见 §7）确认该块为**死代码**——两个手动调用方（`ProxyListPanel.cpp`、`StandaloneFloatingWidget.cpp`）均在调用前经 `controller_->isRunning()` 预检查拦截并弹「操作进行中」，预取消块不可达。且该块存在「取消任意运行中操作 + UI 线程无界阻塞」的潜伏风险，已在本版移除。真正解决弹窗的是本版（`5ce71e4` 内容 + DEBUG 日志）。
 
 ### 3.3 关键设计点
 
 1. **silent 探活传入 `nullptr` handler**：
    - `AsyncOperationGuard` 检测到 `handler_ == nullptr` 时，拒绝路径不发送 `REJECT` 事件
-   - 探活静默跳过，不打扰用户
-
-2. **手动测试优先于 silent**：
-   - 若用户手动点击「测试在线代理」时 silent 探活正在运行
-   - 先 cancel + join 结束 silent，再启动手动测试
-   - 避免手动请求也被 guard 拒绝
+   - 探活静默跳过，不打扰用户（仅 DEBUG 日志留痕，便于排查）
+2. **手动测试行为保持原语义**：
+   - 手动调用方（ProxyListPanel / StandaloneFloatingWidget）已有 `isRunning_` 预检查，运行中操作时弹「操作进行中」
+   - 其余手动路径（如 ken 无预检查的调用）被 guard 拒绝时仍弹 "Operation Busy"（传递原始 handler）
+   - **不引入跨操作取消**——避免影响批量测试/订阅更新/自动任务等共享 worker 线程的操作
 
 ---
 
@@ -150,11 +148,14 @@ cmake --build build --target validproxy --parallel 8
 ### 4.2 提交记录
 
 ```powershell
-git log --oneline -3
+git log --oneline -4
+<NEW_COMMIT> fix(pool): remove unreachable pre-cancel block, keep silent-probe quiet (review)
+c5040be docs(pool): add bugfix doc for silent probe Operation Busy dialog
 5ce71e4 fix(pool): suppress Operation Busy dialog for silent periodic probe
 171b660 fix(pool): cancel silent probe on manual online-proxy test to avoid Operation Busy dialog
-6801ead feat(pool): thresholded probe-failure WARN + UI refresh on probe done
 ```
+
+> `171b660` 的预取消块经审核确认不可达且具跨操作取消风险，已在本版移除（见 §7）。
 
 ---
 
@@ -169,5 +170,33 @@ git log --oneline -3
 ## 6. 后续建议
 
 1. **考虑统一 guard 策略**：其他 silent 异步操作（如后台订阅更新、地区解析）也可能遇到相同问题，建议统一评估是否传入 `nullptr` handler
-2. **增加日志**：silent 探活被拒时可在 DEBUG 级别输出日志，便于排查 timer 冲突
+2. **增加日志** ⏳ 已在本版实现：silent 探活被拒时输出 DEBUG 级 `[OnlineProbe] skipped: another operation in progress`
 3. **UI 反馈**：若 silent 探活连续多次被拒（说明系统持续繁忙），可在状态栏显示轻量提示
+
+---
+
+## 7. 代码审核记录（2026-09-16）
+
+对提交 `171b660` + `5ce71e4` 进行正确性审查（ce-correctness-reviewer），结论与处置如下：
+
+| ID | 严重度 | 发现 | 处置 |
+|----|--------|------|------|
+| C1 | Critical | `171b660` 预取消块 `if (!silent && isRunning_ && joinable())` **不区分操作类型**，会 cancel+join 中断任何运行中的异步操作（批量测试/订阅更新/自动任务/数据库同步/地区解析），破坏共享单 worker 线程的互斥语义 | **已移除**该块 |
+| I1 | Important | `workerThread_.join()` 在 UI 线程**无界阻塞**，最长可达被取消操作的网络超时（订阅抓取 30s、单代理地区解析整次 HTTP） | 随 C1 一并移除 |
+| I2 | Important | 预取消块**不可达（死代码）**：两个手动调用方（`ProxyListPanel.cpp:481`、`StandaloneFloatingWidget.cpp:848`）均先 `controller_->isRunning()` 预检查并弹「操作进行中」；因此 `171b660` 对弹窗问题零贡献，真正修复是 `5ce71e4` | 移除后行为不变（修复效果保留） |
+| M1 | Minor | silent 被拒完全无痕，不可观测 | 已补 DEBUG 日志 |
+| M2 | Minor | join 后手动 `isRunning_=false` 冗余（worker ScopeGuard 已复位，join happens-before） | 随块移除 |
+| M3 | Minor | 注释声称「silent 探活运行时」与代码（仅查 isRunning_）不符 | 随块移除 |
+| M4 | Minor | `cancelRequested_=false` 复位可能覆盖 NetworkMonitor 断连信号（既有模式，非本次引入） | 记录备忘，不处理 |
+
+### 7.1 最终修复形态
+
+- **保留** `5ce71e4`：silent 探活传 `nullptr` 给 guard → 被拒不弹 "Operation Busy"
+- **新增**：silent 被拒时 DEBUG 日志（M1）
+- **删除** `171b660` 预取消块（C1/I1/I2/M2/M3）
+- 手动调用方行为不变：「操作进行中」预检查照旧
+
+### 7.2 残余风险
+
+1. 共享单 `workerThread_` 架构下，任何未来新增的调用方若未做 `isRunning_` 预检查，手动触发被拒时会弹 "Operation Busy"（恢复原始行为，语义正确，仅 UX 提醒）
+2. M4 网络断连取消信号覆盖为既有模式，若需区分「用户取消」与「断连取消」应拆分标志——超出本次范围
