@@ -1129,18 +1129,24 @@ void MainFrame::onMenuConfig(wxCommandEvent&) {
     if (configDialog_->ShowModal() == wxID_OK) {
         config::AppConfig cfg = configDialog_->getConfig();
         // Saving config while a USER-INITIATED async operation is running
-        // would race the worker thread's config_ reads — keep the original
-        // guard for those. The periodic silent probe is a background task:
-        // it snapshots the config fields it needs under configMutex_, so
-        // ordinary config saves are allowed while it runs. Switching the
-        // live database still requires full idle (switchDatabase() swaps db_
-        // that the probe is using).
-        if (controller_->isRunning() && !controller_->isOnlineProbeRunning()) {
+        // would race the worker thread's config_ reads — keep the guard for
+        // those. The periodic silent probe is a background task that does NOT
+        // hold isRunning_: it snapshots the config fields it needs under
+        // configMutex_, so ordinary config saves are allowed while ONLY the
+        // probe runs (isRunning()==false). Under the probe+user-op concurrent
+        // state (probe started first, user op then allowed) both flags are
+        // true — the old !isOnlineProbeRunning() clause would have bypassed
+        // the save guard there, so we now check isRunning() alone.
+        if (controller_->isRunning()) {
             wxMessageBox(L"操作进行中，无法保存配置", L"操作进行中", wxOK | wxICON_WARNING);
             return;
         }
         bool dbPathChanged = !cfg.database_path.empty() && cfg.database_path != config_.database_path;
-        if (controller_->isRunning() && dbPathChanged) {
+        // Switching the live database requires FULL idle (user op OR probe):
+        // switchDatabase() swaps db_ that both use — the probe's exDao_ holds
+        // the old db_ pointer, so letting the probe run across a switch would
+        // be use-after-free.
+        if ((controller_->isRunning() || controller_->isOnlineProbeRunning()) && dbPathChanged) {
             wxMessageBox(L"操作进行中，无法切换数据库", L"操作进行中", wxOK | wxICON_WARNING);
             return;
         }

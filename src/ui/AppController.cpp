@@ -523,6 +523,12 @@ void AppController::testOnlineProxiesAsync(wxEvtHandler* wxHandler, bool silent)
         // user-initiated operation (save blocked). doTestOnlineProxies clears
         // the flag via its ScopeGuard on every exit path.
         onlineProbeRunning_ = true;
+        // 探活独立线程不消费/复位 cancelRequested_（AsyncOperationGuard 仅
+        // 服务于用户操作路径）。断连或 cancelTest() 残留的 true 会让每轮
+        // 探活线程在循环首行立即退出 → 周期探活静默停摆。此处置位安全：
+        // 上一行检查已保证 isRunning_==false（无用户操作在跑）；且本函数
+        // 在 UI 线程执行，与用户操作入口串行。
+        cancelRequested_ = false;
         probeThread_ = std::thread(&AppController::doTestOnlineProxies, this, wxHandler, true);
         return;
     }
