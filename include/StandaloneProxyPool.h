@@ -134,8 +134,9 @@ private:
     // Resident xray workers used to health-probe non-direct members
     // (vmess/vless/trojan/ss/hysteria2/tuic/wireguard) that cannot be measured
     // with a bare cURL proxy URL. Null when the pool runs without probe
-    // workers (evaluate.probeWorkers <= 0 disallowed by parser, but start
-    // failure keeps this null-safe via evaluator probePool_ check).
+    // workers (evaluate.probeWorkers == 0 disables the pool; start
+    // failure also leaves this null, which stays null-safe via the
+    // evaluator's probePool_ check).
     std::unique_ptr<ProxyProbePool> probePool_;
     mutable std::mutex membersMutex_;
     std::map<long long, PoolMember> members_;

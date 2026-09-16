@@ -250,7 +250,7 @@ TEST(StandaloneProxyPool, ConfigParserRejectsInvalidEnum) {
             "mode": "bogus",
             "balancerStrategy": "bogus",
             "observatory": { "type": "bogus" },
-            "evaluate": { "probeWorkers": 0 }
+            "evaluate": { "probeWorkers": 65 }
         }
     })").as_object();
     config::StandalonePoolConfigParser().parse(root, cfg, "");
@@ -258,7 +258,25 @@ TEST(StandaloneProxyPool, ConfigParserRejectsInvalidEnum) {
     EXPECT_EQ(cfg.standalone_pool.balancerStrategy, "leastPing") << "invalid strategy ignored";
     EXPECT_EQ(cfg.standalone_pool.observatory.type, "http") << "invalid observatory type ignored";
     EXPECT_EQ(cfg.standalone_pool.evaluate.probeWorkers, 2)
-        << "non-positive probeWorkers must keep the default";
+        << "out-of-range probeWorkers (>64) must keep the default";
+
+    // 0 is a legal value: it disables the resident probe pool (0..64 accepted).
+    cfg.standalone_pool.evaluate.probeWorkers = 2;
+    boost::json::object rootZero = boost::json::parse(R"({
+        "standalone_pool": { "evaluate": { "probeWorkers": 0 } }
+    })").as_object();
+    config::StandalonePoolConfigParser().parse(rootZero, cfg, "");
+    EXPECT_EQ(cfg.standalone_pool.evaluate.probeWorkers, 0)
+        << "probeWorkers 0 = disable must be parsed, not rejected";
+
+    // Negative values are rejected.
+    cfg.standalone_pool.evaluate.probeWorkers = 2;
+    boost::json::object rootNeg = boost::json::parse(R"({
+        "standalone_pool": { "evaluate": { "probeWorkers": -1 } }
+    })").as_object();
+    config::StandalonePoolConfigParser().parse(rootNeg, cfg, "");
+    EXPECT_EQ(cfg.standalone_pool.evaluate.probeWorkers, 2)
+        << "negative probeWorkers must keep the default";
 }
 
 // ---- pool construction (offline) ------------------------------------------

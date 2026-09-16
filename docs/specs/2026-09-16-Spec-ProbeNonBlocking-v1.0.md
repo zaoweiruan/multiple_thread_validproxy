@@ -193,8 +193,8 @@ bool updateResultsFor(const std::vector<db::models::ProfileExItem>& rows);
 2. 运行时日志验证：
    - 探活独立线程日志（手动操作时探活跳过 DEBUG）
    - 手动测试取消探活顺序（cancel → join → 手动启动）
-3. 增量刷新正确性：探活完成只更新受测行 delay/health/message
-4. `test_config_reader` 43/43、`test_proxy_list_model` **21/21**（新增 6 用例：`UpdateResultFor_FirstSeenIndexId_StoresAndReturnsTrue` / `SameValuesAgain_ReturnsFalse` / `PartialChange_UpdatesOnlyChangedField` / `NotifyTestResultChangedFor_ExistingIndexId_NotifiesThatRow` / `MissingIndexId_DoesNotNotify` / `NoData_DoesNotCrash`）
+3. 增量刷新正确性：探活完成只更新受测行 **Delay/Message/Failures 三列**（`updateResultFor`）+ **历史三列 Starts/Runtime/Health**（`syncHistoryForIndexId` 单行重算，公式与 `rebuildMaps()` L86-104 逐字一致，见 §8.9）；`rowChanged || historyChanged` 才 `notifyTestResultChangedFor`（`ItemChanged(item)` 通知整行重绘，经源码核实 datavgen.cpp:737/3350-3393）
+4. `test_config_reader` 43/43、`test_proxy_list_model` **27/27**（阶段 1 初稿新增 6 用例：`UpdateResultFor_FirstSeenIndexId_StoresAndReturnsTrue` / `SameValuesAgain_ReturnsFalse` / `PartialChange_UpdatesOnlyChangedField` / `NotifyTestResultChangedFor_ExistingIndexId_NotifiesThatRow` / `MissingIndexId_DoesNotNotify` / `NoData_DoesNotCrash`；最终审查 fix 4c646e9 再新增 6 用例：`SyncHistoryForIndexId_FirstSeenIndexId_ReturnsTrue` / `SameValuesAgain_ReturnsFalse` / `MissingIndexId_ReturnsFalse` / `PartialChange_UpdatesOnlyChangedField` / `HistoryMapsPreserveNonZeroBase` / `HistoryFormulaMatchesRebuildMaps`（45 组 `(start, crash, runtime)` 输入断言 sync 与全量 `rebuildMaps()` 对 health/runtime 等价））
 5. UI 冒烟：代理列表滚动/配置保存/自动任务在探活周期内可正常操作
 
 ## 6. 阶段 2 预告（另行立项）
@@ -213,7 +213,7 @@ bool updateResultsFor(const std::vector<db::models::ProfileExItem>& rows);
 
 ## 8. 实施偏离记录（2026-09-16 最终实现）
 
-阶段 1 已实现（提交 `66f9635..7ef1456`，9 commits；全量回归：test_config_reader 43/43、test_proxy_list_model 21/21、validproxy/validproxy-cli/UITests 构建 0 error）。初稿设计与最终实现存在以下偏离（保留原设计意图，此处汇总）：
+阶段 1 已实现（提交 `66f9635..4c646e9`，10 commits = 初稿 9 + 最终审查 fix 1；全量回归：test_config_reader 43/43、test_proxy_list_model 27/27、validproxy/validproxy-cli/UITests 构建 0 error；最终审查追加 exDao_ 切库重绑 + 历史列同步两处修复，见 §8.8/§8.9）。初稿设计与最终实现存在以下偏离（保留原设计意图，此处汇总）：
 
 ### 8.1 §3.1「doTestOnlineProxies 零改动」不成立
 
@@ -253,3 +253,27 @@ isRunning_=true 且 onlineProbeRunning_=true（探活先占、用户操作随后
 ### 8.7 测试补充
 
 `tests/test_proxy_list_model.cpp` 新增 6 用例（15 → 21/21）：`UpdateResultFor_FirstSeenIndexId_StoresAndReturnsTrue`、`UpdateResultFor_SameValuesAgain_ReturnsFalse`、`UpdateResultFor_PartialChange_UpdatesOnlyChangedField`、`NotifyTestResultChangedFor_ExistingIndexId_NotifiesThatRow`、`NotifyTestResultChangedFor_MissingIndexId_DoesNotNotify`、`NotifyTestResultChangedFor_NoData_DoesNotCrash`；`test_config_reader` 43/43 不受影响。
+
+### 8.8 exDao_ 切库重绑（原守卫必要但不充分，已补 setDb）
+
+§8.3 引入的「DB 切换守卫追加 `|| isOnlineProbeRunning()`」只挡住了**探活跨切换窗口**（切换瞬间探活仍在跑 → 拒绝切换），无法防止**切库后下一轮探活**用旧句柄：`ProfileExItemDAO` 构造时捕获当时的 `sqlite3*` 指针，`switchDatabase()` 关闭旧库、打开新库并交换 `db_` 后，`exDao_` 内部 `db_` 仍指向已关闭的旧 `sqlite3*` → 下一轮周期探活经 `exDao_` 读写 = UAF。
+
+修复（commit 4c646e9）：
+- `ProfileExItemDAO::setDb(sqlite3* db)` 新增（include/Profileexitem.h:105，`void setDb(sqlite3* db) { db_ = db; }`）——DAO 是构造一次、句柄可换的绑定契约；
+- `AppController::switchDatabase()` 交换 `db_` 后新增 `exDao_.setDb(db_)`（AppController.cpp:178）。
+
+原守卫保留（探测窗口内的用户操作仍需拒绝切库，防止并发写冲突），`setDb` 补齐切库后 DAO 句柄陈旧的第二层缺口。
+
+### 8.9 历史列同步（syncHistoryForIndexId 补偿增量路径）
+
+初稿 `refreshResultsFor` 只调 `updateResultFor`（Delay/Message/Failures 三列），假设探活失败不影响历史三列。实际探活失败经 `updateTestResult` 写回时会重置 `start_count` / `total_runtime_ms` / `crash_count` = 0（与独立代理测试失败语义一致），全量 `refreshResults()` → `rebuildMaps()` 会同步刷新 Health/Starts/Runtime 三列，而增量路径缺这一步 → 探活失败的死代理在列表里一直显示上一轮的健康值（本交付引入的回归，最终审查发现）。
+
+修复（commit 4c646e9）：
+- `ProxyListModel::syncHistoryForIndexId(indexId)` 新增（ProxyListModel.cpp:203-264）——单行重算 `startCountMap_` / `runtimeMap_` / `healthMap_`，**逐字复制 `rebuildMaps()` L86-104 三公式**（start 直读 / runtime 保留非零历史 base 的三态 / health 贝叶斯平滑 + 冷启动强制 0.0）；
+- `refreshResultsFor` 在 `*it = *rit` 同步源数据后调用 `syncHistoryForIndexId`，`rowChanged || historyChanged` 才 `notifyTestResultChangedFor`（ProxyListPanel.cpp:235-246）；
+- **`ItemChanged(item)` 整行重绘已核实**：MSW generic dataview 下 `wxDataViewModel::ItemChanged`（dataview.h 公开成员，ProxyListModel.cpp:267-281 直接调用）触发 `wxDataViewStore::UpdateItem`（datavgen.cpp:737）→ `UpdateItemInternal`（3350-3393）重绘整个 row（非单列），因此受测行的历史列能随增量通知一起刷新，无需额外 `notifyHistoryChanged()`；
+- 新增 6 个 GTest（21 → 27/27），含 `SyncHistoryForIndexId_HistoryFormulaMatchesRebuildMaps`：45 组 `(start, crash, runtime)` 输入，断言 sync 路径与全量 `rebuildMaps()` 对 health（`EXPECT_NEAR 1e-12`）与 runtime 严格等价，把单行公式钉死在全量重建公式上（防止未来单侧漂移）。
+
+### 8.10 既有测试断言漂移（非本交付引入）
+
+最终审查另发现一处既有测试断言漂移，已随本次提交一并修复：`ConfigParserRejectsInvalidEnum`（tests/TestStandaloneProxyPool.cpp）旧断言「非正值 probeWorkers 保持默认 2」，但 commit 5471274（PoolConfigDialogAdjust）已将解析器合法区间扩为 `0..64`（0 = 禁用常驻探针池），故 `probeWorkers=0` 应解析为 0 而非保持默认，旧断言失败导致全量 ctest 47 项中 1 失败。修复：`65 → 保持默认 2`（超上限）、`0 → 解析为 0`（合法禁用）、`-1 → 保持默认 2`（负值拒绝）三段断言；`StandaloneProxyPool.h` 探针池成员过期注释（"probeWorkers <= 0 disallowed by parser"）同步更新为「0 禁用，start 失败保持 null-safe」。修复后 **StandaloneProxyPoolTest 100% PASS、全量 ctest 47/47 PASS**。
