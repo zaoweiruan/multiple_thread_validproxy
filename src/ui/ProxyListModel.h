@@ -73,6 +73,19 @@ public:
     // session, which makes the periodic evaluation refresh a no-op).
     bool setRunningDurations(const std::unordered_map<std::string, long long>& runningMs);
 
+    // Update the test-result lookup maps for ONE indexId (delay/message/
+    // failures columns).  Caller must also keep the panel-owned exItems_
+    // vector in sync.  Returns true when any value actually changed (caller
+    // may then notify only this row).
+    bool updateResultFor(const std::string& indexId,
+                         const std::string& delay,
+                         const std::string& message,
+                         int failures);
+
+    // Notify the view that ONE row's test-result cells changed.  No-op when
+    // the indexId is not currently visible (filtered out / not present).
+    void notifyTestResultChangedFor(const std::string& indexId);
+
     // Detect the internal ID offset.
     // Some wxWidgets builds of wxDataViewIndexListModel::Reset(N) populate
     // m_list with 1-based IDs (1..N) instead of 0-based (0..N-1).

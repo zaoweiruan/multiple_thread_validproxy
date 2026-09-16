@@ -161,6 +161,48 @@ bool ProxyListModel::setRunningDurations(
 }
 
 // -------------------------------------------------------------------
+bool ProxyListModel::updateResultFor(const std::string& indexId,
+                                     const std::string& delay,
+                                     const std::string& message,
+                                     int failures) {
+    bool changed = false;
+    std::unordered_map<std::string, std::string>::iterator it = delayMap_.find(indexId);
+    const bool known = it != delayMap_.end();
+    if (!known || it->second != delay) {
+        delayMap_[indexId] = delay;
+        changed = true;
+    }
+    std::unordered_map<std::string, std::string>::iterator mIt = messageMap_.find(indexId);
+    if (mIt == messageMap_.end() || mIt->second != message) {
+        messageMap_[indexId] = message;
+        changed = true;
+    }
+    std::unordered_map<std::string, int>::iterator fIt = failuresMap_.find(indexId);
+    if (fIt == failuresMap_.end() || fIt->second != failures) {
+        failuresMap_[indexId] = failures;
+        changed = true;
+    }
+    return changed;
+}
+
+// -------------------------------------------------------------------
+// ItemChanged() is a public member of wxDataViewModel (dataview.h), so the
+// model can notify the view about a single item directly.  The view then
+// refreshes exactly that row (and re-sorts it if a sort order is active).
+void ProxyListModel::notifyTestResultChangedFor(const std::string& indexId) {
+    const int row = findRowByIndexId(indexId);
+    if (row < 0) {
+        return;
+    }
+    // Bit-cast the row back to the same item ID the model handed to the
+    // view (m_hash entries are row + idOffset_, see detectIdOffset()).
+    const wxDataViewItem item = wxDataViewItem(
+        reinterpret_cast<void*>(static_cast<wxUIntPtr>(
+            static_cast<unsigned int>(row) + idOffset_)));
+    ItemChanged(item);
+}
+
+// -------------------------------------------------------------------
 void ProxyListModel::detectIdOffset() {
     idOffset_ = 0;
     if (GetCount() > 0) {
