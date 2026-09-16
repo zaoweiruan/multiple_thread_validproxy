@@ -94,6 +94,7 @@ private:
     void onToolCancel(wxCommandEvent& event);
     void onToolSync(wxCommandEvent& event);
     void onStatusUpdate(StatusUpdateEvent& event);
+    void onOnlineProbeFinished(OnlineProbeFinishedEvent& event);
     void onResize(wxSizeEvent& event);
     void onSearchBoxEnter(wxCommandEvent& event);
     void onSearchTextChanged(wxCommandEvent& event);

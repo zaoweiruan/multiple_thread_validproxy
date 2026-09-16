@@ -237,6 +237,10 @@ MainFrame::MainFrame(const config::AppConfig& cfg, sqlite3* db)
         evt.Skip();
     });
 
+    // ── Periodic silent probe finished → incremental refresh of only the
+    // tested rows (OnlineProbeFinishedEvent carries the tested indexIds).
+    Bind(wxEVT_ONLINE_PROBE_FINISHED, &MainFrame::onOnlineProbeFinished, this);
+
     // ── Locate proxy from standalone monitor dialog double-click ──
     // The dialog posts LocateProxyEvent (carrying the proxy indexId); select
     // and scroll it into view in ProxyListPanel.  The dialog hides itself.
@@ -1468,15 +1472,19 @@ void MainFrame::onStatusUpdate(StatusUpdateEvent& event) {
         if (proxyPanel_) {
             proxyPanel_->reloadFromDatabase();
         }
-    } else if (text == "ONLINE_PROBE_DONE") {
-        // Periodic standalone-proxy probe finished: it wrote ProfileExItem
-        // (Delay/Health/Message), so refresh those columns in the proxy list.
-        // The floating-widget panel refreshes itself on its own timer.
-        if (proxyPanel_) {
-            proxyPanel_->refreshResults();
-        }
     } else {
         setStatusText(0, text);
+    }
+}
+
+// -------------------------------------------------------------------
+//  OnlineProbeFinishedEvent handler — periodic silent probe completed.
+//  It updated only the tested rows (ProfileExItem), so refresh exactly
+//  those rows incrementally — no full 53k-row reload.
+// -------------------------------------------------------------------
+void MainFrame::onOnlineProbeFinished(OnlineProbeFinishedEvent& event) {
+    if (proxyPanel_) {
+        proxyPanel_->refreshResultsFor(event.getIndexIds());
     }
 }
 
