@@ -537,3 +537,174 @@ TEST_F(ProxyListModelTest, NotifyTestResultChangedFor_NoData_DoesNotCrash) {
     model.notifyTestResultChangedFor("A");
     EXPECT_EQ(notifier->itemChangedCount, 0);
 }
+
+// -------------------------------------------------------------------
+// syncHistoryForIndexId: incremental one-row refresh of the history
+// maps (Starts / Runtime / Health).  Mirrors the rebuildMaps() formulas
+// so a probe-triggered incremental refresh produces the same values a
+// full rebuild would.  Missing indexId / no exItems_ is a safe no-op.
+// -------------------------------------------------------------------
+TEST_F(ProxyListModelTest, SyncHistoryForIndexId_FirstSeenIndexId_ReturnsTrue) {
+    std::vector<db::models::Profileitem> proxies(1);
+    proxies[0].indexid = "A";
+    std::vector<db::models::ProfileExItem> exItems;
+    exItems.push_back(makeEx("A", 3, 1, 1234));
+
+    ProxyListModel model;
+    model.setData(&proxies, &exItems);  // rebuildMaps already ran
+    model.clear();                       // wipe maps AND null exItems_
+    model.setDataWithoutRebuild(&proxies, &exItems);  // restore pointer, keep empty maps
+
+    // First sight of the indexId: every history field is stored -> true.
+    EXPECT_TRUE(model.syncHistoryForIndexId("A"));
+    EXPECT_NEAR(model.getHealth("A"), 3.0 / 5.0, 1e-9);   // (3-1+1)/(3+2)
+    EXPECT_EQ(model.getRuntime("A"), 1234LL);
+
+    // No exItems_ attached: safe no-op, returns false.
+    ProxyListModel empty;
+    EXPECT_FALSE(empty.syncHistoryForIndexId("A"));
+}
+
+TEST_F(ProxyListModelTest, SyncHistoryForIndexId_SameValuesAgain_ReturnsFalse) {
+    std::vector<db::models::Profileitem> proxies(1);
+    proxies[0].indexid = "A";
+    std::vector<db::models::ProfileExItem> exItems;
+    exItems.push_back(makeEx("A", 3, 1, 1234));
+
+    ProxyListModel model;
+    model.setData(&proxies, &exItems);
+
+    // Maps already carry these values -> identical sync is a no-op.
+    EXPECT_FALSE(model.syncHistoryForIndexId("A"));
+    EXPECT_FALSE(model.syncHistoryForIndexId("A"));
+    EXPECT_NEAR(model.getHealth("A"), 0.6, 1e-9);
+    EXPECT_EQ(model.getRuntime("A"), 1234LL);
+}
+
+TEST_F(ProxyListModelTest, SyncHistoryForIndexId_MissingIndexId_ReturnsFalse) {
+    std::vector<db::models::Profileitem> proxies(1);
+    proxies[0].indexid = "A";
+    std::vector<db::models::ProfileExItem> exItems;
+    exItems.push_back(makeEx("A", 2, 0, 100));
+
+    ProxyListModel model;
+    model.setData(&proxies, &exItems);
+
+    // exItems_ has no entry for "B": no maps to touch, no change reported.
+    EXPECT_FALSE(model.syncHistoryForIndexId("B"));
+    EXPECT_EQ(model.getHealth("B"), 0.0);
+    EXPECT_EQ(model.getRuntime("B"), 0LL);
+
+    // Existing "A" entry stays untouched by the missing-indexId sync.
+    EXPECT_NEAR(model.getHealth("A"), 0.75, 1e-9);
+}
+
+TEST_F(ProxyListModelTest, SyncHistoryForIndexId_PartialChange_UpdatesOnlyChangedField) {
+    std::vector<db::models::Profileitem> proxies(1);
+    proxies[0].indexid = "A";
+    std::vector<db::models::ProfileExItem> exItems;
+    exItems.push_back(makeEx("A", 2, 0, 1000));  // health = (2+1)/(2+2) = 0.75
+
+    ProxyListModel model;
+    model.setData(&proxies, &exItems);
+    // Reset maps to empty so syncHistoryForIndexId reports the first write
+    // as a change (exItems_ is preserved by setDataWithoutRebuild).
+    model.clear();
+    model.setDataWithoutRebuild(&proxies, &exItems);
+
+    // Probe failed: DB reset the history counters -> 0/0/0.
+    // NOTE: total_runtime_ms is 0 here (finalizeStop never wrote it back),
+    // so the historical base stays at 0 (no prior entry in runtimeMap_).
+    exItems[0] = makeEx("A", 0, 0, 0);
+    EXPECT_TRUE(model.syncHistoryForIndexId("A"));
+    EXPECT_NEAR(model.getHealth("A"), 0.0, 1e-9);   // cold start -> 0.0
+    EXPECT_EQ(model.getRuntime("A"), 0LL);
+
+    // A new run with a crash: start=5, crash=3, runtime=5000.
+    exItems[0] = makeEx("A", 5, 3, 5000);
+    EXPECT_TRUE(model.syncHistoryForIndexId("A"));
+    EXPECT_NEAR(model.getHealth("A"), 3.0 / 7.0, 1e-9);  // (5-3+1)/(5+2)
+    EXPECT_EQ(model.getRuntime("A"), 5000LL);
+
+    // Re-sync the identical exItem: no change reported.
+    EXPECT_FALSE(model.syncHistoryForIndexId("A"));
+}
+
+TEST_F(ProxyListModelTest, SyncHistoryForIndexId_HistoryMapsPreserveNonZeroBase) {
+    // Mirrors the rebuildMaps() comment: total_runtime_ms is only written
+    // back to ProfileExItem when finalizeStop runs.  While a session is
+    // in progress the row still carries 0; syncHistoryForIndexId must
+    // NOT overwrite a non-zero historical runtimeMap_ entry with 0.
+    std::vector<db::models::Profileitem> proxies(1);
+    proxies[0].indexid = "A";
+    std::vector<db::models::ProfileExItem> exItems;
+    exItems.push_back(makeEx("A", 2, 0, 1000));  // historical runtime = 1s
+
+    ProxyListModel model;
+    model.setData(&proxies, &exItems);
+    EXPECT_EQ(model.getRuntime("A"), 1000LL);
+
+    // Simulate a probe-triggered incremental refresh with total_runtime_ms
+    // still 0 (session not finalized).  Historical base must survive.
+    exItems[0] = makeEx("A", 2, 0, 0);
+    // start_count / health are unchanged; runtime base is preserved.
+    EXPECT_FALSE(model.syncHistoryForIndexId("A"));
+    EXPECT_EQ(model.getRuntime("A"), 1000LL);
+
+    // finalizeStop commits the new total (e.g. 12s).  Now the runtime is
+    // overwritten.
+    exItems[0] = makeEx("A", 3, 0, 12000);
+    EXPECT_TRUE(model.syncHistoryForIndexId("A"));
+    EXPECT_EQ(model.getRuntime("A"), 12000LL);
+    EXPECT_NEAR(model.getHealth("A"), 4.0 / 5.0, 1e-9);  // (3+1)/(3+2)
+}
+
+// Full-rebuild vs incremental-sync parity: for a range of (start, crash,
+// runtime) tuples the health value produced by syncHistoryForIndexId on a
+// cleared model must equal the value produced by rebuildMaps on a fresh
+// model.  This pins the syncHistoryForIndexId formula to rebuildMaps().
+TEST_F(ProxyListModelTest, SyncHistoryForIndexId_HistoryFormulaMatchesRebuildMaps) {
+    std::vector<db::models::Profileitem> proxies(1);
+    proxies[0].indexid = "A";
+    std::vector<db::models::ProfileExItem> exItems;
+
+    const int starts[]   = {0, 1, 2, 5, 10};
+    const int crashes[]  = {0, 1, 3};
+    const long long runtimes[] = {0LL, 500LL, 5000LL};
+
+    for (int si = 0; si < 5; ++si) {
+        for (int ci = 0; ci < 3; ++ci) {
+            for (int ri = 0; ri < 3; ++ri) {
+                exItems.clear();
+                exItems.push_back(makeEx("A", starts[si], crashes[ci], runtimes[ri]));
+
+                // Model A: full rebuild via setData (fresh maps, then filled).
+                ProxyListModel full;
+                full.setData(&proxies, &exItems);
+
+                // Model B: syncHistoryForIndexId on an empty-map model whose
+                // exItems_ pointer is still valid.  clear() nulls the
+                // pointers, so setDataWithoutRebuild restores them without
+                // repopulating the maps.
+                ProxyListModel sync;
+                sync.setData(&proxies, &exItems);
+                sync.clear();
+                sync.setDataWithoutRebuild(&proxies, &exItems);
+
+                EXPECT_TRUE(sync.syncHistoryForIndexId("A"))
+                    << "start=" << starts[si]
+                    << " crash=" << crashes[ci]
+                    << " runtime=" << runtimes[ri];
+
+                EXPECT_NEAR(sync.getHealth("A"), full.getHealth("A"), 1e-12)
+                    << "start=" << starts[si]
+                    << " crash=" << crashes[ci]
+                    << " runtime=" << runtimes[ri];
+                EXPECT_EQ(sync.getRuntime("A"), full.getRuntime("A"))
+                    << "start=" << starts[si]
+                    << " crash=" << crashes[ci]
+                    << " runtime=" << runtimes[ri];
+            }
+        }
+    }
+}

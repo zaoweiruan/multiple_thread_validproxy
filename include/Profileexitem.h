@@ -98,6 +98,11 @@ private:
 
 public:
   explicit ProfileExItemDAO(sqlite3* db);
+  // Rebind the underlying sqlite handle (e.g. after AppController::switchDatabase).
+  // The DAO is constructed once with a pointer to the current handle; any
+  // later swap of that handle leaves db_ pointing at a closed sqlite3, so
+  // callers must re-bind explicitly.
+  void setDb(sqlite3* db) { db_ = db; }
   static void migrateTable(sqlite3* db);
   std::vector<ProfileExItem> getAll();
   std::optional<ProfileExItem> getByIndexId(const std::string& indexId);

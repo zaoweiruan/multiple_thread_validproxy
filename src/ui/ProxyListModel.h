@@ -82,6 +82,16 @@ public:
                          const std::string& message,
                          int failures);
 
+    // Recompute ONE row's history maps (start_count / total_runtime_ms /
+    // health) from the caller-updated exItems_ entry, mirroring the
+    // rebuildMaps() formulas.  Preserves the existing non-zero runtimeMap_
+    // entry when the caller's ex.total_runtime_ms is still 0 (finalizeStop
+    // has not yet written it back).  Returns true when any of the three
+    // history values changed (first sight of the indexId always counts as a
+    // change), so the caller can skip the view notification otherwise.
+    // No-op (returns false) when the indexId is not present in exItems_.
+    bool syncHistoryForIndexId(const std::string& indexId);
+
     // Notify the view that ONE row's test-result cells changed.  No-op when
     // the indexId is not currently visible (filtered out / not present).
     void notifyTestResultChangedFor(const std::string& indexId);

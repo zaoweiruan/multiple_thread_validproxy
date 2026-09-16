@@ -186,6 +186,84 @@ bool ProxyListModel::updateResultFor(const std::string& indexId,
 }
 
 // -------------------------------------------------------------------
+// Incremental history-map refresh for ONE indexId (probe-triggered, see
+// ProxyListPanel::refreshResultsFor).  Uses the SAME formulas as
+// rebuildMaps() so the Health/Starts/Runtime columns read identically
+// whether the row was refreshed incrementally or by a full reload.
+//
+// Formula source — ProxyListModel::rebuildMaps() L86-104:
+//   startCountMap_[id] = ex.start_count;
+//   if (ex.total_runtime_ms > 0)  runtimeMap_[id] = ex.total_runtime_ms;
+//   else if (not present)         runtimeMap_[id] = 0;
+//   else                          keep previous non-zero runtimeMap_[id]
+//   stable = max(ex.start_count - ex.crash_count, 0);
+//   health = (ex.start_count == 0) ? 0.0
+//           : double(stable + 1) / double(ex.start_count + 2);
+// -------------------------------------------------------------------
+bool ProxyListModel::syncHistoryForIndexId(const std::string& indexId) {
+    if (!exItems_) {
+        return false;
+    }
+    const db::models::ProfileExItem* ex = nullptr;
+    for (std::vector<db::models::ProfileExItem>::const_iterator it = exItems_->begin();
+         it != exItems_->end(); ++it) {
+        if (it->indexid == indexId) {
+            ex = &(*it);
+            break;
+        }
+    }
+    if (!ex) {
+        return false;   // not present in current data — nothing to sync
+    }
+
+    bool changed = false;
+
+    // start_count
+    std::unordered_map<std::string, int>::iterator scIt = startCountMap_.find(indexId);
+    const bool scKnown = scIt != startCountMap_.end();
+    if (!scKnown || scIt->second != ex->start_count) {
+        startCountMap_[indexId] = ex->start_count;
+        changed = true;
+    }
+
+    // total_runtime_ms — preserve non-zero historical base when the
+    // running session has not been committed back to ProfileExItem yet.
+    std::unordered_map<std::string, long long>::iterator rtIt = runtimeMap_.find(indexId);
+    const bool rtKnown = rtIt != runtimeMap_.end();
+    long long newRuntime = 0;
+    if (ex->total_runtime_ms > 0) {
+        newRuntime = ex->total_runtime_ms;
+    } else if (rtKnown) {
+        newRuntime = rtIt->second;   // keep previous base (may be 0)
+    } else {
+        newRuntime = 0;
+    }
+    if (!rtKnown || rtIt->second != newRuntime) {
+        runtimeMap_[indexId] = newRuntime;
+        changed = true;
+    }
+
+    // health — Bayesian-smoothed base score, cold start forced to 0.0
+    int stable = ex->start_count - ex->crash_count;
+    if (stable < 0) stable = 0;
+    double newHealth;
+    if (ex->start_count == 0) {
+        newHealth = 0.0;
+    } else {
+        newHealth = static_cast<double>(stable + 1) /
+                    static_cast<double>(ex->start_count + 2);
+    }
+    std::unordered_map<std::string, double>::iterator hIt = healthMap_.find(indexId);
+    const bool hKnown = hIt != healthMap_.end();
+    if (!hKnown || hIt->second != newHealth) {
+        healthMap_[indexId] = newHealth;
+        changed = true;
+    }
+
+    return changed;
+}
+
+// -------------------------------------------------------------------
 // ItemChanged() is a public member of wxDataViewModel (dataview.h), so the
 // model can notify the view about a single item directly.  The view then
 // refreshes exactly that row (and re-sorts it if a sort order is active).

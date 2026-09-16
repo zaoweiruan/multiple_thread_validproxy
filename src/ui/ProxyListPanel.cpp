@@ -235,8 +235,13 @@ void ProxyListPanel::refreshResultsFor(const std::vector<std::string>& indexIds)
             const bool rowChanged = model_->updateResultFor(
                 rit->indexid, delay, rit->message, rit->consecutive_failures);
             *it = *rit;   // 同步源数据（model 只读非拥有指针）
-            if (rowChanged) {
+            // 探活失败会重置 start_count / total_runtime_ms / crash_count = 0，
+            // 增量刷新必须重算 history maps，否则死代理的 Health/Starts/Runtime
+            // 列会一直显示上一轮的值（与全量 refreshResults 的全库重建不一致）。
+            const bool historyChanged = model_->syncHistoryForIndexId(rit->indexid);
+            if (rowChanged || historyChanged) {
                 anyChanged = true;
+                // ItemChanged(item) 通知整行（含 history 列）重绘。
                 model_->notifyTestResultChangedFor(rit->indexid);
             }
             break;

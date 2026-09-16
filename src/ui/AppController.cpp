@@ -171,8 +171,12 @@ sqlite3* AppController::switchDatabase(const std::string& newPath) {
     config_.database_path = newPath;
 
     // Reset monitoring state for the new database:
-    // 1) Update historyDao_ to point to the new database handle
+    // 1) Update the DAO handles to point at the new database.  Both DAOs
+    //    were constructed with the original sqlite3*; without re-binding,
+    //    exDao_ keeps referencing the (now-closed) old handle on every
+    //    subsequent updateTestResult()/updateStartupTime() call.
     historyDao_.setDb(db_);
+    exDao_.setDb(db_);
 
     // 2) Clear stale standalone proxy state — old entries reference the
     //    previous database and may contain invalid runtimeHistoryId values.
