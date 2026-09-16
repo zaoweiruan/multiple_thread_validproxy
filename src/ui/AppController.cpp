@@ -1091,7 +1091,7 @@ bool AppController::startStandaloneProxy(const std::string& indexId, int overrid
             return true;
         }
         Logger::write("[StandaloneProxy] Connectivity test PASSED for " + indexId
-                      + " on SOCKS5 :" + std::to_string(socksPort), LogLevel::DEBUG);
+                      + " on SOCKS5 :" + std::to_string(socksPort), LogLevel::REPORT);
         // Write startup time into ProfileExItem.message (+<startup time>)
         exDao_.updateStartupTime(indexId, db_);
         if (topWindow_) {
@@ -2222,16 +2222,22 @@ void AppController::doTestOnlineProxies(wxEvtHandler* wxHandler, bool silent) {
             wxQueueEvent(wxHandler, new TestOnlineProxiesEvent(failedIndexIds, total, success, failed));
         }
 
-        // Log only on failure (REPORT); a fully-successful probe stays quiet
-        // (DEBUG) so periodic probes do not spam the log.
+        // Log only meaningful events (spec LogLevelRefinement §3.2):
+        //  - failures: REPORT (unchanged)
+        //  - manual test fully successful: REPORT (user-initiated, visible)
+        //  - periodic silent probe fully successful: DEBUG (no log spam)
         if (failed > 0) {
             Logger::write(std::string("Online proxies test finished: total=") + std::to_string(total) +
                               ", success=" + std::to_string(success) + ", failed=" + std::to_string(failed),
                           LogLevel::REPORT);
-        } else {
+        } else if (silent) {
             Logger::write(std::string("Online proxies test finished: total=") + std::to_string(total) +
                               ", success=" + std::to_string(success) + ", failed=0",
                           LogLevel::DEBUG);
+        } else {
+            Logger::write(std::string("Online proxies test finished: total=") + std::to_string(total) +
+                              ", success=" + std::to_string(success) + ", failed=0",
+                          LogLevel::REPORT);
         }
     } catch (const std::exception& e) {
         if (wxHandler && !silent) {

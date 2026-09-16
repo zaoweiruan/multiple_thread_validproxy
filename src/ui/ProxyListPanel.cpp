@@ -189,7 +189,7 @@ void ProxyListPanel::loadProxies(std::vector<db::models::Profileitem> proxies,
 // Model's lookup maps are rebuilt and the view is notified to redraw.
 // -------------------------------------------------------------------
 void ProxyListPanel::refreshResults() {
-    Logger::write("[ProxyListPanel] refreshResults called", LogLevel::REPORT);
+    Logger::write("[ProxyListPanel] refreshResults called", LogLevel::TRACE);
 
     exItems_ = controller_->loadProxyResults();
 
@@ -701,7 +701,7 @@ void ProxyListPanel::onStartProxy(wxCommandEvent& event) {
     if (ok) {
         Logger::write("[UI] Standalone proxy started: " + indexId
                       + " on SOCKS5 127.0.0.1:" + std::to_string(actualPort),
-                      LogLevel::REPORT);
+                      LogLevel::TRACE);
     } else {
         Logger::write("[UI] Failed to start standalone proxy: " + indexId, LogLevel::ERR);
     }
@@ -712,12 +712,12 @@ void ProxyListPanel::onStartProxy(wxCommandEvent& event) {
 void ProxyListPanel::onStandaloneProxyEvent(StandaloneProxyEvent& event) {
     if (event.isStarted()) {
         Logger::write("[UI] Standalone proxy started: " + event.getIndexId()
-                      + " on port " + std::to_string(event.getSocksPort()), LogLevel::REPORT);
+                      + " on port " + std::to_string(event.getSocksPort()), LogLevel::TRACE);
         // Refresh history/health columns so runtimes and health reflect the
         // new in-progress session (insertStart already updated the DB).
         refreshResults();
     } else {
-        Logger::write("[UI] Standalone proxy stopped: " + event.getIndexId(), LogLevel::REPORT);
+        Logger::write("[UI] Standalone proxy stopped: " + event.getIndexId(), LogLevel::DEBUG);
         refreshResults();
     }
     event.Skip();
