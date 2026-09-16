@@ -17,6 +17,7 @@ updated: 2026-08-24
 
 | 日期 | 类型 | 文档路径 | 说明 |
 |------|------|----------|------|
+| 2026-09-16 | spec | docs/specs/2026-09-16-Spec-PoolConfigDialogAdjust-v1.0.md | 代理池配置窗口调整 — UI 移除 observatory.destination（恒被 test.url 覆盖）；UI 新增 evaluate.probeWorkers（0=禁用探针池，1-64）；parser 接受 0..64；补齐 serializer probeWorkers 写回；后端 destination 保留透传；test_config_reader 43/43；commit 5471274 | ✅ completed |
 | 2026-09-16 | bugfix | docs/bugfix/2026-09-16-Bugfix-ProbeBlocksConfigSave-v1.0.md | 周期探活阻塞配置保存（"操作进行中，无法保存配置"）— 探活 5s 周期占用 isRunning_，保存配置无条件检查 isRunning() 误报；修复=区分后台探活与用户操作（isOnlineProbeRunning + onlineProbeRunning_ + configMutex_ 快照），探活期间允许普通保存、切库仍需空闲；commit 75338a0 | ✅ completed |
 | 2026-09-16 | spec | docs/specs/2026-09-16-Spec-LogLevelRefinement-v1.0.md | 独立代理日志级别细化 — REPORT 只保留三类成功事件各一条（启动 Started / 首次测试 Connectivity test PASSED / 纳管 Adopted）；手动测试全成功 REPORT、周期全成功 DEBUG；refreshResults TRACE、UI 重复启动日志 TRACE、停止 DEBUG；commit 71ad8bd | ✅ completed |
 | 2026-09-15 | bugfix | docs/bugfix/2026-09-15-Bugfix-StandaloneProbe-OperationBusy-v1.0.md | 独立代理周期 silent 探活被 AsyncOperationGuard 拒绝时弹出 "Operation Busy" 对话框 — 修复：silent 探活传入 nullptr handler 静默跳过；手动测试优先于 silent（cancel+join 后启动手动）；commit 5ce71e4 | ✅ completed |
