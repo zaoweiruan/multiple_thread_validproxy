@@ -1,6 +1,8 @@
 // Unit tests for ProxyListModel evaluation maps:
 //   - setRunningDurations() merges live elapsed time into the Runtime column
 //   - Health gains a running-time bonus (ramp 30 min, weight 0.3, capped 1.0)
+//   - updateResultFor() incrementally patches delay/message/failures maps
+//   - notifyTestResultChangedFor() emits ItemChanged for exactly one row
 #include <gtest/gtest.h>
 #include <wx/wx.h>
 
@@ -31,6 +33,28 @@ db::models::ProfileExItem makeEx(const std::string& indexId, int start,
     ex.total_runtime_ms = runtime;
     return ex;
 }
+
+// wxDataViewModelNotifier that records ItemChanged deliveries so the tests
+// can observe what notifyTestResultChangedFor() actually sends to the view.
+// AddNotifier() transfers ownership to the model, so the instance must be
+// heap-allocated and is deleted by wxDataViewModel's dtor — never call
+// RemoveNotifier() on it.
+class RecordingNotifier : public wxDataViewModelNotifier {
+public:
+    int itemChangedCount = 0;
+    wxDataViewItem lastChangedItem;
+
+    bool ItemAdded(const wxDataViewItem&, const wxDataViewItem&) override { return true; }
+    bool ItemDeleted(const wxDataViewItem&, const wxDataViewItem&) override { return true; }
+    bool ItemChanged(const wxDataViewItem& item) override {
+        ++itemChangedCount;
+        lastChangedItem = item;
+        return true;
+    }
+    bool ValueChanged(const wxDataViewItem&, unsigned int) override { return true; }
+    bool Cleared() override { return true; }
+    void Resort() override {}
+};
 
 }  // namespace
 
@@ -364,4 +388,152 @@ TEST_F(ProxyListModelTest, ValidityReason_MissingExItem_ReturnsUntested) {
     model.rebuildMaps();
 
     EXPECT_EQ(model.getProxyValidityReason("A"), "untested");
+}
+
+// -------------------------------------------------------------------
+// updateResultFor: incremental one-row patch of the delay/message/
+// failures maps.  Returns true only when at least one value changed.
+// -------------------------------------------------------------------
+TEST_F(ProxyListModelTest, UpdateResultFor_FirstSeenIndexId_StoresAndReturnsTrue) {
+    std::vector<db::models::Profileitem> proxies(1);
+    proxies[0].indexid = "A";
+    std::vector<db::models::ProfileExItem> exItems;  // no entry: "A" is new
+
+    ProxyListModel model;
+    model.setData(&proxies, &exItems);
+
+    // First sight of the indexId: every field is stored, change reported.
+    EXPECT_TRUE(model.updateResultFor("A", "120", "ok", 2));
+    EXPECT_EQ(model.getDelay("A"), "120");
+    EXPECT_EQ(model.getMessage("A"), "ok");
+    EXPECT_EQ(model.getFailures("A"), 2);
+
+    // Re-applying the identical result must report "no change" so the
+    // caller can skip notifying the view.
+    EXPECT_FALSE(model.updateResultFor("A", "120", "ok", 2));
+}
+
+TEST_F(ProxyListModelTest, UpdateResultFor_SameValuesAgain_ReturnsFalse) {
+    std::vector<db::models::Profileitem> proxies(1);
+    proxies[0].indexid = "A";
+    std::vector<db::models::ProfileExItem> exItems;
+    db::models::ProfileExItem ex;
+    ex.indexid = "A";
+    ex.delay = "120";
+    ex.message = "ok";
+    ex.consecutive_failures = 2;
+    exItems.push_back(ex);
+
+    ProxyListModel model;
+    model.setData(&proxies, &exItems);
+
+    // Maps already carry these values -> identical update is a no-op.
+    EXPECT_FALSE(model.updateResultFor("A", "120", "ok", 2));
+    EXPECT_FALSE(model.updateResultFor("A", "120", "ok", 2));
+
+    EXPECT_EQ(model.getDelay("A"), "120");
+    EXPECT_EQ(model.getMessage("A"), "ok");
+    EXPECT_EQ(model.getFailures("A"), 2);
+}
+
+TEST_F(ProxyListModelTest, UpdateResultFor_PartialChange_UpdatesOnlyChangedField) {
+    std::vector<db::models::Profileitem> proxies(1);
+    proxies[0].indexid = "A";
+    std::vector<db::models::ProfileExItem> exItems;
+    db::models::ProfileExItem ex;
+    ex.indexid = "A";
+    ex.delay = "100";
+    ex.message = "msg1";
+    ex.consecutive_failures = 0;
+    exItems.push_back(ex);
+
+    ProxyListModel model;
+    model.setData(&proxies, &exItems);
+
+    // Only delay changes: message/failures must survive untouched.
+    EXPECT_TRUE(model.updateResultFor("A", "200", "msg1", 0));
+    EXPECT_EQ(model.getDelay("A"), "200");
+    EXPECT_EQ(model.getMessage("A"), "msg1");
+    EXPECT_EQ(model.getFailures("A"), 0);
+
+    // Only failures changes.
+    EXPECT_TRUE(model.updateResultFor("A", "200", "msg1", 3));
+    EXPECT_EQ(model.getDelay("A"), "200");
+    EXPECT_EQ(model.getMessage("A"), "msg1");
+    EXPECT_EQ(model.getFailures("A"), 3);
+
+    // Only message changes.
+    EXPECT_TRUE(model.updateResultFor("A", "200", "msg2", 3));
+    EXPECT_EQ(model.getDelay("A"), "200");
+    EXPECT_EQ(model.getMessage("A"), "msg2");
+    EXPECT_EQ(model.getFailures("A"), 3);
+
+    // Fully converged again: no change reported.
+    EXPECT_FALSE(model.updateResultFor("A", "200", "msg2", 3));
+}
+
+// -------------------------------------------------------------------
+// notifyTestResultChangedFor: must emit ItemChanged for exactly the row
+// matching the indexId, and be a safe no-op otherwise.  The notification
+// is observed through a wxDataViewModelNotifier attached to the model
+// (AddNotifier transfers ownership; the model dtor deletes it).
+// -------------------------------------------------------------------
+TEST_F(ProxyListModelTest, NotifyTestResultChangedFor_ExistingIndexId_NotifiesThatRow) {
+    std::vector<db::models::Profileitem> proxies(2);
+    proxies[0].indexid = "A";
+    proxies[1].indexid = "B";
+    std::vector<db::models::ProfileExItem> exItems;
+    exItems.push_back(makeEx("A", 1, 0, 10));
+    exItems.push_back(makeEx("B", 1, 0, 20));
+
+    ProxyListModel model;
+    model.setData(&proxies, &exItems);
+    // Mirror ProxyListPanel: rebuild the internal row-ID table, then
+    // calibrate the 1-based-ID offset this wxWidgets build uses.
+    model.Reset(0);
+    model.Reset(static_cast<unsigned int>(proxies.size()));
+    model.detectIdOffset();
+
+    RecordingNotifier* notifier = new RecordingNotifier();
+    model.AddNotifier(notifier);
+
+    model.notifyTestResultChangedFor("B");
+
+    // Exactly one ItemChanged, targeting B's row (view row 1).
+    EXPECT_EQ(notifier->itemChangedCount, 1);
+    EXPECT_TRUE(notifier->lastChangedItem.IsOk());
+    EXPECT_EQ(notifier->lastChangedItem.GetID(), model.GetItem(1).GetID());
+}
+
+TEST_F(ProxyListModelTest, NotifyTestResultChangedFor_MissingIndexId_DoesNotNotify) {
+    std::vector<db::models::Profileitem> proxies(2);
+    proxies[0].indexid = "A";
+    proxies[1].indexid = "B";
+    std::vector<db::models::ProfileExItem> exItems;
+    exItems.push_back(makeEx("A", 1, 0, 10));
+    exItems.push_back(makeEx("B", 1, 0, 20));
+
+    ProxyListModel model;
+    model.setData(&proxies, &exItems);
+    model.Reset(0);
+    model.Reset(static_cast<unsigned int>(proxies.size()));
+    model.detectIdOffset();
+
+    RecordingNotifier* notifier = new RecordingNotifier();
+    model.AddNotifier(notifier);
+
+    // findRowByIndexId() returns -1 -> early return, no ItemChanged at all.
+    model.notifyTestResultChangedFor("does-not-exist");
+    EXPECT_EQ(notifier->itemChangedCount, 0);
+}
+
+TEST_F(ProxyListModelTest, NotifyTestResultChangedFor_NoData_DoesNotCrash) {
+    ProxyListModel model;  // no proxies_ / exItems_ attached
+
+    RecordingNotifier* notifier = new RecordingNotifier();
+    model.AddNotifier(notifier);
+
+    // proxies_ == nullptr -> findRowByIndexId() short-circuits to -1.
+    model.notifyTestResultChangedFor("A");
+    EXPECT_EQ(notifier->itemChangedCount, 0);
 }
