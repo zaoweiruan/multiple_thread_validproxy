@@ -492,7 +492,13 @@ void AppController::testOnlineProxiesAsync(wxEvtHandler* wxHandler, bool silent)
             cancelRequested_ = false;
         }
 
-        AsyncOperationGuard guard{workerThread_, isRunning_, cancelRequested_, wxHandler};
+        // For silent periodic probes, pass nullptr as the guard handler so a
+        // rejection does NOT pop up the "Operation Busy" dialog — the probe
+        // is simply skipped and retried on the next timer tick.  Manual
+        // (non-silent) calls keep the original handler so the user sees the
+        // busy notification when another operation is in progress.
+        wxEvtHandler* guardHandler = silent ? nullptr : wxHandler;
+        AsyncOperationGuard guard{workerThread_, isRunning_, cancelRequested_, guardHandler};
         if (!guard.isAllowed()) return;
     workerThread_ = std::thread(&AppController::doTestOnlineProxies, this, wxHandler, silent);
 }
