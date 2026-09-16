@@ -1127,11 +1127,23 @@ void MainFrame::onMenuConfig(wxCommandEvent&) {
     }
     configDialog_ = new ConfigDialog(this, controller_->getConfig());
     if (configDialog_->ShowModal() == wxID_OK) {
-        if (controller_->isRunning()) {
+        config::AppConfig cfg = configDialog_->getConfig();
+        // Saving config while a USER-INITIATED async operation is running
+        // would race the worker thread's config_ reads — keep the original
+        // guard for those. The periodic silent probe is a background task:
+        // it snapshots the config fields it needs under configMutex_, so
+        // ordinary config saves are allowed while it runs. Switching the
+        // live database still requires full idle (switchDatabase() swaps db_
+        // that the probe is using).
+        if (controller_->isRunning() && !controller_->isOnlineProbeRunning()) {
             wxMessageBox(L"操作进行中，无法保存配置", L"操作进行中", wxOK | wxICON_WARNING);
             return;
         }
-        config::AppConfig cfg = configDialog_->getConfig();
+        bool dbPathChanged = !cfg.database_path.empty() && cfg.database_path != config_.database_path;
+        if (controller_->isRunning() && dbPathChanged) {
+            wxMessageBox(L"操作进行中，无法切换数据库", L"操作进行中", wxOK | wxICON_WARNING);
+            return;
+        }
         std::string oldDbPath = config_.database_path;
         // Capture old network monitor settings BEFORE saveConfig updates config_
         bool oldNetMonEnabled = controller_->getNetworkMonitor()->IsEnabled();

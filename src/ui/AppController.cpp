@@ -115,6 +115,11 @@ AppController::~AppController() {
 // Config
 // ---------------------------------------------------------------
 bool AppController::saveConfig(const config::AppConfig& cfg) {
+    // Guard config_ against the background silent probe's config snapshot
+    // (doTestOnlineProxies reads test_url / test_timeout_ms / pruneFailStreak
+    // under this mutex). Ordinary config saves are allowed while the probe
+    // runs; only DB-path swaps require full idle (see MainFrame::onMenuConfig).
+    std::lock_guard<std::mutex> lock(configMutex_);
     config_ = cfg;
     // Persist to config.json so changes survive restart
     std::string configPath = config::ConfigReader::getDefaultConfigPath();
@@ -498,6 +503,13 @@ void AppController::testOnlineProxiesAsync(wxEvtHandler* wxHandler, bool silent)
                               LogLevel::DEBUG);
             }
             return;
+        }
+        // Mark the periodic silent probe so the config dialog can distinguish
+        // this background task (ordinary config save allowed) from a
+        // user-initiated operation (save blocked). doTestOnlineProxies clears
+        // the flag via its ScopeGuard on every exit path.
+        if (silent) {
+            onlineProbeRunning_ = true;
         }
     workerThread_ = std::thread(&AppController::doTestOnlineProxies, this, wxHandler, silent);
 }
@@ -2151,6 +2163,23 @@ void AppController::doTestAllProxies(wxEvtHandler* wxHandler) {
 void AppController::doTestOnlineProxies(wxEvtHandler* wxHandler, bool silent) {
     // Scope guard: reset isRunning_ on every exit path (including early returns and exceptions)
     ScopeGuard<std::atomic<bool>> _guard{isRunning_};
+    // Clear the silent-probe marker too (no-op for manual runs, where it
+    // never gets set).
+    ScopeGuard<std::atomic<bool>> _probeGuard{onlineProbeRunning_};
+
+    // Snapshot the config fields the probe loop reads so a concurrent
+    // saveConfig() (allowed while the silent probe runs — see
+    // MainFrame::onMenuConfig) cannot race with these reads. saveConfig()
+    // writes config_ under the same configMutex_.
+    std::string probeTestUrl;
+    int probeTimeoutMs = 0;
+    int probeFailStreak = 0;
+    {
+        std::lock_guard<std::mutex> lock(configMutex_);
+        probeTestUrl = config_.test_url;
+        probeTimeoutMs = config_.test_timeout_ms;
+        probeFailStreak = config_.standalone_pool.evaluate.pruneFailStreak;
+    }
 
     try {
         // Show testing progress in status bar field 0 (skipped for the silent
@@ -2178,7 +2207,7 @@ void AppController::doTestOnlineProxies(wxEvtHandler* wxHandler, bool silent) {
                 std::optional<db::models::ProfileExItem> exBad =
                     exDao_.getByIndexId(mon.indexId);
                 int curBad = exBad ? exBad->consecutive_failures : 0;
-                if (curBad + 1 >= config_.standalone_pool.evaluate.pruneFailStreak) {
+                if (curBad + 1 >= probeFailStreak) {
                     Logger::write("[OnlineProbe] test failed: " + mon.indexId
                                   + ": socks port unknown", LogLevel::WARN);
                 }
@@ -2186,7 +2215,7 @@ void AppController::doTestOnlineProxies(wxEvtHandler* wxHandler, bool silent) {
                 continue;
             }
 
-            ProxyTester tester(nullptr, config_.test_url, config_.test_timeout_ms);
+            ProxyTester tester(nullptr, probeTestUrl, probeTimeoutMs);
             TestResult r = tester.test(port, &cancelRequested_, nullptr);
             if (r.success) {
                 success++;
@@ -2199,7 +2228,7 @@ void AppController::doTestOnlineProxies(wxEvtHandler* wxHandler, bool silent) {
                 std::optional<db::models::ProfileExItem> ex =
                     exDao_.getByIndexId(mon.indexId);
                 int cur = ex ? ex->consecutive_failures : 0;
-                if (cur + 1 >= config_.standalone_pool.evaluate.pruneFailStreak) {
+                if (cur + 1 >= probeFailStreak) {
                     Logger::write("[OnlineProbe] test failed: " + mon.indexId
                                   + ": " + r.errorMsg, LogLevel::WARN);
                 }

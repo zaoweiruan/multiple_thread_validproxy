@@ -93,6 +93,11 @@ public:
    config::AppConfig getConfig() const { return config_; }
    bool saveConfig(const config::AppConfig& cfg);
    bool isRunning() const { return isRunning_.load(); }
+    // True while the periodic SILENT probe (background task) is running.
+    // The config dialog uses this to allow ordinary config saves during the
+    // probe (it snapshots config_ under configMutex_) while still blocking
+    // saves during user-initiated operations.
+    bool isOnlineProbeRunning() const { return onlineProbeRunning_.load(); }
 
   // Database switching (close old + open new)
   sqlite3* switchDatabase(const std::string& newPath);
@@ -247,8 +252,15 @@ private:
 
   sqlite3* db_;
   config::AppConfig config_;
+  // Guards config_ against saveConfig() racing the background silent probe's
+  // config snapshot (doTestOnlineProxies takes the snapshot under this mutex).
+  mutable std::mutex configMutex_;
   std::atomic<bool> cancelRequested_{false};
   std::atomic<bool> isRunning_{false};
+  // Set while the periodic silent probe runs (cleared by ScopeGuard in
+  // doTestOnlineProxies). Distinct from isRunning_ so the config dialog can
+  // allow saves during this background task.
+  std::atomic<bool> onlineProbeRunning_{false};
   // Worker thread (single at a time)
 std::thread workerThread_;
    TestResult lastFindResult_;
