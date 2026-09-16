@@ -213,7 +213,7 @@ bool updateResultsFor(const std::vector<db::models::ProfileExItem>& rows);
 
 ## 8. 实施偏离记录（2026-09-16 最终实现）
 
-阶段 1 已实现（提交 `66f9635..4c646e9`，10 commits = 初稿 9 + 最终审查 fix 1；全量回归：test_config_reader 43/43、test_proxy_list_model 27/27、validproxy/validproxy-cli/UITests 构建 0 error；最终审查追加 exDao_ 切库重绑 + 历史列同步两处修复，见 §8.8/§8.9）。初稿设计与最终实现存在以下偏离（保留原设计意图，此处汇总）：
+阶段 1 已实现（提交 `66f9635..4e3a269`，11 commits = 初稿 9 + 最终审查 fix 1 + 文档同步 1；全量回归：test_config_reader 43/43、test_proxy_list_model 27/27、全量 `ctest --test-dir build` 47/47、validproxy/validproxy-cli/UITests 构建 0 error；最终审查追加 exDao_ 切库重绑 + 历史列同步两处修复，见 §8.8/§8.9）。初稿设计与最终实现存在以下偏离（保留原设计意图，此处汇总）：
 
 ### 8.1 §3.1「doTestOnlineProxies 零改动」不成立
 
@@ -276,4 +276,4 @@ isRunning_=true 且 onlineProbeRunning_=true（探活先占、用户操作随后
 
 ### 8.10 既有测试断言漂移（非本交付引入）
 
-最终审查另发现一处既有测试断言漂移，已随本次提交一并修复：`ConfigParserRejectsInvalidEnum`（tests/TestStandaloneProxyPool.cpp）旧断言「非正值 probeWorkers 保持默认 2」，但 commit 5471274（PoolConfigDialogAdjust）已将解析器合法区间扩为 `0..64`（0 = 禁用常驻探针池），故 `probeWorkers=0` 应解析为 0 而非保持默认，旧断言失败导致全量 ctest 47 项中 1 失败。修复：`65 → 保持默认 2`（超上限）、`0 → 解析为 0`（合法禁用）、`-1 → 保持默认 2`（负值拒绝）三段断言；`StandaloneProxyPool.h` 探针池成员过期注释（"probeWorkers <= 0 disallowed by parser"）同步更新为「0 禁用，start 失败保持 null-safe」。修复后 **StandaloneProxyPoolTest 100% PASS**（ctest 47 项中该项转为通过；余下唯一非确定性失败为既有已知 flaky 项 `UI_FLOATINGWIDGET`「Orb hit-test」OS 级 WindowFromPoint 网格探针，单独复跑 PASS，与本交付及本次修复路径不相交）。
+最终审查另发现一处既有测试断言漂移，已随本次提交一并修复：`ConfigParserRejectsInvalidEnum`（tests/TestStandaloneProxyPool.cpp）旧断言「非正值 probeWorkers 保持默认 2」，但 commit 5471274（PoolConfigDialogAdjust）已将解析器合法区间扩为 `0..64`（0 = 禁用常驻探针池），故 `probeWorkers=0` 应解析为 0 而非保持默认，旧断言失败导致全量 ctest 47 项中 1 失败。修复：`65 → 保持默认 2`（超上限）、`0 → 解析为 0`（合法禁用）、`-1 → 保持默认 2`（负值拒绝）三段断言；`StandaloneProxyPool.h` 探针池成员过期注释（"probeWorkers <= 0 disallowed by parser"）同步更新为「0 禁用，start 失败保持 null-safe」。修复后 **StandaloneProxyPoolTest 100% PASS**；修复后最终全量 `ctest --test-dir build` **47/47 PASS（126.79s，2026-09-16）**，其中此前非确定性失败过的既有 flaky 项 `UI_FLOATINGWIDGET`「Orb hit-test」OS 级 WindowFromPoint 网格探针本轮亦通过。
