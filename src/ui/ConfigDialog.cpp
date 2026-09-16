@@ -207,9 +207,8 @@ ConfigDialog::ConfigDialog(wxWindow* parent, const config::AppConfig& cfg)
         propGrid_->Append(new wxEnumProperty(L"均衡策略", "pool_balancer_strategy", strategyChoices));
         propGrid_->SetPropertyValue("pool_balancer_strategy", wxString(cfg.standalone_pool.balancerStrategy));
     }
-    // 观测探测地址：仅当 test.url 为空时作为探测 URL 兜底（AppController.cpp:1806 用
-    // test_url 覆盖 probeUrl）
-    propGrid_->Append(new wxStringProperty(L"观测探测地址(兜底)", "pool_obs_destination", wxString(cfg.standalone_pool.observatory.destination)));
+    // 观测探测地址：恒被 test.url 覆盖（AppController::startProxyPool 用 test_url
+    // 填充 probeUrl），后端字段保留作极端兜底但不暴露 UI（spec PoolConfigDialogAdjust）。
     propGrid_->Append(new wxIntProperty(L"观测间隔(秒)", "pool_obs_interval", cfg.standalone_pool.observatory.intervalSec));
     propGrid_->Append(new wxIntProperty(L"观测超时(秒)", "pool_obs_timeout", cfg.standalone_pool.observatory.timeoutSec));
     propGrid_->Append(new wxIntProperty(L"评估间隔(秒)", "pool_eval_interval", cfg.standalone_pool.evaluate.intervalSec));
@@ -217,6 +216,9 @@ ConfigDialog::ConfigDialog(wxWindow* parent, const config::AppConfig& cfg)
     propGrid_->Append(new wxBoolProperty(L"自动剔除失效成员", "pool_eval_auto_prune", cfg.standalone_pool.evaluate.autoPruneDead));
     propGrid_->Append(new wxIntProperty(L"剔除阈值(连续失败次数)", "pool_eval_prune_streak", cfg.standalone_pool.evaluate.pruneFailStreak));
     propGrid_->Append(new wxBoolProperty(L"自动优化(预留记录式)", "pool_eval_auto_optimize", cfg.standalone_pool.evaluate.autoOptimize));
+    // 探针 worker 数：0 = 禁用常驻探针池（ProxyProbePool::start 的 workerCount<=0 分支），
+    // 1-N = 常驻 Xray 探针 worker 数（spec PoolConfigDialogAdjust）。
+    propGrid_->Append(new wxIntProperty(L"探针 worker 数(0=禁用)", "pool_eval_probe_workers", cfg.standalone_pool.evaluate.probeWorkers));
 
     propGrid_->SetPropertyAttributeAll(wxPG_BOOL_USE_CHECKBOX, true);
 
@@ -305,13 +307,12 @@ void ConfigDialog::loadConfig(const config::AppConfig& cfg) {
     propGrid_->SetPropertyValue("proxy_process_monitor_enabled", cfg.proxy_process_monitor.enabled);
     propGrid_->SetPropertyValue("proxy_process_monitor_check_interval_ms", cfg.proxy_process_monitor.checkIntervalMs);
 
-    // StandalonePool fields (方案甲：12 项；mode/type/samplingCount 不经 UI，由
-    // editedConfig_ = cfg 起底原值透传)
+    // StandalonePool fields (方案甲：12 项；mode/type/samplingCount/destination 不经 UI，
+    // 由 editedConfig_ = cfg 起底原值透传)
     propGrid_->SetPropertyValue("pool_enabled", cfg.standalone_pool.enabled);
     propGrid_->SetPropertyValue("pool_socks_port", cfg.standalone_pool.socksPort);
     propGrid_->SetPropertyValue("pool_api_port", cfg.standalone_pool.apiPort);
     propGrid_->SetPropertyValue("pool_balancer_strategy", wxString(cfg.standalone_pool.balancerStrategy));
-    propGrid_->SetPropertyValue("pool_obs_destination", wxString(cfg.standalone_pool.observatory.destination));
     propGrid_->SetPropertyValue("pool_obs_interval", cfg.standalone_pool.observatory.intervalSec);
     propGrid_->SetPropertyValue("pool_obs_timeout", cfg.standalone_pool.observatory.timeoutSec);
     propGrid_->SetPropertyValue("pool_eval_interval", cfg.standalone_pool.evaluate.intervalSec);
@@ -319,6 +320,7 @@ void ConfigDialog::loadConfig(const config::AppConfig& cfg) {
     propGrid_->SetPropertyValue("pool_eval_auto_prune", cfg.standalone_pool.evaluate.autoPruneDead);
     propGrid_->SetPropertyValue("pool_eval_prune_streak", cfg.standalone_pool.evaluate.pruneFailStreak);
     propGrid_->SetPropertyValue("pool_eval_auto_optimize", cfg.standalone_pool.evaluate.autoOptimize);
+    propGrid_->SetPropertyValue("pool_eval_probe_workers", cfg.standalone_pool.evaluate.probeWorkers);
 }
 
 bool ConfigDialog::saveConfig() {
@@ -431,13 +433,12 @@ bool ConfigDialog::saveConfig() {
     if (editedConfig_.proxy_process_monitor.checkIntervalMs < 5000) editedConfig_.proxy_process_monitor.checkIntervalMs = 5000;
     if (editedConfig_.proxy_process_monitor.checkIntervalMs > 300000) editedConfig_.proxy_process_monitor.checkIntervalMs = 300000;
 
-    // StandalonePool fields (方案甲：12 项读回；mode/type/samplingCount 不经 UI，
+    // StandalonePool fields (方案甲：12 项读回；mode/type/samplingCount/destination 不经 UI，
     // 保留 loadConfig() 起底的原值；probeUrl 为运行期派生值，不落盘不读回)
     editedConfig_.standalone_pool.enabled = propGrid_->GetPropertyValueAsBool("pool_enabled");
     editedConfig_.standalone_pool.socksPort = static_cast<int>(propGrid_->GetPropertyValueAsInt("pool_socks_port"));
     editedConfig_.standalone_pool.apiPort = static_cast<int>(propGrid_->GetPropertyValueAsInt("pool_api_port"));
     editedConfig_.standalone_pool.balancerStrategy = propGrid_->GetPropertyValueAsString("pool_balancer_strategy").ToStdString();
-    editedConfig_.standalone_pool.observatory.destination = propGrid_->GetPropertyValueAsString("pool_obs_destination").ToStdString();
     editedConfig_.standalone_pool.observatory.intervalSec = static_cast<int>(propGrid_->GetPropertyValueAsInt("pool_obs_interval"));
     editedConfig_.standalone_pool.observatory.timeoutSec = static_cast<int>(propGrid_->GetPropertyValueAsInt("pool_obs_timeout"));
     editedConfig_.standalone_pool.evaluate.intervalSec = static_cast<int>(propGrid_->GetPropertyValueAsInt("pool_eval_interval"));
@@ -445,6 +446,12 @@ bool ConfigDialog::saveConfig() {
     editedConfig_.standalone_pool.evaluate.autoPruneDead = propGrid_->GetPropertyValueAsBool("pool_eval_auto_prune");
     editedConfig_.standalone_pool.evaluate.pruneFailStreak = static_cast<int>(propGrid_->GetPropertyValueAsInt("pool_eval_prune_streak"));
     editedConfig_.standalone_pool.evaluate.autoOptimize = propGrid_->GetPropertyValueAsBool("pool_eval_auto_optimize");
+    {
+        int pw = static_cast<int>(propGrid_->GetPropertyValueAsInt("pool_eval_probe_workers"));
+        if (pw < 0) pw = 0;           // 0 = 禁用探针池
+        if (pw > 64) pw = 64;         // 上限保护
+        editedConfig_.standalone_pool.evaluate.probeWorkers = pw;
+    }
 
     // AutoTask fields
     editedConfig_.auto_task.steps = stepOrder_;
@@ -607,21 +614,20 @@ bool ConfigDialog::validateConfig() {
             wxMessageBox("观测超时必须在 1 到 60 秒之间", "验证错误", wxOK | wxICON_ERROR);
             return false;
         }
-        const std::string& poolDest = editedConfig_.standalone_pool.observatory.destination;
-        if (!poolDest.empty() && !utils::isValidUrlFormat(poolDest)) {
-            wxMessageBox("代理池观测探测地址格式无效: " + wxString(poolDest), "URL格式错误", wxOK | wxICON_WARNING);
-            return false;
-        }
-        if (poolDest.empty() && editedConfig_.test_url.empty()) {
-            // 兜底探测地址与 test.url 双空：探测将无 URL 可用，警告但不阻断
-            wxMessageBox("代理池观测探测地址与测试URL均为空，池启动后探测可能失败", "配置警告", wxOK | wxICON_WARNING);
-        }
+        // observatory.destination 不暴露 UI：恒被 test.url 覆盖（spec PoolConfigDialogAdjust），
+        // 后端保留透传，不再校验格式。
         if (editedConfig_.standalone_pool.evaluate.intervalSec < 1 || editedConfig_.standalone_pool.evaluate.intervalSec > 600) {
             wxMessageBox("评估间隔必须在 1 到 600 秒之间", "验证错误", wxOK | wxICON_ERROR);
             return false;
         }
         if (editedConfig_.standalone_pool.evaluate.pruneFailStreak < 1) {
             wxMessageBox("剔除阈值必须大于等于 1", "验证错误", wxOK | wxICON_ERROR);
+            return false;
+        }
+        if (editedConfig_.standalone_pool.evaluate.probeWorkers < 0 ||
+            editedConfig_.standalone_pool.evaluate.probeWorkers > 64) {
+            wxMessageBox("探针 worker 数必须在 0 到 64 之间（0=禁用探针池）", "验证错误",
+                         wxOK | wxICON_ERROR);
             return false;
         }
     }

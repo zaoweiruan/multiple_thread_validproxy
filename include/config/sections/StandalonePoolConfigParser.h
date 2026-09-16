@@ -84,7 +84,9 @@ inline void StandalonePoolConfigParser::parse(const boost::json::value& root, Ap
         }
         if (ev.contains("probeWorkers") && ev.at("probeWorkers").is_int64()) {
             int v = static_cast<int>(ev.at("probeWorkers").as_int64());
-            if (v > 0) config.standalone_pool.evaluate.probeWorkers = v;
+            // 0 = 禁用常驻探针池（ProxyProbePool::start workerCount<=0 分支）；
+            // 上限 64 防误配（spec PoolConfigDialogAdjust）。
+            if (v >= 0 && v <= 64) config.standalone_pool.evaluate.probeWorkers = v;
         }
     }
 }

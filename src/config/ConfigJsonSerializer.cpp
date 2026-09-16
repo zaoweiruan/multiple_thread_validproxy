@@ -173,6 +173,7 @@ boost::json::object ConfigJsonSerializer::serialize(const AppConfig& config) con
         evObj["autoPruneDead"] = config.standalone_pool.evaluate.autoPruneDead;
         evObj["pruneFailStreak"] = config.standalone_pool.evaluate.pruneFailStreak;
         evObj["autoOptimize"] = config.standalone_pool.evaluate.autoOptimize;
+        evObj["probeWorkers"] = config.standalone_pool.evaluate.probeWorkers;
         spObj["evaluate"] = evObj;
         root["standalone_pool"] = spObj;
     }
