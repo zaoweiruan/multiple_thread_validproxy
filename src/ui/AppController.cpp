@@ -2186,11 +2186,18 @@ void AppController::doTestAllProxies(wxEvtHandler* wxHandler) {
 }
 
 void AppController::doTestOnlineProxies(wxEvtHandler* wxHandler, bool silent) {
-    // Scope guard: reset isRunning_ on every exit path (including early returns and exceptions)
-    ScopeGuard<std::atomic<bool>> _guard{isRunning_};
-    // Clear the silent-probe marker too (no-op for manual runs, where it
+    // Scope guard: reset isRunning_ on every exit path — only for the MANUAL
+    // path (AsyncOperationGuard set it). The silent probe runs on
+    // probeThread_ without holding isRunning_, so it must NOT reset it —
+    // doing so would clear a user-initiated operation's guard if one started
+    // while the probe was running.
+    std::optional<ui::ScopeGuard<std::atomic<bool>>> runningGuard;
+    if (!silent) {
+        runningGuard.emplace(isRunning_);
+    }
+    // Clear the silent-probe marker (no-op for manual runs, where it
     // never gets set).
-    ScopeGuard<std::atomic<bool>> _probeGuard{onlineProbeRunning_};
+    ui::ScopeGuard<std::atomic<bool>> _probeGuard{onlineProbeRunning_};
 
     // Snapshot the config fields the probe loop reads so a concurrent
     // saveConfig() (allowed while the silent probe runs — see
