@@ -17,6 +17,7 @@ updated: 2026-08-24
 
 | 日期 | 类型 | 文档路径 | 说明 |
 |------|------|----------|------|
+| 2026-09-16 | bugfix | docs/bugfix/2026-09-16-Bugfix-ProbeBlocksConfigSave-v1.0.md | 周期探活阻塞配置保存（"操作进行中，无法保存配置"）— 探活 5s 周期占用 isRunning_，保存配置无条件检查 isRunning() 误报；修复=区分后台探活与用户操作（isOnlineProbeRunning + onlineProbeRunning_ + configMutex_ 快照），探活期间允许普通保存、切库仍需空闲；commit 75338a0 | ✅ completed |
 | 2026-09-16 | spec | docs/specs/2026-09-16-Spec-LogLevelRefinement-v1.0.md | 独立代理日志级别细化 — REPORT 只保留三类成功事件各一条（启动 Started / 首次测试 Connectivity test PASSED / 纳管 Adopted）；手动测试全成功 REPORT、周期全成功 DEBUG；refreshResults TRACE、UI 重复启动日志 TRACE、停止 DEBUG；commit 71ad8bd | ✅ completed |
 | 2026-09-15 | bugfix | docs/bugfix/2026-09-15-Bugfix-StandaloneProbe-OperationBusy-v1.0.md | 独立代理周期 silent 探活被 AsyncOperationGuard 拒绝时弹出 "Operation Busy" 对话框 — 修复：silent 探活传入 nullptr handler 静默跳过；手动测试优先于 silent（cancel+join 后启动手动）；commit 5ce71e4 | ✅ completed |
 | 2026-09-15 | spec+plan | docs/specs/2026-09-15-Spec-StandalonePeriodicProbe-v1.0.md + docs/plans/2026-09-15-Plan-StandalonePeriodicProbe-v1.0.md | 独立代理周期自动探活 — 复用池评估机制语义（ProxyTester 本地端口端到端 + updateTestResult + 阈值 WARN），随 proxy_process_monitor timer 周期静默触发，失败更新数据不关闭进程；失败达 pruneFailStreak（默认 3）才 WARN，ONLINE_PROBE_DONE 触发列表刷新；零新增配置；Task 1-3 全部完成（silent 参数 + 阈值 WARN + MainFrame timer + UI 刷新，commit 9f883ec/6801ead） | ✅ completed |
