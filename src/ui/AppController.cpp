@@ -2231,10 +2231,16 @@ void AppController::doTestOnlineProxies(wxEvtHandler* wxHandler, bool silent) {
         int success = 0;
         int failed = 0;
         std::vector<std::string> failedIndexIds;
+        // Every monitored proxy whose row was refreshed by updateTestResult
+        // (including the port<=0 branch, which writes -1) — the UI needs
+        // these indexIds to refresh exactly those rows incrementally when
+        // the silent probe finishes.
+        std::vector<std::string> monitorIndexIds;
 
         for (const StandaloneMonitorRow& mon : monitors) {
             if (cancelRequested_.load()) break;
             total++;
+            monitorIndexIds.push_back(mon.indexId);
 
             int port = mon.socksPort;
             if (port <= 0) {
@@ -2274,10 +2280,11 @@ void AppController::doTestOnlineProxies(wxEvtHandler* wxHandler, bool silent) {
             exDao_.updateTestResult(mon.indexId, r.latencyMs, r.success, r.errorMsg);
         }
 
-        // Periodic silent probe: no status-bar chatter, no result event — but
-        // still notify the UI to refresh the Delay/Health/Message columns once.
-        if (wxHandler && silent && total > 0) {
-            wxQueueEvent(wxHandler, new StatusUpdateEvent(0, "ONLINE_PROBE_DONE"));
+        // Periodic silent probe: no status-bar chatter, no result dialog — but
+        // still notify the UI to refresh ONLY the tested rows (incremental,
+        // keeps the full-table 53k reload off the UI thread).
+        if (wxHandler && silent && !monitorIndexIds.empty()) {
+            wxQueueEvent(wxHandler, new OnlineProbeFinishedEvent(monitorIndexIds));
         }
 
         // Periodic silent probe: no status-bar chatter, no result event.
