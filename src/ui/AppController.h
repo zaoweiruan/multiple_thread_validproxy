@@ -261,6 +261,9 @@ private:
   // doTestOnlineProxies). Distinct from isRunning_ so the config dialog can
   // allow saves during this background task.
   std::atomic<bool> onlineProbeRunning_{false};
+  // 周期 silent 探活专用独立线程：不占共享 workerThread_/isRunning_，
+  // 用户操作优先（手动测试先取消探活再启动）。
+  std::thread probeThread_;
   // Worker thread (single at a time)
 std::thread workerThread_;
    TestResult lastFindResult_;

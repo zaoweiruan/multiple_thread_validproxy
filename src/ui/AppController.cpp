@@ -107,6 +107,22 @@ AppController::~AppController() {
         }
     }
 
+    // Signal cancellation for any in-flight periodic probe, then join it
+    // with the same bounded-wait pattern as workerThread_.
+    // (cancelRequested_ was already set true at the top of this destructor,
+    // so the probe loop exits quickly; no need to touch it here.)
+    if (probeThread_.joinable()) {
+        std::future<void> fut = std::async(std::launch::async, [this]() {
+            if (probeThread_.joinable()) {
+                probeThread_.join();
+            }
+        });
+        if (fut.wait_for(std::chrono::seconds(5)) != std::future_status::ready) {
+            Logger::write("[AppController] Destructor: probe thread join timed out, detaching", LogLevel::WARN);
+            probeThread_.detach();
+        }
+    }
+
     // Now it is safe to shut down XrayManager — no thread still holds a ref
     XrayManager::release();
 }
@@ -487,31 +503,40 @@ void AppController::testAllProxiesAsync(wxEvtHandler* wxHandler) {
 }
 
 void AppController::testOnlineProxiesAsync(wxEvtHandler* wxHandler, bool silent) {
-        // For silent periodic probes, pass nullptr as the guard handler so a
-        // rejection does NOT pop up the "Operation Busy" dialog — the probe
-        // is simply skipped and retried on the next timer tick.  Manual
-        // (non-silent) calls keep the original handler so the user sees the
-        // busy notification when another operation is in progress.
-        wxEvtHandler* guardHandler = silent ? nullptr : wxHandler;
-        AsyncOperationGuard guard{workerThread_, isRunning_, cancelRequested_, guardHandler};
-        if (!guard.isAllowed()) {
-            // Silent periodic probe rejected by another in-flight operation:
-            // leave a DEBUG trace only (no dialog, no REPORT/ERR noise) so the
-            // skip is diagnosable.  The probe is retried on the next timer tick.
-            if (silent) {
-                Logger::write("[OnlineProbe] skipped: another operation in progress",
-                              LogLevel::DEBUG);
-            }
+    if (silent) {
+        // 周期 silent 探活：独立线程，不占共享 workerThread_/isRunning_
+        // （用户操作优先）。用户在跑其它操作、或上一轮探活尚未结束 →
+        // 静默跳过本轮。
+        if (isRunning_ || onlineProbeRunning_) {
+            Logger::write("[OnlineProbe] skipped: user operation running "
+                          "or previous probe still in flight", LogLevel::DEBUG);
             return;
+        }
+        // 上一轮探活已结束但尚未被 join（std::thread 完成后 joinable()
+        // 仍为 true，直到 join/detach 为止）：此处快速回收，否则后续
+        // 周期探活会被该残留 joinable 状态永久跳过。
+        if (probeThread_.joinable()) {
+            probeThread_.join();
         }
         // Mark the periodic silent probe so the config dialog can distinguish
         // this background task (ordinary config save allowed) from a
         // user-initiated operation (save blocked). doTestOnlineProxies clears
         // the flag via its ScopeGuard on every exit path.
-        if (silent) {
-            onlineProbeRunning_ = true;
-        }
-    workerThread_ = std::thread(&AppController::doTestOnlineProxies, this, wxHandler, silent);
+        onlineProbeRunning_ = true;
+        probeThread_ = std::thread(&AppController::doTestOnlineProxies, this, wxHandler, true);
+        return;
+    }
+
+    // 手动「测试在线代理」：优先取消正在运行的探活（可中断后台任务），
+    // 再走共享 workerThread_（用户操作占 isRunning_，原逻辑不变）。
+    if (probeThread_.joinable()) {
+        cancelRequested_ = true;
+        probeThread_.join();
+        cancelRequested_ = false;
+    }
+    AsyncOperationGuard guard{workerThread_, isRunning_, cancelRequested_, wxHandler};
+    if (!guard.isAllowed()) return;
+    workerThread_ = std::thread(&AppController::doTestOnlineProxies, this, wxHandler, false);
 }
 
 void AppController::cancelTest() {
