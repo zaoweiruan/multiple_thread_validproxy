@@ -46,6 +46,7 @@ class ProxySelectionEvent;
 class ProxyListLoadedEvent;
 class SubListLoadedEvent;
 class StandaloneProxyEvent;
+class OnlineProbeFinishedEvent;
 class RunningDurationsLoadedEvent;
 class LocateProxyEvent;
 class PoolMembersUpdatedEvent;
@@ -62,6 +63,7 @@ wxDECLARE_EVENT(wxEVT_PROXY_SELECTION, ProxySelectionEvent);
 wxDECLARE_EVENT(wxEVT_PROXY_LIST_LOADED, ProxyListLoadedEvent);
 wxDECLARE_EVENT(wxEVT_SUB_LIST_LOADED, SubListLoadedEvent);
 wxDECLARE_EVENT(wxEVT_STANDALONE_PROXY, StandaloneProxyEvent);
+wxDECLARE_EVENT(wxEVT_ONLINE_PROBE_FINISHED, OnlineProbeFinishedEvent);
 wxDECLARE_EVENT(wxEVT_RUNNING_DURATIONS_LOADED, RunningDurationsLoadedEvent);
 wxDECLARE_EVENT(wxEVT_LOCATE_PROXY, LocateProxyEvent);
 wxDECLARE_EVENT(wxEVT_POOL_MEMBERS_UPDATED, PoolMembersUpdatedEvent);
@@ -334,6 +336,27 @@ private:
     std::string indexId_, address_, error_;
     int socksPort_;
     bool started_;
+};
+
+// ---------------------------------------------------------------
+// OnlineProbeFinishedEvent — posted by AppController after the periodic
+// SILENT probe completes. Carries the indexIds that were actually tested
+// so the proxy list can refresh only those rows (incremental, no full
+// 53k-row reload). Replaces the old StatusUpdateEvent("ONLINE_PROBE_DONE").
+// ---------------------------------------------------------------
+class OnlineProbeFinishedEvent : public wxEvent {
+public:
+    explicit OnlineProbeFinishedEvent(std::vector<std::string> indexIds = std::vector<std::string>())
+        : wxEvent(0, wxEVT_ONLINE_PROBE_FINISHED),
+          indexIds_(std::move(indexIds)) {}
+
+    wxEvent* Clone() const override { return new OnlineProbeFinishedEvent(*this); }
+
+    std::vector<std::string> takeIndexIds() { return std::move(indexIds_); }
+    const std::vector<std::string>& getIndexIds() const { return indexIds_; }
+
+private:
+    std::vector<std::string> indexIds_;
 };
 
 // ---------------------------------------------------------------
