@@ -209,6 +209,50 @@ void ProxyListPanel::refreshResults() {
 }
 
 // -------------------------------------------------------------------
+// Incremental refresh: only the tested proxy rows' Delay/Message/Failures
+// columns are reloaded and updated (probe-triggered, see
+// OnlineProbeFinishedEvent).  No full-table re-read and no map rebuild —
+// keeps the 53k-row reload off the UI thread.
+// -------------------------------------------------------------------
+void ProxyListPanel::refreshResultsFor(const std::vector<std::string>& indexIds) {
+    if (indexIds.empty() || !model_ || !controller_) {
+        return;
+    }
+    std::vector<db::models::ProfileExItem> rows =
+        controller_->loadProxyResultsFor(indexIds);
+
+    bool anyChanged = false;
+    for (std::vector<db::models::ProfileExItem>::const_iterator rit = rows.begin();
+         rit != rows.end(); ++rit) {
+        bool rowFound = false;
+        for (std::vector<db::models::ProfileExItem>::iterator it = exItems_.begin();
+             it != exItems_.end(); ++it) {
+            if (it->indexid != rit->indexid) continue;
+            rowFound = true;
+            // delay 格式化与 refreshResults()/rebuildMaps() 一致：
+            // ProfileExItem.delay 是 DB 原生显示字符串（GetValueByRow 直接渲染）。
+            const std::string delay = rit->delay;
+            const bool rowChanged = model_->updateResultFor(
+                rit->indexid, delay, rit->message, rit->consecutive_failures);
+            *it = *rit;   // 同步源数据（model 只读非拥有指针）
+            if (rowChanged) {
+                anyChanged = true;
+                model_->notifyTestResultChangedFor(rit->indexid);
+            }
+            break;
+        }
+        if (!rowFound) {
+            // 受测行不在当前过滤/列表中（如筛选后隐藏）——查找失败不通知。
+            Logger::write("[ProxyListPanel] refreshResultsFor: indexId not in list: "
+                          + rit->indexid, LogLevel::DEBUG);
+        }
+    }
+    if (anyChanged) {
+        listCtrl_->Refresh();
+    }
+}
+
+// -------------------------------------------------------------------
 // Reload the full proxy rows (ProfileItem incl. Region column) for the
 // current subscription filter from the database.  refreshResults() only
 // re-reads ProfileExItem test results, so region values written by the

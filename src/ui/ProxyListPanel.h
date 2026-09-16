@@ -41,6 +41,10 @@ public:
                      utils::ProxyListMaps maps,
                      const std::string& subId);
     void refreshResults();
+    // Incremental refresh of ONLY the given tested rows (Delay/Message/Failures
+    // columns).  Probe-triggered, see OnlineProbeFinishedEvent: no full-table
+    // re-read and no map rebuild, so 53k-row reloads stay off the UI thread.
+    void refreshResultsFor(const std::vector<std::string>& indexIds);
     void reloadFromDatabase();
     // Instant in-memory subscription switch (no DB access, same filter
     // pattern as filterBySearch).  Falls back to reloadFromDatabase()

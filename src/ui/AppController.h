@@ -123,6 +123,10 @@ std::optional<db::models::Profileitem> getProxyByIndexId(const std::string& inde
 // empty string when the proxy does not exist or has no assigned subscription.
 std::string getSubIdByProxyIndexId(const std::string& indexId);
 std::vector<db::models::ProfileExItem> loadProxyResults();
+// Small indexed query: loads only the ProfileExItem rows whose indexId is in
+// the given list (probe-triggered incremental refresh).  Keeps the full-table
+// re-read off the UI thread for large databases.
+std::vector<db::models::ProfileExItem> loadProxyResultsFor(const std::vector<std::string>& indexIds);
 
 // Live elapsed time (ms) of in-progress standalone sessions, keyed by
 // indexId.  Reads proxy_runtime_history rows whose ended_at IS NULL

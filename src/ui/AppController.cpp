@@ -414,6 +414,25 @@ std::vector<db::models::ProfileExItem> AppController::loadProxyResults() {
     return items;
 }
 
+// -------------------------------------------------------------------
+// Small indexed query: load only the ProfileExItem rows for the given
+// indexIds.  Used by ProxyListPanel::refreshResultsFor() so a single
+// probe-completion event does not trigger a full 53k-row re-read.
+// -------------------------------------------------------------------
+std::vector<db::models::ProfileExItem> AppController::loadProxyResultsFor(
+        const std::vector<std::string>& indexIds) {
+    std::vector<db::models::ProfileExItem> rows;
+    rows.reserve(indexIds.size());
+    db::models::ProfileExItemDAO dao(db_);
+    for (std::vector<std::string>::const_iterator it = indexIds.begin(); it != indexIds.end(); ++it) {
+        std::optional<db::models::ProfileExItem> ex = dao.getByIndexId(*it);
+        if (ex.has_value()) {
+            rows.push_back(std::move(*ex));
+        }
+    }
+    return rows;
+}
+
 // ---------------------------------------------------------------
 std::unordered_map<std::string, long long> AppController::getRunningDurations() {
     std::unordered_map<std::string, long long> result;
