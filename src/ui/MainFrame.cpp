@@ -544,10 +544,19 @@ void MainFrame::startMonitoring() {
     // paints against the correct size/position instead of the panel's initial
     // best-fit (which can be 0x0 and silently early-return from paint).
     repositionProxyMonPanel();
-    if (controller_ && controller_->getConfig().proxy_process_monitor.enabled) {
-        startProxyMonitor(controller_->getConfig().proxy_process_monitor.checkIntervalMs);
-    } else {
-        updateProxyMonStatus(false, 0);
+    {
+        const config::AppConfig curCfg = controller_ ? controller_->getConfig() : config::AppConfig();
+        const bool monEnabled = curCfg.proxy_process_monitor.enabled;
+        const bool probeEnabled = curCfg.independent_probe.enabled;
+        if (controller_ && (monEnabled || probeEnabled)) {
+            startProxyMonitor(curCfg.proxy_process_monitor.checkIntervalMs);
+            if (!monEnabled) {
+                // 仅探活启用：timer 运行但悬浮窗关闭，状态圆点保持灰色。
+                updateProxyMonStatus(false, 0);
+            }
+        } else {
+            updateProxyMonStatus(false, 0);
+        }
     }
     // Belt-and-suspenders: force a second Refresh after reposition + status
     // update, in case wxWidgets coalesced the two paint events.
@@ -968,7 +977,10 @@ void MainFrame::onProxyMonTimer(wxTimerEvent&) {
     // test machinery (ProxyTester local-port end-to-end + updateTestResult +
     // WARN log on failure). isRunning_ inside AppController prevents overlap
     // with a manual trigger or another test. Never closes the process.
-    controller_->testOnlineProxiesAsync(this, true);
+    // 方案 B：silent 探活独立于悬浮窗开关，由 independent_probe.enabled 门控。
+    if (controller_->isIndependentProbeEnabled()) {
+        controller_->testOnlineProxiesAsync(this, true);
+    }
 }
 
 void MainFrame::updateProxyMonStatus(bool enabled, int aliveCount) {
@@ -1175,6 +1187,15 @@ void MainFrame::onMenuConfig(wxCommandEvent&) {
         bool oldNetMonEnabled = controller_->getNetworkMonitor()->IsEnabled();
         int oldNetMonInterval = config_.network_monitor.checkIntervalMs;
         int oldNetMonTimeout = config_.network_monitor.checkTimeoutMs;
+        // Capture old proxy-process-monitor + checkUrls values BEFORE config_
+        // is overwritten by cfg (bugfix 2026-09-17: reading them after
+        // config_ = cfg made the comparisons always-false, so hot-apply of the
+        // proxy monitor switch / interval and netmon checkUrls never ran —
+        // the status-bar dot stayed green after disabling the monitor).
+        bool oldProxyMonEnabled = config_.proxy_process_monitor.enabled;
+        int oldProxyMonInterval = config_.proxy_process_monitor.checkIntervalMs;
+        bool oldProbeEnabled = config_.independent_probe.enabled;
+        std::vector<std::string> oldNetMonCheckUrls = config_.network_monitor.checkUrls;
         bool saveOk = controller_->saveConfig(cfg);
         if (!saveOk) {
             wxMessageBox("Failed to save configuration to file.\n"
@@ -1189,7 +1210,7 @@ void MainFrame::onMenuConfig(wxCommandEvent&) {
 
         // Detect network monitor changes
         bool netMonSettingsChanged = (cfg.network_monitor.enabled != oldNetMonEnabled) ||
-                                     (cfg.network_monitor.checkUrls != config_.network_monitor.checkUrls) ||
+                                     (cfg.network_monitor.checkUrls != oldNetMonCheckUrls) ||
                                      (cfg.network_monitor.checkIntervalMs != oldNetMonInterval) ||
                                      (cfg.network_monitor.checkTimeoutMs != oldNetMonTimeout);
 
@@ -1201,14 +1222,19 @@ void MainFrame::onMenuConfig(wxCommandEvent&) {
             }
         }
 
-        // Detect proxy process monitor changes
-        bool oldProxyMonEnabled = config_.proxy_process_monitor.enabled;
-        int oldProxyMonInterval = config_.proxy_process_monitor.checkIntervalMs;
+        // Detect proxy process monitor / independent probe changes.
+        // Timer stays alive when EITHER switch is on (it drives the widget
+        // refresh, dangling adoption AND the silent probe cadence).
         bool proxyMonEnabledChanged = (cfg.proxy_process_monitor.enabled != oldProxyMonEnabled);
         bool proxyMonIntervalChanged = (cfg.proxy_process_monitor.checkIntervalMs != oldProxyMonInterval);
-        if (proxyMonEnabledChanged || proxyMonIntervalChanged) {
-            if (cfg.proxy_process_monitor.enabled) {
+        bool probeEnabledChanged = (cfg.independent_probe.enabled != oldProbeEnabled);
+        bool needProxyMonTimer = cfg.proxy_process_monitor.enabled || cfg.independent_probe.enabled;
+        if (proxyMonEnabledChanged || proxyMonIntervalChanged || probeEnabledChanged) {
+            if (needProxyMonTimer) {
                 startProxyMonitor(cfg.proxy_process_monitor.checkIntervalMs);
+                if (!cfg.proxy_process_monitor.enabled) {
+                    updateProxyMonStatus(false, 0);   // 保持灰点（仅探活模式）
+                }
             } else {
                 stopProxyMonitor();
             }

@@ -2027,6 +2027,18 @@ std::vector<proxy::PoolMemberView> AppController::getPoolMembers() const {
     return proxyPool_->getMembers();
 }
 
+bool AppController::isIndependentProbeEnabled() const {
+    std::lock_guard<std::mutex> lock(configMutex_);
+    return config_.independent_probe.enabled;
+}
+
+void AppController::setIndependentProbeEnabled(bool on) {
+    std::lock_guard<std::mutex> lock(configMutex_);
+    config_.independent_probe.enabled = on;
+    Logger::write(std::string("[Config] independent_probe.enabled -> ") +
+                  (on ? "true" : "false"), LogLevel::INFO);
+}
+
 void AppController::setPoolReportHealth(bool on) {
     std::lock_guard<std::mutex> lock(poolMutex_);
     if (proxyPool_) proxyPool_->setReportHealth(on);

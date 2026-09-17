@@ -223,6 +223,12 @@ bool isTestCancelled() const;
      void setPoolReportHealth(bool on);
      void setPoolAutoPruneDead(bool on);
      void setPoolAutoOptimize(bool on);
+     // Independent-proxy periodic silent probe (decoupled from the floating
+     // widget switch per 方案 B). isIndependentProbeEnabled() is read by the
+     // monitor timer each tick; setIndependentProbeEnabled() is the live
+     // runtime toggle from StandaloneFloatingWidget (persisted via ConfigDialog).
+     bool isIndependentProbeEnabled() const;
+     void setIndependentProbeEnabled(bool on);
      // Trigger an immediate health probe of the running pool (no-op when idle).
      void probePoolNow();
 

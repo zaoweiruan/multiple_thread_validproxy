@@ -93,6 +93,7 @@ private:
     void onToggleReport(wxCommandEvent& event);
     void onTogglePrune(wxCommandEvent& event);
     void onToggleOptimize(wxCommandEvent& event);
+    void onToggleProbe(wxCommandEvent& event);
     void onMenuLocateProxy(wxCommandEvent& event);
     void onPoolMembersUpdated(PoolMembersUpdatedEvent& event);
     void updatePoolStatusText();
@@ -132,6 +133,7 @@ private:
     wxCheckBox* reportChk_{nullptr};
     wxCheckBox* pruneChk_{nullptr};
     wxCheckBox* optimizeChk_{nullptr};
+    wxCheckBox* probeChk_{nullptr};   // 独立代理周期探活开关（方案 B）
     long contextMenuSel_{-1};  // 右键菜单弹出时选中的行，供 onMenuCloseProxy 使用
     bool active_{false};
     bool hovering_{false};

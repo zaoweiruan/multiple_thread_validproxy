@@ -99,6 +99,13 @@ struct AppConfig {
         int checkIntervalMs{30000};
     } proxy_process_monitor;
 
+    // Independent proxy periodic silent probe configuration.
+    // interval reuses proxy_process_monitor.checkIntervalMs;
+    // failure threshold reuses standalone_pool.evaluate.pruneFailStreak.
+    struct {
+        bool enabled = true;
+    } independent_probe;
+
     // Proxy configuration (standalone proxy)
     struct {
         int socks_base_port = 10808;

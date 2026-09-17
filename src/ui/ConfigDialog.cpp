@@ -51,53 +51,62 @@ ConfigDialog::ConfigDialog(wxWindow* parent, const config::AppConfig& cfg)
     propGrid_->Append(new wxIntProperty(L"起始端口", "xray_start_port", cfg.xray_start_port));
     propGrid_->Append(new wxIntProperty(L"API 端口", "xray_api_port", cfg.xray_api_port));
 
-    // --- 代理配置 ---
-    propGrid_->Append(new wxPropertyCategory(L"代理配置"));
+    // --- 代理后端选择（原「代理配置」，解决 P3：后端路径条件化可见） ---
+    propGrid_->Append(new wxPropertyCategory(L"代理后端选择"));
+    {
+        wxBoolProperty* useSbProp = new wxBoolProperty(L"使用sing-box为代理终端", "proxy_use_singbox", cfg.proxy.use_singbox);
+        propGrid_->Append(useSbProp);
+    }
+    propGrid_->Append(new wxIntProperty(L"SOCKS 监听端口", "proxy_socks_base_port", cfg.proxy.socks_base_port));
+
+    // Xray 后端路径组（use_singbox=false 时可见）——指针存成员供 applyBackendVisibility 使用
+    xrayBackendCat_ = new wxPropertyCategory(L"Xray 后端路径");
+    propGrid_->Append(xrayBackendCat_);
     {
         wxFileProperty* xrayExecProp = new wxFileProperty(L"xray执行文件", "proxy_xray_executable", cfg.proxy.xray_executable);
-        propGrid_->Append(xrayExecProp);
+        propGrid_->AppendIn(xrayBackendCat_, xrayExecProp);
         propGrid_->SetPropertyAttribute("proxy_xray_executable", wxPG_FILE_SHOW_FULL_PATH, (long)1);
         xrayExecProp->ChangeFlag(wxPGFlags::ShowFullFileName, true);
     }
     {
         wxFileProperty* assetDirProp = new wxFileProperty(L"xray_location_asset 目录", "proxy_xray_asset_dir", cfg.proxy.xray_asset_dir);
-        propGrid_->Append(assetDirProp);
+        propGrid_->AppendIn(xrayBackendCat_, assetDirProp);
         propGrid_->SetPropertyAttribute("proxy_xray_asset_dir", wxPG_FILE_SHOW_FULL_PATH, (long)1);
         assetDirProp->ChangeFlag(wxPGFlags::ShowFullFileName, true);
         propGrid_->SetPropertyAttribute("proxy_xray_asset_dir", wxPG_DIALOG_TITLE, L"选择 Xray 资源目录");
     }
     {
         wxFileProperty* tmplProp = new wxFileProperty(L"xray配置模板", "proxy_template_config_path", cfg.proxy.template_config_path);
-        propGrid_->Append(tmplProp);
+        propGrid_->AppendIn(xrayBackendCat_, tmplProp);
         propGrid_->SetPropertyAttribute("proxy_template_config_path", wxPG_FILE_SHOW_FULL_PATH, (long)1);
         tmplProp->ChangeFlag(wxPGFlags::ShowFullFileName, true);
         propGrid_->SetPropertyAttribute("proxy_template_config_path", wxPG_DIALOG_TITLE, L"选择 Xray 启动配置模板文件");
     }
+
+    // sing-box 后端路径组（use_singbox=true 时可见）——指针存成员供 applyBackendVisibility 使用
+    sbBackendCat_ = new wxPropertyCategory(L"sing-box 后端路径");
+    propGrid_->Append(sbBackendCat_);
     {
         wxFileProperty* sbExecProp = new wxFileProperty(L"Sing-box执行文件", "proxy_singbox_executable", cfg.proxy.singbox_executable);
-        propGrid_->Append(sbExecProp);
+        propGrid_->AppendIn(sbBackendCat_, sbExecProp);
         propGrid_->SetPropertyAttribute("proxy_singbox_executable", wxPG_FILE_SHOW_FULL_PATH, (long)1);
         sbExecProp->ChangeFlag(wxPGFlags::ShowFullFileName, true);
         propGrid_->SetPropertyAttribute("proxy_singbox_executable", wxPG_DIALOG_TITLE, L"选择 Sing-box 可执行文件");
     }
     {
-        // singbox_asset_dir：geoip.dat / geosite.dat 等 Sing-box 资源目录（与
-        // proxy.xray_asset_dir 对应；此前仅存在于 struct/序列化器，无 UI 属性）
         wxFileProperty* sbAssetProp = new wxFileProperty(L"Sing-box资源目录", "proxy_singbox_asset_dir", cfg.proxy.singbox_asset_dir);
-        propGrid_->Append(sbAssetProp);
+        propGrid_->AppendIn(sbBackendCat_, sbAssetProp);
         propGrid_->SetPropertyAttribute("proxy_singbox_asset_dir", wxPG_FILE_SHOW_FULL_PATH, (long)1);
         sbAssetProp->ChangeFlag(wxPGFlags::ShowFullFileName, true);
         propGrid_->SetPropertyAttribute("proxy_singbox_asset_dir", wxPG_DIALOG_TITLE, L"选择 Sing-box 资源目录");
     }
     {
         wxFileProperty* sbTmplProp = new wxFileProperty(L"Sing-box配置模板", "proxy_singbox_template_config_path", cfg.proxy.singbox_template_config_path);
-        propGrid_->Append(sbTmplProp);
+        propGrid_->AppendIn(sbBackendCat_, sbTmplProp);
         propGrid_->SetPropertyAttribute("proxy_singbox_template_config_path", wxPG_FILE_SHOW_FULL_PATH, (long)1);
         sbTmplProp->ChangeFlag(wxPGFlags::ShowFullFileName, true);
         propGrid_->SetPropertyAttribute("proxy_singbox_template_config_path", wxPG_DIALOG_TITLE, L"选择 Sing-box 启动配置模板文件");
     }
-    propGrid_->Append(new wxBoolProperty(L"使用sing-box为代理终端", "proxy_use_singbox", cfg.proxy.use_singbox));
-    propGrid_->Append(new wxIntProperty(L"SOCKS 监听端口", "proxy_socks_base_port", cfg.proxy.socks_base_port));
 
     // --- 测试 配置 ---
     propGrid_->Append(new wxPropertyCategory(L"测试"));
@@ -185,16 +194,42 @@ ConfigDialog::ConfigDialog(wxWindow* parent, const config::AppConfig& cfg)
     propGrid_->Append(new wxBoolProperty(L"测试时通知", "notification_on_test", cfg.notification_on_test));
     propGrid_->Append(new wxBoolProperty(L"任务完成通知", "autotask_notify", cfg.auto_task.notify_on_complete));
 
-    // --- 监控代理进程 配置 ---
-    propGrid_->Append(new wxPropertyCategory(L"监控代理进程"));
+    // --- 监控悬浮窗 配置（原「监控代理进程」，解决 P5） ---
+    propGrid_->Append(new wxPropertyCategory(L"监控悬浮窗"));
     propGrid_->Append(new wxBoolProperty(L"启用", "proxy_process_monitor_enabled", cfg.proxy_process_monitor.enabled));
     propGrid_->Append(new wxIntProperty(L"检测间隔(毫秒)", "proxy_process_monitor_check_interval_ms", cfg.proxy_process_monitor.checkIntervalMs));
 
-    // --- 独立代理池 配置 ---
+    // --- 健康度评估 配置（新增父分类，2026-09-17 评审层级树） ---
+    wxPropertyCategory* healthCat = new wxPropertyCategory(L"健康度评估");
+    propGrid_->Append(healthCat);
+
+    // 独立代理评估 子分类（解决 P2）：周期探活开关 + ProxyScorer 三权重
+    wxPropertyCategory* indepEvalCat = new wxPropertyCategory(L"独立代理评估");
+    propGrid_->AppendIn(healthCat, indepEvalCat);
+    propGrid_->AppendIn(indepEvalCat, new wxBoolProperty(L"周期探活", "independent_probe_enabled", cfg.independent_probe.enabled));
+    propGrid_->AppendIn(indepEvalCat, new wxFloatProperty(L"延迟权重(0.0-1.0)", "scoring_delay_weight", cfg.proxy.scoring_delay_weight));
+    propGrid_->AppendIn(indepEvalCat, new wxFloatProperty(L"稳定性权重(0.0-1.0)", "scoring_stability_weight", cfg.proxy.scoring_stability_weight));
+    propGrid_->AppendIn(indepEvalCat, new wxFloatProperty(L"历史权重(0.0-1.0)", "scoring_history_weight", cfg.proxy.scoring_history_weight));
+
+    // 代理池评估 子分类（解决 P1/P4/P6）：evaluate.* 六项
+    wxPropertyCategory* poolEvalCat = new wxPropertyCategory(L"代理池评估");
+    propGrid_->AppendIn(healthCat, poolEvalCat);
+    propGrid_->AppendIn(poolEvalCat, new wxIntProperty(L"评估间隔(秒)", "pool_eval_interval", cfg.standalone_pool.evaluate.intervalSec));
+    propGrid_->AppendIn(poolEvalCat, new wxBoolProperty(L"报告健康结果", "pool_eval_report_health", cfg.standalone_pool.evaluate.reportHealth));
+    propGrid_->AppendIn(poolEvalCat, new wxBoolProperty(L"自动剔除失效成员", "pool_eval_auto_prune", cfg.standalone_pool.evaluate.autoPruneDead));
+    propGrid_->AppendIn(poolEvalCat, new wxIntProperty(L"剔除阈值(连续失败次数)", "pool_eval_prune_streak", cfg.standalone_pool.evaluate.pruneFailStreak));
+    propGrid_->AppendIn(poolEvalCat, new wxBoolProperty(L"自动优化(预留记录式)", "pool_eval_auto_optimize", cfg.standalone_pool.evaluate.autoOptimize));
+    // 探针 worker 数：0 = 禁用常驻探针池（ProxyProbePool::start 的 workerCount<=0 分支），
+    // 1-N = 常驻 Xray 探针 worker 数（spec PoolConfigDialogAdjust）。
+    propGrid_->AppendIn(poolEvalCat, new wxIntProperty(L"探针 worker 数(0=禁用)", "pool_eval_probe_workers", cfg.standalone_pool.evaluate.probeWorkers));
+
+    // --- 代理池配置（拆分，解决 P1/P4/P6：pool 本体 + observatory） ---
     // 方案甲：mode / observatory.type / observatory.samplingCount 三个预留字段（零运行时
     // 消费方）不在 UI 暴露，后端往返由 loadConfig() 起底的 editedConfig_ 原值透传。
     // 端口为期望值：实际监听端口由 PortManager 在池启动时分配（见 spec §4.1 脚注）。
-    propGrid_->Append(new wxPropertyCategory(L"独立代理池"));
+    // 观测探测地址：恒被 test.url 覆盖（AppController::startProxyPool 用 test_url
+    // 填充 probeUrl），后端字段保留作极端兜底但不暴露 UI（spec PoolConfigDialogAdjust）。
+    propGrid_->Append(new wxPropertyCategory(L"代理池配置"));
     propGrid_->Append(new wxBoolProperty(L"启用", "pool_enabled", cfg.standalone_pool.enabled));
     propGrid_->Append(new wxIntProperty(L"SOCKS 端口(期望值)", "pool_socks_port", cfg.standalone_pool.socksPort));
     propGrid_->Append(new wxIntProperty(L"API 端口(期望值)", "pool_api_port", cfg.standalone_pool.apiPort));
@@ -207,18 +242,8 @@ ConfigDialog::ConfigDialog(wxWindow* parent, const config::AppConfig& cfg)
         propGrid_->Append(new wxEnumProperty(L"均衡策略", "pool_balancer_strategy", strategyChoices));
         propGrid_->SetPropertyValue("pool_balancer_strategy", wxString(cfg.standalone_pool.balancerStrategy));
     }
-    // 观测探测地址：恒被 test.url 覆盖（AppController::startProxyPool 用 test_url
-    // 填充 probeUrl），后端字段保留作极端兜底但不暴露 UI（spec PoolConfigDialogAdjust）。
     propGrid_->Append(new wxIntProperty(L"观测间隔(秒)", "pool_obs_interval", cfg.standalone_pool.observatory.intervalSec));
     propGrid_->Append(new wxIntProperty(L"观测超时(秒)", "pool_obs_timeout", cfg.standalone_pool.observatory.timeoutSec));
-    propGrid_->Append(new wxIntProperty(L"评估间隔(秒)", "pool_eval_interval", cfg.standalone_pool.evaluate.intervalSec));
-    propGrid_->Append(new wxBoolProperty(L"报告健康结果", "pool_eval_report_health", cfg.standalone_pool.evaluate.reportHealth));
-    propGrid_->Append(new wxBoolProperty(L"自动剔除失效成员", "pool_eval_auto_prune", cfg.standalone_pool.evaluate.autoPruneDead));
-    propGrid_->Append(new wxIntProperty(L"剔除阈值(连续失败次数)", "pool_eval_prune_streak", cfg.standalone_pool.evaluate.pruneFailStreak));
-    propGrid_->Append(new wxBoolProperty(L"自动优化(预留记录式)", "pool_eval_auto_optimize", cfg.standalone_pool.evaluate.autoOptimize));
-    // 探针 worker 数：0 = 禁用常驻探针池（ProxyProbePool::start 的 workerCount<=0 分支），
-    // 1-N = 常驻 Xray 探针 worker 数（spec PoolConfigDialogAdjust）。
-    propGrid_->Append(new wxIntProperty(L"探针 worker 数(0=禁用)", "pool_eval_probe_workers", cfg.standalone_pool.evaluate.probeWorkers));
 
     propGrid_->SetPropertyAttributeAll(wxPG_BOOL_USE_CHECKBOX, true);
 
@@ -321,6 +346,13 @@ void ConfigDialog::loadConfig(const config::AppConfig& cfg) {
     propGrid_->SetPropertyValue("pool_eval_prune_streak", cfg.standalone_pool.evaluate.pruneFailStreak);
     propGrid_->SetPropertyValue("pool_eval_auto_optimize", cfg.standalone_pool.evaluate.autoOptimize);
     propGrid_->SetPropertyValue("pool_eval_probe_workers", cfg.standalone_pool.evaluate.probeWorkers);
+
+    // 独立代理评估 子分类回填（方案 B：周期探活 + ProxyScorer 三权重）
+    propGrid_->SetPropertyValue("independent_probe_enabled", cfg.independent_probe.enabled);
+    propGrid_->SetPropertyValue("scoring_delay_weight", cfg.proxy.scoring_delay_weight);
+    propGrid_->SetPropertyValue("scoring_stability_weight", cfg.proxy.scoring_stability_weight);
+    propGrid_->SetPropertyValue("scoring_history_weight", cfg.proxy.scoring_history_weight);
+    applyBackendVisibility();
 }
 
 bool ConfigDialog::saveConfig() {
@@ -453,11 +485,24 @@ bool ConfigDialog::saveConfig() {
         editedConfig_.standalone_pool.evaluate.probeWorkers = pw;
     }
 
+    // 独立代理评估 子分类读回（方案 B）
+    editedConfig_.independent_probe.enabled = propGrid_->GetPropertyValueAsBool("independent_probe_enabled");
+    editedConfig_.proxy.scoring_delay_weight = propGrid_->GetPropertyValueAsDouble("scoring_delay_weight");
+    editedConfig_.proxy.scoring_stability_weight = propGrid_->GetPropertyValueAsDouble("scoring_stability_weight");
+    editedConfig_.proxy.scoring_history_weight = propGrid_->GetPropertyValueAsDouble("scoring_history_weight");
+
     // AutoTask fields
     editedConfig_.auto_task.steps = stepOrder_;
     editedConfig_.auto_task.notify_on_complete = propGrid_->GetPropertyValueAsBool("autotask_notify");
 
     return validateConfig();
+}
+
+void ConfigDialog::applyBackendVisibility() {
+    if (!propGrid_) return;
+    const bool useSingbox = propGrid_->GetPropertyValueAsBool("proxy_use_singbox");
+    if (xrayBackendCat_) { xrayBackendCat_->Hide(useSingbox); }
+    if (sbBackendCat_)   { sbBackendCat_->Hide(!useSingbox); }
 }
 
 static const char* stepNameForProp(const wxString& propName) {
@@ -631,6 +676,17 @@ bool ConfigDialog::validateConfig() {
             return false;
         }
     }
+
+    // Scoring weights 校验（0.0-1.0）
+    {
+        const double dw = editedConfig_.proxy.scoring_delay_weight;
+        const double sw = editedConfig_.proxy.scoring_stability_weight;
+        const double hw = editedConfig_.proxy.scoring_history_weight;
+        if (dw < 0.0 || dw > 1.0 || sw < 0.0 || sw > 1.0 || hw < 0.0 || hw > 1.0) {
+            wxMessageBox("代理评分权重必须在 0.0 到 1.0 之间", "验证错误", wxOK | wxICON_ERROR);
+            return false;
+        }
+    }
     return true;
 }
 
@@ -649,6 +705,9 @@ void ConfigDialog::onCancel(wxCommandEvent&) {
 void ConfigDialog::onPropertyChanged(wxPropertyGridEvent& event) {
     modified_ = true;
     wxString propName = event.GetPropertyName();
+    if (propName == "proxy_use_singbox") {
+        applyBackendVisibility();
+    }
     if (propName == "update_method_accelerator" ||
         propName == "update_method_proxy" ||
         propName == "update_method_direct") {

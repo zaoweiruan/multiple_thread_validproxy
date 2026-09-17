@@ -125,6 +125,9 @@ boost::json::object ConfigJsonSerializer::serialize(const AppConfig& config) con
     if (!config.proxy.singbox_template_config_path.empty()) {
         proxyObj["singbox_template_config_path"] = config.proxy.singbox_template_config_path;
     }
+    proxyObj["scoring_delay_weight"] = config.proxy.scoring_delay_weight;
+    proxyObj["scoring_stability_weight"] = config.proxy.scoring_stability_weight;
+    proxyObj["scoring_history_weight"] = config.proxy.scoring_history_weight;
     root["proxy"] = proxyObj;
 
     // network_monitor
@@ -151,6 +154,11 @@ boost::json::object ConfigJsonSerializer::serialize(const AppConfig& config) con
     pmObj["enabled"] = config.proxy_process_monitor.enabled;
     pmObj["check_interval_ms"] = config.proxy_process_monitor.checkIntervalMs;
     root["proxy_process_monitor"] = pmObj;
+
+    // independent_probe
+    boost::json::object ipObj;
+    ipObj["enabled"] = config.independent_probe.enabled;
+    root["independent_probe"] = ipObj;
 
     // standalone_pool
     {

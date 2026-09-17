@@ -278,12 +278,15 @@ StandaloneFloatingWidget::StandaloneFloatingWidget(const config::AppConfig& cfg,
     reportChk_ = new wxCheckBox(this, wxID_ANY, L"上报健康");
     pruneChk_ = new wxCheckBox(this, wxID_ANY, L"自动剔除死亡");
     optimizeChk_ = new wxCheckBox(this, wxID_ANY, L"自动优化");
+    probeChk_ = new wxCheckBox(this, wxID_ANY, L"独立代理探活");
     reportChk_->SetBackgroundColour(wxColour(245, 246, 247));
     pruneChk_->SetBackgroundColour(wxColour(245, 246, 247));
     optimizeChk_->SetBackgroundColour(wxColour(245, 246, 247));
+    probeChk_->SetBackgroundColour(wxColour(245, 246, 247));
     reportChk_->SetValue(cfg_.standalone_pool.evaluate.reportHealth);
     pruneChk_->SetValue(cfg_.standalone_pool.evaluate.autoPruneDead);
     optimizeChk_->SetValue(cfg_.standalone_pool.evaluate.autoOptimize);
+    probeChk_->SetValue(cfg_.independent_probe.enabled);
 
     wxBoxSizer* poolBtnRow = new wxBoxSizer(wxHORIZONTAL);
     poolBtnRow->Add(startStopBtn_, 0, wxRIGHT, 6);
@@ -293,7 +296,8 @@ StandaloneFloatingWidget::StandaloneFloatingWidget(const config::AppConfig& cfg,
     wxBoxSizer* poolChkRow = new wxBoxSizer(wxHORIZONTAL);
     poolChkRow->Add(reportChk_, 0, wxRIGHT, 12);
     poolChkRow->Add(pruneChk_, 0, wxRIGHT, 12);
-    poolChkRow->Add(optimizeChk_, 0, 0, 0);
+    poolChkRow->Add(optimizeChk_, 0, wxRIGHT, 12);
+    poolChkRow->Add(probeChk_, 0, 0, 0);
 
     wxBoxSizer* panelSizer = new wxBoxSizer(wxVERTICAL);
     panelSizer->Add(list_, 1, wxEXPAND | wxALL, 6);
@@ -328,6 +332,7 @@ StandaloneFloatingWidget::StandaloneFloatingWidget(const config::AppConfig& cfg,
     reportChk_->Bind(wxEVT_CHECKBOX, &StandaloneFloatingWidget::onToggleReport, this);
     pruneChk_->Bind(wxEVT_CHECKBOX, &StandaloneFloatingWidget::onTogglePrune, this);
     optimizeChk_->Bind(wxEVT_CHECKBOX, &StandaloneFloatingWidget::onToggleOptimize, this);
+    probeChk_->Bind(wxEVT_CHECKBOX, &StandaloneFloatingWidget::onToggleProbe, this);
     // 池成员更新事件：MainFrame 不再转发，悬浮窗自消费（timer 兜底全量刷新）。
     Bind(wxEVT_POOL_MEMBERS_UPDATED, &StandaloneFloatingWidget::onPoolMembersUpdated, this);
     list_->Bind(wxEVT_LIST_ITEM_ACTIVATED, &StandaloneFloatingWidget::onItemActivated, this);
@@ -384,6 +389,8 @@ void StandaloneFloatingWidget::applySettings(const config::AppConfig& newCfg) {
     if (reportChk_) { reportChk_->SetValue(cfg_.standalone_pool.evaluate.reportHealth); }
     if (pruneChk_) { pruneChk_->SetValue(cfg_.standalone_pool.evaluate.autoPruneDead); }
     if (optimizeChk_) { optimizeChk_->SetValue(cfg_.standalone_pool.evaluate.autoOptimize); }
+    // 独立代理探活开关：不随池启用状态灰化（独立于池，见方案 B）。
+    if (probeChk_) { probeChk_->SetValue(cfg_.independent_probe.enabled); }
 
     if (!cfg_.proxy_process_monitor.enabled) {
         active_ = false;
@@ -791,6 +798,14 @@ void StandaloneFloatingWidget::onToggleOptimize(wxCommandEvent& event) {
     event.Skip();
 }
 
+// 独立代理周期探活开关（方案 B）：仅运行时热切换，持久值由 ConfigDialog 保存。
+void StandaloneFloatingWidget::onToggleProbe(wxCommandEvent& event) {
+    if (controller_) {
+        controller_->setIndependentProbeEnabled(probeChk_->GetValue());
+    }
+    event.Skip();
+}
+
 // 右键菜单「定位到代理列表」：任意选中行可用，复用 LocateProxyEvent。
 void StandaloneFloatingWidget::onMenuLocateProxy(wxCommandEvent&) {
     if (!controller_ || !locateTarget_) {
@@ -1038,6 +1053,7 @@ void StandaloneFloatingWidget::applyShape(const wxPoint& keepCenter) {
         if (reportChk_) reportChk_->Hide();
         if (pruneChk_) pruneChk_->Hide();
         if (optimizeChk_) optimizeChk_->Hide();
+        if (probeChk_) probeChk_->Hide();
         // bugfix 2026-09-14 (OrbHitZone): poolStatusText_ 是统一变更新增的第 8 个
         // 池控件，此前唯一遗漏 Hide——Orb 模式其 HWND 仍横亘球上部截获鼠标命中，
         // 造成悬停/单击仅下半球有效的死区。
@@ -1061,6 +1077,7 @@ void StandaloneFloatingWidget::applyShape(const wxPoint& keepCenter) {
         if (reportChk_) reportChk_->Show();
         if (pruneChk_) pruneChk_->Show();
         if (optimizeChk_) optimizeChk_->Show();
+        if (probeChk_) probeChk_->Show();
         // bugfix 2026-09-14 (OrbHitZone): 与 Orb 分支对称，池状态文本恢复显示。
         if (poolStatusText_) poolStatusText_->Show();
         Layout();

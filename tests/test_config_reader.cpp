@@ -165,6 +165,34 @@ TEST_F(ConfigReaderTest, SaveRoundTrip_FieldCompleteness) {
 }
 
 // ============================================================
+// independent_probe + scoring weights 往返 — 方案 B 新字段
+// ============================================================
+TEST_F(ConfigReaderTest, SaveRoundTrip_IndependentProbeAndScoring) {
+    std::string tmpDirGeneric = std::filesystem::path(tempDir_.path()).generic_string();
+
+    AppConfig original;
+    original.database_path = tmpDirGeneric + "/fc_db.db";
+    original.proxy.xray_executable = tmpDirGeneric + "/fc_xray.exe";
+    original.independent_probe.enabled = false;
+    original.proxy.scoring_delay_weight = 0.4;
+    original.proxy.scoring_stability_weight = 0.35;
+    original.proxy.scoring_history_weight = 0.25;
+
+    touchFile(original.database_path);
+    touchFile(original.proxy.xray_executable);
+
+    ASSERT_TRUE(ConfigReader::save(configPath("fc_indprobe.json"), original));
+
+    std::optional<AppConfig> loaded = ConfigReader::load(configPath("fc_indprobe.json"));
+    ASSERT_TRUE(loaded.has_value());
+
+    EXPECT_EQ(loaded->independent_probe.enabled, false);
+    EXPECT_DOUBLE_EQ(loaded->proxy.scoring_delay_weight, 0.4);
+    EXPECT_DOUBLE_EQ(loaded->proxy.scoring_stability_weight, 0.35);
+    EXPECT_DOUBLE_EQ(loaded->proxy.scoring_history_weight, 0.25);
+}
+
+// ============================================================
 // Save overwrite — second save replaces first
 // ============================================================
 
