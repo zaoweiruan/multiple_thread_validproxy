@@ -3,12 +3,14 @@
 - 日期: 2026-09-16
 - 类型: Report（配置语义说明 + UI 暴露面盘点）
 - 模块: `config.proxy_process_monitor` / `config.standalone_pool`（含 `StandaloneFloatingWidget`、`ConfigDialog`、`AppController::startProxyPool`）
-- 版本: v1.1（附录：配置项架构评估 + 架构级合并方案评估）
+- 版本: v1.2（附录：配置项架构评估 + 架构级合并方案评估 + §7.3 分类重构方案评审修订）
 - 代码基线: `include/ConfigReader.h`、`include/config/sections/ProxyProcessMonitorConfigParser.h`、`include/config/sections/StandalonePoolConfigParser.h`、`include/StandaloneProxyPool.h`、`src/ui/MainFrame.cpp`、`src/ui/ConfigDialog.cpp`、`src/ui/StandaloneFloatingWidget.cpp`、`src/ui/AppController.cpp`、`bin/config.json`
 
 > **触发**: 用户咨询「两个开关的作用」与「独立代理健康度评估配置是否暴露」。本报告将代码级证据与当前生产配置对齐，作为长期文档沉淀，避免每次口头解释。
 
 > **修订记录（v1.0 → v1.1, 2026-09-16）**：新增 §7 配置项架构评估章节，覆盖 4 子节：§7.1 `standalone_pool.enabled` 必要性、§7.2 健康度评估与 `proxy_process_monitor.enabled` 合并可行性、§7.3 配置窗口分类标识问题（P1-P6）、§7.4 架构级合并方案（A/B/C 三档评估 + 推荐方案 B 详细设计）。§6 结论 #3 同步修正为「独立到新增「独立代理评分」分类」，与 §7.3 P2、§7.4 方案 B 建议一致。附录证据索引补充 v1.1 依据。
+
+> **修订记录（v1.1 → v1.2, 2026-09-17）**：按 `docs/review/2026-09-17-Review-results-of-configuration-item-reengineering.md` 评审意见修订 §7.3「建议分类重构方案」——由「平铺 13 分类」改为「层级式」：「健康度评估」新增为父分类，下挂「独立代理评估」+「代理池评估」两个子分类；「代理池配置」承载 pool 本体；「监控悬浮窗」重命名；「代理后端选择」独立分类。§6 结论 #3 同步改为「独立到新增「独立代理评估」子分类」；§7.4.4 方案 B 的 ConfigDialog 分类树对齐评审层级。附录证据索引补充 v1.2 依据。*（评审修订补记：§7.3 补 `observatory.intervalSec/timeoutSec` 归属注记；§7.4.3/§7.4.4 控件口径与灰化条件按 Plan v1.1 评审统一——「悬浮窗新增 1 个 probeChk_」且「不随池/探活状态灰化」，原稿 3 控件/灰化公式为遗留笔误。)*
 
 ---
 
@@ -296,17 +298,19 @@ config_.proxy.scoring_delay_weight * 5000.0 + 3000.0); // speed max ~5000ms
 
 1. **两个开关正交**：`proxy_process_monitor.enabled` 管「悬浮监控面板」，`standalone_pool.enabled` 管「池本体」。当前生产配置两者同时为 `true`，UI 与运行时均完整可用。
 2. **`evaluate.*` 6 字段全暴露**：ConfigDialog 全部，悬浮窗暴露 3 个开关类字段。方案甲 4 个预留字段（`mode`/`observatory.type`/`observatory.samplingCount`/`observatory.destination`）保留透传，无 UI 编辑入口。
-3. **`proxy.scoring_*_weight` 未暴露**：如用户「独立代理健康度评估」指评分权重（ProxyScorer 三因子），此部分**未在 ConfigDialog 提供控件**，需扩 UI 或继续手工编辑 config.json。若需暴露，建议**独立到新增「独立代理评分」分类**（与「独立代理池」分类分开，避免 pool 本体配置与代理评分语义混淆），新增 `proxy_scoring_delay_weight` / `proxy_scoring_stability_weight` / `proxy_scoring_history_weight` 三 `wxDoubleProperty`，并在 `validateConfig` 增加 [0.0, 1.0] 区间校验；详见 §7.3 P2 与 §7.4 方案 B。
+3. **`proxy.scoring_*_weight` 未暴露**：如用户「独立代理健康度评估」指评分权重（ProxyScorer 三因子），此部分**未在 ConfigDialog 提供控件**，需扩 UI 或继续手工编辑 config.json。若需暴露，建议**独立到新增「独立代理评估」子分类**（归属新增「健康度评估」父分类，与「代理池评估」子分类并列，避免 pool 本体配置与代理评分语义混淆），新增 `proxy_scoring_delay_weight` / `proxy_scoring_stability_weight` / `proxy_scoring_history_weight` 三 `wxDoubleProperty`，并在 `validateConfig` 增加 [0.0, 1.0] 区间校验；详见 §7.3 P2 与 §7.4 方案 B。
 4. **文档关联**：
    - `docs/specs/2026-08-26-Spec-StandaloneProxyPool-v1.0.md` — 代理池总体设计与 a/b/c 三开关语义
    - `docs/specs/2026-08-24-Spec-StandaloneFloatingWidget-v1.1.md` — 悬浮窗统一接管版设计（复用 `proxy_process_monitor.enabled`+`checkIntervalMs`）
    - `docs/specs/2026-09-09-Note-PoolMemberHealthEvaluation-v1.0.md` — 池成员健康度评估现状与后续完善清单（P1/P2/P3 缺口）
    - `docs/specs/2026-09-16-Spec-PoolConfigDialogAdjust-v1.0.md` — 本轮 ConfigDialog 方案甲调整（移除 `observatory.destination`、新增 `probeWorkers`）
    - `docs/specs/2026-08-13-Spec-ProxyScoring-History-v1.0.md` — ProxyScorer 三因子评分设计与权重来源
+   - `docs/review/2026-09-17-Review-results-of-configuration-item-reengineering.md` — 分类重构评审意见（v1.2 §7.3 层级树来源）
+   - `docs/plans/2026-09-17-Plan-HealthMonitorUnify-v1.0.md` — 方案 B 实施计划（评审修订后 v1.1，执行状态见 tracker）
 
 ---
 
-## 7. 配置项架构评估与合并方案（v1.1 附录）
+## 7. 配置项架构评估与合并方案（v1.1 附录，v1.2 评审修订）
 
 > **触发**：用户在 v1.0 结论基础上追问三问：①`standalone_pool.enabled` 是否有必要；②健康度评估开关能否与 `proxy_process_monitor.enabled` 合并；③配置窗口中代理池、独立代理健康度评估混杂需区分。§7 结构化回答三问，并给出 A/B/C 三档合并方案对比。
 
@@ -369,30 +373,43 @@ config_.proxy.scoring_delay_weight * 5000.0 + 3000.0); // speed max ~5000ms
 
 | # | 问题 | 影响 | 建议 |
 | :---: | :--- | :--- | :--- |
-| P1 | 「独立代理池」分类同时混入 **pool 本体配置**（`enabled/mode/socksPort/apiPort/balancerStrategy`）与 **evaluate 评估配置**（`intervalSec/reportHealth/autoPruneDead/pruneFailStreak/autoOptimize/probeWorkers`） | 用户不易区分「启停配置」和「评估策略」 | 拆分为「独立代理池 · 本体」+「独立代理池 · 评估」两个子分类 |
-| P2 | 「独立代理」（非池）相关的 **`proxy.scoring_*_weight` 三权重未暴露**（`AppController.cpp:412-413` 消费但 ConfigDialog 无控件） | 用户改不了评分权重，只能手工编辑 JSON | 新增分类「独立代理评分」或在「代理」分类下加三项 |
+| P1 | 「独立代理池」分类同时混入 **pool 本体配置**（`enabled/mode/socksPort/apiPort/balancerStrategy`）与 **evaluate 评估配置**（`intervalSec/reportHealth/autoPruneDead/pruneFailStreak/autoOptimize/probeWorkers`） | 用户不易区分「启停配置」和「评估策略」 | 拆分为「代理池配置」+「代理池评估」（见下方 v1.2 评审层级树） |
+| P2 | 「独立代理」（非池）相关的 **`proxy.scoring_*_weight` 三权重未暴露**（`AppController.cpp:412-413` 消费但 ConfigDialog 无控件） | 用户改不了评分权重，只能手工编辑 JSON | 新增子分类「独立代理评估」（归属新增「健康度评估」父分类）或在「代理」分类下加三项 |
 | P3 | 「代理」分类混合了 **xray 执行路径**（`xray_executable/template_config_path/asset_dir`）与 **singbox 执行路径**（`singbox_executable/singbox_asset_dir/singbox_template_config_path`） | 视觉拥挤，`use_singbox` 切换后另一套字段仍可见 | 用条件化可见性（`wxPropertyGrid::SetHidden`）隐藏未启用后端的路径字段 |
-| P4 | 「独立代理池」分类**未标注**"pool 本体 vs 评估策略"两组语义 | 用户改评估参数时不知影响范围 | 分类标题改为「独立代理池 · 本体」+「独立代理池 · 健康度评估」 |
+| P4 | 「独立代理池」分类**未标注**"pool 本体 vs 评估策略"两组语义 | 用户改评估参数时不知影响范围 | 拆分为「代理池配置」+「代理池评估」（见下方 v1.2 评审层级树） |
 | P5 | 「监控代理进程」分类的 `enabled` 与「独立代理池」分类的 `enabled` **同名** | 用户混淆两者语义 | 前者重命名为「启用悬浮窗」，后者「启用代理池」 |
 | P6 | 「独立代理池」分类字段数 12 超过单栏舒适展示（ConfigDialog 高度 600 px） | 滚动不便 | 拆分或折叠 |
 
-**建议分类重构方案**（13 分类，含 4 项拆分/新增）：
+**建议分类重构方案**（已按 `docs/review/2026-09-17-Review-results-of-configuration-item-reengineering.md` 评审意见修订，由「平铺 13 分类」改为「层级式」）：
 
 ```
 ├── 数据库
+├── 监控悬浮窗             ← 重命名（原「监控代理进程」，解决 P5）：proxy_process_monitor.*
+├── 健康度评估             ← 新增父分类
+│   ├── 独立代理评估       ← 新增子分类（解决 P2）：proxy.scoring_*_weight 三项
+│   └── 代理池评估         ← 拆分子分类（解决 P1/P4/P6）：standalone_pool.evaluate.* 六项
+├── 代理池配置             ← 拆分（解决 P1/P4/P6）：standalone_pool.enabled/mode/socksPort/apiPort/balancerStrategy + observatory.intervalSec/timeoutSec（归入本分类，见下方注记）
+├── 日志
 ├── Xray 全局 (workers / start_port / api_port)
 ├── 测试 (URL / timeout_ms)
-├── 日志
 ├── 订阅
 ├── 去重
 ├── 通知
 ├── 自动任务
-├── 代理后端选择           ← 新增：仅 use_singbox 切换器 + 后端路径字段（条件化可见，解决 P3）
-├── 监控悬浮窗             ← 重命名（原「监控代理进程」，解决 P5）：proxy_process_monitor.*
-├── 独立代理 · 评分        ← 新增（解决 P2）：proxy.scoring_*_weight 三项
-├── 独立代理池 · 本体      ← 拆分（解决 P1/P4/P6）：standalone_pool.enabled/mode/socksPort/apiPort/balancerStrategy
-└── 独立代理池 · 评估      ← 拆分（解决 P1/P4/P6）：standalone_pool.evaluate.* 六项
+└── 代理后端选择           ← 新增：仅 use_singbox 切换器 + 后端路径字段（条件化可见，解决 P3）
 ```
+
+> 归属注记：`observatory.intervalSec/timeoutSec` 评审树未列明，按 `docs/plans/2026-09-17-Plan-HealthMonitorUnify-v1.0.md` 归入「代理池配置」（属 pool 本体运行参数，非评估策略）。
+
+**与上一稿（13 分类平铺）的差异**：
+
+| 维度 | 上一稿（v1.1） | 评审修订（v1.2） |
+| :--- | :--- | :--- |
+| 结构 | 「独立代理 · 评分」/「独立代理池 · 本体」/「独立代理池 · 评估」三个平铺分类 | 「健康度评估」父分类 + 「独立代理评估」/「代理池评估」两个子分类；「代理池配置」承载 pool 本体 |
+| `proxy.scoring_*_weight` 归属 | 「独立代理 · 评分」分类 | 「独立代理评估」子分类（与方案 B 新增 `independent_probe.enabled` 同组，语义=「独立代理健康度」） |
+| pool 本体归属 | 「独立代理池 · 本体」分类 | 「代理池配置」分类（`enabled/mode/socksPort/apiPort/balancerStrategy`） |
+| 池相关分类位置 | 分散在树末 | 集中放置（监控悬浮窗 → 健康度评估 → 代理池配置），符合「监控 → 评估 → 配置」心智流 |
+| 不变项 | — | 「代理后端选择」独立分类（P3）与「监控悬浮窗」重命名（P5）保留 |
 
 **实施前置**：需按 AGENTS.md §6.2 走 `writing-plans` skill 创建 Spec + Plan，再落地代码改动。
 
@@ -406,7 +423,7 @@ config_.proxy.scoring_delay_weight * 5000.0 + 3000.0); // speed max ~5000ms
 | :--- | :---: | :--- |
 | **UI 展示层** | ✅ 已合并 | `docs/specs/2026-09-09-Spec-ProxyPoolMonitorUnify-v1.0.md`：悬浮窗 `UnifiedMonitorRow` + `MonitorType`（独立/池），Orb 计数=在线代理总数，`StandalonePoolDialog` 废弃，`ID_MENU_OPEN_POOL`/`poolDialog_` 清理 |
 | **数据控制层** | ❌ 三独立数据流 | 池评估 `evaluatorLoop`（池线程）+ 独立 silent 探活（`proxyMonTimer_` UI 线程回调）+ ProxyScorer 权重（评分纯函数） |
-| **配置层** | ❌ 三分类分散 | 「监控代理进程」+「独立代理池」（含 pool 本体 + evaluate）+ 独立代理评分缺失 |
+| **配置层** | ❌ 三分类分散 | 「监控代理进程」+「独立代理池」（含 pool 本体 + evaluate）+ 独立代理评估缺失 |
 
 #### 7.4.2 数据流可合并性分析
 
@@ -422,8 +439,8 @@ config_.proxy.scoring_delay_weight * 5000.0 + 3000.0); // speed max ~5000ms
 
 | 方案 | 范围 | 改动量 | 风险 | 建议 |
 | :---: | :--- | :--- | :--- | :--- |
-| **A. 轻量：配置层聚合** | ConfigDialog 分类重命名「监控与评估」（含 `proxy_process_monitor` + `standalone_pool` + 新增 `proxy.scoring_*_weight`） | 单文件 `ConfigDialog.cpp` ~50 行 | 低 | 立即可做 |
-| **B. 中等：配置层聚合 + 控制层解耦** | A + 新增 `independent_probe.enabled` 独立开关（从 `proxy_process_monitor.enabled` 解耦 silent 探活）+ 悬浮窗内新增 3 个独立代理评估控件 | `ConfigDialog` + `StandaloneFloatingWidget` + `AppController` + `ConfigReader` + `ConfigJsonSerializer`，约 200 行 | 中 | **✅ 推荐** |
+| **A. 轻量：配置层聚合** | ConfigDialog 按 v1.2 评审层级树重组分类（「监控悬浮窗」重命名 + 「健康度评估」父分类含「独立代理评估」/「代理池评估」子分类 + 「代理池配置」承载 pool 本体 + 新增 `proxy.scoring_*_weight`） | 单文件 `ConfigDialog.cpp` ~50 行 | 低 | 立即可做 |
+| **B. 中等：配置层聚合 + 控制层解耦** | A + 新增 `independent_probe.enabled` 独立开关（从 `proxy_process_monitor.enabled` 解耦 silent 探活）+ 悬浮窗内新增 1 个独立代理评估控件（`probeChk_`） | `ConfigDialog` + `StandaloneFloatingWidget` + `AppController` + `ConfigReader` + `ConfigJsonSerializer`，约 200 行 | 中 | **✅ 推荐** |
 | **C. 深度：数据面统一评估引擎** | 引入 `UnifiedHealthEvaluator`，池评估 + silent 探活 + ProxyScorer 全走统一引擎 | 约 800-1200 行新代码 + 重构 6 文件 | 高 | ❌ 收益不匹配 |
 
 #### 7.4.4 方案 B 详细设计
@@ -443,21 +460,21 @@ config_.proxy.scoring_delay_weight * 5000.0 + 3000.0); // speed max ~5000ms
 
 2. **`ConfigJsonSerializer` + Parser**：新增 `independent_probe` 段序列化 + 解析分支
 
-3. **`ConfigDialog` 分类重构**（3 分类改为 2 分类）：
+3. **`ConfigDialog` 分类重构**（按 `2026-09-17` 评审层级式树重建）：
    ```
-   监控与评估 (合并展示，含以下子组)
-     ├─ 悬浮窗        → proxy_process_monitor.enabled / check_interval_ms
-     ├─ 独立代理评估  → independent_probe.enabled（新增）
-     ├─ 独立代理池 · 本体 → standalone_pool.enabled / mode / socksPort / apiPort / balancerStrategy
-     └─ 独立代理池 · 评估 → standalone_pool.evaluate.* 6 项
-   代理评分 (新增独立分类)
-     └─ proxy.scoring_delay_weight / stability_weight / history_weight
+   健康度评估 (新增父分类)
+     ├─ 独立代理评估  → independent_probe.enabled（新增）+ proxy.scoring_delay_weight / stability_weight / history_weight
+     └─ 代理池评估    → standalone_pool.evaluate.* 6 项
+   监控悬浮窗 (重命名，原「监控代理进程」)
+     └─ proxy_process_monitor.enabled / check_interval_ms
+   代理池配置 (拆分，承载 pool 本体)
+     └─ standalone_pool.enabled / mode / socksPort / apiPort / balancerStrategy
    ```
 
 4. **`StandaloneFloatingWidget` 新增控件**：
    - 独立代理评估勾选框 `probeChk_`（新增），绑定 `independent_probe.enabled`
    - `applySettings` 增加新字段回填
-   - 控件灰化条件：`poolEnabled || independentProbeEnabled`
+   - 控件灰化：`probeChk_` **不随池/探活状态灰化**（悬浮窗由 `proxy_process_monitor.enabled` 门控，存在期间可勾选），与池三开关（按 `standalone_pool.enabled` 灰化）正交。*(注：原稿「灰化条件 `poolEnabled || independentProbeEnabled`」会导致开关在关闭时自锁无法再开启，已按 Plan v1.1 评审修订为不灰化。)*
 
 5. **`AppController`**：silent 探活触发条件从 `proxy_process_monitor.enabled` 改为 `independent_probe.enabled`
 
@@ -465,7 +482,7 @@ config_.proxy.scoring_delay_weight * 5000.0 + 3000.0); // speed max ~5000ms
 
 **收益**：
 - 用户可从配置层单独控制 silent 探活，不再受悬浮窗启停影响
-- 配置分类语义清晰（监控与评估 vs 代理评分）
+- 配置分类语义清晰（「监控悬浮窗」+「健康度评估」父分类含「独立代理评估」/「代理池评估」子分类 +「代理池配置」，见 v1.2 评审层级树）
 - 悬浮窗内控件完整（池 3 开关 + 独立代理 1 开关）
 
 **代价**：
@@ -480,7 +497,7 @@ config_.proxy.scoring_delay_weight * 5000.0 + 3000.0); // speed max ~5000ms
 | :---: | :--- | :--- |
 | D1 | 方案档位 | A（轻量）/ B（推荐）/ C（深度） |
 | D2 | silent 探活独立开关 | 是否引入 `independent_probe.enabled` 字段 |
-| D3 | ProxyScorer 权重暴露 | 是否同步新增「代理评分」分类（3 项 `wxDoubleProperty` + [0.0,1.0] 校验） |
+| D3 | ProxyScorer 权重暴露 | 是否同步新增「独立代理评估」子分类（3 项 `wxDoubleProperty` + [0.0,1.0] 校验） |
 | D4 | 实施路径 | 仅评估 → v1.1 报告（本次执行）；落地 → 独立 Spec + Plan |
 
 #### 7.4.7 实施路径
@@ -510,3 +527,7 @@ config_.proxy.scoring_delay_weight * 5000.0 + 3000.0); // speed max ~5000ms
   - `docs/specs/2026-09-09-Spec-ProxyPoolMonitorUnify-v1.0.md`（悬浮窗已成统一展示入口，§7.4.1 UI 展示层已合并依据）
   - `docs/specs/2026-09-15-Spec-StandalonePeriodicProbe-v1.0.md`（silent 探活复用 `pruneFailStreak` 阈值，§7.4.2 语义可统一依据）
   - `docs/specs/2026-09-16-Spec-PoolConfigDialogAdjust-v1.0.md`（本轮 ConfigDialog 方案甲调整，§7.3 P1-P6 现状依据）
+
+### v1.2 评审修订依据
+
+- `docs/review/2026-09-17-Review-results-of-configuration-item-reengineering.md`（评审意见：§7.3 分类重构方案由「平铺 13 分类」修订为「层级式」——「健康度评估」父分类 + 「独立代理评估」/「代理池评估」子分类 + 「代理池配置」+ 「监控悬浮窗」重命名 + 「代理后端选择」独立分类）
