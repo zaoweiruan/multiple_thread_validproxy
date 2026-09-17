@@ -468,8 +468,10 @@ void ProxyListPanel::onContextMenu(wxDataViewEvent& event) {
     menu.AppendSeparator();
     menu.Append(ID_CONTEXT_REFRESH, "刷新");
     menu.AppendSeparator();
-    // Standalone (single-process) proxy start.
-    menu.Append(ID_CONTEXT_START_PROXY, "开启代理");
+    // Standalone (single-process) proxy start — always launches an independent
+    // xray process regardless of whether the proxy pool is running. Pool
+    // injection is a separate menu item (ID_CONTEXT_ADD_TO_POOL).
+    menu.Append(ID_CONTEXT_START_PROXY, "开启独立代理");
     // Dedicated pool entry point: when the standalone pool feature is enabled,
     // add the selected proxy to the pool (auto-starts the pool if needed). This
     // is the discoverable "add proxy to pool" action from the proxy list.
@@ -663,20 +665,6 @@ void ProxyListPanel::onStartProxy(wxCommandEvent& event) {
     if (indexId.empty()) return;
 
     if (!controller_) return;
-
-    // When the standalone proxy POOL is running, a double-click injects the
-    // proxy as a dynamic member (tag px-<indexId>) instead of launching a
-    // separate standalone xray process. Unvalidated proxies are still accepted
-    // — the pool's health evaluator surfaces them as dead.
-    if (controller_->isProxyPoolRunning()) {
-        bool ok = controller_->injectProxyToPool(indexId);
-        if (ok) {
-            Logger::write("[UI] Injected proxy into pool: " + indexId, LogLevel::REPORT);
-        } else {
-            Logger::write("[UI] Pool inject failed: " + indexId, LogLevel::WARN);
-        }
-        return;
-    }
 
     // Reject a duplicate start before any port check: if a standalone proxy
     // using the same derived config file is already running, there is no point

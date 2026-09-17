@@ -496,6 +496,10 @@ void MainFrame::startMonitoring() {
     proxyMonPanel_->Bind(wxEVT_PAINT, [this](wxPaintEvent&) {
         wxPaintDC dc(proxyMonPanel_);
         wxSize sz = proxyMonPanel_->GetClientSize();
+        Logger::write(std::string("[MainFrame] proxyMonPaint: sz=")
+            + std::to_string(sz.x) + "x" + std::to_string(sz.y)
+            + ", enabled=" + std::to_string(proxyMonEnabled_ ? 1 : 0)
+            + ", aliveCount=" + std::to_string(proxyAliveCount_), LogLevel::DEBUG);
         if (sz.x < 4 || sz.y < 4) return;
         // Background
         wxColour face = wxSystemSettings::GetColour(wxSYS_COLOUR_MENUBAR);
@@ -534,13 +538,20 @@ void MainFrame::startMonitoring() {
         dc.DrawText(label, cx + r + 4, cy - textH / 2);
     });
 
-    // Start proxy monitor timer if enabled in config
+    // Start proxy monitor timer if enabled in config.
+    // Reposition the panel to its final status-bar field BEFORE flipping
+    // proxyMonEnabled_: this way the first Refresh inside startProxyMonitor
+    // paints against the correct size/position instead of the panel's initial
+    // best-fit (which can be 0x0 and silently early-return from paint).
+    repositionProxyMonPanel();
     if (controller_ && controller_->getConfig().proxy_process_monitor.enabled) {
         startProxyMonitor(controller_->getConfig().proxy_process_monitor.checkIntervalMs);
     } else {
         updateProxyMonStatus(false, 0);
     }
-    repositionProxyMonPanel();
+    // Belt-and-suspenders: force a second Refresh after reposition + status
+    // update, in case wxWidgets coalesced the two paint events.
+    if (proxyMonPanel_) proxyMonPanel_->Refresh();
 
     // Startup activation: create + show the floating widget when the proxy
     // process monitor is enabled in config.
@@ -917,6 +928,9 @@ void MainFrame::repositionProxyMonPanel() {
     if (!statusBar_ || !proxyMonPanel_) return;
     wxRect fieldRect;
     statusBar_->GetFieldRect(3, fieldRect);
+    Logger::write(std::string("[MainFrame] repositionProxyMonPanel: fieldRect=(")
+        + std::to_string(fieldRect.x) + "," + std::to_string(fieldRect.y)
+        + "," + std::to_string(fieldRect.width) + "," + std::to_string(fieldRect.height) + ")", LogLevel::DEBUG);
     proxyMonPanel_->SetSize(fieldRect);
     proxyMonPanel_->Refresh();
 }
@@ -972,6 +986,8 @@ void MainFrame::startProxyMonitor(int intervalMs) {
     proxyMonTimer_ = new wxTimer(this, ID_PROXYMON_TIMER);
     Bind(wxEVT_TIMER, &MainFrame::onProxyMonTimer, this, ID_PROXYMON_TIMER);
     proxyMonTimer_->Start(intervalMs);
+    Logger::write(std::string("[MainFrame] startProxyMonitor: intervalMs=")
+        + std::to_string(intervalMs), LogLevel::DEBUG);
     updateProxyMonStatus(true, 0);
 }
 
@@ -1165,6 +1181,11 @@ void MainFrame::onMenuConfig(wxCommandEvent&) {
                          "Your changes may not persist after restart.",
                          "Save Error", wxOK | wxICON_WARNING);
         }
+        // Sync MainFrame::config_ with AppController::config_ so downstream
+        // entry points (e.g. onMenuStandaloneMonitor) do not read a stale
+        // proxy_process_monitor.enabled value and pop a false "not enabled"
+        // warning after the user just saved the new value via the dialog.
+        config_ = cfg;
 
         // Detect network monitor changes
         bool netMonSettingsChanged = (cfg.network_monitor.enabled != oldNetMonEnabled) ||

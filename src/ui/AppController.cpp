@@ -2002,7 +2002,13 @@ bool AppController::injectProxyToPool(const std::string& indexId) {
     if (!pool) return false;
     std::optional<db::models::Profileitem> profile = getProxyByIndexId(indexId);
     if (!profile) return false;
-    return pool->injectMember(*profile);
+    bool ok = pool->injectMember(*profile);
+    if (ok) {
+        // 加入代理池意味着代理已被启动并注入 Xray balancer，与独立代理启动
+        // 语义一致：刷新 ProfileExItem.message 的启动时间侧（保留测试时间侧）。
+        exDao_.updateStartupTime(indexId, db_);
+    }
+    return ok;
 }
 
 bool AppController::removePoolMember(long long indexId, bool graceful) {
@@ -2254,6 +2260,7 @@ void AppController::doTestOnlineProxies(wxEvtHandler* wxHandler, bool silent) {
         int success = 0;
         int failed = 0;
         std::vector<std::string> failedIndexIds;
+        std::string failedHostsStr;
         // Every monitored proxy whose row was refreshed by updateTestResult
         // (including the port<=0 branch, which writes -1) — the UI needs
         // these indexIds to refresh exactly those rows incrementally when
@@ -2269,6 +2276,7 @@ void AppController::doTestOnlineProxies(wxEvtHandler* wxHandler, bool silent) {
             if (port <= 0) {
                 failed++;
                 failedIndexIds.push_back(mon.indexId);
+                failedHostsStr += (failedHostsStr.empty() ? std::string() : " | ") + mon.host + ":" + std::to_string(mon.socksPort);
                 // Thresholded WARN: frequent failures pile up in consecutive_failures;
                 // only log once the standalone_pool prune threshold is reached.
                 std::optional<db::models::ProfileExItem> exBad =
@@ -2289,6 +2297,7 @@ void AppController::doTestOnlineProxies(wxEvtHandler* wxHandler, bool silent) {
             } else {
                 failed++;
                 failedIndexIds.push_back(mon.indexId);
+                failedHostsStr += (failedHostsStr.empty() ? std::string() : " | ") + mon.host + ":" + std::to_string(mon.socksPort);
                 // Thresholded WARN: reuse standalone_pool.evaluate.pruneFailStreak
                 // (default 3); updateTestResult below already bumps
                 // consecutive_failures by 1, so pre-read it for the comparison.
@@ -2325,7 +2334,8 @@ void AppController::doTestOnlineProxies(wxEvtHandler* wxHandler, bool silent) {
         //  - periodic silent probe fully successful: DEBUG (no log spam)
         if (failed > 0) {
             Logger::write(std::string("Online proxies test finished: total=") + std::to_string(total) +
-                              ", success=" + std::to_string(success) + ", failed=" + std::to_string(failed),
+                              ", success=" + std::to_string(success) + ", failed=" + std::to_string(failed) +
+                              ", failed_hosts=" + failedHostsStr,
                           LogLevel::REPORT);
         } else if (silent) {
             Logger::write(std::string("Online proxies test finished: total=") + std::to_string(total) +

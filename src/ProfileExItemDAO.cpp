@@ -271,17 +271,26 @@ bool ProfileExItemDAO::updateTestResult(const std::string& indexid, long latency
       Logger::write("SQL prepare failed for select: " + std::string(sqlite3_errmsg(execDb)), LogLevel::ERR);
     }
 
-    if (success) {
+    // Only refresh the test-time side of message for VALID proxies:
+    // success && latencyMs > 0 (utils::isTestResultValid). A success with
+    // invalid latency (e.g. timeout returning 0, error returning -1) must not
+    // stamp the test time — that would mislead users into thinking the proxy
+    // was just verified when it actually was not.
+    if (utils::isTestResultValid(success, latencyMs)) {
       message = formatTestMessage(existingMessage, currentTimeString());
     } else {
       // Keep the existing message untouched (may be empty for a brand-new row).
       message = existingMessage;
-      // Reset evaluation history on test failure.
-      histStartCount = 0;
-      histRuntimeMs = 0;
-      histCrashCount = 0;
-      if (!curlMsg.empty()) {
-        Logger::write("[ProfileExItem] test failed for " + indexid + ": " + curlMsg, LogLevel::DEBUG);
+      // Reset evaluation history only on actual test failure — a proxy with
+      // success=true but latencyMs<=0 is "not yet validated" rather than
+      // "failed", so its history is preserved.
+      if (!success) {
+        histStartCount = 0;
+        histRuntimeMs = 0;
+        histCrashCount = 0;
+        if (!curlMsg.empty()) {
+          Logger::write("[ProfileExItem] test failed for " + indexid + ": " + curlMsg, LogLevel::DEBUG);
+        }
       }
     }
 
@@ -398,21 +407,24 @@ bool ProfileExItemDAO::updateTestResult(const std::string& indexid, long latency
               sqlite3_reset(selStmt);
               sqlite3_clear_bindings(selStmt);
               
-              // Only two kinds of info: test time (on success) + startup time.
-              // A failed test never overwrites the existing message.
-              std::string message;
-              if (success) {
-                  message = formatTestMessage(existingMessage, currentTimeString());
-              } else {
-                  message = existingMessage;
-                  // Reset evaluation history on test failure.
-                  histStartCount = 0;
-                  histRuntimeMs = 0;
-                  histCrashCount = 0;
-                  if (!curlMsg.empty()) {
-                      Logger::write("[ProfileExItem] test failed for " + indexid + ": " + curlMsg, LogLevel::DEBUG);
-                  }
-              }
+               // Only refresh the test-time side of message for VALID proxies:
+               // success && latencyMs > 0 (utils::isTestResultValid). A success
+               // with invalid latency must not stamp the test time.
+               std::string message;
+               if (utils::isTestResultValid(success, latencyMs)) {
+                   message = formatTestMessage(existingMessage, currentTimeString());
+               } else {
+                   message = existingMessage;
+                   // Reset evaluation history only on actual test failure.
+                   if (!success) {
+                       histStartCount = 0;
+                       histRuntimeMs = 0;
+                       histCrashCount = 0;
+                       if (!curlMsg.empty()) {
+                           Logger::write("[ProfileExItem] test failed for " + indexid + ": " + curlMsg, LogLevel::DEBUG);
+                       }
+                   }
+               }
               
               std::string delayStr = utils::isTestResultValid(success, latencyMs) ? std::to_string(latencyMs / 10) : "-1";
               int newFailures = success ? 0 : failures + 1;

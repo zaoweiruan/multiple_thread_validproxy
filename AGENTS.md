@@ -204,6 +204,6 @@ cmake --build build --parallel 8 && .\scripts\run_coverage.ps1
 | `画图` / `生成图片` / `画一只XX` / `image generation` / `generate image` / `draw a` | **agnes-image-gen** | 1. 加载技能 `skill(name="agnes-image-gen")`。<br>2. 提取用户描述，增强为详细英文 prompt（风格、光影、构图）。<br>3. 调用 Agnes Image 2.1 Flash API，下载生成的图像。<br>4. 报告保存路径给用户。 |
 | `生成视频` / `制作动画` / `画一段视频` / `video generation` / `create video` / `make a clip` | **agnes-video-gen** | 1. 加载技能 `skill(name="agnes-video-gen")`。<br>2. 提取用户描述，增强为详细英文 cinematic prompt（镜头运动、光影、风格、画质）。<br>3. 调用 Agnes Video V2.0 API 创建异步任务。<br>4. 轮询任务状态直到 completed，下载 MP4 视频。<br>5. 报告保存路径给用户。 |
 | `部署` / `发布` / `release` / `deploy` | **release-skills** | 1. 自动检测版本文件与 changelog，按语义化版本规范发布。 |
-| `图片分析` / `截图分析` / `界面分析` / `GUI分析` / `OCR` / `UI界面分析` / `图片理解` | **wxgui-analyzer**（Agent，非 skill） | 1. 使用 `wxgui-analyzer` 子代理进行 GUI 截图/界面分析。<br>2. 模型链遵循 `docs/model-config.md` 多模态模型选用建议（主模型 `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free`，第一备降 `stepfun/step-3.7-flash:free`）。 |
+| `图片分析` / `截图分析` / `界面分析` / `GUI分析` / `OCR` / `UI界面分析` / `图片理解` | **wxgui-analyzer-sub**（Agent，非 skill） | 1. 使用 `wxgui-analyzer-sub` 子代理进行 GUI 截图/界面分析。<br>2.  多模态模型选用建议（主模型 `stepfun/step-3.7-flash:free`，第一备降 `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free`）。 |
 
 * * *
