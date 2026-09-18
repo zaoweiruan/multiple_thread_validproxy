@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(multiple_thread_validproxy VERSION 1.0.3 LANGUAGES CXX)
+project(multiple_thread_validproxy VERSION 1.5.0 LANGUAGES CXX)
 
 # iphlpapi provides GetExtendedTcpTable (used by utils::isPortAvailable to
 # detect occupied ports via the system TCP table). Link it for every target
