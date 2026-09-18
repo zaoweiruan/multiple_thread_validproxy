@@ -25,6 +25,7 @@ public:
     void loadSubscriptions(const std::vector<db::models::Subitem>& subs,
                            const std::unordered_map<std::string, int>& proxyCounts);
     std::string getSelectedSubId() const;
+    void selectSubBySubId(const std::string& subId);
     const std::vector<db::models::Subitem>& getSubscriptions() const { return subs_; }
     void RefreshContextMenu();
     void filterBySearch(const wxString& query);
@@ -40,6 +41,10 @@ private:
     void onTestSubscription(wxCommandEvent& event);
     void onImportSubscription(wxCommandEvent& event);
     void onColumnHeaderClick(wxDataViewEvent& event);
+    // Resolve a model column index (as returned by wxDataViewEvent::GetColumn)
+    // to the actual wxDataViewColumn*, scanning visual positions.  See
+    // ProxyListPanel::resolveColumnByModel for the rationale.
+    wxDataViewColumn* resolveColumnByModel(int modelCol) const;
 
     void showEditDialog(const db::models::Subitem& sub);
     bool confirmDelete(const std::string& id, const std::string& remarks);

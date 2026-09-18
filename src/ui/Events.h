@@ -11,6 +11,8 @@
 #include "Profileitem.h"
 #include "ProfileExItem.h"
 #include "Subitem.h"
+#include "Utils.h"
+#include "StandaloneProxyPool.h"
 
 // ---------------------------------------------------------------
 // Custom event IDs — range starting from wxID_HIGHEST + 1
@@ -44,6 +46,12 @@ class ProxySelectionEvent;
 class ProxyListLoadedEvent;
 class SubListLoadedEvent;
 class StandaloneProxyEvent;
+class OnlineProbeFinishedEvent;
+class RunningDurationsLoadedEvent;
+class LocateProxyEvent;
+class PoolMembersUpdatedEvent;
+class SubscriptionRefreshEvent;
+class TestOnlineProxiesEvent;
 
 wxDECLARE_EVENT(wxEVT_PROXY_TEST_PROGRESS, ProxyTestProgressEvent);
 wxDECLARE_EVENT(wxEVT_LOG_MESSAGE, LogMessageEvent);
@@ -55,6 +63,12 @@ wxDECLARE_EVENT(wxEVT_PROXY_SELECTION, ProxySelectionEvent);
 wxDECLARE_EVENT(wxEVT_PROXY_LIST_LOADED, ProxyListLoadedEvent);
 wxDECLARE_EVENT(wxEVT_SUB_LIST_LOADED, SubListLoadedEvent);
 wxDECLARE_EVENT(wxEVT_STANDALONE_PROXY, StandaloneProxyEvent);
+wxDECLARE_EVENT(wxEVT_ONLINE_PROBE_FINISHED, OnlineProbeFinishedEvent);
+wxDECLARE_EVENT(wxEVT_RUNNING_DURATIONS_LOADED, RunningDurationsLoadedEvent);
+wxDECLARE_EVENT(wxEVT_LOCATE_PROXY, LocateProxyEvent);
+wxDECLARE_EVENT(wxEVT_POOL_MEMBERS_UPDATED, PoolMembersUpdatedEvent);
+wxDECLARE_EVENT(wxEVT_SUBSCRIPTION_REFRESH, SubscriptionRefreshEvent);
+wxDECLARE_EVENT(wxEVT_TEST_ONLINE_PROXIES, TestOnlineProxiesEvent);
 
 // ---------------------------------------------------------------
 // ProxyTestProgressEvent — sent during batch testing
@@ -162,6 +176,18 @@ private:
 };
 
 // ---------------------------------------------------------------
+// SubscriptionRefreshEvent — sent after the subscription list is
+// refreshed, telling MainFrame to reload the proxy list (all proxies)
+// ---------------------------------------------------------------
+class SubscriptionRefreshEvent : public wxEvent {
+public:
+    explicit SubscriptionRefreshEvent()
+        : wxEvent(0, wxEVT_SUBSCRIPTION_REFRESH) {}
+
+    wxEvent* Clone() const override { return new SubscriptionRefreshEvent(*this); }
+};
+
+// ---------------------------------------------------------------
 // SubscriptionTestEvent — sent when user right-clicks a subscription
 // and selects "Test", instructing MainFrame to run proxy testing
 // ---------------------------------------------------------------
@@ -217,22 +243,26 @@ class ProxyListLoadedEvent : public wxEvent {
 public:
     ProxyListLoadedEvent(const std::string& subId,
                         std::vector<db::models::Profileitem> proxies,
-                        std::vector<db::models::ProfileExItem> exItems)
+                        std::vector<db::models::ProfileExItem> exItems,
+                        utils::ProxyListMaps maps = utils::ProxyListMaps())
         : wxEvent(0, wxEVT_PROXY_LIST_LOADED),
           subId_(subId),
           proxies_(std::move(proxies)),
-          exItems_(std::move(exItems)) {}
+          exItems_(std::move(exItems)),
+          maps_(std::move(maps)) {}
 
     wxEvent* Clone() const override { return new ProxyListLoadedEvent(*this); }
 
     const std::string& getSubId() const { return subId_; }
     std::vector<db::models::Profileitem> takeProxies() { return std::move(proxies_); }
     std::vector<db::models::ProfileExItem> takeExItems() { return std::move(exItems_); }
+    utils::ProxyListMaps takeMaps() { return std::move(maps_); }
 
 private:
     std::string subId_;
     std::vector<db::models::Profileitem> proxies_;
     std::vector<db::models::ProfileExItem> exItems_;
+    utils::ProxyListMaps maps_;
 };
 
 // ---------------------------------------------------------------
@@ -254,6 +284,30 @@ public:
 private:
     std::vector<db::models::Subitem> subs_;
     std::unordered_map<std::string, int> proxyCounts_;
+};
+
+// ---------------------------------------------------------------
+// RunningDurationsLoadedEvent — live running-session durations (ms)
+// keyed by indexId, fetched on a background thread.  The payload is
+// intentionally tiny: only proxy_runtime_history rows whose ended_at
+// IS NULL (in-progress sessions), so the UI can merge elapsed time
+// into the Runtime/Health columns without a full DB re-read.
+// ---------------------------------------------------------------
+class RunningDurationsLoadedEvent : public wxEvent {
+public:
+    explicit RunningDurationsLoadedEvent(
+        std::unordered_map<std::string, long long> durations)
+        : wxEvent(0, wxEVT_RUNNING_DURATIONS_LOADED),
+          durations_(std::move(durations)) {}
+
+    wxEvent* Clone() const override { return new RunningDurationsLoadedEvent(*this); }
+
+    std::unordered_map<std::string, long long> takeDurations() {
+        return std::move(durations_);
+    }
+
+private:
+    std::unordered_map<std::string, long long> durations_;
 };
 
 // ---------------------------------------------------------------
@@ -282,6 +336,93 @@ private:
     std::string indexId_, address_, error_;
     int socksPort_;
     bool started_;
+};
+
+// ---------------------------------------------------------------
+// OnlineProbeFinishedEvent — posted by AppController after the periodic
+// SILENT probe completes. Carries the indexIds that were actually tested
+// so the proxy list can refresh only those rows (incremental, no full
+// 53k-row reload). Replaces the old StatusUpdateEvent("ONLINE_PROBE_DONE").
+// ---------------------------------------------------------------
+class OnlineProbeFinishedEvent : public wxEvent {
+public:
+    explicit OnlineProbeFinishedEvent(std::vector<std::string> indexIds = std::vector<std::string>())
+        : wxEvent(0, wxEVT_ONLINE_PROBE_FINISHED),
+          indexIds_(std::move(indexIds)) {}
+
+    wxEvent* Clone() const override { return new OnlineProbeFinishedEvent(*this); }
+
+    std::vector<std::string> takeIndexIds() { return std::move(indexIds_); }
+    const std::vector<std::string>& getIndexIds() const { return indexIds_; }
+
+private:
+    std::vector<std::string> indexIds_;
+};
+
+// ---------------------------------------------------------------
+// LocateProxyEvent — sent when a row in the standalone monitor
+// dialog is double-clicked, requesting MainFrame to locate (select
+// + scroll into view) the corresponding proxy in ProxyListPanel.
+// ---------------------------------------------------------------
+class LocateProxyEvent : public wxEvent {
+public:
+    explicit LocateProxyEvent(const std::string& indexId = "")
+        : wxEvent(0, wxEVT_LOCATE_PROXY), indexId_(indexId) {}
+
+    wxEvent* Clone() const override { return new LocateProxyEvent(*this); }
+
+    std::string getIndexId() const { return indexId_; }
+
+private:
+    std::string indexId_;
+};
+
+// ---------------------------------------------------------------
+// PoolMembersUpdatedEvent — posted by AppController whenever the standalone
+// proxy pool's membership/health snapshot changes (after each evaluation
+// cycle). Carries a copy of the current member views for the UI to render.
+// ---------------------------------------------------------------
+class PoolMembersUpdatedEvent : public wxEvent {
+public:
+    explicit PoolMembersUpdatedEvent(std::vector<proxy::PoolMemberView> members = std::vector<proxy::PoolMemberView>())
+        : wxEvent(0, wxEVT_POOL_MEMBERS_UPDATED),
+          members_(std::move(members)) {}
+
+    wxEvent* Clone() const override { return new PoolMembersUpdatedEvent(*this); }
+
+    std::vector<proxy::PoolMemberView> takeMembers() { return std::move(members_); }
+
+private:
+    std::vector<proxy::PoolMemberView> members_;
+};
+
+// ---------------------------------------------------------------
+// TestOnlineProxiesEvent — posted by AppController after the "Test
+// Online Proxies" batch connectivity test against all currently
+// running standalone proxy processes completes. Carries the list of
+// failed proxy indexIds plus summary counts so the ProxyListPanel can
+// refresh and notify the user which proxies are offline/unreachable.
+// ---------------------------------------------------------------
+class TestOnlineProxiesEvent : public wxEvent {
+public:
+    TestOnlineProxiesEvent(std::vector<std::string> failedIndexIds = std::vector<std::string>(),
+                           int total = 0,
+                           int success = 0,
+                           int failed = 0)
+        : wxEvent(0, wxEVT_TEST_ONLINE_PROXIES),
+          failedIndexIds_(std::move(failedIndexIds)),
+          total_(total), success_(success), failed_(failed) {}
+
+    wxEvent* Clone() const override { return new TestOnlineProxiesEvent(*this); }
+
+    std::vector<std::string> takeFailedIndexIds() { return std::move(failedIndexIds_); }
+    int getTotal() const { return total_; }
+    int getSuccess() const { return success_; }
+    int getFailed() const { return failed_; }
+
+private:
+    std::vector<std::string> failedIndexIds_;
+    int total_, success_, failed_;
 };
 
 #endif // UI_EVENTS_H

@@ -3,6 +3,7 @@
 #include <filesystem>
 #include "test_utils.h"
 #include "ConfigReader.h"
+#include "Logger.h"
 
 using namespace config;
 
@@ -384,6 +385,8 @@ TEST_F(ConfigReaderLoadTest, SectionDefaults_Test) {
 }
 
 TEST_F(ConfigReaderLoadTest, SectionDefaults_Log) {
+    // network_failures key removed (Spec 附录A): the stale key in this fixture
+    // must be silently ignored by the parser (regression fixture).
     writeConfig("sec_log.json", R"({
         "log": {
             "enabled": false,
@@ -395,7 +398,6 @@ TEST_F(ConfigReaderLoadTest, SectionDefaults_Log) {
     std::optional<AppConfig> result = ConfigReader::load(configPath("sec_log.json"));
     ASSERT_TRUE(result.has_value());
     EXPECT_FALSE(result->log_enabled);
-    EXPECT_TRUE(result->log_network_failures);
     EXPECT_EQ(result->log_console_level, "WARN");
     EXPECT_EQ(result->log_file_level, "INFO");
 }
@@ -568,7 +570,6 @@ TEST_F(ConfigReaderLoadTest, SaveRoundTripInLoad) {
         },
         "log": {
             "enabled": false,
-            "network_failures": true,
             "console_level": "WARN",
             "file_level": "ERROR"
         },
@@ -617,7 +618,6 @@ TEST_F(ConfigReaderLoadTest, SaveRoundTripInLoad) {
     EXPECT_EQ(reloaded->test_url, original->test_url);
     EXPECT_EQ(reloaded->test_timeout_ms, original->test_timeout_ms);
     EXPECT_EQ(reloaded->log_enabled, original->log_enabled);
-    EXPECT_EQ(reloaded->log_network_failures, original->log_network_failures);
     EXPECT_EQ(reloaded->log_console_level, original->log_console_level);
     EXPECT_EQ(reloaded->log_file_level, original->log_file_level);
     EXPECT_EQ(reloaded->accelerator_url, original->accelerator_url);
@@ -637,4 +637,177 @@ TEST_F(ConfigReaderLoadTest, SaveRoundTripInLoad) {
     EXPECT_EQ(reloaded->sync.source_db, original->sync.source_db);
     EXPECT_EQ(reloaded->sync.target_db, original->sync.target_db);
     EXPECT_EQ(reloaded->sync.sync_skip_subids, original->sync.sync_skip_subids);
+}
+
+// --- Proxy section type validation ---
+// Captures Logger output via callback to assert no spurious "wrong type" warning
+// when proxy is a valid object, and that a correct warning is emitted when the
+// proxy value has the wrong type.
+
+namespace {
+
+std::vector<std::string> g_capturedLogs;
+
+void captureLogger(const std::string& msg, LogLevel) {
+    g_capturedLogs.push_back(msg);
+}
+
+} // namespace
+
+TEST_F(ConfigReaderLoadTest, ProxySectionValidObject_NoWrongTypeWarning) {
+    writeConfig("proxy_valid.json", R"({
+        "proxy": {
+            "socks_base_port": 10808,
+            "xray_executable": "C:/xray/xray.exe",
+            "use_singbox": false
+        }
+    })");
+    g_capturedLogs.clear();
+    Logger::pushCallback(captureLogger);
+
+    std::optional<AppConfig> result = ConfigReader::load(configPath("proxy_valid.json"));
+
+    Logger::popCallback();
+
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result->proxy.socks_base_port, 10808);
+    EXPECT_EQ(result->proxy.xray_executable, "C:/xray/xray.exe");
+    // Regression: valid proxy object must NOT emit the wrong-type warning.
+    for (const std::string& log : g_capturedLogs) {
+        EXPECT_EQ(log.find("config.proxy has wrong type"), std::string::npos)
+            << "unexpected spurious warning: " << log;
+    }
+}
+
+TEST_F(ConfigReaderLoadTest, ProxySectionWrongType_UsesDefaultAndWarns) {
+    writeConfig("proxy_wrong.json", R"({
+        "proxy": "not-an-object"
+    })");
+    g_capturedLogs.clear();
+    Logger::pushCallback(captureLogger);
+
+    std::optional<AppConfig> result = ConfigReader::load(configPath("proxy_wrong.json"));
+
+    Logger::popCallback();
+
+    ASSERT_TRUE(result.has_value());
+    // Defaults from AppConfig::proxy struct must be retained.
+    EXPECT_EQ(result->proxy.socks_base_port, 10808);
+    EXPECT_FALSE(result->proxy.use_singbox);
+
+    bool found = false;
+    for (const std::string& log : g_capturedLogs) {
+        if (log.find("config.proxy has wrong type (expected object), using default") != std::string::npos) {
+            found = true;
+            break;
+        }
+    }
+    EXPECT_TRUE(found) << "expected wrong-type warning with (expected object), using default";
+}
+
+TEST_F(ConfigReaderLoadTest, ProxyProcessMonitor_Defaults) {
+    writeConfig("ppm_defaults.json", R"({
+        "database": {"path": "test/guiNDB.db"},
+        "xray": {"workers": 2}
+    })");
+
+    std::optional<AppConfig> result = ConfigReader::load(configPath("ppm_defaults.json"));
+
+    ASSERT_TRUE(result.has_value());
+    EXPECT_FALSE(result->proxy_process_monitor.enabled);
+    EXPECT_EQ(result->proxy_process_monitor.checkIntervalMs, 30000);
+}
+
+TEST_F(ConfigReaderLoadTest, ProxyProcessMonitor_CustomValues) {
+    writeConfig("ppm_custom.json", R"({
+        "database": {"path": "test/guiNDB.db"},
+        "xray": {"workers": 2},
+        "proxy_process_monitor": {
+            "enabled": true,
+            "check_interval_ms": 15000
+        }
+    })");
+
+    std::optional<AppConfig> result = ConfigReader::load(configPath("ppm_custom.json"));
+
+    ASSERT_TRUE(result.has_value());
+    EXPECT_TRUE(result->proxy_process_monitor.enabled);
+    EXPECT_EQ(result->proxy_process_monitor.checkIntervalMs, 15000);
+}
+
+TEST_F(ConfigReaderLoadTest, ProxyProcessMonitor_WrongType_UsesDefaultAndWarns) {
+    writeConfig("ppm_wrong.json", R"({
+        "database": {"path": "test/guiNDB.db"},
+        "xray": {"workers": 2},
+        "proxy_process_monitor": "not-an-object"
+    })");
+    g_capturedLogs.clear();
+    Logger::pushCallback(captureLogger);
+
+    std::optional<AppConfig> result = ConfigReader::load(configPath("ppm_wrong.json"));
+
+    Logger::popCallback();
+
+    ASSERT_TRUE(result.has_value());
+    EXPECT_FALSE(result->proxy_process_monitor.enabled);
+    EXPECT_EQ(result->proxy_process_monitor.checkIntervalMs, 30000);
+
+    bool found = false;
+    for (const std::string& log : g_capturedLogs) {
+        if (log.find("config.proxy_process_monitor has wrong type (expected object), using default") != std::string::npos) {
+            found = true;
+            break;
+        }
+    }
+    EXPECT_TRUE(found) << "expected wrong-type warning";
+}
+// ============================================================
+// ProxyProcessMonitor section tests
+// ============================================================
+
+TEST_F(ConfigReaderLoadTest, ProxyProcessMonitorDefaults) {
+    writeConfig("empty.json", "{}");
+    std::optional<AppConfig> result = ConfigReader::load(configPath("empty.json"));
+    ASSERT_TRUE(result.has_value());
+    EXPECT_FALSE(result->proxy_process_monitor.enabled);
+    EXPECT_EQ(result->proxy_process_monitor.checkIntervalMs, 30000);
+}
+
+TEST_F(ConfigReaderLoadTest, ProxyProcessMonitorCustomValues) {
+    writeConfig("ppm.json", R"({
+        "proxy_process_monitor": {
+            "enabled": true,
+            "check_interval_ms": 15000
+        }
+    })");
+    std::optional<AppConfig> result = ConfigReader::load(configPath("ppm.json"));
+    ASSERT_TRUE(result.has_value());
+    EXPECT_TRUE(result->proxy_process_monitor.enabled);
+    EXPECT_EQ(result->proxy_process_monitor.checkIntervalMs, 15000);
+}
+
+TEST_F(ConfigReaderLoadTest, ProxyProcessMonitorClampsLowInterval) {
+    writeConfig("ppm_low.json", R"({
+        "proxy_process_monitor": {
+            "enabled": true,
+            "check_interval_ms": 1000
+        }
+    })");
+    std::optional<AppConfig> result = ConfigReader::load(configPath("ppm_low.json"));
+    ASSERT_TRUE(result.has_value());
+    // Parser clamps to minimum 5000
+    EXPECT_EQ(result->proxy_process_monitor.checkIntervalMs, 5000);
+}
+
+TEST_F(ConfigReaderLoadTest, ProxyProcessMonitorClampsHighInterval) {
+    writeConfig("ppm_high.json", R"({
+        "proxy_process_monitor": {
+            "enabled": true,
+            "check_interval_ms": 500000
+        }
+    })");
+    std::optional<AppConfig> result = ConfigReader::load(configPath("ppm_high.json"));
+    ASSERT_TRUE(result.has_value());
+    // Parser clamps to maximum 300000
+    EXPECT_EQ(result->proxy_process_monitor.checkIntervalMs, 300000);
 }

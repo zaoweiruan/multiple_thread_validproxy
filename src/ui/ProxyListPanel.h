@@ -6,12 +6,14 @@
 
 #include <string>
 #include <vector>
+#include <atomic>
 
 #include "Profileitem.h"
 #include "ProfileExItem.h"
 #include "AppController.h"
 #include "Events.h"
 #include "ProxyListModel.h"
+#include "Utils.h"
 
 // Forward declarations
 
@@ -34,7 +36,20 @@ public:
     void loadProxies(std::vector<db::models::Profileitem> proxies,
                      std::vector<db::models::ProfileExItem> exItems,
                      const std::string& subId);
+    void loadProxies(std::vector<db::models::Profileitem> proxies,
+                     std::vector<db::models::ProfileExItem> exItems,
+                     utils::ProxyListMaps maps,
+                     const std::string& subId);
     void refreshResults();
+    // Incremental refresh of ONLY the given tested rows (Delay/Message/Failures
+    // columns).  Probe-triggered, see OnlineProbeFinishedEvent: no full-table
+    // re-read and no map rebuild, so 53k-row reloads stay off the UI thread.
+    void refreshResultsFor(const std::vector<std::string>& indexIds);
+    void reloadFromDatabase();
+    // Instant in-memory subscription switch (no DB access, same filter
+    // pattern as filterBySearch).  Falls back to reloadFromDatabase()
+    // while the data cache has not been populated yet (startup).
+    void applySubscriptionFilter(const std::string& subId);
     void selectProxyByIndexId(const std::string& indexId);
     void filterBySearch(const wxString& query);
     bool HasSelection() const;
@@ -45,20 +60,38 @@ private:
 
     void onContextMenu(wxDataViewEvent& event);
     void onTestProxy(wxCommandEvent& event);
+    void onTestOnlineProxies(wxCommandEvent& event);
+    void onTestOnlineProxiesEvent(TestOnlineProxiesEvent& event);
     void onRefreshProxyList(wxCommandEvent& event);
     void onExportShareLink(wxCommandEvent& event);
     void onResolveRegion(wxCommandEvent& event);
     void onBatchResolveRegion(wxCommandEvent& event);
     void onStartProxy(wxCommandEvent& event);
+    void onAddToPool(wxCommandEvent& event);
     void onProxyTestProgress(ProxyTestProgressEvent& event);
     void onColumnHeaderClick(wxDataViewEvent& event);
+    // Resolve a model column index (as returned by wxDataViewEvent::GetColumn)
+    // to the actual wxDataViewColumn*, scanning visual positions.  This is
+    // required because wxDataViewEvent::GetColumn() yields the *model* column,
+    // while wxDataViewCtrl::GetColumn() expects a *visual* position; the two
+    // diverge once columns are reordered.
+    wxDataViewColumn* resolveColumnByModel(int modelCol) const;
     void onSelectionChanged(wxDataViewEvent& event);
     void onStandaloneProxyEvent(StandaloneProxyEvent& event);
+    void onHistoryTimer(wxTimerEvent& event);
+    void onRunningDurationsLoaded(RunningDurationsLoadedEvent& event);
 
     void selectFirstProxy();
     void updateProxyList(const std::vector<db::models::Profileitem>& proxies,
                          const std::vector<db::models::ProfileExItem>& exItems,
                          const std::string& subId);
+    // Periodic refresh of the history/evaluation columns (Starts/Runtime/Health).
+    // Called from onHistoryTimer so the evaluation stays current even when no
+    // standalone start/stop event arrives.  Lightweight: kicks off a
+    // background DB read (getRunningDurationsAsync) instead of doing any
+    // query on the UI thread; the RunningDurationsLoadedEvent handler applies
+    // the merged durations and only rows with standalone history are notified.
+    void refreshHistoryPeriodic();
 
     AppController* controller_;
     sqlite3* db_;
@@ -66,10 +99,20 @@ private:
     wxDataViewCtrl* listCtrl_;
     ProxyListModel* model_;
 
+    // Periodic timer (3s) that refreshes the evaluation columns
+    // (Starts/Runtime/Health) from the latest DB state.  The DB read itself
+    // happens on a background thread; this flag prevents a new background
+    // read from being spawned while the previous one is still in flight.
+    wxTimer* historyTimer_ = nullptr;
+    std::atomic<bool> refreshInFlight_{false};
+
     std::vector<db::models::Profileitem> proxies_;
     std::vector<db::models::ProfileExItem> exItems_;
     std::vector<db::models::Profileitem> allProxies_;  // Unfiltered list for search
     std::string currentSubId_;  // Track current subscription filter for reload
+    // True once a load path has populated allProxies_/exItems_/model maps;
+    // gates the in-memory fast path of applySubscriptionFilter().
+    bool cacheReady_ = false;
 
     struct SortState {
         int column = -1;

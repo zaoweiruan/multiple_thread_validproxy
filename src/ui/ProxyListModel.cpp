@@ -1,5 +1,6 @@
 #include "ProxyListModel.h"
 #include "Logger.h"
+#include "Utils.h"
 
 #include <algorithm>
 
@@ -40,19 +41,243 @@ void ProxyListModel::setData(
     rebuildMaps();
 }
 
+void ProxyListModel::setDataWithoutRebuild(
+    std::vector<db::models::Profileitem>* proxies,
+    const std::vector<db::models::ProfileExItem>* exItems)
+{
+    proxies_ = proxies;
+    exItems_ = exItems;
+}
+
+void ProxyListModel::setMaps(const utils::ProxyListMaps& maps) {
+    delayMap_ = maps.delayMap;
+    messageMap_ = maps.messageMap;
+    failuresMap_ = maps.failuresMap;
+    startCountMap_ = maps.startCountMap;
+    runtimeMap_ = maps.runtimeMap;
+    healthMap_ = maps.healthMap;
+}
+
+// -------------------------------------------------------------------
+// Rebuild lookup maps from exItems_.
+// NOTE: total_runtime_ms is only back-filled into ProfileExItem when a
+// session ends (finalizeStop).  During an in-progress session the DB row
+// may still carry 0, so we MUST NOT overwrite a non-zero runtimeMap_
+// entry with 0 — otherwise the Runtime column loses its historical base
+// on every refreshResults().
 // -------------------------------------------------------------------
 void ProxyListModel::rebuildMaps() {
     delayMap_.clear();
     messageMap_.clear();
     failuresMap_.clear();
+    startCountMap_.clear();
+    healthMap_.clear();
 
-    if (!exItems_) return;
+    if (!exItems_) {
+        runtimeMap_.clear();
+        return;
+    }
 
     for (const db::models::ProfileExItem& ex : *exItems_) {
         delayMap_[ex.indexid] = ex.delay;
         messageMap_[ex.indexid] = ex.message;
         failuresMap_[ex.indexid] = ex.consecutive_failures;
+
+        startCountMap_[ex.indexid] = ex.start_count;
+
+        // Preserve existing historical runtime when the running session
+        // hasn't been committed back to ProfileExItem yet (still 0).
+        if (ex.total_runtime_ms > 0) {
+            runtimeMap_[ex.indexid] = ex.total_runtime_ms;
+        } else if (runtimeMap_.find(ex.indexid) == runtimeMap_.end()) {
+            runtimeMap_[ex.indexid] = 0;
+        }
+        // else: keep the previous non-zero runtimeMap_ entry.
+
+        int stable = ex.start_count - ex.crash_count;
+        if (stable < 0) stable = 0;
+        if (ex.start_count == 0) {
+            healthMap_[ex.indexid] = 0.0;
+        } else {
+            healthMap_[ex.indexid] = static_cast<double>(stable + 1) /
+                                     static_cast<double>(ex.start_count + 2);
+        }
     }
+}
+
+// -------------------------------------------------------------------
+bool ProxyListModel::setRunningDurations(
+    const std::unordered_map<std::string, long long>& runningMs) {
+    // Whole-map replacement: runningMs is the current snapshot of
+    // in-progress sessions (absolute heartbeat durations), so assigning
+    // instead of accumulating keeps the Runtime column idempotent across
+    // repeated periodic refreshes.
+    bool changed = (runningDurations_ != runningMs);
+    runningDurations_ = runningMs;
+
+    // Recompute health with a running-time bonus so the score varies while
+    // the proxy is running: base (Bayesian smoothing) + min(elapsed/30min,1)*0.3,
+    // capped at 1.0.
+    // NOTE: health must be refreshed even when the running snapshot is
+    // unchanged, because rebuildMaps() may have replaced exItems_ in the
+    // meantime (e.g. refreshResults reloads DB rows while a session is
+    // still in progress).
+    if (exItems_) {
+        const long long RAMP_MS = 1800000LL;   // 30 minutes to reach max bonus
+        const double WEIGHT = 0.3;
+        for (const db::models::ProfileExItem& ex : *exItems_) {
+            long long running = 0;
+            std::unordered_map<std::string, long long>::const_iterator rit =
+                runningDurations_.find(ex.indexid);
+            if (rit != runningDurations_.end()) {
+                running = rit->second;
+            }
+            int stable = ex.start_count - ex.crash_count;
+            if (stable < 0) stable = 0;
+            double base = 0.0;
+            double bonus = 0.0;
+            if (ex.start_count > 0) {
+                base = static_cast<double>(stable + 1) /
+                       static_cast<double>(ex.start_count + 2);
+                if (running > 0) {
+                    double ramp = static_cast<double>(running) /
+                                  static_cast<double>(RAMP_MS);
+                    if (ramp > 1.0) ramp = 1.0;
+                    bonus = ramp * WEIGHT;
+                }
+            }
+            double h = base + bonus;
+            if (h > 1.0) h = 1.0;
+            healthMap_[ex.indexid] = h;
+        }
+    }
+
+    if (!changed) {
+        // No data change (e.g. no in-progress session): the caller can
+        // skip the view redraw entirely.
+        return false;
+    }
+    return true;
+}
+
+// -------------------------------------------------------------------
+bool ProxyListModel::updateResultFor(const std::string& indexId,
+                                     const std::string& delay,
+                                     const std::string& message,
+                                     int failures) {
+    bool changed = false;
+    std::unordered_map<std::string, std::string>::iterator it = delayMap_.find(indexId);
+    const bool known = it != delayMap_.end();
+    if (!known || it->second != delay) {
+        delayMap_[indexId] = delay;
+        changed = true;
+    }
+    std::unordered_map<std::string, std::string>::iterator mIt = messageMap_.find(indexId);
+    if (mIt == messageMap_.end() || mIt->second != message) {
+        messageMap_[indexId] = message;
+        changed = true;
+    }
+    std::unordered_map<std::string, int>::iterator fIt = failuresMap_.find(indexId);
+    if (fIt == failuresMap_.end() || fIt->second != failures) {
+        failuresMap_[indexId] = failures;
+        changed = true;
+    }
+    return changed;
+}
+
+// -------------------------------------------------------------------
+// Incremental history-map refresh for ONE indexId (probe-triggered, see
+// ProxyListPanel::refreshResultsFor).  Uses the SAME formulas as
+// rebuildMaps() so the Health/Starts/Runtime columns read identically
+// whether the row was refreshed incrementally or by a full reload.
+//
+// Formula source — ProxyListModel::rebuildMaps() L86-104:
+//   startCountMap_[id] = ex.start_count;
+//   if (ex.total_runtime_ms > 0)  runtimeMap_[id] = ex.total_runtime_ms;
+//   else if (not present)         runtimeMap_[id] = 0;
+//   else                          keep previous non-zero runtimeMap_[id]
+//   stable = max(ex.start_count - ex.crash_count, 0);
+//   health = (ex.start_count == 0) ? 0.0
+//           : double(stable + 1) / double(ex.start_count + 2);
+// -------------------------------------------------------------------
+bool ProxyListModel::syncHistoryForIndexId(const std::string& indexId) {
+    if (!exItems_) {
+        return false;
+    }
+    const db::models::ProfileExItem* ex = nullptr;
+    for (std::vector<db::models::ProfileExItem>::const_iterator it = exItems_->begin();
+         it != exItems_->end(); ++it) {
+        if (it->indexid == indexId) {
+            ex = &(*it);
+            break;
+        }
+    }
+    if (!ex) {
+        return false;   // not present in current data — nothing to sync
+    }
+
+    bool changed = false;
+
+    // start_count
+    std::unordered_map<std::string, int>::iterator scIt = startCountMap_.find(indexId);
+    const bool scKnown = scIt != startCountMap_.end();
+    if (!scKnown || scIt->second != ex->start_count) {
+        startCountMap_[indexId] = ex->start_count;
+        changed = true;
+    }
+
+    // total_runtime_ms — preserve non-zero historical base when the
+    // running session has not been committed back to ProfileExItem yet.
+    std::unordered_map<std::string, long long>::iterator rtIt = runtimeMap_.find(indexId);
+    const bool rtKnown = rtIt != runtimeMap_.end();
+    long long newRuntime = 0;
+    if (ex->total_runtime_ms > 0) {
+        newRuntime = ex->total_runtime_ms;
+    } else if (rtKnown) {
+        newRuntime = rtIt->second;   // keep previous base (may be 0)
+    } else {
+        newRuntime = 0;
+    }
+    if (!rtKnown || rtIt->second != newRuntime) {
+        runtimeMap_[indexId] = newRuntime;
+        changed = true;
+    }
+
+    // health — Bayesian-smoothed base score, cold start forced to 0.0
+    int stable = ex->start_count - ex->crash_count;
+    if (stable < 0) stable = 0;
+    double newHealth;
+    if (ex->start_count == 0) {
+        newHealth = 0.0;
+    } else {
+        newHealth = static_cast<double>(stable + 1) /
+                    static_cast<double>(ex->start_count + 2);
+    }
+    std::unordered_map<std::string, double>::iterator hIt = healthMap_.find(indexId);
+    const bool hKnown = hIt != healthMap_.end();
+    if (!hKnown || hIt->second != newHealth) {
+        healthMap_[indexId] = newHealth;
+        changed = true;
+    }
+
+    return changed;
+}
+
+// -------------------------------------------------------------------
+// ItemChanged() is a public member of wxDataViewModel (dataview.h), so the
+// model can notify the view about a single item directly.  The view then
+// refreshes exactly that row (and re-sorts it if a sort order is active).
+void ProxyListModel::notifyTestResultChangedFor(const std::string& indexId) {
+    const int row = findRowByIndexId(indexId);
+    if (row < 0) {
+        return;
+    }
+    // Bit-cast the row back to the same item ID the model handed to the
+    // view (m_hash entries are row + idOffset_, see detectIdOffset()).
+    const wxDataViewItem item = wxDataViewItem(
+        reinterpret_cast<void*>(static_cast<wxUIntPtr>(
+            static_cast<unsigned int>(row) + idOffset_)));
+    ItemChanged(item);
 }
 
 // -------------------------------------------------------------------
@@ -77,6 +302,10 @@ void ProxyListModel::clear() {
     delayMap_.clear();
     messageMap_.clear();
     failuresMap_.clear();
+    startCountMap_.clear();
+    runtimeMap_.clear();
+    healthMap_.clear();
+    runningDurations_.clear();
     idOffset_ = 0;
 }
 
@@ -162,6 +391,41 @@ void ProxyListModel::GetValueByRow(wxVariant& variant, unsigned int row,
         case COL_INDEXID:
             variant = wxVariant(idx);
             break;
+        case COL_START_COUNT: {
+            std::unordered_map<std::string, int>::const_iterator it = startCountMap_.find(idx);
+            variant = wxVariant(std::to_string(it != startCountMap_.end() ? it->second : 0));
+            break;
+        }
+        case COL_TOTAL_RUNTIME_MS: {
+            long long base = 0;
+            std::unordered_map<std::string, long long>::const_iterator it =
+                runtimeMap_.find(idx);
+            if (it != runtimeMap_.end()) {
+                base = it->second;
+            }
+            long long running = 0;
+            std::unordered_map<std::string, long long>::const_iterator rit =
+                runningDurations_.find(idx);
+            if (rit != runningDurations_.end()) {
+                running = rit->second;
+            }
+            long long totalMs = base + running;
+            long long totalSec = totalMs / 1000;
+            long long minutes = totalSec / 60;
+            long long secs = totalSec % 60;
+            char buf[32];
+            std::snprintf(buf, sizeof(buf), "%lld:%02lld",
+                          static_cast<long long>(minutes),
+                          static_cast<long long>(secs));
+            variant = wxVariant(buf);
+            break;
+        }
+        case COL_HEALTH: {
+            std::unordered_map<std::string, double>::const_iterator it = healthMap_.find(idx);
+            double h = it != healthMap_.end() ? it->second : 0.0;
+            variant = wxVariant(wxString::Format("%.3f", h));
+            break;
+        }
         default:
             variant = wxVariant("");
             break;
@@ -262,6 +526,30 @@ int ProxyListModel::Compare(const wxDataViewItem& item1,
         case COL_INDEXID:
             cmp = a.indexid.compare(b.indexid);
             break;
+        case COL_START_COUNT: {
+            int sA = 0, sB = 0;
+            auto itA = startCountMap_.find(a.indexid);
+            auto itB = startCountMap_.find(b.indexid);
+            if (itA != startCountMap_.end()) sA = itA->second;
+            if (itB != startCountMap_.end()) sB = itB->second;
+            cmp = (sA > sB) - (sA < sB);
+            break;
+        }
+        case COL_TOTAL_RUNTIME_MS: {
+            long long rA = getRuntime(a.indexid);
+            long long rB = getRuntime(b.indexid);
+            cmp = (rA > rB) - (rA < rB);
+            break;
+        }
+        case COL_HEALTH: {
+            double hA = 0.0, hB = 0.0;
+            auto itA = healthMap_.find(a.indexid);
+            auto itB = healthMap_.find(b.indexid);
+            if (itA != healthMap_.end()) hA = itA->second;
+            if (itB != healthMap_.end()) hB = itB->second;
+            cmp = (hA > hB) - (hA < hB);
+            break;
+        }
         default:
             cmp = a.indexid.compare(b.indexid);
             break;
@@ -329,6 +617,42 @@ int ProxyListModel::getFailures(const std::string& indexId) const {
 }
 
 // -------------------------------------------------------------------
+std::string ProxyListModel::getProxyValidityReason(const std::string& indexId) const {
+    std::string delay = getDelay(indexId);
+    if (utils::isDelayValid(delay)) {
+        return "";
+    }
+    if (delay.empty() || delay == "-1") {
+        return "untested";
+    }
+    return "invalid";
+}
+
+// -------------------------------------------------------------------
+long long ProxyListModel::getRuntime(const std::string& indexId) const {
+    long long base = 0;
+    std::unordered_map<std::string, long long>::const_iterator it =
+        runtimeMap_.find(indexId);
+    if (it != runtimeMap_.end()) {
+        base = it->second;
+    }
+    long long running = 0;
+    std::unordered_map<std::string, long long>::const_iterator rit =
+        runningDurations_.find(indexId);
+    if (rit != runningDurations_.end()) {
+        running = rit->second;
+    }
+    return base + running;
+}
+
+// -------------------------------------------------------------------
+double ProxyListModel::getHealth(const std::string& indexId) const {
+    std::unordered_map<std::string, double>::const_iterator it =
+        healthMap_.find(indexId);
+    return it != healthMap_.end() ? it->second : 0.0;
+}
+
+// -------------------------------------------------------------------
 void ProxyListModel::notifyTestResultChanged() {
     unsigned int count = GetCount();
     for (unsigned int i = 0; i < count; ++i) {
@@ -336,6 +660,48 @@ void ProxyListModel::notifyTestResultChanged() {
         ValueChanged(item, COL_DELAY);
         ValueChanged(item, COL_MESSAGE);
         ValueChanged(item, COL_FAILURES);
+    }
+}
+
+// -------------------------------------------------------------------
+void ProxyListModel::notifyHistoryChanged() {
+    unsigned int count = GetCount();
+    for (unsigned int i = 0; i < count; ++i) {
+        std::string indexId = getIndexIdAtRow(i);
+        if (indexId.empty()) {
+            continue;
+        }
+        // 仅通知有 standalone 运行历史（start_count > 0）的行，
+        // 避免对全库（数万行）逐一 ValueChanged 造成 UI 线程卡死。
+        std::unordered_map<std::string, int>::const_iterator it = startCountMap_.find(indexId);
+        if (it == startCountMap_.end() || it->second <= 0) {
+            continue;
+        }
+        wxDataViewItem item = GetItem(i);
+        ValueChanged(item, COL_START_COUNT);
+        ValueChanged(item, COL_TOTAL_RUNTIME_MS);
+        ValueChanged(item, COL_HEALTH);
+    }
+}
+
+// -------------------------------------------------------------------
+// Notify only the rows that have an in-progress (running) session and
+// actually changed.  Runtime and Health vary while a proxy is running;
+// Starts remains historical/cumulated.
+// -------------------------------------------------------------------
+void ProxyListModel::notifyRunningChanged() {
+    unsigned int count = GetCount();
+    for (unsigned int i = 0; i < count; ++i) {
+        std::string indexId = getIndexIdAtRow(i);
+        if (indexId.empty()) {
+            continue;
+        }
+        if (runningDurations_.find(indexId) == runningDurations_.end()) {
+            continue;  // 无 running 会话 → 跳过
+        }
+        wxDataViewItem item = GetItem(i);
+        ValueChanged(item, COL_TOTAL_RUNTIME_MS);
+        ValueChanged(item, COL_HEALTH);
     }
 }
 

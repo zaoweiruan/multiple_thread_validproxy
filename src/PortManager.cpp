@@ -23,9 +23,12 @@ int PortManager::findAvailableUnlocked(int startPort, int maxAttempts) {
     int stop = begin;  // stop when we loop back to begin (each port checked at most once)
 
     for (int i = 0; i < maxAttempts; ++i) {
-        // Check the physical port availability via connect(); this is the
-        // authoritative check — usedPorts_ only tracks what we allocated,
-        // not what the OS has reserved.
+        // Check the physical port availability via the OS bind probe in
+        // utils::isPortAvailable — which now binds the WILDCARD address
+        // (0.0.0.0 / [::]) on both TCP families, so a real listen() target
+        // such as an xray SOCKS5 inbound bound to the wildcard is correctly
+        // reported as occupied. usedPorts_ only tracks what we allocated,
+        // not what the OS has already reserved for another process.
         bool systemFree = !isInUseUnlocked(candidate);
         bool oursFree = (usedPorts_.find(candidate) == usedPorts_.end());
 

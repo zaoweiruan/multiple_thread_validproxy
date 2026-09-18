@@ -4,6 +4,7 @@
 #include "Logger.h"
 #include "Utils.h"
 #include "MainFrame.h"
+#include "TestOnlineResultDialog.h"
 
 #include <wx/sizer.h>
 #include <wx/dataview.h>
@@ -28,18 +29,24 @@ enum {
     ID_CONTEXT_RESOLVE_REGION = wxID_HIGHEST + 403,
     ID_CONTEXT_BATCH_RESOLVE_REGION = wxID_HIGHEST + 404,
     ID_CONTEXT_REFRESH        = wxID_HIGHEST + 405,
+    ID_HISTORY_TIMER          = wxID_HIGHEST + 406,
+    ID_CONTEXT_ADD_TO_POOL    = wxID_HIGHEST + 407,
+    ID_CONTEXT_TEST_ONLINE_PROXIES = wxID_HIGHEST + 408,
 };
 
 // -------------------------------------------------------------------
 wxBEGIN_EVENT_TABLE(ProxyListPanel, wxPanel)
     EVT_DATAVIEW_ITEM_CONTEXT_MENU(wxID_ANY, ProxyListPanel::onContextMenu)
     EVT_MENU(ID_CONTEXT_TEST_PROXY, ProxyListPanel::onTestProxy)
+    EVT_MENU(ID_CONTEXT_TEST_ONLINE_PROXIES, ProxyListPanel::onTestOnlineProxies)
     EVT_MENU(ID_CONTEXT_EXPORT_SHARE, ProxyListPanel::onExportShareLink)
     EVT_MENU(ID_CONTEXT_START_PROXY, ProxyListPanel::onStartProxy)
+    EVT_MENU(ID_CONTEXT_ADD_TO_POOL, ProxyListPanel::onAddToPool)
     EVT_MENU(ID_CONTEXT_RESOLVE_REGION, ProxyListPanel::onResolveRegion)
     EVT_MENU(ID_CONTEXT_BATCH_RESOLVE_REGION, ProxyListPanel::onBatchResolveRegion)
     EVT_MENU(ID_CONTEXT_REFRESH, ProxyListPanel::onRefreshProxyList)
     EVT_DATAVIEW_SELECTION_CHANGED(wxID_ANY, ProxyListPanel::onSelectionChanged)
+    EVT_TIMER(ID_HISTORY_TIMER, ProxyListPanel::onHistoryTimer)
 wxEND_EVENT_TABLE()
 
 // -------------------------------------------------------------------
@@ -61,18 +68,28 @@ ProxyListPanel::ProxyListPanel(wxWindow* parent, AppController* controller,
     listCtrl_->AssociateModel(model_);
     model_->DecRef();  // AssociateModel took ownership
 
-    // Columns: Row# | Region | Latency ↕ | Type | Host ↕ | Port | Failures ↕ |
-    // Remarks | Message | IndexId
-    listCtrl_->AppendTextColumn("#",        COL_ROWNUM,   wxDATAVIEW_CELL_INERT,  40);
+    // Periodic evaluation refresh: every 3 seconds re-read the live
+    // running-session durations from the DB (on a background thread) so the
+    // displayed evaluation stays in sync with the heartbeat updates without
+    // blocking the UI.
+    historyTimer_ = new wxTimer(this, ID_HISTORY_TIMER);
+    historyTimer_->Start(3000);
+
+    // Columns: Region | Latency ↕ | Health ↕ | Type | Host ↕ | Port | Message ↕ |
+    // Starts ↕ | Runtime(ms) ↕ | # | IndexId | Failures ↕ | Remarks
     listCtrl_->AppendTextColumn("Region",   COL_REGION,   wxDATAVIEW_CELL_INERT,  90);
     listCtrl_->AppendTextColumn("Latency ↕", COL_DELAY,  wxDATAVIEW_CELL_INERT,  80);
+    listCtrl_->AppendTextColumn("Health ↕", COL_HEALTH, wxDATAVIEW_CELL_INERT, 70);
     listCtrl_->AppendTextColumn("Type",     COL_TYPE,     wxDATAVIEW_CELL_INERT,  80);
     listCtrl_->AppendTextColumn("Host ↕",   COL_ADDRESS,  wxDATAVIEW_CELL_INERT, 100);
     listCtrl_->AppendTextColumn("Port",     COL_PORT,     wxDATAVIEW_CELL_INERT,  70);
+    listCtrl_->AppendTextColumn("Message ↕", COL_MESSAGE,  wxDATAVIEW_CELL_INERT, 160);
+    listCtrl_->AppendTextColumn("Starts ↕", COL_START_COUNT, wxDATAVIEW_CELL_INERT, 60);
+    listCtrl_->AppendTextColumn("Runtime ↕", COL_TOTAL_RUNTIME_MS, wxDATAVIEW_CELL_INERT, 90);
+    listCtrl_->AppendTextColumn("#",        COL_ROWNUM,   wxDATAVIEW_CELL_INERT,  40);
+    listCtrl_->AppendTextColumn("IndexId",  COL_INDEXID,  wxDATAVIEW_CELL_INERT, 120);
     listCtrl_->AppendTextColumn("Failures ↕", COL_FAILURES, wxDATAVIEW_CELL_INERT, 80);
     listCtrl_->AppendTextColumn("Remarks",  COL_REMARKS,  wxDATAVIEW_CELL_EDITABLE, 160);
-    listCtrl_->AppendTextColumn("Message ↕", COL_MESSAGE,  wxDATAVIEW_CELL_INERT, 160);
-    listCtrl_->AppendTextColumn("IndexId",  COL_INDEXID,  wxDATAVIEW_CELL_INERT, 120);
 
     sizer->Add(listCtrl_, 1, wxEXPAND | wxALL, 2);
     SetSizer(sizer);
@@ -80,7 +97,9 @@ ProxyListPanel::ProxyListPanel(wxWindow* parent, AppController* controller,
     // Bind custom events for completion handling
     Bind(wxEVT_PROXY_TEST_PROGRESS, &ProxyListPanel::onProxyTestProgress, this);
     Bind(wxEVT_STANDALONE_PROXY, &ProxyListPanel::onStandaloneProxyEvent, this);
+    Bind(wxEVT_RUNNING_DURATIONS_LOADED, &ProxyListPanel::onRunningDurationsLoaded, this);
     Bind(wxEVT_DATAVIEW_COLUMN_HEADER_CLICK, &ProxyListPanel::onColumnHeaderClick, this);
+    Bind(wxEVT_TEST_ONLINE_PROXIES, &ProxyListPanel::onTestOnlineProxiesEvent, this);
 
     // Double-click to start proxy
     listCtrl_->Bind(wxEVT_DATAVIEW_ITEM_ACTIVATED, [this](wxDataViewEvent&) {
@@ -89,7 +108,13 @@ ProxyListPanel::ProxyListPanel(wxWindow* parent, AppController* controller,
     });
 }
 
-ProxyListPanel::~ProxyListPanel() = default;
+ProxyListPanel::~ProxyListPanel() {
+    if (historyTimer_) {
+        historyTimer_->Stop();
+        delete historyTimer_;
+        historyTimer_ = nullptr;
+    }
+}
 
 // -------------------------------------------------------------------
 // UI update helper — sets member data, resets model, selects first row.
@@ -100,6 +125,7 @@ void ProxyListPanel::updateProxyList(const std::vector<db::models::Profileitem>&
                                       const std::string& subId) {
     currentSubId_ = subId;
     allProxies_ = proxies;
+    cacheReady_ = true;
 
     sortState_.column = -1;
     sortState_.direction = SortDirection::None;
@@ -138,16 +164,202 @@ void ProxyListPanel::loadProxies(std::vector<db::models::Profileitem> proxies,
 }
 
 // -------------------------------------------------------------------
+// Accept pre-fetched data and pre-built maps (no DB read, no O(N) map
+// rebuild on the UI thread).  The async reader posts the FULL unfiltered
+// profile table; it is kept as the panel cache and the visible subset is
+// derived through applySubscriptionFilter() — the same in-memory path
+// used for instant subscription switching.
+// -------------------------------------------------------------------
+void ProxyListPanel::loadProxies(std::vector<db::models::Profileitem> proxies,
+                                  std::vector<db::models::ProfileExItem> exItems,
+                                  utils::ProxyListMaps maps,
+                                  const std::string& subId) {
+    currentSubId_ = subId;
+    allProxies_ = std::move(proxies);
+    exItems_ = std::move(exItems);
+    model_->setMaps(std::move(maps));
+    cacheReady_ = true;
+
+    applySubscriptionFilter(subId);
+}
+
+// -------------------------------------------------------------------
 // Refresh only the Delay/Message/Failures columns by reloading exItems_ from DB.
 // Proxies list and user selection are preserved.
 // Model's lookup maps are rebuilt and the view is notified to redraw.
 // -------------------------------------------------------------------
 void ProxyListPanel::refreshResults() {
+    Logger::write("[ProxyListPanel] refreshResults called", LogLevel::TRACE);
+
     exItems_ = controller_->loadProxyResults();
 
     model_->rebuildMaps();
 
+    // Merge live elapsed time of in-progress standalone sessions so the
+    // Runtime column shows total_runtime_ms + current session duration and
+    // the Health score gains a running-time bonus.
+    model_->setRunningDurations(controller_->getRunningDurations());
+
+    // Notify the view that the history columns changed so the DataViewCtrl
+    // re-queries the model for Starts/Runtime/Health cells (Refresh() alone
+    // only repaints, it does not invalidate cached cell values on MSW).
+    model_->notifyHistoryChanged();
+
     listCtrl_->Refresh();
+}
+
+// -------------------------------------------------------------------
+// Incremental refresh: only the tested proxy rows' Delay/Message/Failures
+// columns are reloaded and updated (probe-triggered, see
+// OnlineProbeFinishedEvent).  No full-table re-read and no map rebuild —
+// keeps the 53k-row reload off the UI thread.
+// -------------------------------------------------------------------
+void ProxyListPanel::refreshResultsFor(const std::vector<std::string>& indexIds) {
+    if (indexIds.empty() || !model_ || !controller_) {
+        return;
+    }
+    std::vector<db::models::ProfileExItem> rows =
+        controller_->loadProxyResultsFor(indexIds);
+
+    bool anyChanged = false;
+    for (std::vector<db::models::ProfileExItem>::const_iterator rit = rows.begin();
+         rit != rows.end(); ++rit) {
+        bool rowFound = false;
+        for (std::vector<db::models::ProfileExItem>::iterator it = exItems_.begin();
+             it != exItems_.end(); ++it) {
+            if (it->indexid != rit->indexid) continue;
+            rowFound = true;
+            // delay 格式化与 refreshResults()/rebuildMaps() 一致：
+            // ProfileExItem.delay 是 DB 原生显示字符串（GetValueByRow 直接渲染）。
+            const std::string delay = rit->delay;
+            const bool rowChanged = model_->updateResultFor(
+                rit->indexid, delay, rit->message, rit->consecutive_failures);
+            *it = *rit;   // 同步源数据（model 只读非拥有指针）
+            // 探活失败会重置 start_count / total_runtime_ms / crash_count = 0，
+            // 增量刷新必须重算 history maps，否则死代理的 Health/Starts/Runtime
+            // 列会一直显示上一轮的值（与全量 refreshResults 的全库重建不一致）。
+            const bool historyChanged = model_->syncHistoryForIndexId(rit->indexid);
+            if (rowChanged || historyChanged) {
+                anyChanged = true;
+                // ItemChanged(item) 通知整行（含 history 列）重绘。
+                model_->notifyTestResultChangedFor(rit->indexid);
+            }
+            break;
+        }
+        if (!rowFound) {
+            // 受测行不在当前过滤/列表中（如筛选后隐藏）——查找失败不通知。
+            Logger::write("[ProxyListPanel] refreshResultsFor: indexId not in list: "
+                          + rit->indexid, LogLevel::DEBUG);
+        }
+    }
+    if (anyChanged) {
+        listCtrl_->Refresh();
+    }
+}
+
+// -------------------------------------------------------------------
+// Reload the full proxy rows (ProfileItem incl. Region column) for the
+// current subscription filter from the database.  refreshResults() only
+// re-reads ProfileExItem test results, so region values written by the
+// background resolver would never appear without this full reload.
+// Runs asynchronously (background reader + prebuilt maps) to avoid
+// blocking the UI thread on 50k+ row databases.
+// -------------------------------------------------------------------
+void ProxyListPanel::reloadFromDatabase() {
+    if (controller_) {
+        controller_->loadProxiesAsync(currentSubId_, this);
+    }
+}
+
+// -------------------------------------------------------------------
+// Instant subscription switch: filter the cached full list in memory
+// (same pattern as filterBySearch) instead of re-reading the entire
+// database on every click.  The model lookup maps are keyed by indexId
+// and unaffected by the subid filter, so no rebuildMaps() is needed —
+// only the non-owning pointers must be re-pointed at the reassigned
+// vectors before resetting the view.
+// -------------------------------------------------------------------
+void ProxyListPanel::applySubscriptionFilter(const std::string& subId) {
+    if (!cacheReady_) {
+        // Cache not populated yet (startup) — fall back to async DB reload.
+        reloadFromDatabase();
+        return;
+    }
+
+    currentSubId_ = subId;
+    if (subId.empty()) {
+        proxies_ = allProxies_;  // Restore unfiltered list
+    } else {
+        proxies_.clear();
+        for (const db::models::Profileitem& p : allProxies_) {
+            if (p.subid == subId) {
+                proxies_.push_back(p);
+            }
+        }
+    }
+
+    sortState_.column = -1;
+    sortState_.direction = SortDirection::None;
+
+    model_->setDataWithoutRebuild(&proxies_, &exItems_);
+    // Double-Reset workaround (see filterBySearch): Reset(N) alone may keep
+    // stale m_list entries in some wxWidgets versions.
+    model_->Reset(0);
+    model_->Reset(static_cast<unsigned int>(proxies_.size()));
+    model_->detectIdOffset();
+
+    if (!proxies_.empty()) {
+        if (!listCtrl_->GetSelection().IsOk()) {
+            selectFirstProxy();
+        }
+    }
+}
+
+// -------------------------------------------------------------------
+void ProxyListPanel::onHistoryTimer(wxTimerEvent& event) {
+    refreshHistoryPeriodic();
+}
+
+// -------------------------------------------------------------------
+// Periodic evaluation refresh.  Kicks off a background read of live
+// running-session durations; the actual DB query runs off the UI thread
+// (see AppController::getRunningDurationsAsync).  No full-table re-read
+// of exItems and no map rebuild here — only in-flight sessions change on
+// a heartbeat cadence, so an incremental merge is sufficient.  The
+// refreshInFlight_ guard prevents stacking multiple background reads if
+// the timer fires while the previous query is still running.
+void ProxyListPanel::refreshHistoryPeriodic() {
+    if (!model_ || !controller_) {
+        return;
+    }
+    if (refreshInFlight_.exchange(true)) {
+        // Previous background read still in flight — skip this tick.
+        return;
+    }
+    controller_->getRunningDurationsAsync(this);
+}
+
+// -------------------------------------------------------------------
+// RunningDurationsLoadedEvent handler (UI thread).  Merges the live
+// durations of in-progress sessions into the model and re-queries the
+// view for the evaluation columns.  Only rows with standalone history
+// are notified, so the cost is small even with a large profile database.
+// When the snapshot is unchanged (e.g. no in-progress session at all) the
+// redraw is skipped entirely — otherwise an idle UI would repaint every
+// 3s even though no evaluation data changed.
+void ProxyListPanel::onRunningDurationsLoaded(RunningDurationsLoadedEvent& event) {
+    if (!model_ || !controller_) {
+        refreshInFlight_ = false;
+        return;
+    }
+    if (model_->setRunningDurations(event.takeDurations())) {
+        // Only the in-progress (running) rows actually changed, so notify
+        // and repaint only those.  Idle proxies keep their historical values
+        // and stay completely still during the periodic 3s poll.
+        model_->notifyRunningChanged();
+        listCtrl_->Refresh();
+    }
+    refreshInFlight_ = false;
 }
 
 // -------------------------------------------------------------------
@@ -166,6 +378,20 @@ void ProxyListPanel::selectProxyByIndexId(const std::string& indexId) {
 // -------------------------------------------------------------------
 // Column header click handler + virtual model sorting
 // -------------------------------------------------------------------
+wxDataViewColumn* ProxyListPanel::resolveColumnByModel(int modelCol) const {
+    if (modelCol < 0) {
+        return nullptr;
+    }
+    const unsigned int count = listCtrl_->GetColumnCount();
+    for (unsigned int i = 0; i < count; ++i) {
+        wxDataViewColumn* col = listCtrl_->GetColumn(i);
+        if (col != nullptr && static_cast<int>(col->GetModelColumn()) == modelCol) {
+            return col;
+        }
+    }
+    return nullptr;
+}
+
 void ProxyListPanel::onColumnHeaderClick(wxDataViewEvent& event) {
     int col = event.GetColumn();
 
@@ -194,7 +420,7 @@ void ProxyListPanel::onColumnHeaderClick(wxDataViewEvent& event) {
     if (sortState_.direction != SortDirection::None) {
         // Set the sort indicator on the column and trigger re-sort.
         // The model's Compare() is called by the view during sorting.
-        wxDataViewColumn* dvCol = listCtrl_->GetColumn(col);
+        wxDataViewColumn* dvCol = resolveColumnByModel(col);
         if (dvCol) {
             dvCol->SetSortOrder(sortState_.direction == SortDirection::Asc);
         }
@@ -234,6 +460,7 @@ void ProxyListPanel::onContextMenu(wxDataViewEvent& event) {
 
     wxMenu menu;
     menu.Append(ID_CONTEXT_TEST_PROXY, "测试此代理");
+    menu.Append(ID_CONTEXT_TEST_ONLINE_PROXIES, "测试在线代理");
     menu.Append(ID_CONTEXT_EXPORT_SHARE, "有效代理分享");
     menu.AppendSeparator();
     menu.Append(ID_CONTEXT_RESOLVE_REGION, "解析地区");
@@ -241,7 +468,17 @@ void ProxyListPanel::onContextMenu(wxDataViewEvent& event) {
     menu.AppendSeparator();
     menu.Append(ID_CONTEXT_REFRESH, "刷新");
     menu.AppendSeparator();
-    menu.Append(ID_CONTEXT_START_PROXY, "开启代理");
+    // Standalone (single-process) proxy start — always launches an independent
+    // xray process regardless of whether the proxy pool is running. Pool
+    // injection is a separate menu item (ID_CONTEXT_ADD_TO_POOL).
+    menu.Append(ID_CONTEXT_START_PROXY, "开启独立代理");
+    // Dedicated pool entry point: when the standalone pool feature is enabled,
+    // add the selected proxy to the pool (auto-starts the pool if needed). This
+    // is the discoverable "add proxy to pool" action from the proxy list.
+    bool poolEnabled = (controller_ != nullptr && controller_->isProxyPoolEnabled());
+    if (poolEnabled) {
+        menu.Append(ID_CONTEXT_ADD_TO_POOL, "加入代理池");
+    }
     PopupMenu(&menu);
     event.Skip();
 }
@@ -278,6 +515,55 @@ void ProxyListPanel::onTestProxy(wxCommandEvent& event) {
 
     controller_->testSingleProxyAsync(indexId, this);
     (void)event; // id dispatched in menu
+}
+
+// -------------------------------------------------------------------
+void ProxyListPanel::onTestOnlineProxies(wxCommandEvent& WXUNUSED(event)) {
+    if (!controller_) return;
+
+    // Sync toolbar Cancel button state from controller before re-entry check
+    {
+        wxWindow* topLevel = wxGetTopLevelParent(this);
+        if (topLevel && topLevel != this) {
+            static_cast<MainFrame*>(topLevel)->syncToolbarState();
+        }
+    }
+
+    if (controller_->isRunning()) {
+        wxMessageBox(L"操作进行中，请等待完成后再试", L"操作进行中", wxOK | wxICON_WARNING);
+        return;
+    }
+
+    // Test connectivity of all currently-running standalone proxy processes.
+    controller_->testOnlineProxiesAsync(this);
+}
+
+// -------------------------------------------------------------------
+void ProxyListPanel::onTestOnlineProxiesEvent(TestOnlineProxiesEvent& event) {
+    // Refresh proxy list to reflect the latest test results from the history table.
+    refreshResults();
+
+    std::vector<std::string> failedIndexIds = event.takeFailedIndexIds();
+    const int total = event.getTotal();
+    const int success = event.getSuccess();
+    const int failed = event.getFailed();
+
+    wxString msg;
+    if (total <= 0) {
+        msg = L"当前没有正在运行的独立代理进程。";
+        wxMessageBox(msg, L"测试在线代理", wxOK | wxICON_INFORMATION);
+        return;
+    }
+
+    msg = wxString::Format(L"在线代理测试完成：共 %d，成功 %d，失败 %d。", total, success, failed);
+    if (failed > 0) {
+        // Show every failed proxy in a scrollable dialog. A single click on a
+        // failed row locates it in the Subscription + Proxy List panels.
+        TestOnlineResultDialog dlg(this, failedIndexIds, total, success, failed);
+        dlg.ShowModal();
+    } else {
+        wxMessageBox(msg, L"测试在线代理", wxOK | wxICON_INFORMATION);
+    }
 }
 
 // -------------------------------------------------------------------
@@ -380,6 +666,37 @@ void ProxyListPanel::onStartProxy(wxCommandEvent& event) {
 
     if (!controller_) return;
 
+    // Reject a duplicate start before any port check: if a standalone proxy
+    // using the same derived config file is already running, there is no point
+    // in resolving ports for it (it would be refused right after anyway).
+    if (controller_->isStandaloneProxyRunning(indexId)) {
+        Logger::write("[UI] Standalone proxy for " + indexId
+                      + " is already running, skipped duplicate start", LogLevel::WARN);
+        wxMessageDialog dlg(this, "该代理已作为独立进程运行，请先停止后再启动。",
+                            "代理已运行", wxOK | wxICON_INFORMATION);
+        dlg.CentreOnScreen();
+        dlg.ShowModal();
+        return;
+    }
+
+    // Reject proxies whose last test result is invalid (delay <= 0 or
+    // untested).  The user must run a connectivity test first so the proxy
+    // has a meaningful latency before being promoted to standalone mode.
+    {
+        std::string reason = model_->getProxyValidityReason(indexId);
+        if (!reason.empty()) {
+            Logger::write("[UI] Refusing standalone start for " + indexId
+                          + ": reason=" + reason, LogLevel::WARN);
+            wxString userMsg = reason == "untested"
+                ? "该代理尚未测速，请先进行连通性测速后再启动。"
+                : "该代理测速失败，请先进行连通性测速后再启动。";
+            wxMessageDialog dlg(this, userMsg, "需要测速", wxOK | wxICON_WARNING);
+            dlg.CentreOnScreen();
+            dlg.ShowModal();
+            return;
+        }
+    }
+
     // Check if the configured SOCKS port is available
     config::AppConfig cfg = controller_->getConfig();
     int desiredPort = cfg.proxy.socks_base_port;
@@ -389,6 +706,7 @@ void ProxyListPanel::onStartProxy(wxCommandEvent& event) {
     int actualPort = desiredPort;
 
     if (!utils::isPortAvailable(desiredPort)) {
+        utils::logPortOccupants(desiredPort);
         // Port occupied — find the next free port
         int freePort = utils::findAvailablePort(desiredPort + 1);
         if (freePort < 0) {
@@ -420,7 +738,7 @@ void ProxyListPanel::onStartProxy(wxCommandEvent& event) {
     if (ok) {
         Logger::write("[UI] Standalone proxy started: " + indexId
                       + " on SOCKS5 127.0.0.1:" + std::to_string(actualPort),
-                      LogLevel::REPORT);
+                      LogLevel::TRACE);
     } else {
         Logger::write("[UI] Failed to start standalone proxy: " + indexId, LogLevel::ERR);
     }
@@ -431,9 +749,13 @@ void ProxyListPanel::onStartProxy(wxCommandEvent& event) {
 void ProxyListPanel::onStandaloneProxyEvent(StandaloneProxyEvent& event) {
     if (event.isStarted()) {
         Logger::write("[UI] Standalone proxy started: " + event.getIndexId()
-                      + " on port " + std::to_string(event.getSocksPort()), LogLevel::REPORT);
+                      + " on port " + std::to_string(event.getSocksPort()), LogLevel::TRACE);
+        // Refresh history/health columns so runtimes and health reflect the
+        // new in-progress session (insertStart already updated the DB).
+        refreshResults();
     } else {
-        Logger::write("[UI] Standalone proxy stopped: " + event.getIndexId(), LogLevel::REPORT);
+        Logger::write("[UI] Standalone proxy stopped: " + event.getIndexId(), LogLevel::DEBUG);
+        refreshResults();
     }
     event.Skip();
 }
@@ -522,7 +844,7 @@ void ProxyListPanel::filterBySearch(const wxString& query) {
         model_->Reset(0);
         model_->Reset(static_cast<unsigned int>(proxies_.size()));
         model_->detectIdOffset();
-        wxDataViewColumn* dvCol = listCtrl_->GetColumn(sortState_.column);
+        wxDataViewColumn* dvCol = resolveColumnByModel(sortState_.column);
         if (dvCol) {
             dvCol->SetSortOrder(sortState_.direction == SortDirection::Asc);
         }
@@ -572,4 +894,48 @@ void ProxyListPanel::selectFirstProxy() {
                                    delay, message, failures, proxy->remarks);
         wxQueueEvent(topLevel, selEvt.Clone());
     }
+}
+
+// -------------------------------------------------------------------
+// onAddToPool — context-menu "加入代理池". Adds the selected proxy to the
+// standalone proxy pool. If the pool is not running, it is auto-started first
+// so the entry point is always usable from the proxy list. This is the
+// dedicated "add proxy to pool" action surfaced from the right-click menu.
+// -------------------------------------------------------------------
+void ProxyListPanel::onAddToPool(wxCommandEvent& event) {
+    wxDataViewItem item = listCtrl_->GetSelection();
+    if (!item.IsOk()) {
+        wxMessageDialog dlg(this, "请先在列表中选择一个代理。", "代理池", wxOK | wxICON_INFORMATION);
+        dlg.CentreOnScreen();
+        dlg.ShowModal();
+        return;
+    }
+    unsigned int viewRow = model_->GetRow(item);
+    if (viewRow == static_cast<unsigned int>(-1)) return;
+    std::string indexId = model_->getIndexIdAtRow(viewRow);
+    if (indexId.empty()) return;
+    if (!controller_) return;
+
+    // Auto-start the pool if it is not already running, so this entry point can
+    // be used even when the pool has never been started.
+    if (!controller_->isProxyPoolRunning()) {
+        if (!controller_->startProxyPool()) {
+            wxMessageDialog dlg(this, "代理池启动失败，无法加入代理。请确认 xray 可执行文件已配置且端口可用。",
+                                "代理池", wxOK | wxICON_WARNING);
+            dlg.CentreOnScreen();
+            dlg.ShowModal();
+            return;
+        }
+    }
+    bool ok = controller_->injectProxyToPool(indexId);
+    if (ok) {
+        Logger::write("[UI] Added proxy to pool via context menu: " + indexId, LogLevel::REPORT);
+        wxMessageDialog dlg(this, "已加入代理池：" + wxString(indexId.c_str(), wxConvUTF8),
+                            "代理池", wxOK | wxICON_INFORMATION);
+        dlg.CentreOnScreen();
+        dlg.ShowModal();
+    } else {
+        Logger::write("[UI] Pool inject failed (context menu): " + indexId, LogLevel::WARN);
+    }
+    (void)event;
 }

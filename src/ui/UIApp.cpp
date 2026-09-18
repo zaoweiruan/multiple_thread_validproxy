@@ -5,9 +5,16 @@
 #include <wx/image.h>
 #include <wx/msgdlg.h>
 #include <wx/stdpaths.h>
+#include <wx/ffile.h>
+#include <wx/filename.h>
+#include <windows.h>
 #include <filesystem>
 #include <exception>
 #include <string>
+
+// Write an assertion report next to the executable for redundancy (the primary
+// copy goes to the harness-redirected stderr). File-static helper.
+static void WriteAssertCapture(const wxString& text);
 
 // -------------------------------------------------------------------
 // wxIMPLEMENT_APP_NO_MAIN — provides wxAppConsole-derived class
@@ -140,4 +147,48 @@ bool UIApp::OnExceptionInMainLoop()
     }
     // Continue the event loop by default
     return true;
+}
+
+void UIApp::OnAssertFailure(const wxChar *file, int line, const wxChar *func,
+                            const wxChar *cond, const wxChar *msg)
+{
+    // UI-test / CI mode: log the assertion instead of showing the modal dialog
+    // (which would block app initialization and is unreadable by the harness).
+    // The text goes to stderr (redirected to a file by the test harness) and to
+    // a dedicated file next to the executable for redundancy.
+    wxString mode;
+    if (wxGetEnv("VALIDPROXY_ASSERT_LOG", &mode) && mode == "1") {
+        const wxChar* empty = wxT("");
+        wxString text = wxString::Format(
+            wxT("WX_ASSERT file=%s line=%d func=%s\n  cond=%s\n  msg=%s\n"),
+            file ? file : empty,
+            line,
+            func ? func : empty,
+            cond ? cond : empty,
+            msg ? msg : empty);
+
+        // (1a) stderr — captured by the harness' redirected child stderr.
+        ::fwprintf(stderr, wxT("%s"), static_cast<const wchar_t*>(text.wc_str()));
+        ::fflush(stderr);
+
+        // (1b) redundant dedicated file.
+        WriteAssertCapture(text);
+        return; // no dialog -> initialization continues
+    }
+
+    // Normal run: preserve the default assert dialog.
+    wxApp::OnAssertFailure(file, line, func, cond, msg);
+}
+
+void WriteAssertCapture(const wxString& text)
+{
+    wxString exePath = wxStandardPaths::Get().GetExecutablePath();
+    wxFileName fn(exePath);
+    fn.SetFullName(wxString::Format(wxT("ui-assert-%lu.log"),
+                                    static_cast<unsigned long>(::GetCurrentProcessId())));
+    wxFFile f(fn.GetFullPath(), "a");
+    if (f.IsOpened()) {
+        f.Write(text);
+        f.Close();
+    }
 }

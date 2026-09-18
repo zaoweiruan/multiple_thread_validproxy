@@ -1,5 +1,6 @@
 #include "MainFrame.h"
 #include "ConfigDialog.h"
+#include "StandaloneFloatingWidget.h"
 #include "LogPanel.h"
 #include "ProxyDetailPanel.h"
 #include "ProxyListPanel.h"
@@ -28,6 +29,8 @@
 #include <shellapi.h>
 #include <thread>
 #include <fstream>
+#include <algorithm>
+#include <set>
 
 // -------------------------------------------------------------------
 //  Menu / Tool identifiers
@@ -47,6 +50,7 @@ enum {
     ID_MENU_ABOUT         = wxID_HIGHEST + 111,
     ID_MENU_AUTOTASK_RUN  = wxID_HIGHEST + 112,
     ID_MENU_AUTOTASK_RESUME = wxID_HIGHEST + 113,
+    ID_MENU_STANDALONE_MON  = wxID_HIGHEST + 114,
     ID_TOOL_UPDATE_ALL    = wxID_HIGHEST + 200,
     ID_TOOL_TEST          = wxID_HIGHEST + 201,
     ID_TOOL_FIND          = wxID_HIGHEST + 202,
@@ -60,6 +64,14 @@ enum {
     ID_SEARCH_BOX         = wxID_HIGHEST + 206,
     ID_SEARCH_TARGET      = wxID_HIGHEST + 300,
     ID_TOOL_DETAIL_TOGGLE = wxID_HIGHEST + 302,
+    ID_TOOL_STANDALONE_MON = wxID_HIGHEST + 211,
+
+    // Distinct logical IDs for the network/proxy status timers. Each timer
+    // must have its own id and each Bind must be constrained to that id,
+    // otherwise (both defaulting to wxID_ANY) the most-recently-bound handler
+    // consumes every wxTimerEvent and the other handler never runs.
+    ID_NETMON_TIMER   = wxID_HIGHEST + 400,
+    ID_PROXYMON_TIMER = wxID_HIGHEST + 401,
 };
 
 // -------------------------------------------------------------------
@@ -67,6 +79,7 @@ wxBEGIN_EVENT_TABLE(MainFrame, wxFrame)
     EVT_CLOSE(MainFrame::onClose)
     EVT_ICONIZE(MainFrame::onIconize)
     EVT_SIZE(MainFrame::onResize)
+    EVT_SHOW(MainFrame::onFirstShow)
     // Menu
     EVT_MENU(ID_MENU_IMPORT_SUB,  MainFrame::onMenuImportSub)
     EVT_MENU(ID_MENU_SYNC_DB,     MainFrame::onMenuSyncDb)
@@ -81,6 +94,7 @@ wxBEGIN_EVENT_TABLE(MainFrame, wxFrame)
     EVT_MENU(ID_MENU_AUTOTASK_RUN, MainFrame::onMenuAutoTask)
     EVT_MENU(ID_MENU_AUTOTASK_RESUME, MainFrame::onMenuAutoTaskResume)
     EVT_MENU(ID_MENU_ABOUT,       MainFrame::onMenuAbout)
+    EVT_MENU(ID_MENU_STANDALONE_MON, MainFrame::onMenuStandaloneMonitor)
     // Toolbar
     EVT_MENU(ID_TOOL_UPDATE_ALL,  MainFrame::onToolUpdateAll)
     EVT_MENU(ID_TOOL_TEST,        MainFrame::onToolTest)
@@ -91,6 +105,7 @@ wxBEGIN_EVENT_TABLE(MainFrame, wxFrame)
     EVT_MENU(ID_TOOL_CANCEL, MainFrame::onToolCancel)
     EVT_MENU(ID_TOOL_SYNC,       MainFrame::onToolSync)
     EVT_MENU(ID_TOOL_AUTOTASK,   MainFrame::onMenuAutoTask)
+    EVT_MENU(ID_TOOL_STANDALONE_MON, MainFrame::onMenuStandaloneMonitor)
     // Search
     EVT_TEXT_ENTER(ID_SEARCH_BOX,  MainFrame::onSearchBoxEnter)
     EVT_TEXT(ID_SEARCH_BOX,        MainFrame::onSearchTextChanged)
@@ -109,6 +124,12 @@ MainFrame::MainFrame(const config::AppConfig& cfg, sqlite3* db)
 {
     controller_ = new AppController(db, cfg);
     Logger::write("[MainFrame] Constructor begin", LogLevel::DEBUG);
+
+    // Route AppController's wxQueueEvent notifications (standalone proxy
+    // start/stop, dangling adoption) to this frame's event table.
+    controller_->setTopWindow(this);
+
+    
 
     Logger::write("[MainFrame] After controller creation, initializing icon", LogLevel::DEBUG);
 
@@ -191,14 +212,60 @@ MainFrame::MainFrame(const config::AppConfig& cfg, sqlite3* db)
             if (proxyPanel_) {
                 proxyPanel_->refreshResults();
             }
-            if (subPanel_) {
-                subPanel_->loadSubscriptions();
+            if (subPanel_ && controller_) {
+                controller_->loadSubscriptionsAsync(this);
             }
             setOperationState(OperationType::NONE);
             setStatusText(0, "Test completed");
         } else {
             // Show per-proxy progress in status bar (e.g. region resolution)
             setStatusText(0, evt.getMessage());
+        }
+    });
+
+    // ── Standalone proxy start/stop → refresh history columns ──
+    // AppController posts StandaloneProxyEvent to topWindow_ on standalone
+    // proxy start (incl. dangling adoption) and stop; refresh the proxy list
+    // so Starts/Runtime/Health columns reflect the updated runtime history.
+    Bind(wxEVT_STANDALONE_PROXY, [this](StandaloneProxyEvent& evt) {
+        Logger::write("[MainFrame] StandaloneProxyEvent received, started="
+                      + std::string(evt.isStarted() ? "true" : "false")
+                      + " indexId=" + evt.getIndexId(), LogLevel::REPORT);
+        if (proxyPanel_) {
+            proxyPanel_->refreshResults();
+        }
+        evt.Skip();
+    });
+
+    // ── Periodic silent probe finished → incremental refresh of only the
+    // tested rows (OnlineProbeFinishedEvent carries the tested indexIds).
+    Bind(wxEVT_ONLINE_PROBE_FINISHED, &MainFrame::onOnlineProbeFinished, this);
+
+    // ── Locate proxy from standalone monitor dialog double-click ──
+    // The dialog posts LocateProxyEvent (carrying the proxy indexId); select
+    // and scroll it into view in ProxyListPanel.  The dialog hides itself.
+    Bind(wxEVT_LOCATE_PROXY, [this](LocateProxyEvent& evt) {
+        // Resolve the proxy's owning subscription first. An empty subId means
+        // the proxy has no assigned subscription, which maps to "全部" view.
+        std::string subId;
+        if (controller_) {
+            subId = controller_->getSubIdByProxyIndexId(evt.getIndexId());
+        }
+        // Switch the ProxyListPanel view to the owning subscription so the
+        // target proxy is actually present in the (filtered) list before we
+        // try to select it. Without this, selectProxyByIndexId searches only
+        // the currently displayed subscription and may not find the row.
+        if (proxyPanel_) {
+            proxyPanel_->applySubscriptionFilter(subId);
+        }
+        // Now locate the proxy row in the (correct) view.
+        if (proxyPanel_) {
+            proxyPanel_->selectProxyByIndexId(evt.getIndexId());
+        }
+        // Locate the owning subscription row in the Subscription panel too,
+        // so the user sees which subscription the failed proxy belongs to.
+        if (subPanel_ && !subId.empty()) {
+            subPanel_->selectSubBySubId(subId);
         }
     });
 
@@ -243,16 +310,27 @@ MainFrame::MainFrame(const config::AppConfig& cfg, sqlite3* db)
 // Bind subscription selection to filter proxy list
       Bind(wxEVT_SUBSCRIPTION_SELECTED, [this](SubscriptionSelectedEvent& evt) {
           std::string subId = evt.getSubId();
-          if (proxyPanel_ && controller_) {
-              controller_->loadProxiesAsync(subId, this);
+          if (proxyPanel_) {
+              // Instant in-memory switch from the panel cache (no DB read);
+              // falls back to an async reload while the cache is not ready.
+              proxyPanel_->applySubscriptionFilter(subId);
           }
-          setStatusText(0, "Loading subscription: " + wxString(subId));
+          setStatusText(0, "Loaded subscription: " + wxString(subId));
       });
+
+// Reload full proxy list (all proxies) after the subscription list refreshes
+Bind(wxEVT_SUBSCRIPTION_REFRESH, [this](SubscriptionRefreshEvent&) {
+    if (proxyPanel_ && controller_) {
+        controller_->loadProxiesAsync("", this);
+    }
+    setStatusText(0, "Refresh: loaded all proxies");
+});
 
 // ── Async proxy list loaded ───────────────────────────────────
 Bind(wxEVT_PROXY_LIST_LOADED, [this](ProxyListLoadedEvent& evt) {
     if (proxyPanel_) {
-        proxyPanel_->loadProxies(evt.takeProxies(), evt.takeExItems(), evt.getSubId());
+        proxyPanel_->loadProxies(evt.takeProxies(), evt.takeExItems(),
+                                 evt.takeMaps(), evt.getSubId());
     }
     setStatusText(0, "Loaded subscription: " + wxString(evt.getSubId()));
 });
@@ -260,7 +338,30 @@ Bind(wxEVT_PROXY_LIST_LOADED, [this](ProxyListLoadedEvent& evt) {
 // ── Async subscription list loaded ────────────────────────────
 Bind(wxEVT_SUB_LIST_LOADED, [this](SubListLoadedEvent& evt) {
     if (subPanel_) {
-        subPanel_->loadSubscriptions(evt.takeSubs(), evt.takeProxyCounts());
+        std::vector<db::models::Subitem> subs = evt.takeSubs();
+
+        // Sort priority subscriptions to the top (preserving config order)
+        if (!config_.priority_subids.empty()) {
+            std::set<std::string> priSet(config_.priority_subids.begin(),
+                                          config_.priority_subids.end());
+            // Stable partition: priority subs first, then the rest
+            std::stable_partition(subs.begin(), subs.end(),
+                [&priSet](const db::models::Subitem& s) {
+                    return priSet.count(s.id) > 0;
+                });
+        }
+
+        subPanel_->loadSubscriptions(subs, evt.takeProxyCounts());
+
+        // On initial async load, auto-select the first subscription and
+        // load its proxies so the user sees data immediately.
+        if (!initialSubsLoaded_) {
+            initialSubsLoaded_ = true;
+            if (!subs.empty()) {
+                controller_->loadProxiesAsync(subs[0].id, this);
+                setStatusText(0, "Loading proxies...");
+            }
+        }
     }
 });
       
@@ -293,12 +394,63 @@ Bind(wxEVT_SUB_LIST_LOADED, [this](SubListLoadedEvent& evt) {
 
     loadSettings();
 
-    // Network status timer (2s poll)
-    netMonTimer_ = new wxTimer(this);
-    Bind(wxEVT_TIMER, &MainFrame::onNetMonTimer, this);
+    // Network status panel (created but timer not started until first show)
+    // netMonPanel_ is created in startMonitoring() after the frame is visible
+    // to avoid layout flicker and ensure status bar field widths are final.
+
+    Logger::write("[MainFrame] Constructor end", LogLevel::DEBUG);
+}
+
+// -------------------------------------------------------------------
+//  First-show handler: defer heavy/background work until the frame is
+//  actually visible and the event loop has drained the initial paint /
+//  layout / subscription-proxy data-loading events.  This guarantees
+//  that menus, buttons, and panel content are on screen before the
+//  dangling-adoption thread and the network-monitor timer start.
+// -------------------------------------------------------------------
+void MainFrame::onFirstShow(wxShowEvent& evt) {
+    evt.Skip();  // allow default show processing
+
+    // Only run once — unwatch so subsequent Show() calls (un-minimize etc.)
+    // do not re-trigger adoption or timer creation.
+    if (monitoringStarted_) {
+        return;
+    }
+    monitoringStarted_ = true;
+
+    // wxCallAfter posts a callback to the event loop; it runs after the
+    // current batch of show/layout/paint/data events has been processed,
+    // which is exactly when the UI is visually settled.
+    CallAfter([this]() {
+        Logger::write("[MainFrame] onFirstShow: starting monitoring", LogLevel::DEBUG);
+        startMonitoring();
+    });
+}
+
+void MainFrame::startMonitoring() {
+    // 1) Adopt any dangling standalone proxy processes left from a previous
+    //    GUI session.  Run in a background thread so the main window remains
+    //    responsive; the controller's DB handle is SQLITE_OPEN_FULLMUTEX and
+    //    all UI notifications go through wxQueueEvent.
+    //    UI-test gate (VALIDPROXY_NO_ADOPT=1): sandbox test apps must not
+    //    adopt a production standalone xray they see on the system — the
+    //    adoption heartbeat writes + the StandaloneProxyEvent-driven
+    //    refreshResults() sync DB read stall the main thread and hang the
+    //    test app (follows the VALIDPROXY_ASSERT_LOG=1 env precedent).
+    char adoptEnv[2] = {0};
+    if (GetEnvironmentVariableA("VALIDPROXY_NO_ADOPT", adoptEnv, 2) == 0) {
+        std::thread([this]() {
+            controller_->adoptDanglingStandaloneProxies();
+        }).detach();
+    }
+
+    // 2) Network status timer (2s poll) — started only after the frame is
+    //    visible so the status bar has its final field widths.
+    netMonTimer_ = new wxTimer(this, ID_NETMON_TIMER);
+    Bind(wxEVT_TIMER, &MainFrame::onNetMonTimer, this, ID_NETMON_TIMER);
     netMonTimer_->Start(2000);
 
-    // Create network status indicator panel on status bar field 1
+    // 3) Create network status indicator panel on status bar field 1
     netMonPanel_ = new wxPanel(statusBar_, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxBORDER_NONE);
     netMonPanel_->SetBackgroundStyle(wxBG_STYLE_PAINT);
     netMonPanel_->Bind(wxEVT_PAINT, [this](wxPaintEvent&) {
@@ -338,13 +490,91 @@ Bind(wxEVT_SUB_LIST_LOADED, [this](SubListLoadedEvent& evt) {
     }
     repositionNetMonPanel();
 
+    // 4) Proxy process monitor timer + panel (field 3)
+    proxyMonPanel_ = new wxPanel(statusBar_, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxBORDER_NONE);
+    proxyMonPanel_->SetBackgroundStyle(wxBG_STYLE_PAINT);
+    proxyMonPanel_->Bind(wxEVT_PAINT, [this](wxPaintEvent&) {
+        wxPaintDC dc(proxyMonPanel_);
+        wxSize sz = proxyMonPanel_->GetClientSize();
+        Logger::write(std::string("[MainFrame] proxyMonPaint: sz=")
+            + std::to_string(sz.x) + "x" + std::to_string(sz.y)
+            + ", enabled=" + std::to_string(proxyMonEnabled_ ? 1 : 0)
+            + ", aliveCount=" + std::to_string(proxyAliveCount_), LogLevel::DEBUG);
+        if (sz.x < 4 || sz.y < 4) return;
+        // Background
+        wxColour face = wxSystemSettings::GetColour(wxSYS_COLOUR_MENUBAR);
+        dc.SetBrush(wxBrush(face));
+        dc.SetPen(*wxTRANSPARENT_PEN);
+        dc.DrawRectangle(0, 0, sz.x, sz.y);
+        // Border
+        wxColour shadow = wxSystemSettings::GetColour(wxSYS_COLOUR_3DSHADOW);
+        wxColour highlight = wxSystemSettings::GetColour(wxSYS_COLOUR_3DHIGHLIGHT);
+        dc.SetPen(wxPen(shadow));
+        dc.DrawLine(0, 0, sz.x - 1, 0);
+        dc.DrawLine(0, 0, 0, sz.y - 1);
+        dc.SetPen(wxPen(highlight));
+        dc.DrawLine(0, sz.y - 1, sz.x - 1, sz.y - 1);
+        dc.DrawLine(sz.x - 1, 0, sz.x - 1, sz.y - 1);
+        // Text: alive count
+        wxString label = wxString::Format("%d", proxyAliveCount_);
+        dc.SetFont(wxFont(8, wxFONTFAMILY_DEFAULT, wxFONTSTYLE_NORMAL, wxFONTWEIGHT_NORMAL));
+        wxSize textExt = dc.GetTextExtent(label);
+        int textH = textExt.y;
+        int r = (textH - 2) / 2;
+        if (r < 2) r = 2;
+        int cx = r + 3;
+        int cy = sz.y / 2;
+        // Dot color
+        wxColour dotColor;
+        if (!proxyMonEnabled_) {
+            dotColor = wxColour(128, 128, 128);  // Grey: not enabled
+        } else {
+            dotColor = wxColour(0, 180, 0);      // Green: monitoring
+        }
+        dc.SetBrush(wxBrush(dotColor));
+        dc.SetPen(wxPen(dotColor));
+        dc.DrawCircle(cx, cy, r);
+        dc.SetTextForeground(wxSystemSettings::GetColour(wxSYS_COLOUR_BTNTEXT));
+        dc.DrawText(label, cx + r + 4, cy - textH / 2);
+    });
+
+    // Start proxy monitor timer if enabled in config.
+    // Reposition the panel to its final status-bar field BEFORE flipping
+    // proxyMonEnabled_: this way the first Refresh inside startProxyMonitor
+    // paints against the correct size/position instead of the panel's initial
+    // best-fit (which can be 0x0 and silently early-return from paint).
+    repositionProxyMonPanel();
+    {
+        const config::AppConfig curCfg = controller_ ? controller_->getConfig() : config::AppConfig();
+        const bool monEnabled = curCfg.proxy_process_monitor.enabled;
+        const bool probeEnabled = curCfg.independent_probe.enabled;
+        if (controller_ && (monEnabled || probeEnabled)) {
+            startProxyMonitor(curCfg.proxy_process_monitor.checkIntervalMs);
+            if (!monEnabled) {
+                // 仅探活启用：timer 运行但悬浮窗关闭，状态圆点保持灰色。
+                updateProxyMonStatus(false, 0);
+            }
+        } else {
+            updateProxyMonStatus(false, 0);
+        }
+    }
+    // Belt-and-suspenders: force a second Refresh after reposition + status
+    // update, in case wxWidgets coalesced the two paint events.
+    if (proxyMonPanel_) proxyMonPanel_->Refresh();
+
+    // Startup activation: create + show the floating widget when the proxy
+    // process monitor is enabled in config.
+    if (config_.proxy_process_monitor.enabled) {
+        floatingWidget_ = new StandaloneFloatingWidget(config_, controller_, this);
+        floatingWidget_->setActive(true);
+        syncFloatingWidgetControls();
+    }
 
     statusBar_->Bind(wxEVT_SIZE, [this](wxSizeEvent& evt) {
         evt.Skip();
         repositionNetMonPanel();
+        repositionProxyMonPanel();
     });
-
-    Logger::write("[MainFrame] Constructor end", LogLevel::DEBUG);
 }
 
 MainFrame::~MainFrame() {
@@ -353,6 +583,17 @@ MainFrame::~MainFrame() {
         netMonTimer_->Stop();
         delete netMonTimer_;
         netMonTimer_ = nullptr;
+    }
+
+    if (proxyMonTimer_) {
+        proxyMonTimer_->Stop();
+        delete proxyMonTimer_;
+        proxyMonTimer_ = nullptr;
+    }
+
+    if (floatingWidget_) {
+        delete floatingWidget_;
+        floatingWidget_ = nullptr;
     }
 
      // Step 1: AUI must be torn down before any panel/frame member is destroyed
@@ -371,11 +612,12 @@ MainFrame::~MainFrame() {
         controller_ = nullptr;
     }
 
-    // Step 3: TrayIcon — already deleted in onClose() via RemoveIcon() + delete,
-    //            so here we only null the dangling pointer to prevent double-free
+    // Step 3: TrayIcon — onClose() only removed the shell icon (safe inside the
+    // popup-menu nested loop handler-push context); the object itself must be
+    // freed HERE in the destructor, which runs in the OUTER event loop AFTER the
+    // tray menu returned and its handler was popped from m_win. Deleting the
+    // tray inside the menu's nested loop hangs it; deleting here is safe.
     if (trayIcon_) {
-        // onClose() has already removed it from the shell and freed it
-        // (left over if onClose path was never called, e.g. programmatic delete)
         delete trayIcon_;
         trayIcon_ = nullptr;
     }
@@ -489,14 +731,17 @@ void MainFrame::initMenuBar() {
     bar->Append(fileMenu, "&File");
     Logger::write("[MainFrame] initMenuBar step 4: fileMenu appended", LogLevel::DEBUG);
 
-    wxMenu* proxyMenu = new wxMenu;
-    proxyMenu->Append(ID_MENU_FIND_PROXY, "Find First Working Proxy\tCtrl+F");
-    proxyMenu->Append(ID_MENU_FIND_BEST,  "Find Best Proxy\tCtrl+Shift+F");
-    proxyMenu->AppendSeparator();
-    proxyMenu->Append(ID_MENU_DEDUP,      "Remove Duplicates");
-    proxyMenu->Append(ID_MENU_EXPORT,     "Export Share Links");
-    proxyMenu->Append(ID_MENU_GEN_CONFIG, "Generate Config…");
-    bar->Append(proxyMenu, "&Proxy");
+    proxyMenu_ = new wxMenu;
+    proxyMenu_->Append(ID_MENU_FIND_PROXY, "Find First Working Proxy\tCtrl+F");
+    proxyMenu_->Append(ID_MENU_FIND_BEST,  "Find Best Proxy\tCtrl+Shift+F");
+    proxyMenu_->AppendSeparator();
+    proxyMenu_->Append(ID_MENU_DEDUP,      "Remove Duplicates");
+    proxyMenu_->Append(ID_MENU_EXPORT,     "Export Share Links");
+    proxyMenu_->Append(ID_MENU_GEN_CONFIG, "Generate Config…");
+    proxyMenu_->AppendSeparator();
+    proxyMenu_->Append(ID_MENU_STANDALONE_MON, L"独立代理监控…\tCtrl+M", "显示/隐藏独立代理悬浮窗", wxITEM_CHECK);
+    proxyMenu_->Check(ID_MENU_STANDALONE_MON, config_.proxy_process_monitor.enabled);
+    bar->Append(proxyMenu_, "&Proxy");
 
     wxMenu* taskMenu = new wxMenu;
     taskMenu->Append(ID_MENU_AUTOTASK_RUN,  L"执行自动任务\tCtrl+T");
@@ -543,6 +788,8 @@ void MainFrame::initToolBar() {
     m_toolbar->AddTool(ID_TOOL_DEDUP, "去重", ToolbarIcons::load("tool_dedup"), "去重");
     m_toolbar->AddTool(ID_TOOL_IMPORT, "导入", ToolbarIcons::load("tool_import"), "增加新订阅");
     m_toolbar->AddTool(ID_TOOL_AUTOTASK, "自动任务", ToolbarIcons::load("tool_pipeline"), "自动任务");
+    m_toolbar->AddTool(ID_TOOL_STANDALONE_MON, "监控代理", ToolbarIcons::load("tool_monitoring_proxy_process"), "监控代理", wxITEM_CHECK);
+    m_toolbar->ToggleTool(ID_TOOL_STANDALONE_MON, config_.proxy_process_monitor.enabled);
     m_toolbar->AddTool(ID_TOOL_CONFIG, "配置", ToolbarIcons::load("tool_config"), "配置");
 
     // ── Search box: left-shifted by 150px from center ──
@@ -562,6 +809,9 @@ void MainFrame::initToolBar() {
                                    wxTE_PROCESS_ENTER);
     m_searchBox->ShowSearchButton(true);
     m_searchBox->ShowCancelButton(true);
+    // Pin the UIA Name so the UI test suite can locate the search box
+    // (TestSearch.cpp looks up NameProperty == "searchCtrl").
+    m_searchBox->SetName("searchCtrl");
     m_toolbar->AddControl(m_searchBox);
     m_toolbar->AddStretchSpacer(1);  // Push toggle detail to right edge
 
@@ -574,20 +824,16 @@ void MainFrame::initToolBar() {
 }
 
 void MainFrame::initStatusBar() {
-    statusBar_ = CreateStatusBar(4);
-    // Explicit widths (not equal-width): field0=status msg, field1=log file,
-    // field2=network status, field3=database path.
-    // SetStatusWidths forces SB_SETPARTS with real widths so SetStatusText
-    // actually reaches the native control (equal-width path can leave parts
-    // at width 0 until a WM_SIZE is processed).
-    // -1 = variable-width field: field3 (database path) stretches to fill
-    // the remaining status bar width so the bar spans the whole bottom row.
-    int widths[] = { 250, 250, 120, -1 };
-    statusBar_->SetStatusWidths(4, widths);
+    statusBar_ = CreateStatusBar(5);
+    // field0=status msg, field1=log file, field2=network status,
+    // field3=proxy monitor status, field4=database path.
+    int widths[] = { 200, 200, 100, 110, -1 };
+    statusBar_->SetStatusWidths(5, widths);
     statusBar_->SetStatusText("Ready", 0);
     statusBar_->SetStatusText("", 1);
     statusBar_->SetStatusText("", 2);
-    statusBar_->SetStatusText(wxString(getDbPath()), 3);
+    statusBar_->SetStatusText("", 3);
+    statusBar_->SetStatusText(wxString(getDbPath()), 4);
 }
 
 void MainFrame::initAuiManager() {
@@ -658,17 +904,14 @@ void MainFrame::initPanels() {
     auiManager_->Update();
     Logger::write("[MainFrame] auiManager_->Update() returned", LogLevel::DEBUG);
 
-    // Load initial data (unchanged) — done before AUI Update() to ensure
-    // data is ready when the layout triggers first paint
-    subPanel_->loadSubscriptions();
-
-    if (!subPanel_->getSubscriptions().empty()) {
-        std::string firstSubId = subPanel_->getSubscriptions()[0].id;
-        proxyPanel_->loadProxies(firstSubId);
-    } else {
-        proxyPanel_->loadProxies("");
-    }
-    Logger::write("[MainFrame] initPanels done", LogLevel::DEBUG);
+    // ── Async initial data load (non-blocking UI) ──────────────────
+    // The synchronous loadSubscriptions()/loadProxies() calls blocked the
+    // UI thread for >5 seconds with 50k+ proxies.  Replace with async
+    // loads that return via wxQueueEvent; the SubListLoadedEvent handler
+    // auto-selects the first subscription and triggers proxy loading.
+    setStatusText(0, "Loading data...");
+    controller_->loadSubscriptionsAsync(this);
+    Logger::write("[MainFrame] initPanels done (async load started)", LogLevel::DEBUG);
 }
 
 void MainFrame::initTrayIcon() {
@@ -690,6 +933,17 @@ void MainFrame::repositionNetMonPanel() {
     netMonPanel_->Refresh();
 }
 
+void MainFrame::repositionProxyMonPanel() {
+    if (!statusBar_ || !proxyMonPanel_) return;
+    wxRect fieldRect;
+    statusBar_->GetFieldRect(3, fieldRect);
+    Logger::write(std::string("[MainFrame] repositionProxyMonPanel: fieldRect=(")
+        + std::to_string(fieldRect.x) + "," + std::to_string(fieldRect.y)
+        + "," + std::to_string(fieldRect.width) + "," + std::to_string(fieldRect.height) + ")", LogLevel::DEBUG);
+    proxyMonPanel_->SetSize(fieldRect);
+    proxyMonPanel_->Refresh();
+}
+
 // -------------------------------------------------------------------
 //  Network monitor timer — updates status bar field 1
 // -------------------------------------------------------------------
@@ -702,6 +956,60 @@ void MainFrame::onNetMonTimer(wxTimerEvent&) {
         netMonConnected_ = connected;
         netMonPanel_->Refresh();
     }
+}
+
+void MainFrame::onProxyMonTimer(wxTimerEvent&) {
+    if (!controller_) return;
+    // Scan and adopt dangling standalone proxies in background.
+    // UI-test gate (VALIDPROXY_NO_ADOPT=1): skip adoption in sandbox test
+    // apps — see the comment in startMonitoring() for the hang rationale.
+    char adoptEnv[2] = {0};
+    if (GetEnvironmentVariableA("VALIDPROXY_NO_ADOPT", adoptEnv, 2) == 0) {
+        std::thread([this]() {
+            controller_->adoptDanglingStandaloneProxies();
+        }).detach();
+    }
+    // Update alive count in status bar
+    int aliveCount = controller_->getRunningStandaloneCount();
+    updateProxyMonStatus(true, aliveCount);
+
+    // Periodic silent probe of watched standalone proxies: reuses the online
+    // test machinery (ProxyTester local-port end-to-end + updateTestResult +
+    // WARN log on failure). isRunning_ inside AppController prevents overlap
+    // with a manual trigger or another test. Never closes the process.
+    // 方案 B：silent 探活独立于悬浮窗开关，由 independent_probe.enabled 门控。
+    if (controller_->isIndependentProbeEnabled()) {
+        controller_->testOnlineProxiesAsync(this, true);
+    }
+}
+
+void MainFrame::updateProxyMonStatus(bool enabled, int aliveCount) {
+    if (!proxyMonPanel_) return;
+    proxyMonEnabled_ = enabled;
+    proxyAliveCount_ = aliveCount;
+    proxyMonPanel_->Refresh();
+}
+
+void MainFrame::startProxyMonitor(int intervalMs) {
+    if (proxyMonTimer_) {
+        proxyMonTimer_->Stop();
+        delete proxyMonTimer_;
+    }
+    proxyMonTimer_ = new wxTimer(this, ID_PROXYMON_TIMER);
+    Bind(wxEVT_TIMER, &MainFrame::onProxyMonTimer, this, ID_PROXYMON_TIMER);
+    proxyMonTimer_->Start(intervalMs);
+    Logger::write(std::string("[MainFrame] startProxyMonitor: intervalMs=")
+        + std::to_string(intervalMs), LogLevel::DEBUG);
+    updateProxyMonStatus(true, 0);
+}
+
+void MainFrame::stopProxyMonitor() {
+    if (proxyMonTimer_) {
+        proxyMonTimer_->Stop();
+        delete proxyMonTimer_;
+        proxyMonTimer_ = nullptr;
+    }
+    updateProxyMonStatus(false, 0);
 }
 
 // -------------------------------------------------------------------
@@ -717,11 +1025,13 @@ void MainFrame::onClose(wxCloseEvent& event) {
     // If the tray icon remains registered after the frame is destroyed,
     // the shell can send notifications to the now-freed hidden window,
     // and wxWidgets' message loop pumps those forever → process hangs.
+    // NOTE: only RemoveIcon() here — deleting the TrayIcon object inside the
+    // popup-menu nested message loop context hangs the loop; the object is
+    // freed later in ~MainFrame (outer event loop), after the menu returned
+    // and its handler was popped from the tray's hidden window.
     if (trayIcon_) {
         Logger::write("[MainFrame][onClose] RemoveTrayIcon before frame destroy", LogLevel::DEBUG);
         trayIcon_->RemoveIcon();
-        delete trayIcon_;
-        trayIcon_ = nullptr;
     }
 
     event.Skip();  // Allow frame destruction to proceed
@@ -729,7 +1039,11 @@ void MainFrame::onClose(wxCloseEvent& event) {
 
 void MainFrame::onIconize(wxIconizeEvent& event) {
     if (event.IsIconized() && trayIcon_) {
-        // TODO: hide to tray
+        // 最小化时隐藏到托盘（不进任务栏）；恢复由托盘左键双击完成
+        // (TrayIcon::onLeftDClick → Show+Maximize 切换语义)。
+        Hide();
+        // 不调用 event.Skip()：吃掉最小化事件，避免任务栏出现最小化窗口
+        return;
     }
     event.Skip();
 }
@@ -784,23 +1098,12 @@ void MainFrame::onMenuFindBest(wxCommandEvent&) {
 }
 
 void MainFrame::onMenuDedup(wxCommandEvent&) {
-    bool ok = controller_->deduplicate();
-    if (ok) {
-        // Refresh subscription list (updates "Proxies" count column)
-        if (subPanel_) {
-            subPanel_->loadSubscriptions();
-        }
-        // Refresh current proxy list if a subscription is selected
-        if (proxyPanel_ && subPanel_) {
-            std::string currentSubId = subPanel_->getSelectedSubId();
-            if (!currentSubId.empty()) {
-                proxyPanel_->loadProxies(currentSubId);
-            }
-        }
-    }
-    wxMessageBox(ok ? "Dedup completed." : "Dedup failed.",
-                 "Dedup", wxOK | (ok ? wxICON_INFORMATION : wxICON_WARNING));
-    setStatusText(0, ok ? "Dedup completed." : "Dedup failed.");
+    setStatusText(0, "Deduplicating…");
+    std::thread([this]() {
+        bool ok = controller_->deduplicate();
+        wxQueueEvent(this, new StatusUpdateEvent(0,
+            ok ? "DEDUP_OK" : "DEDUP_FAIL"));
+    }).detach();
 }
 
 void MainFrame::onMenuExportShareLink(wxCommandEvent&) {
@@ -826,6 +1129,29 @@ void MainFrame::onMenuGenerateConfig(wxCommandEvent&) {
                  "Generate Config", wxOK | (ok ? wxICON_INFORMATION : wxICON_WARNING));
 }
 
+void MainFrame::onMenuStandaloneMonitor(wxCommandEvent&) {
+    if (!config_.proxy_process_monitor.enabled) {
+        wxMessageBox(L"监控代理进程未在配置中启用", L"提示",
+                     wxOK | wxICON_INFORMATION);
+        return;
+    }
+    if (!floatingWidget_) {
+        floatingWidget_ = new StandaloneFloatingWidget(config_, controller_, this);
+    }
+    floatingWidget_->toggleActive();
+    syncFloatingWidgetControls();
+}
+
+void MainFrame::syncFloatingWidgetControls() {
+    const bool on = floatingWidget_ && floatingWidget_->isActive();
+    if (m_toolbar) {
+        m_toolbar->ToggleTool(ID_TOOL_STANDALONE_MON, on);
+    }
+    if (proxyMenu_) {
+        proxyMenu_->Check(ID_MENU_STANDALONE_MON, on);
+    }
+}
+
 void MainFrame::onMenuConfig(wxCommandEvent&) {
     if (configDialog_) {
         delete configDialog_;
@@ -833,26 +1159,58 @@ void MainFrame::onMenuConfig(wxCommandEvent&) {
     }
     configDialog_ = new ConfigDialog(this, controller_->getConfig());
     if (configDialog_->ShowModal() == wxID_OK) {
+        config::AppConfig cfg = configDialog_->getConfig();
+        // Saving config while a USER-INITIATED async operation is running
+        // would race the worker thread's config_ reads — keep the guard for
+        // those. The periodic silent probe is a background task that does NOT
+        // hold isRunning_: it snapshots the config fields it needs under
+        // configMutex_, so ordinary config saves are allowed while ONLY the
+        // probe runs (isRunning()==false). Under the probe+user-op concurrent
+        // state (probe started first, user op then allowed) both flags are
+        // true — the old !isOnlineProbeRunning() clause would have bypassed
+        // the save guard there, so we now check isRunning() alone.
         if (controller_->isRunning()) {
             wxMessageBox(L"操作进行中，无法保存配置", L"操作进行中", wxOK | wxICON_WARNING);
             return;
         }
-        config::AppConfig cfg = configDialog_->getConfig();
+        bool dbPathChanged = !cfg.database_path.empty() && cfg.database_path != config_.database_path;
+        // Switching the live database requires FULL idle (user op OR probe):
+        // switchDatabase() swaps db_ that both use — the probe's exDao_ holds
+        // the old db_ pointer, so letting the probe run across a switch would
+        // be use-after-free.
+        if ((controller_->isRunning() || controller_->isOnlineProbeRunning()) && dbPathChanged) {
+            wxMessageBox(L"操作进行中，无法切换数据库", L"操作进行中", wxOK | wxICON_WARNING);
+            return;
+        }
         std::string oldDbPath = config_.database_path;
         // Capture old network monitor settings BEFORE saveConfig updates config_
         bool oldNetMonEnabled = controller_->getNetworkMonitor()->IsEnabled();
         int oldNetMonInterval = config_.network_monitor.checkIntervalMs;
         int oldNetMonTimeout = config_.network_monitor.checkTimeoutMs;
+        // Capture old proxy-process-monitor + checkUrls values BEFORE config_
+        // is overwritten by cfg (bugfix 2026-09-17: reading them after
+        // config_ = cfg made the comparisons always-false, so hot-apply of the
+        // proxy monitor switch / interval and netmon checkUrls never ran —
+        // the status-bar dot stayed green after disabling the monitor).
+        bool oldProxyMonEnabled = config_.proxy_process_monitor.enabled;
+        int oldProxyMonInterval = config_.proxy_process_monitor.checkIntervalMs;
+        bool oldProbeEnabled = config_.independent_probe.enabled;
+        std::vector<std::string> oldNetMonCheckUrls = config_.network_monitor.checkUrls;
         bool saveOk = controller_->saveConfig(cfg);
         if (!saveOk) {
             wxMessageBox("Failed to save configuration to file.\n"
                          "Your changes may not persist after restart.",
                          "Save Error", wxOK | wxICON_WARNING);
         }
+        // Sync MainFrame::config_ with AppController::config_ so downstream
+        // entry points (e.g. onMenuStandaloneMonitor) do not read a stale
+        // proxy_process_monitor.enabled value and pop a false "not enabled"
+        // warning after the user just saved the new value via the dialog.
+        config_ = cfg;
 
         // Detect network monitor changes
         bool netMonSettingsChanged = (cfg.network_monitor.enabled != oldNetMonEnabled) ||
-                                     (cfg.network_monitor.checkUrls != config_.network_monitor.checkUrls) ||
+                                     (cfg.network_monitor.checkUrls != oldNetMonCheckUrls) ||
                                      (cfg.network_monitor.checkIntervalMs != oldNetMonInterval) ||
                                      (cfg.network_monitor.checkTimeoutMs != oldNetMonTimeout);
 
@@ -863,6 +1221,31 @@ void MainFrame::onMenuConfig(wxCommandEvent&) {
                 repositionNetMonPanel();
             }
         }
+
+        // Detect proxy process monitor / independent probe changes.
+        // Timer stays alive when EITHER switch is on (it drives the widget
+        // refresh, dangling adoption AND the silent probe cadence).
+        bool proxyMonEnabledChanged = (cfg.proxy_process_monitor.enabled != oldProxyMonEnabled);
+        bool proxyMonIntervalChanged = (cfg.proxy_process_monitor.checkIntervalMs != oldProxyMonInterval);
+        bool probeEnabledChanged = (cfg.independent_probe.enabled != oldProbeEnabled);
+        bool needProxyMonTimer = cfg.proxy_process_monitor.enabled || cfg.independent_probe.enabled;
+        if (proxyMonEnabledChanged || proxyMonIntervalChanged || probeEnabledChanged) {
+            if (needProxyMonTimer) {
+                startProxyMonitor(cfg.proxy_process_monitor.checkIntervalMs);
+                if (!cfg.proxy_process_monitor.enabled) {
+                    updateProxyMonStatus(false, 0);   // 保持灰点（仅探活模式）
+                }
+            } else {
+                stopProxyMonitor();
+            }
+        }
+
+        // Hot-apply the new config to the floating widget (interval restart,
+        // hide when monitoring is disabled) and re-sync the toggle controls.
+        if (floatingWidget_) {
+            floatingWidget_->applySettings(cfg);
+        }
+        syncFloatingWidgetControls();
 
         // Apply log level changes
         Logger::setFileLevel(Logger::stringToLevel(cfg.log_file_level));
@@ -888,19 +1271,23 @@ void MainFrame::onMenuConfig(wxCommandEvent&) {
                 // Update config path
                 config_.database_path = cfg.database_path;
                 if (statusBar_) {
-                    statusBar_->SetStatusText(wxString(cfg.database_path), 3);
+                    statusBar_->SetStatusText(wxString(cfg.database_path), 4);
                 }
 
                 // Refresh all panels with the new database
-                if (subPanel_) {
-                    subPanel_->loadSubscriptions();
+                if (subPanel_ && controller_) {
+                    controller_->loadSubscriptionsAsync(this);
                 }
                 // Reload proxy list (empty subId = show all / first sub)
                 if (subPanel_ && !subPanel_->getSubscriptions().empty()) {
                     std::string firstSubId = subPanel_->getSubscriptions()[0].id;
-                    if (proxyPanel_) proxyPanel_->loadProxies(firstSubId);
+                    if (proxyPanel_ && controller_) {
+                        controller_->loadProxiesAsync(firstSubId, this);
+                    }
                 } else {
-                    if (proxyPanel_) proxyPanel_->loadProxies("");
+                    if (proxyPanel_ && controller_) {
+                        controller_->loadProxiesAsync("", this);
+                    }
                 }
 
                 setStatusText(0, wxString("Switched to database: ") + cfg.database_path);
@@ -1106,6 +1493,45 @@ void MainFrame::onToggleDetailPane(wxCommandEvent&) {
 //  in the Bind lambda).
 // -------------------------------------------------------------------
 void MainFrame::onStatusUpdate(StatusUpdateEvent& event) {
-    setStatusText(0, event.getText());
+    wxString text = event.getText();
+    if (text == "DEDUP_OK") {
+        if (subPanel_ && controller_) {
+            controller_->loadSubscriptionsAsync(this);
+        }
+        if (proxyPanel_ && subPanel_) {
+            std::string currentSubId = subPanel_->getSelectedSubId();
+            if (!currentSubId.empty()) {
+                controller_->loadProxiesAsync(currentSubId, this);
+            }
+        }
+        wxMessageBox("Dedup completed.", "Dedup",
+                     wxOK | wxICON_INFORMATION);
+        setStatusText(0, "Dedup completed.");
+    } else if (text == "DEDUP_FAIL") {
+        wxMessageBox("Dedup failed.", "Dedup",
+                     wxOK | wxICON_WARNING);
+        setStatusText(0, "Dedup failed.");
+    } else if (text == "REGION_RESOLVE_DONE") {
+        // Region resolution (single or batch) finished: reload the proxy
+        // rows so the Region column reflects values written to ProfileItem
+        // by the background resolver.  refreshResults() alone is not enough
+        // because it only re-reads ProfileExItem test results.
+        if (proxyPanel_) {
+            proxyPanel_->reloadFromDatabase();
+        }
+    } else {
+        setStatusText(0, text);
+    }
+}
+
+// -------------------------------------------------------------------
+//  OnlineProbeFinishedEvent handler — periodic silent probe completed.
+//  It updated only the tested rows (ProfileExItem), so refresh exactly
+//  those rows incrementally — no full 53k-row reload.
+// -------------------------------------------------------------------
+void MainFrame::onOnlineProbeFinished(OnlineProbeFinishedEvent& event) {
+    if (proxyPanel_) {
+        proxyPanel_->refreshResultsFor(event.getIndexIds());
+    }
 }
 

@@ -520,9 +520,7 @@ bool ProxyBatchTester::run() {
         return false;
     }
 
-    if (config_.log_network_failures) {
-        Logger::write("Started " + std::to_string(instanceCount) + " xray instances", LogLevel::INFO);
-    }
+    Logger::write("Started " + std::to_string(instanceCount) + " xray instances", LogLevel::DEBUG);
 
     if (!preGenerateConfigs(totalProxies_)) {
         return false;
@@ -553,9 +551,7 @@ bool ProxyBatchTester::runWithSubId(const std::string& subId) {
     }
 
     Logger::write("Testing " + std::to_string(totalProxies_) + " proxies total", LogLevel::REPORT);
-    if (config_.log_network_failures) {
-        Logger::write("Testing " + std::to_string(totalProxies_) + " proxies from subscription: " + subId, LogLevel::INFO);
-    }
+    Logger::write("Testing " + std::to_string(totalProxies_) + " proxies from subscription: " + subId, LogLevel::DEBUG);
 
     int instanceCount = calculateXrayInstanceCount(totalProxies_);
     if (!startXrayInstances(instanceCount)) {
@@ -563,9 +559,7 @@ bool ProxyBatchTester::runWithSubId(const std::string& subId) {
         return false;
     }
 
-    if (config_.log_network_failures) {
-        Logger::write("Started " + std::to_string(instanceCount) + " xray instances", LogLevel::INFO);
-    }
+    Logger::write("Started " + std::to_string(instanceCount) + " xray instances", LogLevel::DEBUG);
 
     if (!preGenerateConfigs(totalProxies_)) {
         return false;

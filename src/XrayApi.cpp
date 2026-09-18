@@ -2310,6 +2310,113 @@ bool XrayApi::validateSplitHTTPSettings(const std::string& streamSettingsJson,
     return true;
 }
 
+namespace {
+
+bool pbReadVarintSP(const std::string& buf, size_t& pos, uint64_t& out) {
+    uint64_t value = 0;
+    int shift = 0;
+    while (pos < buf.size()) {
+        unsigned char b = static_cast<unsigned char>(buf[pos++]);
+        value |= (static_cast<uint64_t>(b) & 0x7F) << shift;
+        if ((b & 0x80) == 0) {
+            out = value;
+            return true;
+        }
+        shift += 7;
+        if (shift > 63) return false;
+    }
+    return false;
+}
+
+bool pbReadFieldSP(const std::string& buf, size_t& pos, uint32_t& field,
+                   uint32_t& wireType, std::string& data, uint64_t& varint) {
+    if (pos >= buf.size()) return false;
+    unsigned char b = static_cast<unsigned char>(buf[pos++]);
+    field = static_cast<uint32_t>(b) >> 3;
+    wireType = static_cast<uint32_t>(b) & 0x07;
+    if (wireType == 0) {
+        return pbReadVarintSP(buf, pos, varint);
+    }
+    if (wireType == 2) {
+        uint64_t len;
+        if (!pbReadVarintSP(buf, pos, len)) return false;
+        if (pos + len > buf.size()) return false;
+        data = buf.substr(pos, static_cast<size_t>(len));
+        pos += static_cast<size_t>(len);
+        return true;
+    }
+    return false; // unsupported wire type (1/5) — not needed for status parsing
+}
+
+} // anonymous namespace
+
+const char* XrayApi::observatoryStatusPath() {
+    // Runtime-registered name (verified via gRPC reflection on Xray 26.3.27):
+    //   xray.core.app.observatory.command.ObservatoryService
+    // NOT the proto package "xray.app.observatory.command" - xray registers
+    // the observatory command only under the legacy "xray.core.app..." prefix
+    // (unlike HandlerService which dual-registers both xray.app... and v2ray.core.app...).
+    return "/xray.core.app.observatory.command.ObservatoryService/GetOutboundStatus";
+}
+
+bool XrayApi::getOutboundStatusDirect(std::vector<OutboundStatus>& out) {
+    Logger::write("[XrayApi] getOutboundStatusDirect", LogLevel::DEBUG);
+    out.clear();
+    std::string host;
+    int port;
+    if (!parseServerAddr(host, port)) {
+        lastError_ = "getOutboundStatusDirect: bad serverAddr=" + serverAddr_;
+        return false;
+    }
+    int sock = grpcConnect(host, port);
+    if (sock < 0) return false;
+    bool ok = grpcSendPreface(sock);
+    if (!ok) {
+        grpcClose(sock);
+        return false;
+    }
+
+    // GetOutboundStatusRequest is an empty message (no fields).
+    std::string response;
+    ok = grpcSendReceive(sock,
+        observatoryStatusPath(),
+        "", response);
+    grpcClose(sock);
+    if (!ok) {
+        Logger::write("[XrayApi] getOutboundStatusDirect FAILED: " + lastError_,
+                      LogLevel::ERR);
+        return false;
+    }
+
+    // Parse GetOutboundStatusResponse { repeated OutboundStatus outbounds = 1; }
+    // OutboundStatus { string outbound_tag=1; bool alive=2; int64 delay=3;
+    //                  string last_error_reason=4; }
+    size_t pos = 0;
+    while (pos < response.size()) {
+        uint32_t field, wireType;
+        std::string data;
+        uint64_t varint;
+        if (!pbReadFieldSP(response, pos, field, wireType, data, varint)) break;
+        if (field == 1 && wireType == 2) {
+            OutboundStatus st;
+            size_t p2 = 0;
+            while (p2 < data.size()) {
+                uint32_t f2, wt2;
+                std::string d2;
+                uint64_t v2;
+                if (!pbReadFieldSP(data, p2, f2, wt2, d2, v2)) break;
+                if (f2 == 1 && wt2 == 2) st.tag = d2;
+                else if (f2 == 2 && wt2 == 0) st.alive = (v2 != 0);
+                else if (f2 == 3 && wt2 == 0) st.delayMs = static_cast<long long>(v2);
+                else if (f2 == 4 && wt2 == 2) st.lastError = d2;
+            }
+            out.push_back(st);
+        }
+    }
+    lastError_.clear();
+    return true;
+}
+
 bool XrayApi::addOutboundDirect(const std::string& outboundJson,
                                  const std::string& tag,
                                  std::string& resultOutput) {

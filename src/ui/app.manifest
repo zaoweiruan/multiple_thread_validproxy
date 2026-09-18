@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
+  <description>validproxy - proxy validator</description>
+  <!--
+    Common Controls v6 (SxS) dependency.
+
+    wxWidgets 3.3.x wxcore imports comctl32!GetWindowSubclass (delay-load).
+    Without this manifest Windows falls back to the legacy comctl32 v5.82 in
+    System32, which lacks that export, and GUI startup fails with
+    "无法定位程序输入点 GetWindowSubclass 于动态链接库 ...wxmsw333u_core...".
+  -->
+  <dependency>
+    <dependentAssembly>
+      <assemblyIdentity
+        type="win32"
+        name="Microsoft.Windows.Common-Controls"
+        version="6.0.0.0"
+        processorArchitecture="*"
+        publicKeyToken="6595b64144ccf1df"
+        language="*"
+      />
+    </dependentAssembly>
+  </dependency>
+</assembly>

@@ -1,6 +1,10 @@
 // Tests for ProfileExItemDAO message field semantics:
 // message carries ONLY two kinds of info: test time + startup time,
 // separated by a '+' (always present). Changing one side preserves the other.
+// Startup write (formatStartupMessage): when the test side is empty/invalid,
+// it is FILLED with the new startup time -> "<NS>+<NS>" (never left blank).
+// Test-result write (formatTestMessage): an empty startup side stays blank
+// ("<NT>+") because "never started" is real state, not fabricated.
 #include "Profileexitem.h"
 #include <gtest/gtest.h>
 #include <sqlite3.h>
@@ -91,9 +95,11 @@ TEST_F(ProfileExItemDAOTest, FormatTestMessage_InvalidStartupSideDropped) {
 // ---- formatStartupMessage (startup write) ----
 
 TEST_F(ProfileExItemDAOTest, FormatStartupMessage_LegacyReplaced) {
-  EXPECT_EQ(db::models::ProfileExItemDAO::formatStartupMessage("OK", NS), "+" + NS);
-  EXPECT_EQ(db::models::ProfileExItemDAO::formatStartupMessage("", NS), "+" + NS);
-  EXPECT_EQ(db::models::ProfileExItemDAO::formatStartupMessage("NOT_TESTED", NS), "+" + NS);
+  // Empty/invalid test side is FILLED with the new startup time (bugfix
+  // 2026-08-21): "<NS>+<NS>" instead of leaving the test side blank.
+  EXPECT_EQ(db::models::ProfileExItemDAO::formatStartupMessage("OK", NS), NS + "+" + NS);
+  EXPECT_EQ(db::models::ProfileExItemDAO::formatStartupMessage("", NS), NS + "+" + NS);
+  EXPECT_EQ(db::models::ProfileExItemDAO::formatStartupMessage("NOT_TESTED", NS), NS + "+" + NS);
 }
 
 TEST_F(ProfileExItemDAOTest, FormatStartupMessage_KeepsValidTestSide) {
@@ -102,8 +108,16 @@ TEST_F(ProfileExItemDAOTest, FormatStartupMessage_KeepsValidTestSide) {
 }
 
 TEST_F(ProfileExItemDAOTest, FormatStartupMessage_InvalidTestSideDropped) {
-  EXPECT_EQ(db::models::ProfileExItemDAO::formatStartupMessage("garbage+" + S1, NS), "+" + NS);
-  EXPECT_EQ(db::models::ProfileExItemDAO::formatStartupMessage("+" + S1, NS), "+" + NS);
+  EXPECT_EQ(db::models::ProfileExItemDAO::formatStartupMessage("garbage+" + S1, NS), NS + "+" + NS);
+  EXPECT_EQ(db::models::ProfileExItemDAO::formatStartupMessage("+" + S1, NS), NS + "+" + NS);
+}
+
+TEST_F(ProfileExItemDAOTest, FormatStartupMessage_EmptyTestSideFilledWithStartupTime) {
+  // Both sides equal the new startup time; messageActiveTime() then yields
+  // exactly that timestamp (max of the two identical sides).
+  const std::string filled = db::models::ProfileExItemDAO::formatStartupMessage("", NS);
+  EXPECT_EQ(filled, NS + "+" + NS);
+  EXPECT_EQ(db::models::ProfileExItemDAO::messageActiveTime(filled), NS);
 }
 
 // ---- currentTimeString ----
@@ -202,10 +216,12 @@ TEST_F(ProfileExItemDAOTest, UpdateStartupTime_NewRow_WritesStartupTime) {
   ASSERT_TRUE(dao.updateStartupTime("s1"));
 
   std::string msg = getMessage("s1");
-  // "+yyyy-MM-dd HH:mm:ss" exactly 20 chars, leading '+'
-  EXPECT_EQ(msg.size(), 20u);
-  EXPECT_EQ(msg[0], '+');
-  EXPECT_EQ(msg[11], ' ');
+  // "<yyyy-MM-dd HH:mm:ss>+<same>" exactly 39 chars, both sides equal
+  EXPECT_EQ(msg.size(), 39u);
+  EXPECT_EQ(msg[10], ' ');
+  EXPECT_EQ(msg[19], '+');
+  EXPECT_EQ(msg[30], ' ');
+  EXPECT_EQ(msg.substr(0, 19), msg.substr(20, 19));
 }
 
 TEST_F(ProfileExItemDAOTest, UpdateStartupTime_PreservesTestSide) {
@@ -225,8 +241,10 @@ TEST_F(ProfileExItemDAOTest, UpdateStartupTime_LegacyReplaced) {
   ASSERT_TRUE(dao.updateStartupTime("s3"));
 
   std::string msg = getMessage("s3");
-  EXPECT_EQ(msg.size(), 20u);
-  EXPECT_EQ(msg[0], '+');
+  // legacy "OK" replaced by "<now>+<now>" (test side filled, bugfix 2026-08-21)
+  EXPECT_EQ(msg.size(), 39u);
+  EXPECT_EQ(msg[19], '+');
+  EXPECT_EQ(msg.substr(0, 19), msg.substr(20, 19));
 }
 
 // ---- messageActiveTime / compareMessage (Message column sort key) ----

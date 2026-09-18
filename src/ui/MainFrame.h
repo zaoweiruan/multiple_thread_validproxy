@@ -22,6 +22,7 @@ class wxSearchCtrl;
 class wxChoice;
 class ConfigDialog;
 class TrayIcon;
+class StandaloneFloatingWidget;
 
 enum class OperationType {
     NONE,
@@ -82,6 +83,8 @@ private:
     void onMenuAutoTask(wxCommandEvent& event);
     void onMenuAutoTaskResume(wxCommandEvent& event);
     void onMenuAbout(wxCommandEvent& event);
+    void onMenuStandaloneMonitor(wxCommandEvent& event);
+    void syncFloatingWidgetControls();
     void onToolUpdateAll(wxCommandEvent& event);
     void onToolTest(wxCommandEvent& event);
     void onToolFind(wxCommandEvent& event);
@@ -91,6 +94,7 @@ private:
     void onToolCancel(wxCommandEvent& event);
     void onToolSync(wxCommandEvent& event);
     void onStatusUpdate(StatusUpdateEvent& event);
+    void onOnlineProbeFinished(OnlineProbeFinishedEvent& event);
     void onResize(wxSizeEvent& event);
     void onSearchBoxEnter(wxCommandEvent& event);
     void onSearchTextChanged(wxCommandEvent& event);
@@ -98,18 +102,27 @@ private:
     void onToggleDetailPane(wxCommandEvent& event);
     void onTestSubscription(SubscriptionTestEvent& event);
     void onNetMonTimer(wxTimerEvent& event);
+    void onFirstShow(wxShowEvent& event);
     void repositionNetMonPanel();
+    void onProxyMonTimer(wxTimerEvent& event);
+    void repositionProxyMonPanel();
+    void updateProxyMonStatus(bool enabled, int aliveCount);
+    void startProxyMonitor(int intervalMs);
+    void stopProxyMonitor();
+    void startMonitoring();
 
-// Members
+    // Members
      wxAuiManager* auiManager_{nullptr};
      wxSplitterWindow* splitter_{nullptr};  // Resizable splitter for subscription/proxy panels
-     AppController* controller_;
-     wxMenuBar* menuBar_{nullptr};
+    AppController* controller_;
+    wxMenuBar* menuBar_{nullptr};
+    wxMenu* proxyMenu_{nullptr};
     SubscriptionPanel* subPanel_{nullptr};
     ProxyListPanel* proxyPanel_{nullptr};
     ProxyDetailPanel* detailPanel_{nullptr};
     LogPanel* logPanel_{nullptr};
     ConfigDialog* configDialog_{nullptr};
+    StandaloneFloatingWidget* floatingWidget_{nullptr};  // Lazy, toggled via Ctrl+M / toolbar / menu
     wxAuiToolBar* m_toolbar{nullptr};  // Toolbar pointer for AUI management
     TrayIcon* trayIcon_{nullptr};
     sqlite3* db_;
@@ -118,10 +131,17 @@ private:
     wxChoice* m_searchTargetChoice{nullptr};
     wxAuiToolBarItem* m_toggleDetailItem{nullptr};  // Toggle detail panel button
     bool detailPaneVisible_{false};
+    bool monitoringStarted_{false};
+    bool initialSubsLoaded_{false};  // Guard: auto-load proxies on first async subscription load
     config::AppConfig config_;
     wxTimer* netMonTimer_{nullptr};
     wxPanel* netMonPanel_{nullptr};
     bool netMonConnected_{true};
+
+    wxTimer* proxyMonTimer_{nullptr};
+    wxPanel* proxyMonPanel_{nullptr};
+    bool proxyMonEnabled_{false};
+    int proxyAliveCount_{0};
 
     wxDECLARE_EVENT_TABLE();
 };

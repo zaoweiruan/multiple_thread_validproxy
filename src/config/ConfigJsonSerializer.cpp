@@ -23,15 +23,11 @@ boost::json::object ConfigJsonSerializer::serialize(const AppConfig& config) con
     boost::json::object testObj;
     testObj["url"] = config.test_url;
     testObj["timeout_ms"] = config.test_timeout_ms;
-    if (!config.ipinfo_token.empty()) {
-        testObj["ipinfo_token"] = config.ipinfo_token;
-    }
     root["test"] = testObj;
 
     // log
     boost::json::object logObj;
     logObj["enabled"] = config.log_enabled;
-    logObj["network_failures"] = config.log_network_failures;
     logObj["console_level"] = config.log_console_level;
     logObj["file_level"] = config.log_file_level;
     root["log"] = logObj;
@@ -51,6 +47,15 @@ boost::json::object ConfigJsonSerializer::serialize(const AppConfig& config) con
     subObj["check_auto_update_interval"] = config.check_auto_update_interval;
     subObj["connect_timeout_ms"] = config.subscription_connect_timeout_ms;
     subObj["timeout_ms"] = config.subscription_timeout_ms;
+    {
+        // priority_subids: join with comma
+        std::string joined;
+        for (size_t i = 0; i < config.priority_subids.size(); ++i) {
+            if (i > 0) joined += ",";
+            joined += config.priority_subids[i];
+        }
+        subObj["priority_subids"] = joined;
+    }
     root["subscription"] = subObj;
 
     // dedup
@@ -120,6 +125,9 @@ boost::json::object ConfigJsonSerializer::serialize(const AppConfig& config) con
     if (!config.proxy.singbox_template_config_path.empty()) {
         proxyObj["singbox_template_config_path"] = config.proxy.singbox_template_config_path;
     }
+    proxyObj["scoring_delay_weight"] = config.proxy.scoring_delay_weight;
+    proxyObj["scoring_stability_weight"] = config.proxy.scoring_stability_weight;
+    proxyObj["scoring_history_weight"] = config.proxy.scoring_history_weight;
     root["proxy"] = proxyObj;
 
     // network_monitor
@@ -140,6 +148,43 @@ boost::json::object ConfigJsonSerializer::serialize(const AppConfig& config) con
         nmObj["probe_on_disconnect"] = pdObj;
     }
     root["network_monitor"] = nmObj;
+
+    // proxy_process_monitor
+    boost::json::object pmObj;
+    pmObj["enabled"] = config.proxy_process_monitor.enabled;
+    pmObj["check_interval_ms"] = config.proxy_process_monitor.checkIntervalMs;
+    root["proxy_process_monitor"] = pmObj;
+
+    // independent_probe
+    boost::json::object ipObj;
+    ipObj["enabled"] = config.independent_probe.enabled;
+    root["independent_probe"] = ipObj;
+
+    // standalone_pool
+    {
+        boost::json::object spObj;
+        spObj["enabled"] = config.standalone_pool.enabled;
+        spObj["mode"] = config.standalone_pool.mode;
+        spObj["socksPort"] = config.standalone_pool.socksPort;
+        spObj["apiPort"] = config.standalone_pool.apiPort;
+        spObj["balancerStrategy"] = config.standalone_pool.balancerStrategy;
+        boost::json::object obObj;
+        obObj["type"] = config.standalone_pool.observatory.type;
+        obObj["destination"] = config.standalone_pool.observatory.destination;
+        obObj["intervalSec"] = config.standalone_pool.observatory.intervalSec;
+        obObj["samplingCount"] = config.standalone_pool.observatory.samplingCount;
+        obObj["timeoutSec"] = config.standalone_pool.observatory.timeoutSec;
+        spObj["observatory"] = obObj;
+        boost::json::object evObj;
+        evObj["intervalSec"] = config.standalone_pool.evaluate.intervalSec;
+        evObj["reportHealth"] = config.standalone_pool.evaluate.reportHealth;
+        evObj["autoPruneDead"] = config.standalone_pool.evaluate.autoPruneDead;
+        evObj["pruneFailStreak"] = config.standalone_pool.evaluate.pruneFailStreak;
+        evObj["autoOptimize"] = config.standalone_pool.evaluate.autoOptimize;
+        evObj["probeWorkers"] = config.standalone_pool.evaluate.probeWorkers;
+        spObj["evaluate"] = evObj;
+        root["standalone_pool"] = spObj;
+    }
 
     return root;
 }

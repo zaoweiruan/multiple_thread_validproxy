@@ -26,9 +26,21 @@ tool_import_png       RCDATA "docs/design/ui/icon/png/tool_import.png"
 tool_config_png       RCDATA "docs/design/ui/icon/png/tool_config.png"
  tool_dockarrow_png    RCDATA "docs/design/ui/icon/png/tool_dockarrow.png"
 tool_pipeline_png     RCDATA "docs/design/ui/icon/png/tool_pipeline.png"
+tool_monitoring_proxy_process_png RCDATA "docs/design/ui/icon/png/tool_monitoring_proxy_process.png"
+
+// ── Floating-widget background (circular orb) ───────────────────
+// Loaded by StandaloneFloatingWidget via ToolbarIcons::loadPngFromResource
+// (resource name = basename + "_png" = "float_monitor_process_png").
+float_monitor_process_png  RCDATA "docs/design/ui/icon/png/float_monitor_process_1.png"
 
 // ── Application / frame icon (native ICON group) ────────────────────
 // Creates both RT_ICON (raw DIB data per resolution) and RT_GROUP_ICON
 // (directory of available resolutions) so Windows / wxWidgets can load
 // it with LoadImage / wxBITMAP_TYPE_ICO_RESOURCE.
 icon_ico              ICON   "docs/design/ui/icon.ico"
+
+// ── Common Controls v6 manifest ─────────────────────────────────────
+// wxcore 3.3.x delay-loads comctl32!GetWindowSubclass (v6-only export).
+// Without this dependency Windows loads legacy comctl32 v5.82 (System32)
+// and GUI startup fails with "无法定位程序输入点 GetWindowSubclass".
+1 24 "src/ui/app.manifest"

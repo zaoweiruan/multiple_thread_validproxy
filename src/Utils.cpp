@@ -10,7 +10,10 @@
 #include <chrono>
 #include <algorithm>
 #include <set>
-#include <cctype>
+    #include <cctype>
+    #include <vector>
+    #include <iphlpapi.h>
+    #include "Logger.h"
 
 namespace utils {
     std::string getCurrentTimestamp() {
@@ -18,6 +21,16 @@ namespace utils {
         long long timestamp = std::chrono::duration_cast<std::chrono::seconds>(
             now.time_since_epoch()).count();
         return std::to_string(timestamp);
+    }
+
+    std::string getCurrentTimestampFormatted() {
+        std::chrono::system_clock::time_point now = std::chrono::system_clock::now();
+        std::time_t t = std::chrono::system_clock::to_time_t(now);
+        std::tm tm{};
+        localtime_s(&tm, &t);
+        char buf[32];
+        std::strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", &tm);
+        return std::string(buf);
     }
 }
 
@@ -152,6 +165,78 @@ bool isValidUrlFormat(const std::string& url) {
         return valid.count(lower) > 0;
     }
 
+    // Detect whether `port` is held by any socket (our process or another) by
+    // enumerating the system TCP endpoint table — the same source `netstat` uses.
+    // A fresh listen() on `port` fails if an existing endpoint occupies it in a
+    // state that blocks binding. We treat LISTEN and TIME_WAIT as blocking:
+    //   * LISTEN    -> a real server (e.g. xray SOCKS5 on 0.0.0.0 / [::]) holds it
+    //                  (the 2026-08-31 wildcard false-free regression).
+    //   * TIME_WAIT -> a just-closed socket (e.g. a killed xray outbound on 10810)
+    //                  still blocks a new listen() until it expires.
+    //
+    // bind()-based probing is unreliable on Windows: a bind() to a wildcard address
+    // is permitted to COEXIST with an existing wildcard/specific listener (verified
+    // live — an exclusive bind to 0.0.0.0:10808 succeeded while xray already held it),
+    // so it cannot detect occupancy across processes. The TCP table does not have
+    // this blind spot. See docs/bugfix/2026-08-31-Bugfix-IsPortAvailable-Wildcard-v1.0.md.
+    static bool isPortOccupiedInTable(int port) {
+        bool occupied = false;
+
+        // IPv4
+        {
+            DWORD size = 0;
+            DWORD ret = GetExtendedTcpTable(nullptr, &size, FALSE, AF_INET,
+                                            TCP_TABLE_OWNER_PID_ALL, 0);
+            if (ret == ERROR_INSUFFICIENT_BUFFER && size > 0) {
+                std::vector<unsigned char> buf(size);
+                PMIB_TCPTABLE_OWNER_PID table =
+                    reinterpret_cast<PMIB_TCPTABLE_OWNER_PID>(buf.data());
+                if (GetExtendedTcpTable(table, &size, FALSE, AF_INET,
+                                        TCP_TABLE_OWNER_PID_ALL, 0) == NO_ERROR) {
+                    for (DWORD i = 0; i < table->dwNumEntries; ++i) {
+                        if (ntohs(static_cast<u_short>(table->table[i].dwLocalPort))
+                                == static_cast<u_short>(port)) {
+                            DWORD st = table->table[i].dwState;
+                            if (st == MIB_TCP_STATE_LISTEN
+                                    || st == MIB_TCP_STATE_TIME_WAIT) {
+                                occupied = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // IPv6
+        if (!occupied) {
+            DWORD size = 0;
+            DWORD ret = GetExtendedTcpTable(nullptr, &size, FALSE, AF_INET6,
+                                            TCP_TABLE_OWNER_PID_ALL, 0);
+            if (ret == ERROR_INSUFFICIENT_BUFFER && size > 0) {
+                std::vector<unsigned char> buf(size);
+                PMIB_TCP6TABLE_OWNER_PID table =
+                    reinterpret_cast<PMIB_TCP6TABLE_OWNER_PID>(buf.data());
+                if (GetExtendedTcpTable(table, &size, FALSE, AF_INET6,
+                                        TCP_TABLE_OWNER_PID_ALL, 0) == NO_ERROR) {
+                    for (DWORD i = 0; i < table->dwNumEntries; ++i) {
+                        if (ntohs(static_cast<u_short>(table->table[i].dwLocalPort))
+                                == static_cast<u_short>(port)) {
+                            DWORD st = table->table[i].dwState;
+                            if (st == MIB_TCP_STATE_LISTEN
+                                    || st == MIB_TCP_STATE_TIME_WAIT) {
+                                occupied = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        return occupied;
+    }
+
     bool isPortAvailable(int port) {
         static bool wsaStarted = false;
         if (!wsaStarted) {
@@ -162,73 +247,11 @@ bool isValidUrlFormat(const std::string& url) {
             wsaStarted = true;
         }
 
-        // Use connect() instead of bind() because Windows allows overlapping address
-        // bindings (e.g., xray on 0.0.0.0:10808 vs our check on 127.0.0.1:10808).
-        // connect() to 127.0.0.1 detects any listener on that port regardless of
-        // the address the server bound to.
-        SOCKET sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-        if (sock == INVALID_SOCKET) {
-            return false;
-        }
-
-        // Non-blocking so we can control connect() timeout
-        u_long nonblocking = 1;
-        ioctlsocket(sock, FIONBIO, &nonblocking);
-
-        sockaddr_in addr = {};
-        addr.sin_family = AF_INET;
-        addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-        addr.sin_port = htons(static_cast<u_short>(port));
-
-        int result = connect(sock, reinterpret_cast<sockaddr*>(&addr), sizeof(addr));
-
-        // Connected immediately — port is occupied
-        if (result == 0) {
-            closesocket(sock);
-            return false;
-        }
-
-        int err = WSAGetLastError();
-
-        // Immediately refused — nothing is listening
-        if (err == WSAECONNREFUSED) {
-            closesocket(sock);
-            return true;
-        }
-
-        // Connection in progress — wait with short timeout
-        if (err == WSAEWOULDBLOCK) {
-            fd_set writeSet;
-            FD_ZERO(&writeSet);
-            FD_SET(sock, &writeSet);
-
-            timeval tv;
-            tv.tv_sec = 0;
-            tv.tv_usec = 30000;  // 30 ms — the probe only ever connects to
-                                 // 127.0.0.1, where connect resolves in
-                                 // microseconds; 200 ms per probe was pure waste
-
-            int selResult = select(0, nullptr, &writeSet, nullptr, &tv);
-
-            if (selResult == 1) {
-                // Socket became writable — check if connected or refused
-                int optval = 0;
-                socklen_t optlen = sizeof(optval);
-                getsockopt(sock, SOL_SOCKET, SO_ERROR,
-                           reinterpret_cast<char*>(&optval), &optlen);
-                bool occupied = (optval == 0);
-                closesocket(sock);
-                return !occupied;
-            }
-
-            // Timeout or error — assume free
-            closesocket(sock);
-            return true;
-        }
-
-        // Any other error — assume available
-        closesocket(sock);
-        return true;
+        // Consult the real system TCP table (netstat-grade). The port is available
+        // only if no endpoint currently holds it in LISTEN or TIME_WAIT. This catches
+        // wildcard listeners (e.g. xray on 0.0.0.0 / [::]) AND lingering TIME_WAIT
+        // sockets from a just-killed connection — the two historically broken cases.
+        return !isPortOccupiedInTable(port);
     }
 
     int findAvailablePort(int startPort, int maxAttempts) {
@@ -240,6 +263,92 @@ bool isValidUrlFormat(const std::string& url) {
             }
         }
         return -1;
+    }
+
+    // ---- Port-occupation diagnostics (2026-08-31 port investigation) ----
+    static std::string tcpStateName(unsigned long st) {
+        switch (st) {
+            case MIB_TCP_STATE_CLOSED:     return "CLOSED";
+            case MIB_TCP_STATE_LISTEN:     return "LISTEN";
+            case MIB_TCP_STATE_SYN_SENT:   return "SYN_SENT";
+            case MIB_TCP_STATE_SYN_RCVD:   return "SYN_RCVD";
+            case MIB_TCP_STATE_ESTAB:      return "ESTABLISHED";
+            case MIB_TCP_STATE_FIN_WAIT1:  return "FIN_WAIT1";
+            case MIB_TCP_STATE_FIN_WAIT2:  return "FIN_WAIT2";
+            case MIB_TCP_STATE_TIME_WAIT:  return "TIME_WAIT";
+            case MIB_TCP_STATE_CLOSE_WAIT: return "CLOSE_WAIT";
+            case MIB_TCP_STATE_LAST_ACK:   return "LAST_ACK";
+            case MIB_TCP_STATE_CLOSING:    return "CLOSING";
+            default:                       return "STATE_" + std::to_string(st);
+        }
+    }
+
+    static std::string resolveProcessName(DWORD pid) {
+        std::string name = "<unknown>";
+        HANDLE h = OpenProcess(PROCESS_QUERY_INFORMATION, FALSE, pid);
+        if (h == NULL) {
+            return name;
+        }
+        char path[MAX_PATH] = {0};
+        DWORD len = MAX_PATH;
+        if (QueryFullProcessImageNameA(h, 0, path, &len) && len > 0) {
+            std::string p(path);
+            size_t pos = p.find_last_of("\\/");
+            name = (pos != std::string::npos) ? p.substr(pos + 1) : p;
+        }
+        CloseHandle(h);
+        return name;
+    }
+
+    void logPortOccupants(int port) {
+        auto dumpFamily = [&](ADDRESS_FAMILY af, bool v6) {
+            DWORD size = 0;
+            if (GetExtendedTcpTable(nullptr, &size, FALSE, af,
+                                    TCP_TABLE_OWNER_PID_ALL, 0) != ERROR_INSUFFICIENT_BUFFER
+                    || size == 0) {
+                return;
+            }
+            std::vector<unsigned char> buf(size);
+            if (v6) {
+                PMIB_TCP6TABLE_OWNER_PID table =
+                    reinterpret_cast<PMIB_TCP6TABLE_OWNER_PID>(buf.data());
+                if (GetExtendedTcpTable(table, &size, FALSE, af,
+                                        TCP_TABLE_OWNER_PID_ALL, 0) != NO_ERROR) {
+                    return;
+                }
+                for (DWORD i = 0; i < table->dwNumEntries; ++i) {
+                    if (ntohs(static_cast<u_short>(table->table[i].dwLocalPort))
+                            != static_cast<unsigned short>(port)) {
+                        continue;
+                    }
+                    Logger::write("  port=" + std::to_string(port)
+                                  + " pid=" + std::to_string(table->table[i].dwOwningPid)
+                                  + " state=" + tcpStateName(table->table[i].dwState)
+                                  + " process=" + resolveProcessName(table->table[i].dwOwningPid),
+                                  LogLevel::INFO);
+                }
+            } else {
+                PMIB_TCPTABLE_OWNER_PID table =
+                    reinterpret_cast<PMIB_TCPTABLE_OWNER_PID>(buf.data());
+                if (GetExtendedTcpTable(table, &size, FALSE, af,
+                                        TCP_TABLE_OWNER_PID_ALL, 0) != NO_ERROR) {
+                    return;
+                }
+                for (DWORD i = 0; i < table->dwNumEntries; ++i) {
+                    if (ntohs(static_cast<u_short>(table->table[i].dwLocalPort))
+                            != static_cast<unsigned short>(port)) {
+                        continue;
+                    }
+                    Logger::write("  port=" + std::to_string(port)
+                                  + " pid=" + std::to_string(table->table[i].dwOwningPid)
+                                  + " state=" + tcpStateName(table->table[i].dwState)
+                                  + " process=" + resolveProcessName(table->table[i].dwOwningPid),
+                                  LogLevel::INFO);
+                }
+            }
+        };
+        dumpFamily(AF_INET, false);
+        dumpFamily(AF_INET6, true);
     }
 
     // Helper: convert narrow string to wide string
@@ -471,4 +580,44 @@ bool isValidUrlFormat(const std::string& url) {
         }
         return false;
     }
- }
+
+    bool isTestResultValid(bool success, long latencyMs) {
+        return success && latencyMs > 0;
+    }
+
+    bool isDelayValid(const std::string& delayStr) {
+        if (delayStr.empty() || delayStr == "-1") return false;
+        try {
+            long val = std::stol(delayStr);
+            return val > 0;
+        } catch (...) {
+            return false;
+        }
+    }
+
+    ProxyListMaps buildProxyListMaps(const std::vector<db::models::ProfileExItem>& exItems) {
+        ProxyListMaps maps;
+        for (const db::models::ProfileExItem& ex : exItems) {
+            maps.delayMap[ex.indexid] = ex.delay;
+            maps.messageMap[ex.indexid] = ex.message;
+            maps.failuresMap[ex.indexid] = ex.consecutive_failures;
+            maps.startCountMap[ex.indexid] = ex.start_count;
+
+            if (ex.total_runtime_ms > 0) {
+                maps.runtimeMap[ex.indexid] = ex.total_runtime_ms;
+            } else {
+                maps.runtimeMap[ex.indexid] = 0;
+            }
+
+            int stable = ex.start_count - ex.crash_count;
+            if (stable < 0) stable = 0;
+            if (ex.start_count == 0) {
+                maps.healthMap[ex.indexid] = 0.0;
+            } else {
+                maps.healthMap[ex.indexid] = static_cast<double>(stable + 1) /
+                                             static_cast<double>(ex.start_count + 2);
+            }
+        }
+        return maps;
+    }
+}

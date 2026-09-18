@@ -1,5 +1,6 @@
 #include "Profileexitem.h"
 #include "Logger.h"
+#include "Utils.h"
 #include <sqlite3.h>
 #include <string>
 #include <vector>
@@ -15,7 +16,11 @@ ProfileExItemDAO::ProfileExItemDAO(sqlite3* db) : db_(db) {
 void ProfileExItemDAO::migrateTable(sqlite3* db) {
     // Add columns to ProfileExItem (existing migrations)
     const char* addCols[] = {
-        "ALTER TABLE ProfileExItem ADD COLUMN consecutive_failures INTEGER DEFAULT 0"
+        "ALTER TABLE ProfileExItem ADD COLUMN consecutive_failures INTEGER DEFAULT 0",
+        // ProxyScoring history aggregation columns (idempotent - column already exists is OK)
+        "ALTER TABLE ProfileExItem ADD COLUMN start_count INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE ProfileExItem ADD COLUMN total_runtime_ms INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE ProfileExItem ADD COLUMN crash_count INTEGER NOT NULL DEFAULT 0"
     };
     for (const char* sql : addCols) {
         sqlite3_exec(db, sql, nullptr, nullptr, nullptr);
@@ -44,6 +49,25 @@ std::vector<ProfileExItem> ProfileExItemDAO::getAll() {
 
     while (sqlite3_step(stmt) == SQLITE_ROW) {
       result.push_back(ProfileExItem::fromStmt(stmt));
+    }
+
+    sqlite3_finalize(stmt);
+    return result;
+  }
+
+std::optional<ProfileExItem> ProfileExItemDAO::getByIndexId(const std::string& indexId) {
+    const char* sql = "SELECT * FROM ProfileExItem WHERE IndexId = ? LIMIT 1;";
+
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+      Logger::write("SQL错误: " + std::string(sqlite3_errmsg(db_)), LogLevel::ERR);
+      return std::nullopt;
+    }
+
+    sqlite3_bind_text(stmt, 1, indexId.c_str(), -1, SQLITE_STATIC);
+    std::optional<ProfileExItem> result = std::nullopt;
+    if (sqlite3_step(stmt) == SQLITE_ROW) {
+      result = ProfileExItem::fromStmt(stmt);
     }
 
     sqlite3_finalize(stmt);
@@ -94,6 +118,9 @@ std::string ProfileExItemDAO::formatTestMessage(const std::string& existingMessa
 
 std::string ProfileExItemDAO::formatStartupMessage(const std::string& existingMessage, const std::string& newStartupTime) {
     // Keep the test side (before first '+') only when it is a valid timestamp.
+    // When the test side is empty/invalid, FILL it with the new startup time
+    // (bugfix 2026-08-21): "<NS>+<NS>" instead of a blank test side, so the
+    // message always carries two valid timestamps after a monitored start.
     std::string testPart;
     std::size_t plusPos = existingMessage.find('+');
     if (plusPos != std::string::npos && plusPos > 0) {
@@ -103,7 +130,7 @@ std::string ProfileExItemDAO::formatStartupMessage(const std::string& existingMe
       }
     }
     if (testPart.empty()) {
-      return "+" + newStartupTime;
+      return newStartupTime + "+" + newStartupTime;
     }
     return testPart + "+" + newStartupTime;
   }
@@ -220,8 +247,13 @@ bool ProfileExItemDAO::updateTestResult(const std::string& indexid, long latency
     std::string existingMessage;
 
     int currentFailures = 0;
+    // Evaluation history columns — preserved on success, reset on failure.
+    int histStartCount = 0;
+    int64_t histRuntimeMs = 0;
+    int histCrashCount = 0;
+
     sqlite3_stmt* selectStmt = nullptr;
-    const char* selectSql = "SELECT consecutive_failures, Message FROM ProfileExItem WHERE IndexId = ?";
+    const char* selectSql = "SELECT consecutive_failures, Message, start_count, total_runtime_ms, crash_count FROM ProfileExItem WHERE IndexId = ?";
     sqlite3* execDb = db ? db : db_;
 
     if (sqlite3_prepare_v2(execDb, selectSql, -1, &selectStmt, nullptr) == SQLITE_OK) {
@@ -230,27 +262,43 @@ bool ProfileExItemDAO::updateTestResult(const std::string& indexid, long latency
         currentFailures = sqlite3_column_int(selectStmt, 0);
         const char* text = (const char*)sqlite3_column_text(selectStmt, 1);
         existingMessage = text ? text : "";
+        histStartCount = sqlite3_column_int(selectStmt, 2);
+        histRuntimeMs = sqlite3_column_int64(selectStmt, 3);
+        histCrashCount = sqlite3_column_int(selectStmt, 4);
       }
       sqlite3_finalize(selectStmt);
     } else {
       Logger::write("SQL prepare failed for select: " + std::string(sqlite3_errmsg(execDb)), LogLevel::ERR);
     }
 
-    if (success) {
+    // Only refresh the test-time side of message for VALID proxies:
+    // success && latencyMs > 0 (utils::isTestResultValid). A success with
+    // invalid latency (e.g. timeout returning 0, error returning -1) must not
+    // stamp the test time — that would mislead users into thinking the proxy
+    // was just verified when it actually was not.
+    if (utils::isTestResultValid(success, latencyMs)) {
       message = formatTestMessage(existingMessage, currentTimeString());
     } else {
       // Keep the existing message untouched (may be empty for a brand-new row).
       message = existingMessage;
-      if (!curlMsg.empty()) {
-        Logger::write("[ProfileExItem] test failed for " + indexid + ": " + curlMsg, LogLevel::DEBUG);
+      // Reset evaluation history only on actual test failure — a proxy with
+      // success=true but latencyMs<=0 is "not yet validated" rather than
+      // "failed", so its history is preserved.
+      if (!success) {
+        histStartCount = 0;
+        histRuntimeMs = 0;
+        histCrashCount = 0;
+        if (!curlMsg.empty()) {
+          Logger::write("[ProfileExItem] test failed for " + indexid + ": " + curlMsg, LogLevel::DEBUG);
+        }
       }
     }
 
     int newFailures = success ? 0 : currentFailures + 1;
 
-    std::string delayStr = (success && latencyMs >= 0) ? std::to_string(latencyMs / 10) : "-1";
+    std::string delayStr = utils::isTestResultValid(success, latencyMs) ? std::to_string(latencyMs / 10) : "-1";
 
-    const char* insertSql = "INSERT OR REPLACE INTO ProfileExItem (indexid, delay, speed, sort, message, consecutive_failures) VALUES (?, ?, '0', '0', ?, ?);";
+    const char* insertSql = "INSERT OR REPLACE INTO ProfileExItem (indexid, delay, speed, sort, message, consecutive_failures, start_count, total_runtime_ms, crash_count) VALUES (?, ?, '0', '0', ?, ?, ?, ?, ?);";
     sqlite3_stmt* insertStmt = nullptr;
     if (sqlite3_prepare_v2(execDb, insertSql, -1, &insertStmt, nullptr) != SQLITE_OK) {
         Logger::write("SQL insert prepare error: " + std::string(sqlite3_errmsg(execDb)), LogLevel::ERR);
@@ -260,6 +308,9 @@ bool ProfileExItemDAO::updateTestResult(const std::string& indexid, long latency
     sqlite3_bind_text(insertStmt, 2, delayStr.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_text(insertStmt, 3, message.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_int(insertStmt, 4, newFailures);
+    sqlite3_bind_int(insertStmt, 5, histStartCount);
+    sqlite3_bind_int64(insertStmt, 6, histRuntimeMs);
+    sqlite3_bind_int(insertStmt, 7, histCrashCount);
 
     int rc = sqlite3_step(insertStmt);
     sqlite3_finalize(insertStmt);
@@ -285,8 +336,8 @@ bool ProfileExItemDAO::updateTestResult(const std::string& indexid, long latency
       static constexpr int SUB_BATCH_SIZE = 50;
       bool allOk = true;
       
-      const char* insertSql = "INSERT OR REPLACE INTO ProfileExItem (indexid, delay, speed, sort, message, consecutive_failures) VALUES (?, ?, '0', '0', ?, ?);";
-      const char* selectSql = "SELECT consecutive_failures, Message FROM ProfileExItem WHERE IndexId = ?";
+      const char* insertSql = "INSERT OR REPLACE INTO ProfileExItem (indexid, delay, speed, sort, message, consecutive_failures, start_count, total_runtime_ms, crash_count) VALUES (?, ?, '0', '0', ?, ?, ?, ?, ?);";
+      const char* selectSql = "SELECT consecutive_failures, Message, start_count, total_runtime_ms, crash_count FROM ProfileExItem WHERE IndexId = ?";
       
       int totalSize = static_cast<int>(results.size());
       
@@ -338,37 +389,53 @@ bool ProfileExItemDAO::updateTestResult(const std::string& indexid, long latency
               bool success = std::get<2>(results[i]);
               const std::string& curlMsg = std::get<3>(results[i]);
               
-              // Fetch current failure count and existing message
+              // Fetch current failure count, existing message, and evaluation history.
               sqlite3_bind_text(selStmt, 1, indexid.c_str(), -1, SQLITE_TRANSIENT);
               int failures = 0;
               std::string existingMessage;
+              int histStartCount = 0;
+              int64_t histRuntimeMs = 0;
+              int histCrashCount = 0;
               if (sqlite3_step(selStmt) == SQLITE_ROW) {
                   failures = sqlite3_column_int(selStmt, 0);
                   const char* text = (const char*)sqlite3_column_text(selStmt, 1);
                   existingMessage = text ? text : "";
+                  histStartCount = sqlite3_column_int(selStmt, 2);
+                  histRuntimeMs = sqlite3_column_int64(selStmt, 3);
+                  histCrashCount = sqlite3_column_int(selStmt, 4);
               }
               sqlite3_reset(selStmt);
               sqlite3_clear_bindings(selStmt);
               
-              // Only two kinds of info: test time (on success) + startup time.
-              // A failed test never overwrites the existing message.
-              std::string message;
-              if (success) {
-                  message = formatTestMessage(existingMessage, currentTimeString());
-              } else {
-                  message = existingMessage;
-                  if (!curlMsg.empty()) {
-                      Logger::write("[ProfileExItem] test failed for " + indexid + ": " + curlMsg, LogLevel::DEBUG);
-                  }
-              }
+               // Only refresh the test-time side of message for VALID proxies:
+               // success && latencyMs > 0 (utils::isTestResultValid). A success
+               // with invalid latency must not stamp the test time.
+               std::string message;
+               if (utils::isTestResultValid(success, latencyMs)) {
+                   message = formatTestMessage(existingMessage, currentTimeString());
+               } else {
+                   message = existingMessage;
+                   // Reset evaluation history only on actual test failure.
+                   if (!success) {
+                       histStartCount = 0;
+                       histRuntimeMs = 0;
+                       histCrashCount = 0;
+                       if (!curlMsg.empty()) {
+                           Logger::write("[ProfileExItem] test failed for " + indexid + ": " + curlMsg, LogLevel::DEBUG);
+                       }
+                   }
+               }
               
-              std::string delayStr = (success && latencyMs >= 0) ? std::to_string(latencyMs / 10) : "-1";
+              std::string delayStr = utils::isTestResultValid(success, latencyMs) ? std::to_string(latencyMs / 10) : "-1";
               int newFailures = success ? 0 : failures + 1;
               
               sqlite3_bind_text(stmt, 1, indexid.c_str(), -1, SQLITE_TRANSIENT);
               sqlite3_bind_text(stmt, 2, delayStr.c_str(), -1, SQLITE_TRANSIENT);
               sqlite3_bind_text(stmt, 3, message.c_str(), -1, SQLITE_TRANSIENT);
               sqlite3_bind_int(stmt, 4, newFailures);
+              sqlite3_bind_int(stmt, 5, histStartCount);
+              sqlite3_bind_int64(stmt, 6, histRuntimeMs);
+              sqlite3_bind_int(stmt, 7, histCrashCount);
               
               int rc = sqlite3_step(stmt);
               sqlite3_reset(stmt);

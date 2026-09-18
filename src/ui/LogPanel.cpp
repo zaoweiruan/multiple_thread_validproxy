@@ -131,11 +131,6 @@ void LogPanel::onLogStatistics(wxCommandEvent&) {
         return; // a statistics parse is already running; ignore repeated clicks
     }
     std::string logPath = Logger::getFilePath();
-    if (logPath.empty()) {
-        wxMessageBox("未找到日志文件，无法进行统计。", "日志统计",
-                     wxOK | wxICON_INFORMATION);
-        return;
-    }
     statisticsForFile(logPath);
 }
 

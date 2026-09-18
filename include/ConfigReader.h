@@ -7,6 +7,33 @@
 
 namespace config {
 
+// Standalone proxy pool configuration (single Xray process, dynamic member injection)
+struct StandalonePoolConfig {
+    bool enabled = false;
+    std::string mode = "pool";                    // "pool" | "select"
+    int socksPort = 10809;
+    int apiPort = 10810;
+    std::string balancerStrategy = "leastPing";  // "random" | "leastPing" | "leastLoad"
+    std::string probeUrl;                          // probe URL for the observatory; when set,
+                                                   // buildPoolConfig reuses it (config.json test.url)
+                                                   // instead of observatory.destination.
+    struct {
+        std::string type = "http";                // "http" | "ping"
+        std::string destination = "https://www.google.com";
+        int intervalSec = 5;
+        int samplingCount = 10;
+        int timeoutSec = 5;
+    } observatory;
+    struct {
+        int intervalSec = 10;
+        bool reportHealth = true;                 // a
+        bool autoPruneDead = false;               // b
+        int pruneFailStreak = 3;                  // b 阈值
+        bool autoOptimize = false;                // c
+        int probeWorkers = 2;                     // 常驻 Xray 探针 worker 数（非直连成员健康探测）
+    } evaluate;
+};
+
 struct AppConfig {
     std::string database_path;
     std::string sql_query;
@@ -16,9 +43,7 @@ struct AppConfig {
     int xray_api_port = 0;
     std::string test_url;
     int test_timeout_ms = 5000;
-    std::string ipinfo_token;         // ipinfo.io API token for region resolution
     bool log_enabled = true;
-    bool log_network_failures = false;
     std::string log_console_level;
     std::string log_file_level;
     std::string accelerator_url;
@@ -26,6 +51,7 @@ struct AppConfig {
     bool check_auto_update_interval = false;
     int subscription_connect_timeout_ms = 10000;  // Default: 10s connect timeout
     int subscription_timeout_ms = 30000;          // Default: 30s total timeout
+    std::vector<std::string> priority_subids;      // Subscriptions sorted to top of list on startup
     bool dedup_enabled = true;
     bool dedup_after_update = false;
     std::vector<std::string> dedup_subids;
@@ -67,6 +93,19 @@ struct AppConfig {
         int maxProbes{3};
     } network_monitor;
 
+    // ProxyProcessMonitor configuration
+    struct {
+        bool enabled{false};
+        int checkIntervalMs{30000};
+    } proxy_process_monitor;
+
+    // Independent proxy periodic silent probe configuration.
+    // interval reuses proxy_process_monitor.checkIntervalMs;
+    // failure threshold reuses standalone_pool.evaluate.pruneFailStreak.
+    struct {
+        bool enabled = true;
+    } independent_probe;
+
     // Proxy configuration (standalone proxy)
     struct {
         int socks_base_port = 10808;
@@ -77,7 +116,13 @@ struct AppConfig {
         std::string singbox_executable;      // sing-box executable path (only relevant when use_singbox=true)
         std::string singbox_asset_dir;       // sing-box geoip/geosite resource directory
         std::string singbox_template_config_path;  // sing-box config template path
+        // Scoring weights (0.0-1.0, sum not required to equal 1.0)
+        double scoring_delay_weight = 0.2;
+        double scoring_stability_weight = 0.3;
+        double scoring_history_weight = 0.5;
     } proxy;
+
+    StandalonePoolConfig standalone_pool;
 };
 
 class ConfigReader {

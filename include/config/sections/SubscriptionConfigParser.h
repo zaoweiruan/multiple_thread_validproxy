@@ -79,6 +79,28 @@ inline void SubscriptionConfigParser::parse(const boost::json::value& root, AppC
         } else {
             config.subscription_timeout_ms = 30000;
         }
+
+        // priority_subids: comma-separated list of subscription IDs to show at top
+        if (sub.contains("priority_subids") && sub.at("priority_subids").is_string()) {
+            std::string raw = sub.at("priority_subids").as_string().c_str();
+            // Split by comma, trim whitespace, skip empty tokens
+            std::string token;
+            for (char ch : raw) {
+                if (ch == ',') {
+                    if (!token.empty()) {
+                        config.priority_subids.push_back(token);
+                    }
+                    token.clear();
+                } else if (ch != ' ' && ch != '\t') {
+                    token += ch;
+                }
+            }
+            if (!token.empty()) {
+                config.priority_subids.push_back(token);
+            }
+        } else if (sub.contains("priority_subids")) {
+            Logger::write("WARNING: config.subscription.priority_subids has wrong type (expected string), using default", LogLevel::WARN);
+        }
     } else if (obj.contains("subscription")) {
         Logger::write("WARNING: config.subscription has wrong type (expected object), using default", LogLevel::WARN);
     } else {

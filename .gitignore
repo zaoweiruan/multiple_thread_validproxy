@@ -30,3 +30,7 @@
 *.temp
 *.exe
 *.dll
+
+# UI test framework outputs (plan 2026-08-24)
+/test-results/
+/test/ui-sandbox/

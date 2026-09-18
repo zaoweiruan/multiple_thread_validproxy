@@ -129,10 +129,16 @@ bool XrayInstance::start() {
     lastExitCode_ = STILL_ACTIVE;
     CloseHandle(pi.hThread);
 
-    // Bounded liveness poll: verify the process survived for at least a few hundred ms
-    // rather than blindly waiting 2s then unconditionally declaring success.
-    const int LIVENESS_POLL_MS = 5000;
-    const int LIVENESS_STEP_MS = 100;
+    // Short spawn-grace poll: confirm the process survived its first moments
+    // (e.g. missing DLL, bad executable path, instant config panic) and log the
+    // death tail on failure. This is intentionally SHORT — it is NOT the success
+    // criterion. The real "is the instance usable" check (API port ready, while
+    // the process is still alive) is performed by XrayManager::waitInstanceReady,
+    // which is crash-aware and bounded so a startup flash-crash never blocks for
+    // the full timeout. Keeping this grace short avoids wasting seconds on every
+    // successful startup (the old code always blocked 5000ms here).
+    const int LIVENESS_POLL_MS = 500;
+    const int LIVENESS_STEP_MS = 50;
     for (int elapsed = 0; elapsed < LIVENESS_POLL_MS; elapsed += LIVENESS_STEP_MS) {
         std::this_thread::sleep_for(std::chrono::milliseconds(LIVENESS_STEP_MS));
         DWORD exitCode = 0;
@@ -194,8 +200,20 @@ void XrayInstance::stop() {
                       + std::to_string(socksPort_) + " api="
                       + std::to_string(apiPort_), LogLevel::INFO);
         TerminateJobObject(job, 1);
-        // Graceful wait: give processes up to GRACEFUL_SHUTDOWN_MS to drain before Job close
-        std::this_thread::sleep_for(std::chrono::milliseconds(GRACEFUL_SHUTDOWN_MS));
+        // 2026-09-18 Spec §3.2: poll 替代硬 sleep_for(500ms)。
+        // pre-fix：无条件 sleep 500ms，即使进程已退出也要等满 500ms。
+        // post-fix：20ms 步长 poll 进程退出，进程通常 <50ms 退出即返回。
+        // 上限仍是 GRACEFUL_SHUTDOWN_MS（500ms），语义与 pre-fix 一致。
+        if (proc) {
+            for (int elapsed = 0; elapsed < static_cast<int>(GRACEFUL_SHUTDOWN_MS);
+                 elapsed += 20) {
+                DWORD pollResult = WaitForSingleObject(proc, 0);
+                if (pollResult == WAIT_OBJECT_0 || pollResult == WAIT_FAILED) {
+                    break;  // 进程已退出或句柄无效
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(20));
+            }
+        }
     }
     if (proc) {
         // Wait synchronously: process may have already exited or been killed by the Job above.
@@ -267,11 +285,28 @@ int XrayInstance::getApiPort() const {
     return apiPort_;
 }
 
+DWORD XrayInstance::getPid() const {
+    std::lock_guard<std::mutex> lock(stateMutex_);
+    if (processHandle_ == nullptr) {
+        return 0;
+    }
+    return GetProcessId(processHandle_);
+}
+
 std::string XrayInstance::getConfigPath() const {
     return configPath_;
 }
 
 bool XrayInstance::createConfigFile() {
+    // StandaloneProxyPool mode: write the prebuilt pool config verbatim.
+    if (!explicitConfig_.empty()) {
+        std::ofstream out(configPath_);
+        if (!out.is_open()) return false;
+        out << explicitConfig_;
+        out.close();
+        return true;
+    }
+
     // Ensure the config directory exists
     std::filesystem::path configPath(configPath_);
     std::error_code ec;
@@ -286,7 +321,7 @@ bool XrayInstance::createConfigFile() {
         "log": {"loglevel": "warning"},
         "api": {
             "tag": "api",
-            "services": ["HandlerService", "LoggerService", "StatsService"]
+            "services": ["HandlerService", "LoggerService", "StatsService", "RoutingService"]
         },
         "stats": {},
         "policy": {
@@ -297,7 +332,10 @@ bool XrayInstance::createConfigFile() {
             {"tag": "api", "listen": "127.0.0.1", "port": )" + std::to_string(apiPort_) + R"(, "protocol": "dokodemo-door", "settings": {"address": "127.0.0.1"}},
             {"tag": "socks-in", "listen": "127.0.0.1", "port": )" + std::to_string(socksPort_) + R"(, "protocol": "mixed", "settings": {"auth": "noauth", "udp": true}}
         ],
-        "outbounds": [{"tag": "direct", "protocol": "freedom"}],
+        "outbounds": [
+            {"tag": "direct", "protocol": "freedom"},
+            {"tag": "proxy", "protocol": "freedom"}
+        ],
         "routing": {
             "domainStrategy": "AsIs",
             "rules": [
@@ -312,6 +350,10 @@ bool XrayInstance::createConfigFile() {
     out << content;
     out.close();
     return true;
+}
+
+void XrayInstance::setExplicitConfig(const std::string& configJson) {
+    explicitConfig_ = configJson;
 }
 
 bool XrayInstance::openRedirectFiles() {
@@ -352,9 +394,16 @@ void XrayInstance::logDeathDetails(DWORD exitCode) const {
     std::string msg = "[XrayInstance] Process exited unexpectedly (socks="
                       + std::to_string(socksPort_) + ", exitCode="
                       + std::to_string(exitCode) + ")";
-    std::string tail = readFileTail(stderrLogPath_, DEATH_STDERR_TAIL_BYTES);
-    if (!tail.empty()) {
-        msg += ", stderr tail:\n" + tail;
+    // Xray prints fatal "Failed to start" errors to stdout, not stderr, so we
+    // surface both tails — otherwise the real cause (e.g. "unable to listen on
+    // 127.0.0.1:10809") never reaches the application log.
+    std::string stderrTail = readFileTail(stderrLogPath_, DEATH_STDERR_TAIL_BYTES);
+    std::string stdoutTail = readFileTail(stdoutLogPath_, DEATH_STDERR_TAIL_BYTES);
+    if (!stderrTail.empty()) {
+        msg += ", stderr tail:\n" + stderrTail;
+    }
+    if (!stdoutTail.empty()) {
+        msg += ", stdout tail:\n" + stdoutTail;
     }
     Logger::write(msg, LogLevel::ERR);
 }

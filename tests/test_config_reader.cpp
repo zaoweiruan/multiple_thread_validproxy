@@ -37,7 +37,6 @@ TEST_F(ConfigReaderTest, SaveRoundTrip) {
     original.test_url = "https://test.com";
     original.test_timeout_ms = 3000;
     original.log_enabled = false;
-    original.log_network_failures = true;
     original.log_console_level = "WARN";
     original.log_file_level = "INFO";
     original.accelerator_url = "https://cdn.acc.com/";
@@ -87,7 +86,6 @@ TEST_F(ConfigReaderTest, SaveRoundTrip_FieldCompleteness) {
     original.test_url = "https://fc.example.com";
     original.test_timeout_ms = 3000;
     original.log_enabled = false;
-    original.log_network_failures = true;
     original.log_console_level = "WARN";
     original.log_file_level = "ERROR";
     original.accelerator_url = "https://fc.acc.com/";
@@ -114,6 +112,8 @@ TEST_F(ConfigReaderTest, SaveRoundTrip_FieldCompleteness) {
     original.network_monitor.checkUrls = {"https://fc.example.com"};
     original.network_monitor.checkIntervalMs = 15000;
     original.network_monitor.checkTimeoutMs = 8000;
+    original.proxy_process_monitor.enabled = true;
+    original.proxy_process_monitor.checkIntervalMs = 5000;
 
     // Create files needed by load validation
     touchFile(original.database_path);
@@ -134,7 +134,6 @@ TEST_F(ConfigReaderTest, SaveRoundTrip_FieldCompleteness) {
     EXPECT_EQ(loaded->test_url, original.test_url);
     EXPECT_EQ(loaded->test_timeout_ms, original.test_timeout_ms);
     EXPECT_EQ(loaded->log_enabled, original.log_enabled);
-    EXPECT_EQ(loaded->log_network_failures, original.log_network_failures);
     EXPECT_EQ(loaded->log_console_level, original.log_console_level);
     EXPECT_EQ(loaded->log_file_level, original.log_file_level);
     EXPECT_EQ(loaded->accelerator_url, original.accelerator_url);
@@ -161,6 +160,36 @@ TEST_F(ConfigReaderTest, SaveRoundTrip_FieldCompleteness) {
     EXPECT_EQ(loaded->network_monitor.checkUrls, original.network_monitor.checkUrls);
     EXPECT_EQ(loaded->network_monitor.checkIntervalMs, original.network_monitor.checkIntervalMs);
     EXPECT_EQ(loaded->network_monitor.checkTimeoutMs, original.network_monitor.checkTimeoutMs);
+    EXPECT_EQ(loaded->proxy_process_monitor.enabled, original.proxy_process_monitor.enabled);
+    EXPECT_EQ(loaded->proxy_process_monitor.checkIntervalMs, original.proxy_process_monitor.checkIntervalMs);
+}
+
+// ============================================================
+// independent_probe + scoring weights 往返 — 方案 B 新字段
+// ============================================================
+TEST_F(ConfigReaderTest, SaveRoundTrip_IndependentProbeAndScoring) {
+    std::string tmpDirGeneric = std::filesystem::path(tempDir_.path()).generic_string();
+
+    AppConfig original;
+    original.database_path = tmpDirGeneric + "/fc_db.db";
+    original.proxy.xray_executable = tmpDirGeneric + "/fc_xray.exe";
+    original.independent_probe.enabled = false;
+    original.proxy.scoring_delay_weight = 0.4;
+    original.proxy.scoring_stability_weight = 0.35;
+    original.proxy.scoring_history_weight = 0.25;
+
+    touchFile(original.database_path);
+    touchFile(original.proxy.xray_executable);
+
+    ASSERT_TRUE(ConfigReader::save(configPath("fc_indprobe.json"), original));
+
+    std::optional<AppConfig> loaded = ConfigReader::load(configPath("fc_indprobe.json"));
+    ASSERT_TRUE(loaded.has_value());
+
+    EXPECT_EQ(loaded->independent_probe.enabled, false);
+    EXPECT_DOUBLE_EQ(loaded->proxy.scoring_delay_weight, 0.4);
+    EXPECT_DOUBLE_EQ(loaded->proxy.scoring_stability_weight, 0.35);
+    EXPECT_DOUBLE_EQ(loaded->proxy.scoring_history_weight, 0.25);
 }
 
 // ============================================================

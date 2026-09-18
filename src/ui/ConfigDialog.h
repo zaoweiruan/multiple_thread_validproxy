@@ -4,6 +4,7 @@
 #include <wx/wx.h>
 #include <wx/dialog.h>
 #include <wx/propgrid/propgrid.h>
+#include <wx/propgrid/property.h>
 #include <wx/propgrid/advprops.h>
 
 #include "ConfigReader.h"
@@ -27,6 +28,10 @@ private:
     bool validateConfig();
     void refreshUpdateMethodDisplay();
     void refreshAutoTaskChainDisplay();
+    // 「代理后端选择」两个后端路径组（条件可见，解决 P3）——指针在构建树时捕获
+    wxPGProperty* xrayBackendCat_{nullptr};
+    wxPGProperty* sbBackendCat_{nullptr};
+    void applyBackendVisibility();
 
     config::AppConfig editedConfig_;
     std::vector<std::string> stepOrder_;

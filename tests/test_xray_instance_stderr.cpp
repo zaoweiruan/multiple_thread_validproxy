@@ -131,6 +131,68 @@ TEST(XrayInstanceStderrTest, RuntimeDeathCapture) {
     std::filesystem::remove_all(tmp, ec);
 }
 
+// Regression (issue ui_20260831_151924.log, exit code 23): the default config
+// template declared "ObservatoryService" in its api.services list, but shipped
+// no corresponding observatory block. Xray 26.x resolves API service
+// dependencies eagerly at startup and aborts with "core: not all dependencies
+// are resolved" (exit code 23) when an api service has no backing config. The
+// template must NOT declare ObservatoryService (it is unused by the batch
+// tester, which only drives HandlerService/StatsService over gRPC). This test
+// asserts the generated config omits it.
+//
+// Note: earlier analysis suspected the routing rule referencing outbound tag
+// "proxy" ({"type":"field","outboundTag":"proxy","network":"tcp"}) was the
+// culprit. Bisection against real Xray 26.3.27 showed that is NOT fatal: a
+// template without ObservatoryService loads fine even with the proxy rule and
+// only a "direct" outbound. The proxy placeholder is kept defensively so the
+// tag resolves at load, and the routing rule itself is unchanged.
+TEST(XrayInstanceStderrTest, ConfigTemplateOmitsObservatoryService) {
+    const std::filesystem::path tmp = makeTempDir();
+    // startup-mode helper exits immediately, but createConfigFile() already
+    // ran synchronously inside start() before the process spawn, so the config
+    // file is guaranteed present regardless of the exit code.
+    const std::string exePath = deployHelper(tmp, "fake_xray_startup.exe");
+
+    XrayInstance inst(exePath, 19003, 19103, tmp.string());
+    (void)inst.start();  // returns false (child dies fast); config still written
+
+    const std::string configContent =
+        readWholeFile((tmp / "xray_config_19003.json").string());
+    ASSERT_FALSE(configContent.empty())
+        << "start() must have written the config file to the temp dir";
+
+    // THE root cause: ObservatoryService must NOT be advertised without a
+    // backing observatory block or Xray 26.x fails with exit code 23.
+    EXPECT_EQ(std::string::npos, configContent.find("ObservatoryService"))
+        << "template must not declare ObservatoryService in api.services: it "
+           "has no corresponding observatory block and makes Xray 26.x abort "
+           "with 'core: not all dependencies are resolved' (exit code 23)";
+
+    // The services the batch tester actually drives over gRPC must still be
+    // advertised so outbound injection and stats keep working.
+    EXPECT_NE(std::string::npos, configContent.find("HandlerService"));
+    EXPECT_NE(std::string::npos, configContent.find("StatsService"));
+
+    // The routing rule that routes socks-in traffic through the proxy tag.
+    EXPECT_NE(std::string::npos,
+              configContent.find("\"outboundTag\": \"proxy\""))
+        << "routing must still reference the proxy outbound tag";
+
+    // The placeholder outbound that resolves that tag at load time.
+    EXPECT_NE(std::string::npos,
+              configContent.find("\"tag\": \"proxy\", \"protocol\": \"freedom\""))
+        << "template must declare a placeholder 'proxy' outbound so the "
+           "routing rule's proxy tag resolves at load";
+
+    // Sanity: the direct outbound baseline is still present.
+    EXPECT_NE(std::string::npos,
+              configContent.find("\"tag\": \"direct\", \"protocol\": \"freedom\""));
+
+    inst.stop();
+    std::error_code ec;
+    std::filesystem::remove_all(tmp, ec);
+}
+
 TEST(XrayInstanceStderrTest, StartupDeathCapture) {
     const std::filesystem::path tmp = makeTempDir();
     const std::string exePath = deployHelper(tmp, "fake_xray_startup.exe");

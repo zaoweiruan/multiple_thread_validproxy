@@ -16,7 +16,11 @@ public:
     bool isRunning() const;
     int getSocksPort() const;
     int getApiPort() const;
+    DWORD getPid() const;
     std::string getConfigPath() const;
+    // Supply a complete xray config JSON; when set, createConfigFile() writes
+    // this verbatim instead of the built-in default (used by StandaloneProxyPool).
+    void setExplicitConfig(const std::string& configJson);
     // Last observed exit code of the child process (STILL_ACTIVE while alive).
     DWORD lastExitCode() const;
 
@@ -25,6 +29,7 @@ private:
     int socksPort_;
     int apiPort_;
     std::string configPath_;
+    std::string explicitConfig_;
     std::string stdoutLogPath_;
     std::string stderrLogPath_;
     HANDLE processHandle_;

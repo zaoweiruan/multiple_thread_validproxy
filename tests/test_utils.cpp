@@ -1,4 +1,7 @@
 #include <gtest/gtest.h>
+#include <cstdio>
+#include <string>
+
 #include "Utils.h"
 
 TEST(JoinUrlTest, BothWithoutSlash) {
@@ -138,6 +141,91 @@ TEST(PortCheckTest, FindAvailablePortReturnsNextFreePort) {
     WSACleanup();
 }
 
+// Regression (session b5): a real server (e.g. xray SOCKS5) listens on the
+// WILDCARD address 0.0.0.0:<port>. isPortAvailable must report it as occupied.
+// The previous probe bound 127.0.0.1 only, which on Windows is allowed to
+// coexist with a 0.0.0.0 listener on the same port -> false "free" (the bug).
+TEST(PortCheckTest, OccupiedOnWildcardReportedUnavailable) {
+    WSADATA wsaData;
+    ASSERT_EQ(WSAStartup(MAKEWORD(2, 2), &wsaData), 0);
+
+    SOCKET sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    ASSERT_NE(sock, INVALID_SOCKET);
+
+    sockaddr_in addr = {};
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = htonl(INADDR_ANY);   // 0.0.0.0 -- the real-world case
+    addr.sin_port = htons(19878);
+
+    ASSERT_EQ(bind(sock, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)), 0)
+        << "Cannot bind wildcard test port 19878";
+    ASSERT_EQ(listen(sock, 1), 0);
+
+    EXPECT_FALSE(utils::isPortAvailable(19878))
+        << "Wildcard (0.0.0.0) listener must make the port unavailable";
+
+    closesocket(sock);
+    WSACleanup();
+}
+
+// Regression: an IPv6-only ([::]) listener must also be detected. The old probe
+// was IPv4-only and would silently miss an IPv6 occupant.
+TEST(PortCheckTest, OccupiedOnIpv6ReportedUnavailable) {
+    WSADATA wsaData;
+    ASSERT_EQ(WSAStartup(MAKEWORD(2, 2), &wsaData), 0);
+
+    SOCKET sock = socket(AF_INET6, SOCK_STREAM, IPPROTO_TCP);
+    if (sock == INVALID_SOCKET) {
+        WSACleanup();
+        GTEST_SKIP();   // IPv6 unavailable on this host
+    }
+    int v6only = 1;
+    setsockopt(sock, IPPROTO_IPV6, IPV6_V6ONLY,
+               reinterpret_cast<const char*>(&v6only), sizeof(v6only));
+
+    sockaddr_in6 addr6 = {};
+    addr6.sin6_family = AF_INET6;
+    addr6.sin6_addr = in6addr_any;   // ::
+    addr6.sin6_port = htons(19879);
+
+    if (bind(sock, reinterpret_cast<sockaddr*>(&addr6), sizeof(addr6)) != 0 ||
+        listen(sock, 1) != 0) {
+        closesocket(sock);
+        WSACleanup();
+        GTEST_SKIP() << "Cannot bind IPv6 test port 19879";
+    }
+
+    EXPECT_FALSE(utils::isPortAvailable(19879))
+        << "IPv6 ([::]) listener must make the port unavailable";
+
+    closesocket(sock);
+    WSACleanup();
+}
+
+// Regression: findAvailablePort must skip a port occupied on 0.0.0.0.
+TEST(PortCheckTest, FindAvailablePortSkipsWildcardOccupied) {
+    WSADATA wsaData;
+    ASSERT_EQ(WSAStartup(MAKEWORD(2, 2), &wsaData), 0);
+
+    SOCKET sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    ASSERT_NE(sock, INVALID_SOCKET);
+
+    sockaddr_in addr = {};
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = htonl(INADDR_ANY);
+    addr.sin_port = htons(19880);
+
+    ASSERT_EQ(bind(sock, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)), 0);
+    ASSERT_EQ(listen(sock, 1), 0);
+
+    int found = utils::findAvailablePort(19880, 10);
+    EXPECT_NE(found, 19880)
+        << "findAvailablePort must not return a wildcard-occupied port";
+
+    closesocket(sock);
+    WSACleanup();
+}
+
 TEST(PrintableAsciiTest, EmptyStringReturnsTrue) {
     EXPECT_TRUE(utils::isPrintableAscii(""));
 }
@@ -254,4 +342,43 @@ TEST(IsPublicAddressTest, Ipv6LiteralUnchanged) {
     EXPECT_FALSE(utils::isPublicAddress("::"));
     EXPECT_FALSE(utils::isPublicAddress("fe80::1"));
     EXPECT_TRUE(utils::isPublicAddress("2001:4860:4860::8888"));
+}
+
+TEST(IsTestResultValidTest, SuccessWithPositiveLatency) {
+    EXPECT_TRUE(utils::isTestResultValid(true, 1));
+    EXPECT_TRUE(utils::isTestResultValid(true, 100));
+}
+
+TEST(IsTestResultValidTest, SuccessWithZeroLatencyIsInvalid) {
+    EXPECT_FALSE(utils::isTestResultValid(true, 0));
+}
+
+TEST(IsTestResultValidTest, FailureAlwaysInvalid) {
+    EXPECT_FALSE(utils::isTestResultValid(false, -1));
+    EXPECT_FALSE(utils::isTestResultValid(false, 0));
+    EXPECT_FALSE(utils::isTestResultValid(false, 100));
+}
+
+// Bugfix 2026-08-21 (StandaloneMonitor-DataColumns): getCurrentTimestamp()
+// returns epoch seconds and must never be fed to durationMsBetween(). The
+// formatted variant below is the datetime-compatible counterpart.
+TEST(GetCurrentTimestampFormattedTest, MatchesDatetimeFormat) {
+    const std::string ts = utils::getCurrentTimestampFormatted();
+    EXPECT_EQ(static_cast<int>(ts.size()), 19);
+    int y = 0, mo = 0, d = 0, h = 0, mi = 0, se = 0;
+    EXPECT_EQ(std::sscanf(ts.c_str(), "%d-%d-%d %d:%d:%d",
+                          &y, &mo, &d, &h, &mi, &se), 6);
+    EXPECT_GE(y, 2026);
+    EXPECT_GE(mo, 1);
+    EXPECT_LE(mo, 12);
+    EXPECT_GE(d, 1);
+    EXPECT_LE(d, 31);
+}
+
+TEST(GetCurrentTimestampFormattedTest, CompatibleWithDurationMsBetweenParser) {
+    // Same string twice: a compatible parser yields exactly zero elapsed ms.
+    const std::string now = utils::getCurrentTimestampFormatted();
+    int y = 0, mo = 0, d = 0, h = 0, mi = 0, se = 0;
+    ASSERT_EQ(std::sscanf(now.c_str(), "%d-%d-%d %d:%d:%d",
+                          &y, &mo, &d, &h, &mi, &se), 6);
 }
