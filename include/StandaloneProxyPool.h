@@ -141,6 +141,11 @@ private:
     mutable std::mutex membersMutex_;
     std::map<long long, PoolMember> members_;
     std::atomic<bool> running_;
+    // 2026-09-18 Spec §3.1: cancellation token for in-flight probe cycles.
+    // stop() sets this before join() so the evaluator exits its current
+    // doProbe() loop after at most one target instead of waiting for the
+    // full serial iteration (pre-fix: 30-120s blocked join).
+    std::atomic<bool> stopFlag_;
     std::atomic<bool> reportHealth_;
     std::atomic<bool> autoPruneDead_;
     std::atomic<bool> autoOptimize_;

@@ -221,7 +221,9 @@ ConfigDialog::ConfigDialog(wxWindow* parent, const config::AppConfig& cfg)
     propGrid_->AppendIn(poolEvalCat, new wxBoolProperty(L"自动优化(预留记录式)", "pool_eval_auto_optimize", cfg.standalone_pool.evaluate.autoOptimize));
     // 探针 worker 数：0 = 禁用常驻探针池（ProxyProbePool::start 的 workerCount<=0 分支），
     // 1-N = 常驻 Xray 探针 worker 数（spec PoolConfigDialogAdjust）。
-    propGrid_->AppendIn(poolEvalCat, new wxIntProperty(L"探针 worker 数(0=禁用)", "pool_eval_probe_workers", cfg.standalone_pool.evaluate.probeWorkers));
+    // 注意：worker 数在池启动时一次性读取（StandaloneProxyPool.cpp:46 构造探针池），
+    // 运行期修改需重启池后才生效。
+    propGrid_->AppendIn(poolEvalCat, new wxIntProperty(L"探针 worker 数(0=禁用, 重启池后生效)", "pool_eval_probe_workers", cfg.standalone_pool.evaluate.probeWorkers));
 
     // --- 代理池配置（拆分，解决 P1/P4/P6：pool 本体 + observatory） ---
     // 方案甲：mode / observatory.type / observatory.samplingCount 三个预留字段（零运行时

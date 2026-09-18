@@ -1,6 +1,7 @@
 #ifndef PROXY_HEALTH_EVALUATOR_H
 #define PROXY_HEALTH_EVALUATOR_H
 
+#include <atomic>
 #include <vector>
 #include <string>
 
@@ -60,10 +61,19 @@ public:
 
     // Probe each target's upstream proxy. Returns one MemberHealth per target
     // (tag always set; tested/alive filled only for directly-probeable types).
+    //
+    // stopFlag: optional cancellation token. When non-null and set to true
+    // before the call returns, the loop terminates early and returns the
+    // partial results collected so far (unprobed targets appear in the
+    // returned vector with tested=false, so mergeHealth leaves their state
+    // untouched). Used by StandaloneProxyPool::stop() to unblock the
+    // evaluator thread's join() within one probe interval instead of
+    // waiting for the full serial cycle (2026-09-18 Spec §3.1).
     std::vector<MemberHealth> probe(const std::vector<MemberProbeTarget>& targets,
                                     const std::string& testUrl,
                                     long connectTimeoutMs,
-                                    long totalTimeoutMs);
+                                    long totalTimeoutMs,
+                                    std::atomic<bool>* stopFlag = nullptr);
 
 private:
     // Resident xray probe pool for non-direct protocols (nullptr = disabled).

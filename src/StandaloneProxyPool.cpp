@@ -18,6 +18,7 @@ StandaloneProxyPool::StandaloneProxyPool(const config::StandalonePoolConfig& cfg
       instance_(std::make_shared<XrayInstance>(xrayPath, cfg.socksPort, cfg.apiPort, configDir)),
       api_(new xray::XrayApi(xrayPath, std::string("127.0.0.1:") + std::to_string(cfg.apiPort))),
       running_(false),
+      stopFlag_(false),
       reportHealth_(cfg.evaluate.reportHealth),
       autoPruneDead_(cfg.evaluate.autoPruneDead),
       autoOptimize_(cfg.evaluate.autoOptimize) {
@@ -29,6 +30,8 @@ StandaloneProxyPool::~StandaloneProxyPool() {
 
 bool StandaloneProxyPool::start() {
     if (running_) return true;
+    // 2026-09-18 Spec §3.1: 每次 start 重置停止标志（stop() 会置 true）。
+    stopFlag_.store(false, std::memory_order_release);
     std::string json = config::ConfigGenerator::buildPoolConfig(cfg_.socksPort, cfg_.apiPort, cfg_);
     instance_->setExplicitConfig(json);
     if (!instance_->start()) {
@@ -57,6 +60,10 @@ bool StandaloneProxyPool::start() {
 void StandaloneProxyPool::stop() {
     if (!running_) return;
     running_ = false;
+    // 2026-09-18 Spec §3.1: 让正在跑的 doProbe() 循环感知到停止请求，
+    // 在下一个 target 之前提前返回。pre-fix 必须等整个串行 probe 循环
+    // 跑完（30-120s）才能返回；post-fix 最多等一个 target 探测完成（~ms）。
+    stopFlag_.store(true, std::memory_order_release);
     if (evaluatorThread_.joinable()) {
         evaluatorThread_.join();
     }
@@ -282,7 +289,9 @@ std::vector<MemberHealth> StandaloneProxyPool::doProbe() {
                        ? static_cast<long>(cfg_.observatory.timeoutSec * 1000)
                        : 10000L;
     long connectMs = (totalMs < 3000L) ? totalMs : 3000L;
-    return evaluator_.probe(targets, testUrl, connectMs, totalMs);
+    // 2026-09-18 Spec §3.1: 传递停止标志，让 evaluator 的串行 probe 循环
+    // 可被 stop() 提前打断（避免 join() 阻塞 30-120s）。
+    return evaluator_.probe(targets, testUrl, connectMs, totalMs, &stopFlag_);
 }
 
 void StandaloneProxyPool::mergeHealth(const std::vector<MemberHealth>& health) {

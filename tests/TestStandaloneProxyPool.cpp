@@ -659,4 +659,238 @@ TEST(StandaloneProxyPool, DuplicateInjectRejected) {
     std::filesystem::remove_all(cfgDir, ec);
 }
 
+// ============================================================================
+// Pool Stop Optimization (2026-09-18 Spec §6)
+//
+// 用户报告"代理池中代理数量多时关闭池非常缓慢"。三个瓶颈：
+//   A: evaluator doProbe 串行不可中断（主因，30-120s）
+//   B: XrayInstance::stop 硬 sleep 500ms（1.0-1.5s/实例）
+//   C: ProxyProbePool::stop 串行停止 worker（probeWorkers=8 时 ~12s）
+// 目标：整体关闭时间 1-2s。
+//
+// 测试 A 为纯离线测试；B/C/D 通过 XRAY_REAL_EXE 环境变量 opt-in，未设置时
+// GTEST_SKIP（CI 保持绿灯）。
+// ============================================================================
+
+// Test A (offline): ProxyHealthEvaluator::probe with a set stopFlag must
+// return promptly, skipping the remaining targets. RED before implementation:
+// probe() currently has no stopFlag parameter, so this fails to compile.
+TEST(StandaloneProxyPool, ProxyHealthEvaluatorStopFlagReturnsPromptly) {
+    proxy::ProxyHealthEvaluator evaluator;
+
+    // 1000 SOCKS targets pointing at an invalid local port. Even if each cURL
+    // probe fails in ~1ms, iterating all of them takes ~1s — far longer than
+    // the stopFlag contract. When stopFlag is pre-set, probe() must return
+    // within the first iteration (<<100ms).
+    std::vector<proxy::MemberProbeTarget> targets;
+    targets.reserve(1000);
+    for (int i = 0; i < 1000; ++i) {
+        proxy::MemberProbeTarget t;
+        t.tag = "px-offline-" + std::to_string(i);
+        t.configtype = 4;            // SOCKS — routed via probeSocksHttp
+        t.address = "127.0.0.1";
+        t.port = "0";                // invalid port, connect fails immediately
+        t.username = "u";
+        t.password = "p";
+        targets.push_back(t);
+    }
+
+    std::atomic<bool> stopFlag(true);   // pre-set: stop immediately on entry
+    const auto start = std::chrono::steady_clock::now();
+    const std::vector<proxy::MemberHealth> health = evaluator.probe(
+        targets, "https://127.0.0.1:1/healthz", /*connectMs*/5, /*totalMs*/100,
+        &stopFlag);
+    const auto elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now() - start).count();
+
+    EXPECT_LE(elapsedMs, 100)
+        << "probe() with a set stopFlag must return within 100ms (took "
+        << elapsedMs << "ms). Pre-fix probe() iterates all 1000 targets "
+        "before returning, taking seconds.";
+    EXPECT_EQ(health.size(), targets.size())
+        << "probe() must still return one MemberHealth per target (contract)";
+}
+
+// Test B (live, opt-in): XrayInstance::stop must return quickly after a
+// successful start, not the previous 1.0-1.5s hardcoded-sleep + wait pattern.
+TEST(StandaloneProxyPool, XrayInstanceStopReturnsFast) {
+    const char* xrayExe = std::getenv("XRAY_REAL_EXE");
+    if (xrayExe == nullptr || xrayExe[0] == '\0') {
+        GTEST_SKIP() << "XRAY_REAL_EXE not set; skipping live stop test";
+    }
+
+    static int s_stopCounter = 0;
+    const std::string cfgDir =
+        (std::filesystem::temp_directory_path() /
+         ("xray_inst_stop_" + std::to_string(++s_stopCounter))).string();
+    std::filesystem::create_directories(cfgDir);
+
+    PortManager::clearPorts();
+    int socksPort = PortManager::findAvailable(20200, 200);
+    int apiPort = PortManager::findAvailable(20201, 200);
+    ASSERT_GT(socksPort, 0);
+    ASSERT_GT(apiPort, 0);
+    ASSERT_NE(socksPort, apiPort);
+
+    XrayInstance inst(xrayExe, socksPort, apiPort, cfgDir);
+    ASSERT_TRUE(inst.start())
+        << "XrayInstance.start() must succeed against real xray";
+    ASSERT_TRUE(inst.isRunning());
+
+    const auto start = std::chrono::steady_clock::now();
+    inst.stop();
+    const auto elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now() - start).count();
+
+    // Pre-fix: 1.0-1.5s per instance. Post-fix (poll replaces sleep_for(500)):
+    // <200ms is the target; use 500ms as a lenient bound that still catches
+    // the regression (pre-fix reliably >700ms).
+    EXPECT_LE(elapsedMs, 500)
+        << "XrayInstance::stop() took " << elapsedMs
+        << "ms; pre-fix hard-sleep pattern takes 1.0-1.5s. Stop should "
+        "return within 200ms of the child exiting.";
+
+    EXPECT_FALSE(inst.isRunning());
+    PortManager::freePort(socksPort);
+    PortManager::freePort(apiPort);
+    PortManager::clearPorts();
+    std::error_code ec;
+    std::filesystem::remove_all(cfgDir, ec);
+}
+
+// Test C (live, opt-in): ProxyProbePool::stop must stop workers in parallel,
+// not serially. With 4 workers the serial baseline is ~4 × 1.5s = 6s; the
+// parallel target is <1s.
+TEST(StandaloneProxyPool, ProxyProbePoolStopWorkersParallel) {
+    const char* xrayExe = std::getenv("XRAY_REAL_EXE");
+    if (xrayExe == nullptr || xrayExe[0] == '\0') {
+        GTEST_SKIP() << "XRAY_REAL_EXE not set; skipping live probe-pool test";
+    }
+
+    static int s_ppCounter = 0;
+    const std::string cfgDir =
+        (std::filesystem::temp_directory_path() /
+         ("probe_pool_stop_" + std::to_string(++s_ppCounter))).string();
+    std::filesystem::create_directories(cfgDir);
+
+    PortManager::clearPorts();
+    proxy::ProxyProbePool pool(xrayExe, /*workerCount*/4, cfgDir);
+    ASSERT_TRUE(pool.start())
+        << "ProxyProbePool.start() must succeed against real xray";
+    ASSERT_EQ(pool.size(), 4);
+
+    const auto start = std::chrono::steady_clock::now();
+    pool.stop();
+    const auto elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now() - start).count();
+
+    EXPECT_LE(elapsedMs, 1000)
+        << "ProxyProbePool::stop() took " << elapsedMs
+        << "ms for 4 workers; pre-fix serial stop takes ~6s. Parallel "
+        "stop should finish in <1s.";
+
+    EXPECT_FALSE(pool.isRunning());
+    EXPECT_EQ(pool.size(), 0);
+    PortManager::clearPorts();
+    std::error_code ec;
+    std::filesystem::remove_all(cfgDir, ec);
+}
+
+// Test D (live, opt-in): StandaloneProxyPool::stop must be fast even when
+// the evaluator is mid-probe on a large set of unreachable members. The stop
+// path is B1+B2 (the dominant bottleneck: join() + non-interruptible probe).
+TEST(StandaloneProxyPool, StopWithManyMembersFast) {
+    const char* xrayExe = std::getenv("XRAY_REAL_EXE");
+    if (xrayExe == nullptr || xrayExe[0] == '\0') {
+        GTEST_SKIP() << "XRAY_REAL_EXE not set; skipping live pool stop test";
+    }
+
+    // Set XRAY_LOCATION_ASSET so xray can load geoip.dat/geosite.dat when the
+    // pool config uses geo routing rules (buildPoolConfig embeds CN/private
+    // direct rules). Derived from the xray exe layout (.../bin/xray/xray.exe
+    // -> .../bin where geoip.dat lives); only set when the asset exists so
+    // non-geo environments are unaffected.
+    {
+        std::filesystem::path exe(xrayExe);
+        std::filesystem::path asset = exe.parent_path().parent_path();
+        if (std::filesystem::exists(asset / "geoip.dat")) {
+#ifdef _WIN32
+            ::SetEnvironmentVariableA("XRAY_LOCATION_ASSET",
+                                      asset.string().c_str());
+#else
+            (void)::setenv("XRAY_LOCATION_ASSET", asset.string().c_str(), 1);
+#endif
+        }
+    }
+
+    static int s_bigCounter = 0;
+    const std::string cfgDir =
+        (std::filesystem::temp_directory_path() /
+         ("standalone_pool_big_" + std::to_string(++s_bigCounter))).string();
+    std::filesystem::create_directories(cfgDir);
+
+    PortManager::clearPorts();
+    config::StandalonePoolConfig cfg;
+    cfg.enabled = true;
+    cfg.socksPort = 20300;
+    cfg.apiPort = 20301;
+    cfg.balancerStrategy = "leastPing";
+    cfg.observatory.destination = "https://www.google.com";
+    cfg.observatory.timeoutSec = 1;
+    cfg.evaluate.intervalSec = 1;
+    ASSERT_TRUE(proxy::resolvePoolPorts(cfg));
+
+    proxy::StandaloneProxyPool pool(cfg, xrayExe, cfgDir);
+    if (!pool.start()) {
+        GTEST_SKIP() << "pool.start() failed against real xray (likely missing "
+                        "xray assets like geoip.dat); cannot run stop timing test.";
+    }
+
+    // Inject 10 unreachable SOCKS members. Pre-fix, the evaluator probes them
+    // serially (each cURL times out at 1s total, so ~10s of blocking); the
+    // stop() call joins the evaluator thread and cannot return until the
+    // current probe cycle finishes.
+    int injected = 0;
+    for (int i = 0; i < 10; ++i) {
+        db::models::Profileitem p;
+        p.indexid = "900100" + std::to_string(i);
+        p.configtype = "4";
+        p.address = "198.51.100." + std::to_string(10 + i);
+        p.port = "8080";
+        if (pool.injectMember(p)) ++injected;
+    }
+    if (injected < 5) {
+        pool.stop();
+        PortManager::freePort(cfg.socksPort);
+        PortManager::freePort(cfg.apiPort);
+        PortManager::clearPorts();
+        std::error_code ec;
+        std::filesystem::remove_all(cfgDir, ec);
+        GTEST_SKIP() << "injected only " << injected
+                     << " members (gRPC addOutbound may have failed); cannot "
+                        "run stop timing test.";
+    }
+
+    // Trigger a probe cycle so the evaluator is (likely) inside doProbe().
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+
+    const auto start = std::chrono::steady_clock::now();
+    pool.stop();
+    const auto elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now() - start).count();
+
+    // Pre-fix: 30-120s. Post-fix (A+B+C): <3s. Use 3000ms as a lenient bound.
+    EXPECT_LE(elapsedMs, 3000)
+        << "StandaloneProxyPool::stop() took " << elapsedMs
+        << "ms for " << injected << " members; pre-fix join + non-interruptible "
+        "probe takes 30-120s. Post-fix (interruptible probe + parallel worker "
+        "stop + poll-based instance stop) should finish in <3s.";
+
+    PortManager::freePort(cfg.socksPort);
+    PortManager::freePort(cfg.apiPort);
+    PortManager::clearPorts();
+    std::error_code ec;
+    std::filesystem::remove_all(cfgDir, ec);
+}
+
 } // namespace

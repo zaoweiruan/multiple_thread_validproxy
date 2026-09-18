@@ -76,10 +76,18 @@ MemberHealth ProxyHealthEvaluator::probeSocksHttp(const MemberProbeTarget& t,
 std::vector<MemberHealth> ProxyHealthEvaluator::probe(const std::vector<MemberProbeTarget>& targets,
                                                       const std::string& testUrl,
                                                       long connectTimeoutMs,
-                                                      long totalTimeoutMs) {
+                                                      long totalTimeoutMs,
+                                                      std::atomic<bool>* stopFlag) {
     std::vector<MemberHealth> result;
     result.reserve(targets.size());
-    for (const auto& t : targets) {
+    size_t i = 0;
+    for (; i < targets.size(); ++i) {
+        const MemberProbeTarget& t = targets[i];
+        // Cancellation: stopFlag 生效时立即跳出主循环，跳到尾部补占位。
+        // 2026-09-18 Spec §3.1：让 evaluator 的 join() 不再阻塞 30-120s。
+        if (stopFlag != nullptr && stopFlag->load(std::memory_order_acquire)) {
+            break;
+        }
         if (t.configtype == 4 || t.configtype == 10) {
             result.push_back(probeSocksHttp(t, testUrl, connectTimeoutMs, totalTimeoutMs));
         } else {
@@ -103,6 +111,18 @@ std::vector<MemberHealth> ProxyHealthEvaluator::probe(const std::vector<MemberPr
             }
             result.push_back(h);
         }
+    }
+    // 补占位：stopFlag 触发后，未探测的 target 保持 API 契约（一个 MemberHealth
+    // 对应一个 target）。占位结果 tested=false，mergeHealth 不会写入 lastDelayMs/
+    // lastAlive/failStreak，因此未探测的成员保持上一次 probe 的状态。
+    for (; i < targets.size(); ++i) {
+        MemberHealth h;
+        h.tag = targets[i].tag;
+        h.tested = false;
+        h.alive = false;
+        h.delayMs = -1;
+        h.lastError = "probe interrupted by stop request";
+        result.push_back(h);
     }
     return result;
 }

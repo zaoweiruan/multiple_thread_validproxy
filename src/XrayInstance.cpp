@@ -200,8 +200,20 @@ void XrayInstance::stop() {
                       + std::to_string(socksPort_) + " api="
                       + std::to_string(apiPort_), LogLevel::INFO);
         TerminateJobObject(job, 1);
-        // Graceful wait: give processes up to GRACEFUL_SHUTDOWN_MS to drain before Job close
-        std::this_thread::sleep_for(std::chrono::milliseconds(GRACEFUL_SHUTDOWN_MS));
+        // 2026-09-18 Spec §3.2: poll 替代硬 sleep_for(500ms)。
+        // pre-fix：无条件 sleep 500ms，即使进程已退出也要等满 500ms。
+        // post-fix：20ms 步长 poll 进程退出，进程通常 <50ms 退出即返回。
+        // 上限仍是 GRACEFUL_SHUTDOWN_MS（500ms），语义与 pre-fix 一致。
+        if (proc) {
+            for (int elapsed = 0; elapsed < static_cast<int>(GRACEFUL_SHUTDOWN_MS);
+                 elapsed += 20) {
+                DWORD pollResult = WaitForSingleObject(proc, 0);
+                if (pollResult == WAIT_OBJECT_0 || pollResult == WAIT_FAILED) {
+                    break;  // 进程已退出或句柄无效
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(20));
+            }
+        }
     }
     if (proc) {
         // Wait synchronously: process may have already exited or been killed by the Job above.

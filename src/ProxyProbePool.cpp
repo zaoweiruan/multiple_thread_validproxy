@@ -12,6 +12,8 @@
 #include "PortManager.h"
 #include "config/OutboundBuilderFactory.h"
 
+#include <future>
+
 namespace {
 
 // Bounded, crash-aware readiness check copied from XrayManager.cpp (file-local
@@ -165,12 +167,34 @@ void ProxyProbePool::stop() {
         std::lock_guard<std::mutex> lock(workersMutex_);
         workers.swap(workers_);
     }
-    for (Worker& w : workers) {
-        if (w.instance) {
-            w.instance->stop();
+
+    // 2026-09-18 Spec §3.3: 并行 stop worker。
+    // pre-fix：for 循环串行调用 w.instance->stop()，probeWorkers=8 时 ~12s。
+    // post-fix：每个 worker 一个 async future，最坏单实例 stop 时间（~200ms
+    // 经 B 优化后）。probeWorkers=8 时 stop 从 ~12s → ~300ms。
+    // PortManager::freePort 保持串行（避免 PortManager 内部锁竞态）。
+    std::vector<std::future<void> > stops;
+    stops.reserve(workers.size());
+    for (std::size_t i = 0; i < workers.size(); ++i) {
+        Worker& w = workers[i];
+        stops.push_back(std::async(std::launch::async, [&w]() {
+            if (w.instance) {
+                w.instance->stop();
+            }
+        }));
+    }
+    for (std::size_t i = 0; i < stops.size(); ++i) {
+        std::future<void>& f = stops[i];
+        std::future_status st = f.wait_for(std::chrono::seconds(3));
+        if (st != std::future_status::ready) {
+            Logger::write("[ProxyProbePool] worker " + std::to_string(i)
+                          + " stop timeout, continuing", LogLevel::WARN);
         }
-        PortManager::freePort(w.socksPort);
-        PortManager::freePort(w.apiPort);
+    }
+
+    for (std::size_t i = 0; i < workers.size(); ++i) {
+        PortManager::freePort(workers[i].socksPort);
+        PortManager::freePort(workers[i].apiPort);
     }
     Logger::write("[ProxyProbePool] stopped " + std::to_string(workers.size())
                   + " probe worker(s)", LogLevel::INFO);
