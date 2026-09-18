@@ -205,5 +205,62 @@ cmake --build build --parallel 8 && .\scripts\run_coverage.ps1
 | `生成视频` / `制作动画` / `画一段视频` / `video generation` / `create video` / `make a clip` | **agnes-video-gen** | 1. 加载技能 `skill(name="agnes-video-gen")`。<br>2. 提取用户描述，增强为详细英文 cinematic prompt（镜头运动、光影、风格、画质）。<br>3. 调用 Agnes Video V2.0 API 创建异步任务。<br>4. 轮询任务状态直到 completed，下载 MP4 视频。<br>5. 报告保存路径给用户。 |
 | `部署` / `发布` / `release` / `deploy` | **release-skills** | 1. 自动检测版本文件与 changelog，按语义化版本规范发布。 |
 | `图片分析` / `截图分析` / `界面分析` / `GUI分析` / `OCR` / `UI界面分析` / `图片理解` | **wxgui-analyzer-sub**（Agent，非 skill） | 1. 使用 `wxgui-analyzer-sub` 子代理进行 GUI 截图/界面分析。<br>2.  多模态模型选用建议（主模型 `stepfun/step-3.7-flash:free`，第一备降 `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free`）。 |
+| `记忆` / `Caura` / `recall` / `caura_recall` / `caura_write` / `经验` / `教训` / `历史决策` | **caura-memory** | 1. 加载技能 `skill(name="caura-memory")`。<br>2. 遵循 §6.3 跨会话记忆规范。<br>3. 在关键节点主动检索/写入 Caura，避免跨会话知识丢失。<br>4. 严禁写入密钥、Token、密码或私密原文。 |
+
+* * *
+
+### 6.3 跨会话记忆（Caura）使用规范
+
+Caura 是项目级跨会话记忆系统，用于在多个 AI 会话之间沉淀、复用关键经验，避免每次会话从零开始。AI 在涉及本项目的工作时**必须**遵循以下规则：
+
+#### 6.3.1 读取时机（caura_recall）
+
+在开始以下任务之前，**必须**先调用 `caura_recall` 检索与当前主题相关的既有记忆，以避免重复探索或违背既有决策：
+
+- 启动复杂任务（架构调整、重构、新功能、跨模块改动）前
+- 涉及 Xray 核心控制、gRPC API、CURL 网络请求、SQLite 存储的实现前
+- 遇到构建（CMake/Ninja）、部署、调试（ASAN/MiniDump/覆盖率）问题时
+- 处理与既有模块（如 `ProxyBatchTester`、`SubitemUpdaterV2`、`XrayApi`）相关的改动前
+- 需要确认历史架构决策、构建命令、排障结论或用户偏好时
+
+#### 6.3.2 写入时机（caura_write）
+
+在以下场景完成后，**应当**调用 `caura_write` 将确认的结论持久化到 Caura：
+
+- 已确认的**架构决策**（如单例模式、事件驱动通信、DAO 分层边界）
+- 已验证的**构建/调试命令**（如 sanitizer 构建参数、测试目标命令）
+- 已定位的**排障结论**（如根因分析、崩溃栈追踪、修复要点）
+- 用户表达的**偏好与约束**（如代码风格、提交规范、命名约定）
+- 已总结的**失败教训**（如踩过的坑、反模式、规避方案）
+
+#### 6.3.3 安全红线（禁止写入内容）
+
+`caura_write` **严禁**保存以下内容：
+
+- 密钥、API Token、密码、证书、私钥
+- 用户的私密原文（个人身份信息、未脱敏的敏感数据）
+- 任何形式的凭据、会话令牌、认证字符串
+
+如确需在记忆中提及上述内容，必须使用占位符（如 `<REDACTED>`）替代。
+
+#### 6.3.4 工作流闭环
+
+一个完整的记忆工作流应遵循「**检索 → 执行 → 沉淀**」闭环：
+
+```
+[任务开始]
+   │
+   ▼
+caura_recall（检索既有经验，避免重复犯错）
+   │
+   ▼
+[执行任务 / 验证 / 排障]
+   │
+   ▼
+[形成结论：决策 / 命令 / 教训 / 偏好]
+   │
+   ▼
+caura_write（沉淀可复用知识，下次会话可直接复用）
+```
 
 * * *

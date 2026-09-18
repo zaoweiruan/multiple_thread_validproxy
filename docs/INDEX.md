@@ -1,4 +1,4 @@
-updated: 2026-09-16
+updated: 2026-09-18
 title: "docs: project document index"
 type: meta
 status: maintained
@@ -27,7 +27,7 @@ status: maintained
 | [设计规范](#5-设计规范) | 11 | `docs/design/` |
 | [需求与脑暴](#6-需求与脑暴) | 4 | `docs/superpowers/brainstorm/` |
 | [技术方案](#7-技术方案) | 6 | `docs/superpowers/specs/` |
-| [规范化设计](#75-规范化设计) | 44 | `docs/specs/` |
+| [规范化设计](#75-规范化设计) | 45 | `docs/specs/` |
 | [实施计划](#8-实施计划) | 57 | `docs/plans/` |
 | [分析报告](#9-分析报告) | 14 | `docs/reports/` |
 | [Bug 修复记录](#91-bug-修复记录) | 57 | `docs/bugfix/` |
@@ -197,6 +197,7 @@ status: maintained
 | 42 | [`docs/specs/2026-09-08-Review-TrayMinimizeBehavior-v1.0.md`](./specs/2026-09-08-Review-TrayMinimizeBehavior-v1.0.md) | **需求评审：监控弹窗双击 / 最小化到托盘 / 托盘图标** — R1 悬浮窗双击 最大化⇄最小化（`toggleMainFrameMaximize` 已实现核心语义，补隐藏态 `Show+Raise` 唤回，与托盘双击语义对齐）；R2 主窗口最小化→托盘（`onIconize` 已满足，无需改）；R3 托盘图标改为主图标（`TrayIcon` ctor `wxART_INFORMATION` → 资源 `icon_ico`，失败回退）；验证=构建 0 error + ctest -R UI_ 7/7 全绿 | ✅ completed |
 | 43 | [`docs/specs/2026-09-09-Spec-ProxyPoolMonitorUnify-v1.0.md`](./specs/2026-09-09-Spec-ProxyPoolMonitorUnify-v1.0.md) | **统一代理池与代理监控窗口 v1.0** — 将 `StandalonePoolDialog` 的池按钮/功能全部移入 `StandaloneFloatingWidget` Panel：监控表新增「类型」列（独立/代理池）统一显示、统一右键（关闭代理/删除成员/测试在线代理/退出）；新增 `UnifiedMonitorRow`+`MonitorType`+`AppController::getUnifiedMonitorRows()`；Orb 计数改为在线代理总数；废弃 StandalonePoolDialog（`ID_MENU_OPEN_POOL`/`poolDialog_`/`onMenuOpenPool` 清理）；`PoolMemberView` 补 host；验证=构建 0 error + ctest + UI_POOL 改写 | ✅ completed |
 | 44 | [`docs/specs/2026-09-09-Note-PoolMemberHealthEvaluation-v1.0.md`](./specs/2026-09-09-Note-PoolMemberHealthEvaluation-v1.0.md) | **代理池成员健康度评估 v1.0（Note）** — 沉淀统一监控评审发现的评估层缺口：P1 专用协议成员（vless/vmess 等）cURL 无法直连实测（tested=false 跳过）；P2 `probeNow()` 无调用方（注入后不立即测）；P3 池评估直连上游不经池 Xray 链路；正确姿势=Xray 代拨（cURL → 本地 socks 入站 → 成员 outbound → testUrl，先例 ProxyFinder/ProxyBatchTester）；方案 A（推荐）=临时探针实例、方案 B=池内 AddInbound（成本高）；后续完善清单挂钩 2026-09-09-Spec-ProxyPoolMonitorUnify | draft |
+| 45 | [`docs/specs/2026-09-18-Spec-PoolStopOptimization-v1.0.md`](./specs/2026-09-18-Spec-PoolStopOptimization-v1.0.md) | **代理池关闭加速 v1.0（30-120s → 1-2s）** — 用户报告"代理池中代理数量多时关闭池非常缓慢"；根因=三瓶颈耦合：B1 `StandaloneProxyPool::stop` join evaluatorThread_（主因，30-120s 与成员数正相关）+ B2 `ProxyHealthEvaluator::doProbe` 串行遍历所有 ACTIVE 成员（cURL 探测平均 ~1s/成员）+ B3 `ProxyProbePool::stop` 串行停止 worker（probeWorkers=8 时 ~12s）+ B4 `XrayInstance::stop` 硬 sleep(500ms)+WaitForSingleObject(500ms)（单实例 1.0-1.5s）；方案 E=A+B+C 组合（不采用 UI 异步 stop 因历史 UAF 教训）：A=ProxyHealthEvaluator::probe 增加 std::atomic&lt;bool&gt;* stopFlag 参数让 doProbe 可中断（循环头检查 + 尾部补占位保 API 契约），B=XrayInstance::stop 用 20ms poll 循环替代硬 sleep(500ms)（上限仍 500ms），C=ProxyProbePool::stop 用 std::async 并行停止 worker（wait_for 3s 守护）；TDD：新增 4 测试（A 离线 1ms PASSED + B/C/D opt-in XRAY_REAL_EXE，本环境 B/C PASSED、D 因缺 geoip.dat GTEST_SKIP）；test_standalone_proxy_pool 11 passed + 7 skipped + 1 pre-existing failed（ResolvePoolPortsKeepsFreeDesiredPort 端口冲突，修改前就失败）；C++17 无 auto | ✅ completed |
 
 ---
 
@@ -219,6 +220,7 @@ status: maintained
 
 | 日期 | 编号 | 文件 | 类型 | 说明 |
 |------|------|------|------|------|
+| 2026-09-18 | feat | [`2026-09-18-Spec-PoolStopOptimization-v1.0.md`](./specs/2026-09-18-Spec-PoolStopOptimization-v1.0.md) | feat ✅ | **代理池关闭加速（30-120s → 1-2s）** — 用户报告"代理池中代理数量多时关闭池非常缓慢"；根因=三瓶颈耦合：B1 `StandaloneProxyPool::stop` join evaluatorThread_（主因，30-120s 与成员数正相关）+ B2 `ProxyHealthEvaluator::doProbe` 串行遍历所有 ACTIVE 成员（cURL 探测平均 ~1s/成员）+ B3 `ProxyProbePool::stop` 串行停止 worker（probeWorkers=8 时 ~12s）+ B4 `XrayInstance::stop` 硬 sleep(500ms)+WaitForSingleObject(500ms)（单实例 1.0-1.5s）；方案 E=A+B+C 组合（不采用 UI 异步 stop 因历史 UAF 教训）：A=ProxyHealthEvaluator::probe 增加 std::atomic&lt;bool&gt;* stopFlag 参数让 doProbe 可中断（循环头检查 + 尾部补占位保 API 契约），B=XrayInstance::stop 用 20ms poll 循环替代硬 sleep(500ms)（上限仍 500ms），C=ProxyProbePool::stop 用 std::async 并行停止 worker（wait_for 3s 守护）；TDD：新增 4 测试（A 离线 1ms PASSED + B/C/D opt-in XRAY_REAL_EXE，本环境 B/C PASSED、D 因缺 geoip.dat GTEST_SKIP）；test_standalone_proxy_pool 11 passed + 7 skipped + 1 pre-existing failed（ResolvePoolPortsKeepsFreeDesiredPort 端口冲突，修改前就失败）；C++17 无 auto | ✅ completed |
 | 2026-09-17 | feat | [`2026-09-17-Plan-HealthMonitorUnify-v1.0.md`](./plans/2026-09-17-Plan-HealthMonitorUnify-v1.0.md) | 方案 B 配置层聚合+控制层解耦 — independent_probe.enabled 独立开关解耦 silent 探活；ConfigDialog 按评审层级树重组（监控悬浮窗/健康度评估/独立代理评估/代理池评估/代理池配置/代理后端选择）；暴露 proxy.scoring_*_weight 三权重（补序列化缺口）；悬浮窗新增「独立代理探活」勾选框；规格=Report v1.2 §7.4.4 + §7.3 评审树 | ⏳ executing |
 | 2026-09-17 | bugfix | [`2026-09-17-Bugfix-ProxyMonHotApply-StaleOldValue-v1.0.md`](./bugfix/2026-09-17-Bugfix-ProxyMonHotApply-StaleOldValue-v1.0.md) | fix ✅ | **修复 `proxy_process_monitor.enabled`→false 状态栏不置灰（热应用检测失效回归）** — `onMenuConfig` 保存回调中 `config_ = cfg`（L1188，Spec-ProxyMonitorMainFrameConfigSync 实施点）在旧值捕获（L1205-1206）之前执行，致 `oldProxyMonEnabled`/`oldProxyMonInterval` 读到新值、`proxyMonEnabledChanged`/`proxyMonIntervalChanged` **恒 false**、L1209-1215 热应用分支成死代码 → 改 enabled=false 不触发 `stopProxyMonitor`，timer 持续运行且 `onProxyMonTimer` 每 tick `updateProxyMonStatus(true,...)` 令状态栏圆点恒绿；修复=saveConfig **之前**捕获 `oldProxyMonEnabled`/`oldProxyMonInterval`/`oldNetMonCheckUrls`（同根因邻近修复 netmon checkUrls 变更检测恒 false），检测块改用捕获值、删除重复声明；验证=构建 0 error + UI_SEARCH/UI_FLOATINGWIDGET(53 断言)/ConfigReaderTest 全绿 + UI_MAINWINDOW 单独重跑 0.76s 通过（并行 32s 超时为既有窗口枚举 flake 非回归） | ✅ completed |
 | 2026-09-17 | fix | [`2026-09-17-Spec-TestMessageOnlyValidProxy-Fix-v1.0.md`](./specs/2026-09-17-Spec-TestMessageOnlyValidProxy-Fix-v1.0.md) | fix ✅ | **修复测试/批量测试时仅对有效代理刷新 `ProfileExItem.message` 测试时间侧** — `ProfileExItemDAO::updateTestResult` L274 与 `updateTestResultBatch` L404 原用 `if (success)` 判断，导致 `success=true 但 latencyMs<=0`（超时返回 0、异常返回 -1）的代理也被写入测试时间，造成「延迟无效但 message 显示刚测试成功」的误导；修复=两处 `if (success)` 改为 `if (utils::isTestResultValid(success, latencyMs))`（`success && latencyMs > 0`），与同文件 L290/L417 `delayStr` 计算口径一致；`!success` 分支嵌套在 else 内，仅失败时重置评价历史列（`success=true 但 latencyMs<=0` 保留历史，因其为「未验证」而非「失败」）；不改 `formatTestMessage`、不改 `updateStartupTime`；C++17 无 `auto` | ✅ completed |
@@ -504,6 +506,7 @@ status: maintained
 | # | 文件 | 说明 | 大小 |
 |---|------|------|------|
 | 1 | [`docs/project-knowledge.md`](./project-knowledge.md) | **项目长期记忆** — 测试规范、错误级别分类、Google Test 规范、错误分析、三文档协同模型、工具模式、架构决策记录、调试与稳定性规则（含 ASAN/UBSan/MiniDump/cppcheck/gcovr 用法、工具选择矩阵、Logger 深度调试）。内容与 AGENTS.md 和 `docs/` 文档不重复。 | 6.2 KB |
+| 2 | [`docs/2026-09-18-Reference-Caura-OperationGuide-v1.0.md`](./2026-09-18-Reference-Caura-OperationGuide-v1.0.md) | **Caura 跨会话记忆 curl 操作指南** — 完整 MCP 端点 (`https://caura.ai/mcp`) curl 命令集：诊断连通性、工具列表、强制策略 (keystones)、列出/搜索/写入/管理记忆、批量写入基础记忆、项目初始化流程、故障排查表 | 12.0 KB |
 
 **维护规则**: 会话结束时如有新的架构决策或跨模块知识，追加至 `docs/project-knowledge.md` §7 关键决策记录。
 
