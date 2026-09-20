@@ -4,6 +4,9 @@
 #include <sstream>
 #include <vector>
 
+#include "update/Deduplicator.h"
+#include "ConfigReader.h"
+
 class DedupTest : public ::testing::Test {
 protected:
     sqlite3* db_ = nullptr;
@@ -50,8 +53,21 @@ protected:
                        const std::string& address, const std::string& port,
                        const std::string& id, const std::string& network,
                        const std::string& subId) {
+        // Escape single quotes for safe SQL string literals
+        auto escape = [](const std::string& s) {
+            std::string out;
+            out.reserve(s.size() + 4);
+            for (char c : s) {
+                if (c == '\'') {
+                    out += "''";
+                } else {
+                    out += c;
+                }
+            }
+            return out;
+        };
         std::string sql = "INSERT INTO ProfileItem (IndexId, ConfigType, Address, Port, Id, Network, Subid) VALUES ('"
-            + indexId + "','" + configType + "','" + address + "','" + port + "','" + id + "','" + network + "','" + subId + "')";
+            + escape(indexId) + "','" + escape(configType) + "','" + escape(address) + "','" + escape(port) + "','" + escape(id) + "','" + escape(network) + "','" + escape(subId) + "')";
         exec(sql);
     }
 
@@ -338,4 +354,88 @@ TEST_F(DedupTest, DeleteWithinTransactionNoNestedError) {
     exec("COMMIT");
 
     EXPECT_EQ(countProfiles(), 0);
+}
+
+// Regression tests: Phase0 and Blacklist phase SQL parameter binding
+// (fixes W1/HIGH-2: single-quote subids previously broke SQL string concatenation)
+
+TEST_F(DedupTest, Phase0WithSingleQuoteSubId) {
+    // Insert proxies with a single quote in the subid — would break string-concatenated SQL
+    // Use valid UUID format to pass the ConfigError phase check
+    insertProfile("1", "5", "1.1.1.1", "443", "12345678-1234-1234-1234-123456789abc", "tcp", "src-sub");
+    insertProfile("2", "5", "2.2.2.2", "443", "12345678-1234-1234-1234-123456789abd", "tcp", "other-sub");
+    insertDelay("1", "100");  // valid proxy
+    insertDelay("2", "0");    // invalid proxy
+
+    config::AppConfig cfg;
+    cfg.dedup_subids.push_back("it's protected");
+
+    update::Deduplicator dedup(db_, cfg);
+    bool ok = dedup.deduplicate();
+
+    ASSERT_TRUE(ok) << "deduplicate() failed with single-quote subid";
+
+    // Verify proxy "1" was moved to the protected subid
+    sqlite3_stmt* stmt = nullptr;
+    sqlite3_prepare_v2(db_, "SELECT Subid FROM ProfileItem WHERE IndexId = '1'", -1, &stmt, nullptr);
+    sqlite3_step(stmt);
+    std::string subid1 = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+    sqlite3_finalize(stmt);
+    EXPECT_EQ(subid1, "it's protected");
+}
+
+TEST_F(DedupTest, Phase0FallbackWithSingleQuoteSubIds) {
+    // Both protected and fallback subids contain single quotes
+    // Both proxies start in the protected subid; primary keeps valid ones,
+    // fallback moves invalid ones (delay <= 0) to the fallback subid.
+    insertProfile("1", "5", "1.1.1.1", "443", "12345678-1234-1234-1234-123456789abc", "tcp", "it's protected");
+    insertProfile("2", "5", "2.2.2.2", "443", "12345678-1234-1234-1234-123456789abd", "tcp", "it's protected");
+    insertDelay("1", "100");  // valid
+    insertDelay("2", "0");    // invalid
+
+    config::AppConfig cfg;
+    cfg.dedup_subids.push_back("it's protected");
+    cfg.dedup_subids.push_back("it's fallback");
+
+    update::Deduplicator dedup(db_, cfg);
+    bool ok = dedup.deduplicate();
+
+    ASSERT_TRUE(ok) << "deduplicate() failed with single-quote subids";
+
+    // Valid proxy stays in protected
+    sqlite3_stmt* stmt = nullptr;
+    sqlite3_prepare_v2(db_, "SELECT Subid FROM ProfileItem WHERE IndexId = '1'", -1, &stmt, nullptr);
+    sqlite3_step(stmt);
+    std::string subid1 = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+    sqlite3_finalize(stmt);
+    EXPECT_EQ(subid1, "it's protected");
+
+    // Invalid proxy moves to fallback
+    sqlite3_prepare_v2(db_, "SELECT Subid FROM ProfileItem WHERE IndexId = '2'", -1, &stmt, nullptr);
+    sqlite3_step(stmt);
+    std::string subid2 = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+    sqlite3_finalize(stmt);
+    EXPECT_EQ(subid2, "it's fallback");
+}
+
+TEST_F(DedupTest, BlacklistPhaseWithSingleQuoteSubId) {
+    insertProfile("1", "5", "1.1.1.1", "443", "12345678-1234-1234-1234-123456789abc", "tcp", "sub-normal");
+    exec("INSERT INTO ProfileExItem (IndexId, consecutive_failures) VALUES ('1', 10)");
+
+    config::AppConfig cfg;
+    cfg.blacklist_enabled = true;
+    cfg.blacklist_subid = "bad'sub";
+    cfg.blacklist_threshold = 5;
+
+    update::Deduplicator dedup(db_, cfg);
+    bool ok = dedup.deduplicate();
+
+    ASSERT_TRUE(ok) << "deduplicate() failed with single-quote blacklist_subid";
+
+    sqlite3_stmt* stmt = nullptr;
+    sqlite3_prepare_v2(db_, "SELECT Subid FROM ProfileItem WHERE IndexId = '1'", -1, &stmt, nullptr);
+    sqlite3_step(stmt);
+    std::string subid1 = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+    sqlite3_finalize(stmt);
+    EXPECT_EQ(subid1, "bad'sub");
 }

@@ -111,7 +111,7 @@ public:
     bool deleteProxiesBySubId(const std::string& subId);
     void updateSubscriptionAsync(const std::string& subId, wxEvtHandler* wxHandler);
   void updateAllSubscriptionsAsync(wxEvtHandler* wxHandler);
-  bool importSubscription(const std::string& url);
+  bool importSubscription(const std::string& url, wxEvtHandler* wxHandler);
 
 // Proxies
 std::vector<db::models::Profileitem> loadProxies(const std::string& subId = "");

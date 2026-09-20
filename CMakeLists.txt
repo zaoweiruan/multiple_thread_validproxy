@@ -293,6 +293,7 @@ if(wxWidgets_FOUND)
         src/ui/TrayIcon.cpp
         src/ui/UIApp.h
         src/ui/UIApp.cpp
+        src/ui/RefreshCommands.cpp
         src/ui/icons.rc
     )
 
@@ -400,7 +401,12 @@ add_dependencies(validproxy update_version_h)
         endforeach()
     endfunction()
 
-    copy_wx_dlls(validproxy)
+    # Scheme A (PATH-based): wx DLLs are resolved via the PATH env var
+    # pointing to ${VCPKG_ROOT}/installed/x64-mingw-dynamic/{,debug/}bin.
+    # The copy_wx_dlls() function is kept above for rollback; re-enable by
+    # uncommenting the three call sites (validproxy, test_log_statistics_event,
+    # test_unified_monitor_rows). No DLLs are copied to ${CMAKE_SOURCE_DIR}/bin.
+    # copy_wx_dlls(validproxy)
 
     # WIN32_EXECUTABLE creates GUI subsystem executable (no console window)
     set_target_properties(validproxy PROPERTIES
@@ -520,12 +526,13 @@ set_target_properties(test_standalone_config_port PROPERTIES
 )
 add_test(NAME StandaloneConfigPortTest COMMAND test_standalone_config_port)
 
-add_executable(test_dedup tests/test_dedup.cpp)
+add_executable(test_dedup tests/test_dedup.cpp src/update/Deduplicator.cpp src/ProfileitemDAO.cpp src/Utils.cpp src/Logger.cpp src/LoggerInstance.cpp)
 target_include_directories(test_dedup PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(test_dedup PRIVATE
     gtest_main
     gtest
     ${VCPKG_ROOT}/installed/x64-mingw-static/lib/libsqlite3.a
+    -lws2_32
 )
 set_target_properties(test_dedup PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
@@ -662,6 +669,17 @@ set_target_properties(test_config_reader PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
 )
 add_test(NAME ConfigReaderTest COMMAND test_config_reader)
+
+# -- RefreshCommands unit tests (command constants + status text mapping, pure functions) --
+add_executable(test_refresh_commands tests/test_refresh_commands.cpp src/ui/RefreshCommands.cpp)
+target_include_directories(test_refresh_commands PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(test_refresh_commands PRIVATE gtest_main gtest)
+set_target_properties(test_refresh_commands PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+)
+add_test(NAME RefreshCommandsTest COMMAND test_refresh_commands)
 
 # -- FloatingWidget pure-policy unit tests (no wx, no external deps beyond gtest) --
 add_executable(test_floating_widget_state tests/test_floating_widget_state.cpp)
@@ -925,7 +943,8 @@ if(wxWidgets_FOUND)
         RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
         RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
     )
-    copy_wx_dlls(test_log_statistics_event)
+    # Scheme A (PATH-based): rely on PATH env var; do not copy wx DLLs to tests/.
+    # copy_wx_dlls(test_log_statistics_event)
     add_test(NAME LogStatisticsEventTest COMMAND test_log_statistics_event)
 endif()
 
@@ -949,7 +968,8 @@ if(wxWidgets_FOUND)
         RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
         RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
     )
-    copy_wx_dlls(test_unified_monitor_rows)
+    # Scheme A (PATH-based): rely on PATH env var; do not copy wx DLLs to tests/.
+    # copy_wx_dlls(test_unified_monitor_rows)
     add_test(NAME UnifiedMonitorRowsTest COMMAND test_unified_monitor_rows)
 endif()
 

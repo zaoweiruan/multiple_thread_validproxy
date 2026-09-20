@@ -90,31 +90,55 @@ int Deduplicator::deduplicatePhase0() {
     
     int updated = 0;
     
-    std::string protectedSubId = config_.dedup_subids[0];
+    const std::string protectedSubId = config_.dedup_subids[0];
     
-    std::string sql = "UPDATE ProfileItem SET SubId = '" + protectedSubId + "' WHERE IndexId IN (SELECT pi.IndexId FROM ProfileItem pi JOIN ProfileExItem pe ON pi.IndexId = pe.IndexId WHERE pe.Delay > 0 AND pe.Delay != '-1')";
-    
-    char* errMsg = nullptr;
-    if (sqlite3_exec(db_, sql.c_str(), nullptr, nullptr, &errMsg) != SQLITE_OK) {
-        Logger::write("ERROR: Phase0 update failed - " + std::string(errMsg), LogLevel::ERR);
-        sqlite3_free(errMsg);
+    // Primary update: move valid proxies (delay > 0) to protected subid
+    const char* kPrimarySql =
+        "UPDATE ProfileItem SET SubId = ? WHERE IndexId IN ("
+        "SELECT pi.IndexId FROM ProfileItem pi JOIN ProfileExItem pe "
+        "ON pi.IndexId = pe.IndexId WHERE pe.Delay > 0 AND pe.Delay != '-1')";
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db_, kPrimarySql, -1, &stmt, nullptr) != SQLITE_OK) {
+        Logger::write(std::string("ERROR: Phase0 primary prepare failed - ") +
+                      sqlite3_errmsg(db_), LogLevel::ERR);
+        sqlite3_exec(db_, "ROLLBACK", nullptr, nullptr, nullptr);
         return 0;
     }
-    
+    sqlite3_bind_text(stmt, 1, protectedSubId.c_str(), -1, SQLITE_TRANSIENT);
+    if (sqlite3_step(stmt) != SQLITE_DONE) {
+        Logger::write(std::string("ERROR: Phase0 primary step failed - ") +
+                      sqlite3_errmsg(db_), LogLevel::ERR);
+        sqlite3_finalize(stmt);
+        sqlite3_exec(db_, "ROLLBACK", nullptr, nullptr, nullptr);
+        return 0;
+    }
     updated += sqlite3_changes(db_);
+    sqlite3_finalize(stmt);
     
     if (config_.dedup_subids.size() > 1) {
-        std::string fallbackSubId = config_.dedup_subids[1];
+        const std::string fallbackSubId = config_.dedup_subids[1];
         
-        sql = "UPDATE ProfileItem SET SubId = '" + fallbackSubId + "' WHERE SubId = '" + protectedSubId + "' AND IndexId IN (SELECT pi.IndexId FROM ProfileItem pi JOIN ProfileExItem pe ON pi.IndexId = pe.IndexId WHERE pe.Delay <= 0 OR pe.Delay = '-1')";
-        
-        if (sqlite3_exec(db_, sql.c_str(), nullptr, nullptr, &errMsg) != SQLITE_OK) {
-            Logger::write("ERROR: Phase0 fallback update failed - " + std::string(errMsg), LogLevel::ERR);
-            sqlite3_free(errMsg);
+        // Fallback update: move invalid proxies (delay <= 0) from protected to fallback subid
+        const char* kFallbackSql =
+            "UPDATE ProfileItem SET SubId = ? WHERE SubId = ? AND IndexId IN ("
+            "SELECT pi.IndexId FROM ProfileItem pi JOIN ProfileExItem pe "
+            "ON pi.IndexId = pe.IndexId WHERE pe.Delay <= 0 OR pe.Delay = '-1')";
+        sqlite3_stmt* stmt2 = nullptr;
+        if (sqlite3_prepare_v2(db_, kFallbackSql, -1, &stmt2, nullptr) != SQLITE_OK) {
+            Logger::write(std::string("ERROR: Phase0 fallback prepare failed - ") +
+                          sqlite3_errmsg(db_), LogLevel::ERR);
+            sqlite3_exec(db_, "ROLLBACK", nullptr, nullptr, nullptr);
             return updated;
         }
-        
-        updated += sqlite3_changes(db_);
+        sqlite3_bind_text(stmt2, 1, fallbackSubId.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt2, 2, protectedSubId.c_str(), -1, SQLITE_TRANSIENT);
+        if (sqlite3_step(stmt2) != SQLITE_DONE) {
+            Logger::write(std::string("ERROR: Phase0 fallback step failed - ") +
+                          sqlite3_errmsg(db_), LogLevel::ERR);
+        } else {
+            updated += sqlite3_changes(db_);
+        }
+        sqlite3_finalize(stmt2);
         Logger::write("INFO: Phase 0 updated: " + std::to_string(updated) + " proxies (protected: " + protectedSubId + ", fallback: " + fallbackSubId + ")", LogLevel::INFO);
     } else {
         Logger::write("INFO: Phase 0 updated: " + std::to_string(updated) + " proxies to subid: " + protectedSubId, LogLevel::INFO);
@@ -219,16 +243,27 @@ int Deduplicator::deduplicateBlacklistPhase() {
         return 0;
     }
     
-    int threshold = config_.blacklist_threshold;
+    const int threshold = config_.blacklist_threshold;
     
-    std::string sql = "UPDATE ProfileItem SET SubId = '" + config_.blacklist_subid + "' "
-                       "WHERE IndexId IN (SELECT IndexId FROM ProfileExItem "
-                       "WHERE consecutive_failures >= " + std::to_string(threshold) + ")";
-    
-    char* errMsg = nullptr;
-    if (sqlite3_exec(db_, sql.c_str(), nullptr, nullptr, &errMsg) != SQLITE_OK) {
-        Logger::write("ERROR: Blacklist phase failed - " + std::string(errMsg), LogLevel::ERR);
-        sqlite3_free(errMsg);
+    const char* kBlacklistSql =
+        "UPDATE ProfileItem SET SubId = ? WHERE "
+        "IndexId IN (SELECT IndexId from ProfileExItem "
+        "WHERE consecutive_failures >= ?)";
+    sqlite3_stmt* blStmt = nullptr;
+    if (sqlite3_prepare_v2(db_, kBlacklistSql, -1, &blStmt, nullptr) != SQLITE_OK) {
+        Logger::write(std::string("ERROR: Blacklist phase prepare failed - ") +
+                      sqlite3_errmsg(db_), LogLevel::ERR);
+        sqlite3_exec(db_, "ROLLBACK", nullptr, nullptr, nullptr);
+        return 0;
+    }
+    sqlite3_bind_text(blStmt, 1, config_.blacklist_subid.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int(blStmt, 2, threshold);
+    const int blRc = sqlite3_step(blStmt);
+    sqlite3_finalize(blStmt);
+    if (blRc != SQLITE_DONE) {
+        Logger::write(std::string("ERROR: Blacklist phase step failed - ") +
+                      sqlite3_errmsg(db_), LogLevel::ERR);
+        sqlite3_exec(db_, "ROLLBACK", nullptr, nullptr, nullptr);
         return 0;
     }
     

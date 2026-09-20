@@ -6,10 +6,12 @@
 #include <wx/splitter.h>
 #include <wx/statusbr.h>
 
+#include <atomic>
 #include <string>
 
 #include "ConfigReader.h"
 #include "Events.h"
+#include "RefreshCommands.h"
 
 struct sqlite3;
 
@@ -94,6 +96,7 @@ private:
     void onToolCancel(wxCommandEvent& event);
     void onToolSync(wxCommandEvent& event);
     void onStatusUpdate(StatusUpdateEvent& event);
+    void rewriteRefreshStatusText();
     void onOnlineProbeFinished(OnlineProbeFinishedEvent& event);
     void onResize(wxSizeEvent& event);
     void onSearchBoxEnter(wxCommandEvent& event);
@@ -142,6 +145,10 @@ private:
     wxPanel* proxyMonPanel_{nullptr};
     bool proxyMonEnabled_{false};
     int proxyAliveCount_{0};
+
+    // Refresh command status-bar protection (see Step 2b)
+    std::atomic<bool> statusTextProtected_{false};
+    std::string statusTextPending_;
 
     wxDECLARE_EVENT_TABLE();
 };

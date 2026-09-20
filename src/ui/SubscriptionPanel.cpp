@@ -508,7 +508,7 @@ void SubscriptionPanel::onImportSubscription(wxCommandEvent&) {
     if (dlg.ShowModal() == wxID_OK) {
         wxString url = dlg.GetValue();
         if (!url.empty()) {
-            controller_->importSubscription(url.ToStdString());
+            controller_->importSubscription(url.ToStdString(), wxGetTopLevelParent(this));
             loadSubscriptions();
         }
     }

@@ -1,5 +1,6 @@
 #include "AppController.h"
 #include "Events.h"
+#include "RefreshCommands.h"
 #include "UnifiedMonitorRows.h"
 #include "ui/AsyncOperationGuard.h"
 #include "ui/ScopeGuard.h"
@@ -274,10 +275,15 @@ void AppController::updateAllSubscriptionsAsync(wxEvtHandler* wxHandler) {
     workerThread_ = std::thread(&AppController::doUpdateAllSubscriptions, this, wxHandler);
 }
 
-bool AppController::importSubscription(const std::string& url) {
+bool AppController::importSubscription(const std::string& url, wxEvtHandler* wxHandler) {
     try {
         update::SubitemUpdaterV2 updater(db_, config_.proxy.xray_executable, config_, nullptr, "");
-        return updater.importSingleUrl(url);
+        bool ok = updater.importSingleUrl(url);
+        if (ok && wxHandler) {
+            wxQueueEvent(wxHandler, new StatusUpdateEvent(0,
+                std::string(ui::refresh_cmd::kRowsChanged)));
+        }
+        return ok;
     } catch (const std::exception& e) {
         Logger::write(std::string("Import error: ") + e.what(), LogLevel::ERR);
         return false;
@@ -2076,6 +2082,10 @@ update::SubitemUpdaterV2 updater(db_, config_.proxy.xray_executable, config_, nu
         if (wxHandler) {
             wxQueueEvent(wxHandler, new StatusUpdateEvent(0, msg));
         }
+        if (ok && wxHandler) {
+            wxQueueEvent(wxHandler, new StatusUpdateEvent(0,
+                std::string(ui::refresh_cmd::kRowsChanged)));
+        }
         Logger::write(msg, ok ? LogLevel::REPORT : LogLevel::ERR);
     } catch (const std::exception& e) {
         if (wxHandler) {
@@ -2096,6 +2106,10 @@ update::SubitemUpdaterV2 updater(db_, config_.proxy.xray_executable, config_, nu
         std::string msg = ok ? "All subscriptions updated" : "Update (all) had failures";
         if (wxHandler) {
             wxQueueEvent(wxHandler, new StatusUpdateEvent(0, msg));
+        }
+        if (ok && wxHandler) {
+            wxQueueEvent(wxHandler, new StatusUpdateEvent(0,
+                std::string(ui::refresh_cmd::kRowsChanged)));
         }
 
         Logger::write(msg, ok ? LogLevel::REPORT : LogLevel::ERR);
@@ -2118,6 +2132,11 @@ void AppController::doTestSubscription(const std::string& subId, wxEvtHandler* w
         // Batch resolve regions for valid proxies only when actual tests were performed
         if (tester.getTotalProxies() > 0) {
             resolveRegionsForValidProxies(subId);
+        }
+
+        if (wxHandler) {
+            wxQueueEvent(wxHandler, new StatusUpdateEvent(0,
+                std::string(ui::refresh_cmd::kRowsChanged)));
         }
 
         if (wxHandler) {
@@ -2204,6 +2223,11 @@ void AppController::doTestAllProxies(wxEvtHandler* wxHandler) {
         // Batch resolve regions for all valid proxies only when actual tests were performed
         if (tester.getTotalProxies() > 0) {
             resolveRegionsForValidProxies();
+        }
+
+        if (wxHandler) {
+            wxQueueEvent(wxHandler, new StatusUpdateEvent(0,
+                std::string(ui::refresh_cmd::kRowsChanged)));
         }
 
         if (wxHandler) {
@@ -2513,6 +2537,10 @@ void AppController::doSyncDatabases(wxEvtHandler* wxHandler) {
         std::string msg = ok ? "数据库同步完成" : "数据库同步失败，请查看日志";
         if (wxHandler) {
             wxQueueEvent(wxHandler, new StatusUpdateEvent(0, msg));
+        }
+        if (ok && wxHandler) {
+            wxQueueEvent(wxHandler, new StatusUpdateEvent(0,
+                std::string(ui::refresh_cmd::kRowsChanged)));
         }
         Logger::write(msg, ok ? LogLevel::REPORT : LogLevel::ERR);
     } catch (const std::exception& e) {
