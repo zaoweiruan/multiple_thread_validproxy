@@ -23,7 +23,7 @@ ProxyBatchTester::ProxyBatchTester(sqlite3* db, const config::AppConfig& config,
     std::string exeBaseDir = baseDir.empty() ? utils::getExecutableDir() : baseDir;
     std::string configDir = exeBaseDir + "/config";
     
-    xrayManager_ = XrayManager::getInstance(config_.proxy.xray_executable, configDir, config_.xray_workers);
+    xrayManager_ = XrayManager::getInstance(config_.proxy.xray_executable, configDir, config_.xray_workers, db_);
     proxyTester_ = std::make_shared<ProxyTester>(xrayManager_, config_.test_url, config_.test_timeout_ms);
     
     lastResult_ = TestResult{};

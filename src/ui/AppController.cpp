@@ -14,6 +14,7 @@ using ui::ScopeGuard;
 #include "ProxyBatchTester.h"
 #include "ProxyTester.h"
 #include "ConfigGenerator.h"
+#include "config/ConfigBuilder.h"
 #include "config/OutboundBuilderFactory.h"
 #include "config/SingBoxOutboundBuilderFactory.h"
 #include "ShareLink.h"
@@ -95,15 +96,17 @@ AppController::~AppController() {
     // running until the OS kills it — the worker may still access XrayManager
     // or xray instances after release() destroys the singleton, causing zombies.
     if (workerThread_.joinable()) {
-        // Wait up to 5 seconds for thread to finish gracefully
-        // If thread doesn't respond, detach it to allow process exit
+        // Wait up to 10 seconds for thread to finish gracefully.
+        // Worker threads may be stuck in network operations (curl, Sleep) that
+        // cannot observe cancelRequested_ until the operation completes.
+        // 10s covers typical curl timeouts (30s test_timeout / 2 attempts).
         std::future<void> fut = std::async(std::launch::async, [this]() {
             if (workerThread_.joinable()) {
                 workerThread_.join();
             }
         });
-        if (fut.wait_for(std::chrono::seconds(5)) != std::future_status::ready) {
-            Logger::write("[AppController] Destructor: worker thread join timed out, detaching", LogLevel::WARN);
+        if (fut.wait_for(std::chrono::seconds(10)) != std::future_status::ready) {
+            Logger::write("[AppController] Destructor: worker thread join timed out after 10s, detaching", LogLevel::WARN);
             workerThread_.detach();
         }
     }
@@ -118,8 +121,8 @@ AppController::~AppController() {
                 probeThread_.join();
             }
         });
-        if (fut.wait_for(std::chrono::seconds(5)) != std::future_status::ready) {
-            Logger::write("[AppController] Destructor: probe thread join timed out, detaching", LogLevel::WARN);
+        if (fut.wait_for(std::chrono::seconds(10)) != std::future_status::ready) {
+            Logger::write("[AppController] Destructor: probe thread join timed out after 10s, detaching", LogLevel::WARN);
             probeThread_.detach();
         }
     }
@@ -591,7 +594,7 @@ bool AppController::isTestCancelled() const {
 TestResult AppController::findFirstProxy() {
     std::string xrayPath = config_.proxy.xray_executable;
     std::string configDir = utils::getExecutableDir() + "/config";
-    XrayManager* manager = XrayManager::getInstance(xrayPath, configDir, config_.xray_workers);
+    XrayManager* manager = XrayManager::getInstance(xrayPath, configDir, config_.xray_workers, db_);
     ProxyFinder finder(db_, manager, xrayPath, config_.test_url, "", config_.test_timeout_ms);
     finder.findFirstWorkingProxy();
     return finder.getLastResult();
@@ -600,7 +603,7 @@ TestResult AppController::findFirstProxy() {
 TestResult AppController::findBestProxy() {
     std::string xrayPath = config_.proxy.xray_executable;
     std::string configDir = utils::getExecutableDir() + "/config";
-    XrayManager* manager = XrayManager::getInstance(xrayPath, configDir, config_.xray_workers);
+    XrayManager* manager = XrayManager::getInstance(xrayPath, configDir, config_.xray_workers, db_);
     ProxyFinder finder(db_, manager, xrayPath, config_.test_url, "", config_.test_timeout_ms);
     finder.findWorkingProxy();
     return finder.getLastResult();
@@ -842,121 +845,40 @@ bool AppController::startStandaloneProxy(const std::string& indexId, int overrid
 
     // Use override port if provided, otherwise use configured SOCKS port
     int socksPort = (overridePort > 0) ? overridePort : config_.proxy.socks_base_port;
-
-    // Generate proxy outbound JSON using appropriate builder
-    boost::json::object proxyOutbound;
-    if (useSingBox) {
-        config::SingBoxOutboundBuilderFactory factory;
-        proxyOutbound = factory.create(profile, "proxy");
-    } else {
-        config::OutboundBuilderFactory factory;
-        proxyOutbound = factory.create(profile, "proxy");
-    }
-
-    // Build outbounds array based on backend
-    boost::json::array outboundsArr;
-    outboundsArr.push_back(proxyOutbound);
-
-    if (useSingBox) {
-        // Sing-box: use "direct" and "block" tag types
-        boost::json::object directOutbound;
-        directOutbound["type"] = "direct";
-        directOutbound["tag"] = "direct";
-        outboundsArr.push_back(directOutbound);
-
-        boost::json::object blockOutbound;
-        blockOutbound["type"] = "block";
-        blockOutbound["tag"] = "block";
-        outboundsArr.push_back(blockOutbound);
-    } else {
-        // Xray: use "freedom" and "blackhole" protocols
-        boost::json::object freedomOutbound;
-        freedomOutbound["tag"] = "direct";
-        freedomOutbound["protocol"] = "freedom";
-        outboundsArr.push_back(freedomOutbound);
-
-        boost::json::object blackholeOutbound;
-        blackholeOutbound["tag"] = "block";
-        blackholeOutbound["protocol"] = "blackhole";
-        outboundsArr.push_back(blackholeOutbound);
-    }
-
-    // Read the full config template
+    
+    // Determine executable and asset directory (needed for both paths)
     std::string exeDir = utils::getExecutableDir();
-    std::string templatePath;
     std::string executable;
     std::string assetDir;
     std::string envVarName;
-
+    
     if (useSingBox) {
-        templatePath = config_.proxy.singbox_template_config_path;
-        if (templatePath.empty()) {
-            templatePath = exeDir + "\\singbox-config-template.json";
-        }
         executable = config_.proxy.singbox_executable;
         assetDir = config_.proxy.singbox_asset_dir;
         envVarName = "SING_BOX_LOCATION_ASSET";
     } else {
-        templatePath = config_.proxy.template_config_path;
-        if (templatePath.empty()) {
-            templatePath = exeDir + "\\xray-config-template.json";
-        }
         executable = config_.proxy.xray_executable;
         assetDir = config_.proxy.xray_asset_dir;
         envVarName = "XRAY_LOCATION_ASSET";
     }
-
-    std::ifstream templateFile(templatePath);
-    if (!templateFile.is_open()) {
-        Logger::write("[StandaloneProxy] Cannot open template: " + templatePath, LogLevel::ERR);
+    
+    // Use ConfigBuilder to generate complete config from database templates
+    Logger::write("[StandaloneProxy] Using ConfigBuilder for standalone proxy: " + indexId, LogLevel::INFO);
+    config::ConfigBuilder builder(db_);
+    config::ConfigVariables vars;
+    vars.socksPort = socksPort;
+    vars.apiPort = 10085;  // Standalone API port (fixed)
+    
+    std::string backend = useSingBox ? "singbox" : "xray";
+    boost::json::value configJson = builder.build(config::ConfigMode::Standalone, backend, profile, vars);
+    
+    boost::json::object configObj;
+    if (configJson.is_object()) {
+        configObj = configJson.as_object();
+        Logger::write("[StandaloneProxy] Config generated by ConfigBuilder for: " + indexId, LogLevel::DEBUG);
+    } else {
+        Logger::write("[StandaloneProxy] ConfigBuilder returned invalid config", LogLevel::ERR);
         return false;
-    }
-    std::string templateContent((std::istreambuf_iterator<char>(templateFile)),
-                                 std::istreambuf_iterator<char>());
-    templateFile.close();
-
-    // Parse and modify the template
-    boost::json::value templateVal = boost::json::parse(templateContent);
-    boost::json::object configObj = templateVal.as_object();
-
-    // Replace the SOCKS inbound port with the dynamically allocated port.
-    // IMPORTANT: the SOCKS inbound is NOT always inbounds[0] -- xray templates
-    // put the gRPC "api" dokodemo-door inbound first. We must locate the SOCKS
-    // inbound by protocol/type, otherwise we clobber the wrong inbound and leave
-    // the real proxy listening on its template port, which also made the
-    // floating-widget display show the wrong port.
-    standalone_config::applySocksPort(configObj, socksPort);
-
-    // Replace the outbounds array with our generated one
-    configObj["outbounds"] = outboundsArr;
-
-    // For sing-box: inject DNS rule to prevent bootstrap loop.
-    // The proxy server's own domain must resolve via local DNS, not through
-    // the proxy (remote_dns has detour "proxy"), otherwise DNS resolution
-    // would need the proxy before the proxy can connect.
-    if (useSingBox) {
-        // Check if address looks like a domain name (contains at least one letter and a dot)
-        bool isDomain = false;
-        for (char c : profile.address) {
-            if (std::isalpha(static_cast<unsigned char>(c))) {
-                isDomain = true;
-                break;
-            }
-        }
-        if (isDomain && profile.address.find('.') != std::string::npos) {
-            // Insert DNS rule at the beginning of the rules array
-            if (configObj.contains("dns")) {
-                boost::json::object& dnsObj = configObj["dns"].as_object();
-                if (dnsObj.contains("rules")) {
-                    boost::json::array& rules = dnsObj["rules"].as_array();
-                    boost::json::object proxyDnsRule;
-                    proxyDnsRule["domain"] = boost::json::array{profile.address};
-                    proxyDnsRule["server"] = "local_local";
-                    rules.insert(rules.begin(), proxyDnsRule);
-                    Logger::write("[StandaloneProxy] DNS bootstrap rule added for: " + profile.address, LogLevel::DEBUG);
-                }
-            }
-        }
     }
 
     // Ensure config subdirectory exists
@@ -972,7 +894,7 @@ bool AppController::startStandaloneProxy(const std::string& indexId, int overrid
     {
         std::ofstream configFile(configPath);
         if (!configFile.is_open()) {
-            Logger::write("[StandaloneProxy] Failed to write config: " + configPath, LogLevel::ERR);
+            Logger::write("[StandaloneProxy] Failed to write config: " + utils::toWindowsPath(configPath), LogLevel::ERR);
             return false;
         }
         configFile << boost::json::serialize(configObj);
@@ -1911,7 +1833,7 @@ bool AppController::startProxyPool() {
     std::string configDir = utils::getExecutableDir() + "/config";
     std::error_code ec;
     if (!std::filesystem::exists(configDir) && !std::filesystem::create_directories(configDir, ec)) {
-        Logger::write("[AppController] cannot create pool config dir: " + configDir, LogLevel::ERR);
+        Logger::write("[AppController] cannot create pool config dir: " + utils::toWindowsPath(configDir), LogLevel::ERR);
         return false;
     }
     // Resolve pool listen ports via PortManager so the pool never collides with
@@ -1938,7 +1860,7 @@ bool AppController::startProxyPool() {
             continue;
         }
         std::shared_ptr<proxy::StandaloneProxyPool> pool(
-            new proxy::StandaloneProxyPool(poolCfg, xrayPath, configDir));
+            new proxy::StandaloneProxyPool(poolCfg, xrayPath, configDir, db_));
         pool->onMembersChanged = [this](const std::vector<proxy::PoolMemberView>& members) {
             if (topWindow_) {
                 wxQueueEvent(topWindow_, new PoolMembersUpdatedEvent(members));
@@ -2412,7 +2334,7 @@ void AppController::doFindFirstProxy(wxEvtHandler* wxHandler) {
         }
         std::string xrayPath = config_.proxy.xray_executable;
         std::string configDir = utils::getExecutableDir() + "/config";
-        XrayManager* manager = XrayManager::getInstance(xrayPath, configDir, config_.xray_workers);
+        XrayManager* manager = XrayManager::getInstance(xrayPath, configDir, config_.xray_workers, db_);
         if (!manager) {
             if (wxHandler) {
                 wxQueueEvent(wxHandler, new StatusUpdateEvent(0, "ERR:Failed to create XrayManager"));
@@ -2476,7 +2398,7 @@ void AppController::doFindBestProxy(wxEvtHandler* wxHandler) {
         }
         std::string xrayPath = config_.proxy.xray_executable;
         std::string configDir = utils::getExecutableDir() + "/config";
-        XrayManager* manager = XrayManager::getInstance(xrayPath, configDir, config_.xray_workers);
+        XrayManager* manager = XrayManager::getInstance(xrayPath, configDir, config_.xray_workers, db_);
         if (!manager) {
             if (wxHandler) {
                 wxQueueEvent(wxHandler, new StatusUpdateEvent(0, "ERR:Failed to create XrayManager"));

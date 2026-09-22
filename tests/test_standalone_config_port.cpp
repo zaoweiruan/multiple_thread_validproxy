@@ -30,7 +30,7 @@ TEST(StandaloneConfigPortTest, FindSocksInboundLocatesSocksRegardlessOfOrder) {
     json::value cfg3 = json::parse(R"({
         "inbounds": [
             {"type":"direct","tag":"direct"},
-            {"type":"mixed","tag":"socks-in","listen_port":10808}
+            {"type":"mixed","tag":"socks","listen_port":10808}
         ]
     })");
     json::array& in3 = cfg3.as_object()["inbounds"].as_array();
@@ -55,7 +55,7 @@ TEST(StandaloneConfigPortTest, ApplySocksPortRewritesSocksNotInbounds0) {
 TEST(StandaloneConfigPortTest, ApplySocksPortHandlesSingboxListenPort) {
     json::value cfg = json::parse(R"({
         "inbounds": [
-            {"type":"socks","tag":"socks-in","listen":"127.0.0.1","listen_port":10808}
+            {"type":"socks","tag":"socks","listen":"127.0.0.1","listen_port":10808}
         ]
     })");
     standalone_config::applySocksPort(cfg.as_object(), 9876);

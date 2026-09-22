@@ -111,11 +111,9 @@ struct AppConfig {
         int socks_base_port = 10808;
         std::string xray_executable;         // Xray executable path (moved from top-level)
         std::string xray_asset_dir;
-        std::string template_config_path;
         bool use_singbox = false;            // Proxy backend selector: true=sing-box, false=Xray
         std::string singbox_executable;      // sing-box executable path (only relevant when use_singbox=true)
         std::string singbox_asset_dir;       // sing-box geoip/geosite resource directory
-        std::string singbox_template_config_path;  // sing-box config template path
         // Scoring weights (0.0-1.0, sum not required to equal 1.0)
         double scoring_delay_weight = 0.2;
         double scoring_stability_weight = 0.3;

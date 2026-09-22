@@ -46,14 +46,6 @@ inline void ProxyConfigParser::parse(const boost::json::value& root, AppConfig& 
         } else if (proxy.contains("xray_asset_dir")) {
             Logger::write("WARNING: config.proxy.xray_asset_dir has wrong type (expected string), using default", LogLevel::WARN);
         }
-        if (proxy.contains("template_config_path") && proxy.at("template_config_path").is_string()) {
-            std::string rawPath = proxy.at("template_config_path").as_string().c_str();
-            std::filesystem::path p(rawPath);
-            if (!p.is_absolute()) p = std::filesystem::path(exeDir) / p;
-            config.proxy.template_config_path = p.string();
-        } else if (proxy.contains("template_config_path")) {
-            Logger::write("WARNING: config.proxy.template_config_path has wrong type (expected string), using default", LogLevel::WARN);
-        }
         // sing-box configuration
         // Scoring weights (0.0 to 1.0)
         if (proxy.contains("scoring_delay_weight") && proxy.at("scoring_delay_weight").is_number()) {
@@ -83,14 +75,6 @@ inline void ProxyConfigParser::parse(const boost::json::value& root, AppConfig& 
             config.proxy.singbox_asset_dir = p.string();
         } else if (proxy.contains("singbox_asset_dir")) {
             Logger::write("WARNING: config.proxy.singbox_asset_dir has wrong type (expected string), using default", LogLevel::WARN);
-        }
-        if (proxy.contains("singbox_template_config_path") && proxy.at("singbox_template_config_path").is_string()) {
-            std::string rawPath = proxy.at("singbox_template_config_path").as_string().c_str();
-            std::filesystem::path p(rawPath);
-            if (!p.is_absolute()) p = std::filesystem::path(exeDir) / p;
-            config.proxy.singbox_template_config_path = p.string();
-        } else if (proxy.contains("singbox_template_config_path")) {
-            Logger::write("WARNING: config.proxy.singbox_template_config_path has wrong type (expected string), using default", LogLevel::WARN);
         }
     } else if (obj.contains("proxy")) {
         Logger::write("WARNING: config.proxy has wrong type (expected object), using default", LogLevel::WARN);

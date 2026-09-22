@@ -75,13 +75,6 @@ ConfigDialog::ConfigDialog(wxWindow* parent, const config::AppConfig& cfg)
         assetDirProp->ChangeFlag(wxPGFlags::ShowFullFileName, true);
         propGrid_->SetPropertyAttribute("proxy_xray_asset_dir", wxPG_DIALOG_TITLE, L"选择 Xray 资源目录");
     }
-    {
-        wxFileProperty* tmplProp = new wxFileProperty(L"xray配置模板", "proxy_template_config_path", cfg.proxy.template_config_path);
-        propGrid_->AppendIn(xrayBackendCat_, tmplProp);
-        propGrid_->SetPropertyAttribute("proxy_template_config_path", wxPG_FILE_SHOW_FULL_PATH, (long)1);
-        tmplProp->ChangeFlag(wxPGFlags::ShowFullFileName, true);
-        propGrid_->SetPropertyAttribute("proxy_template_config_path", wxPG_DIALOG_TITLE, L"选择 Xray 启动配置模板文件");
-    }
 
     // sing-box 后端路径组（use_singbox=true 时可见）——指针存成员供 applyBackendVisibility 使用
     sbBackendCat_ = new wxPropertyCategory(L"sing-box 后端路径");
@@ -99,13 +92,6 @@ ConfigDialog::ConfigDialog(wxWindow* parent, const config::AppConfig& cfg)
         propGrid_->SetPropertyAttribute("proxy_singbox_asset_dir", wxPG_FILE_SHOW_FULL_PATH, (long)1);
         sbAssetProp->ChangeFlag(wxPGFlags::ShowFullFileName, true);
         propGrid_->SetPropertyAttribute("proxy_singbox_asset_dir", wxPG_DIALOG_TITLE, L"选择 Sing-box 资源目录");
-    }
-    {
-        wxFileProperty* sbTmplProp = new wxFileProperty(L"Sing-box配置模板", "proxy_singbox_template_config_path", cfg.proxy.singbox_template_config_path);
-        propGrid_->AppendIn(sbBackendCat_, sbTmplProp);
-        propGrid_->SetPropertyAttribute("proxy_singbox_template_config_path", wxPG_FILE_SHOW_FULL_PATH, (long)1);
-        sbTmplProp->ChangeFlag(wxPGFlags::ShowFullFileName, true);
-        propGrid_->SetPropertyAttribute("proxy_singbox_template_config_path", wxPG_DIALOG_TITLE, L"选择 Sing-box 启动配置模板文件");
     }
 
     // --- 测试 配置 ---
@@ -324,11 +310,8 @@ void ConfigDialog::loadConfig(const config::AppConfig& cfg) {
     propGrid_->SetPropertyValue("proxy_use_singbox", cfg.proxy.use_singbox);
     propGrid_->SetPropertyValue("proxy_socks_base_port", cfg.proxy.socks_base_port);
     propGrid_->SetPropertyValue("proxy_xray_asset_dir", wxString(cfg.proxy.xray_asset_dir));
-    propGrid_->SetPropertyValue("proxy_template_config_path", wxString(cfg.proxy.template_config_path));
     propGrid_->SetPropertyValue("proxy_singbox_executable", wxString(cfg.proxy.singbox_executable));
     propGrid_->SetPropertyValue("proxy_singbox_asset_dir", wxString(cfg.proxy.singbox_asset_dir));
-
-    propGrid_->SetPropertyValue("proxy_singbox_template_config_path", wxString(cfg.proxy.singbox_template_config_path));
 
     // ProxyProcessMonitor fields
     propGrid_->SetPropertyValue("proxy_process_monitor_enabled", cfg.proxy_process_monitor.enabled);
@@ -454,11 +437,8 @@ bool ConfigDialog::saveConfig() {
     editedConfig_.proxy.use_singbox = propGrid_->GetPropertyValueAsBool("proxy_use_singbox");
     editedConfig_.proxy.socks_base_port = propGrid_->GetPropertyValueAsInt("proxy_socks_base_port");
     editedConfig_.proxy.xray_asset_dir = propGrid_->GetPropertyValueAsString("proxy_xray_asset_dir").ToStdString();
-    editedConfig_.proxy.template_config_path = propGrid_->GetPropertyValueAsString("proxy_template_config_path").ToStdString();
     editedConfig_.proxy.singbox_executable = propGrid_->GetPropertyValueAsString("proxy_singbox_executable").ToStdString();
     editedConfig_.proxy.singbox_asset_dir = propGrid_->GetPropertyValueAsString("proxy_singbox_asset_dir").ToStdString();
-
-    editedConfig_.proxy.singbox_template_config_path = propGrid_->GetPropertyValueAsString("proxy_singbox_template_config_path").ToStdString();
 
     // ProxyProcessMonitor fields
     editedConfig_.proxy_process_monitor.enabled = propGrid_->GetPropertyValueAsBool("proxy_process_monitor_enabled");
@@ -599,20 +579,7 @@ bool ConfigDialog::validateConfig() {
         wxMessageBox("Subscription timeout must be between 1000 and 120000 ms", "Validation Error", wxOK | wxICON_ERROR);
         return false;
     }
-    // Validate template config path: must be non-empty and file must exist if configured
-    if (!editedConfig_.proxy.template_config_path.empty() &&
-        !std::filesystem::exists(editedConfig_.proxy.template_config_path)) {
-        wxMessageBox("启动配置模板文件不存在。\n\n路径:\n" + editedConfig_.proxy.template_config_path,
-                     "验证错误", wxOK | wxICON_ERROR);
-        return false;
-    }
-    // Validate sing-box template config path (only if Xray template is empty - sing-box mode)
-    if (editedConfig_.proxy.singbox_executable.empty() && !editedConfig_.proxy.singbox_template_config_path.empty() &&
-        !std::filesystem::exists(editedConfig_.proxy.singbox_template_config_path)) {
-        wxMessageBox("Sing-box 配置模板文件不存在。\n\n路径:\n" + editedConfig_.proxy.singbox_template_config_path,
-                     "验证错误", wxOK | wxICON_ERROR);
-        return false;
-    }
+    // Template file validation removed - using ConfigBuilder from database
 
     // Network monitor validation
     if (editedConfig_.network_monitor.checkIntervalMs < 5000 || editedConfig_.network_monitor.checkIntervalMs > 300000) {

@@ -1,9 +1,9 @@
 ---
 title: "plan: Xray/Sing-box 配置管理统一方案（含独立评审结论）"
 type: plan
-status: draft
+status: in-progress
 date: 2026-09-20
-version: 1.1
+version: 2.0
 ---
 
 # Xray/Sing-box 配置管理统一方案
@@ -133,14 +133,24 @@ public:
     // 主入口：根据模式 + 代理类型生成配置
     boost::json::value build(
         ConfigMode mode,
-        ProxyType proxyType,
         const db::models::Profileitem& profile,
         const ConfigVariables& vars);
     
     // 序列化
     std::string serialize(const boost::json::value& config) const;
+    
+private:
+    // 从 Profileitem.coretype 解析代理类型
+    ProxyType resolveProxyType(const db::models::Profileitem& profile) const;
 };
 ```
+
+**上游代理类型解析**：
+
+`Profileitem.coretype` 字段（索引 21）激活为上游代理类型标识：
+- `"xray"` → `ProxyType::Xray`
+- `"singbox"` → `ProxyType::SingBox`
+- `""` (空串/默认) → `ProxyType::Xray`（向后兼容）
 
 **代理类型字段说明**：
 
@@ -149,13 +159,133 @@ public:
 | `ProxyType::Xray` | 枚举 | Xray-core 后端，生成 xray 配置格式 |
 | `ProxyType::SingBox` | 枚举 | Sing-box 后端，生成 sing-box 配置格式 |
 
+**上游代理类型存储（独立代理客户端表）**：
+
+代理客户端类型（xray/sing-box）是**系统级配置**，不应存储在 `Profileitem` 表中。
+
+**已有表调查**：
+
+数据库 schema 中已有 `FullConfigTemplateItem` 表：
+
+```sql
+CREATE TABLE "FullConfigTemplateItem" (
+    "Id" varchar primary key not null,
+    "Remarks" varchar,
+    "Enabled" integer,
+    "CoreType" integer,        -- 2=Xray, 24=sing-box
+    "Config" varchar,          -- 配置模板内容（当前为空）
+    "TunConfig" varchar,       -- TUN 配置（当前为空）
+    "AddProxyOnly" integer,
+    "ProxyDetour" varchar
+);
+```
+
+**当前数据**：
+
+| Id | Remarks | Enabled | CoreType | Config |
+|----|---------|---------|----------|--------|
+| 4803905735022062193 | V2ray | 0 | 2 | (空) |
+| 5719194720093216641 | sing-box | 0 | 24 | (空) |
+
+**评估**：`FullConfigTemplateItem` 表设计为存储**配置模板内容**，不适合存储代理客户端信息（缺 executable/template_dir/asset_dir 等路径字段）。本方案新建独立的 `proxy_clients` 表：
+
+```sql
+CREATE TABLE IF NOT EXISTS proxy_clients (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    name        TEXT NOT NULL UNIQUE CHECK(name IN ('xray','singbox')),  -- 客户端标识
+    executable  TEXT NOT NULL,              -- 可执行文件路径
+    template_dir TEXT NOT NULL,             -- 模板目录（如 bin/）
+    api_port_base INTEGER NOT NULL DEFAULT 10115,  -- API 端口基准
+    socks_port_base INTEGER NOT NULL DEFAULT 10808, -- SOCKS 端口基准
+    asset_dir   TEXT NOT NULL,              -- 资源目录（geoip/geosite）
+    is_default  INTEGER NOT NULL DEFAULT 0, -- 是否默认客户端
+    enabled     INTEGER NOT NULL DEFAULT 1, -- 是否启用
+    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+```
+
+**种子数据**：
+
+```sql
+INSERT INTO proxy_clients (name, executable, template_dir, api_port_base, socks_port_base, asset_dir, is_default, enabled) VALUES
+('xray', 'bin/xray.exe', 'bin', 10115, 10808, 'bin', 1, 1),
+('singbox', 'bin/singbox.exe', 'bin', 0, 0, 'bin', 0, 1);
+```
+
+**读取逻辑**：
+
+```cpp
+struct ProxyClientInfo {
+    std::string name;
+    std::string executable;
+    std::string templateDir;
+    int apiPortBase;
+    int socksPortBase;
+    std::string assetDir;
+    bool isDefault;
+    bool enabled;
+};
+
+class ProxyClientDAO {
+public:
+    explicit ProxyClientDAO(sqlite3* db);
+    
+    // 获取默认客户端
+    std::optional<ProxyClientInfo> getDefaultClient();
+    
+    // 获取指定客户端
+    std::optional<ProxyClientInfo> getClient(const std::string& name);
+    
+    // 获取所有启用的客户端
+    std::vector<ProxyClientInfo> getEnabledClients();
+    
+    // 设置默认客户端
+    bool setDefaultClient(const std::string& name);
+};
+```
+
+**ConfigBuilder 集成**：
+
+```cpp
+class ConfigBuilder {
+public:
+    explicit ConfigBuilder(sqlite3* db);
+    
+    // 主入口：根据模式生成配置（自动使用默认代理客户端）
+    boost::json::value build(
+        ConfigMode mode,
+        const db::models::Profileitem& profile,
+        const ConfigVariables& vars);
+    
+    // 指定客户端生成配置
+    boost::json::value build(
+        ConfigMode mode,
+        const std::string& clientName,
+        const db::models::Profileitem& profile,
+        const ConfigVariables& vars);
+    
+    // 序列化
+    std::string serialize(const boost::json::value& config) const;
+};
+```
+
 **配置模板对应关系**：
 
 | 配置模式 | Xray 模板 | Sing-box 模板 |
 |---------|----------|--------------|
-| Test | `xray-config-test.json` | `singbox-config-test.json` |
-| Standalone | `xray-config-standalone.json` | `singbox-config-standalone.json` |
-| Pool | `xray-config-pool.json` | `singbox-config-pool.json` |
+| Test | `<template_dir>/xray-config-test.json` | `<template_dir>/singbox-config-test.json` |
+| Standalone | `<template_dir>/xray-config-standalone.json` | `<template_dir>/singbox-config-standalone.json` |
+| Pool | `<template_dir>/xray-config-pool.json` | `<template_dir>/singbox-config-pool.json` |
+
+**与 `FullConfigTemplateItem` 表的关系**：
+
+| 表 | 用途 | 字段 |
+|----|------|------|
+| `proxy_clients` | 代理客户端信息（种类、路径、端口） | name, executable, template_dir, api_port_base, socks_port_base, asset_dir, is_default, enabled |
+| `FullConfigTemplateItem` | 配置模板内容（JSON 配置） | Id, Remarks, Enabled, CoreType, Config, TunConfig |
+
+两表通过 `name`/`CoreType` 关联：`proxy_clients.name` ↔ `FullConfigTemplateItem.Remarks`（或新增 `ClientName` 外键）。
 
 **优势**：
 - 三路径 × 双后端统一，兼容性修复只需改一处
@@ -211,38 +341,58 @@ CREATE TABLE IF NOT EXISTS xray_templates (
 
 ---
 
-## 4. 实施计划（方案 F）
+## 4. 实施计划（方案 F - v2 确认版）
 
-### 4.1 阶段划分
+### 4.1 阶段划分（v2 评审修订）
 
 | 阶段 | 任务 | 文件 | 预估工时 |
 |------|------|------|---------|
 | **P0** | 设计 ConfigBuilder 接口（含 ProxyType 枚举） | `include/config/ConfigBuilder.h` | 2h |
-| **P0** | 实现 Test 模式配置生成（Xray + SingBox） | `src/config/ConfigBuilder.cpp` | 4h |
-| **P0** | 实现 Standalone 模式配置生成（Xray + SingBox） | `src/config/ConfigBuilder.cpp` | 4h |
-| **P0** | 实现 Pool 模式配置生成（Xray + SingBox） | `src/config/ConfigBuilder.cpp` | 4h |
-| **P0** | 实现变量解析与替换 | `src/config/ConfigBuilder.cpp` | 2h |
-| **P1** | 重构 ConfigGenerator::buildPoolConfig | `src/ConfigGenerator.cpp` | 2h |
-| **P1** | 重构 XrayInstance::createConfigFile | `src/XrayInstance.cpp` | 1h |
-| **P1** | 重构 AppController::startStandaloneProxy | `src/ui/AppController.cpp` | 1h |
-| **P1** | 新增 SingBoxConfigBuilder 适配层 | `src/config/SingBoxConfigBuilder.cpp` | 2h |
-| **P2** | ConfigDialog UI 扩展（高级选项 + 代理类型） | `src/ui/ConfigDialog.cpp` | 3h |
-| **P2** | 配置变量持久化（config.json 扩展） | `include/ConfigReader.h` | 1h |
-| **P3** | 快照测试（3 路径 × 2 后端 = 6 组 byte-identical） | `tests/test_config_builder.cpp` | 4h |
-| **P3** | Xray 26.x 加载测试 | `tests/test_config_builder.cpp` | 2h |
-| **P3** | Sing-box 加载测试 | `tests/test_config_builder.cpp` | 2h |
-| **P3** | 文档 + 登记 | `docs/specs/` + tracker | 1h |
-| **总计** | | | **32h** |
+| **P0** | 设计 ConfigVariables 结构体 | `include/config/ConfigBuilder.h` | 1h |
+| **P0** | 设计 ConfigMode/ProxyType 枚举 | `include/config/ConfigBuilder.h` | 1h |
+| **P1** | 实现变量解析与替换引擎 | `src/config/ConfigBuilder.cpp` | 2h |
+| **P1** | 设计配置开关 `config.use_new_config_builder` | `include/ConfigReader.h` + `src/ConfigReader.cpp` | 1h |
+| **P1** | 实现配置开关集成 | `src/config/ConfigBuilder.cpp` | 1h |
+| **P1** | 实现 FullConfigTemplateItem 表 DAO | `include/FullConfigTemplateDAO.h` + `src/FullConfigTemplateDAO.cpp` | 2h |
+| **P2** | 实现 Test 模式配置生成（Xray） | `src/config/ConfigBuilder.cpp` | 3h |
+| **P2** | 实现 Test 模式配置生成（Sing-box） | `src/config/ConfigBuilder.cpp` | 3h |
+| **P2** | 实现 Standalone 模式配置生成（Xray） | `src/config/ConfigBuilder.cpp` | 3h |
+| **P2** | 实现 Standalone 模式配置生成（Sing-box） | `src/config/ConfigBuilder.cpp` | 3h |
+| **P2** | 实现 Pool 模式配置生成（Xray） | `src/config/ConfigBuilder.cpp` | 3h |
+| **P2** | 实现 Pool 模式配置生成（Sing-box） | `src/config/ConfigBuilder.cpp` | 3h |
+| **P3** | 重构 ConfigGenerator::buildPoolConfig | `src/ConfigGenerator.cpp` | 1h |
+| **P3** | 重构 XrayInstance::createConfigFile | `src/XrayInstance.cpp` | 1h |
+| **P3** | 重构 AppController::startStandaloneProxy | `src/ui/AppController.cpp` | 1h |
+| **P3** | 重构 ConfigGenerator::generateConfig | `src/ConfigGenerator.cpp` | 1h |
+| **P4** | ConfigDialog 高级选项面板 | `src/ui/ConfigDialog.cpp` | 2h |
+| **P4** | 代理客户端选择（Xray/Sing-box） | `src/ui/ConfigDialog.cpp` | 1h |
+| **P5** | 填充 FullConfigTemplateItem 种子数据 | SQL 脚本 | 1h |
+| **P5** | 实现配置迁移逻辑（旧路径 → 新路径） | `src/config/ConfigMigrator.cpp` | 1h |
+| **P6** | 快照测试（3 路径 × 2 后端 = 6 组 byte-identical） | `tests/test_config_builder.cpp` | 4h |
+| **P6** | Xray 26.x 加载测试 | `tests/test_config_builder.cpp` | 2h |
+| **P6** | Sing-box 加载测试 | `tests/test_config_builder.cpp` | 1h |
+| **P6** | 旧路径回归测试（配置开关关闭时 byte-identical） | `tests/test_config_builder.cpp` | 2h |
+| **P6** | 迁移幂等性测试（空 DB → 创建 → 有数据 DB → 迁移） | `tests/test_config_builder.cpp` | 1h |
+| **P7** | 更新规格文档 `docs/specs/2026-09-20-Spec-ConfigBuilder-v1.0.md` | `docs/specs/` | 1h |
+| **P7** | 登记 `docs/INDEX.md` | `docs/INDEX.md` | 0.5h |
+| **P7** | 更新 `docs/plans/project-plans-tracker.md` | `docs/plans/project-plans-tracker.md` | 0.5h |
+| **P7** | 更新本计划文档 | `docs/plans/` | 1h |
+| **总计** | | | **50h** |
 
 ### 4.2 关键设计决策
 
-| 决策 | 选项 | 选择 | 理由 |
-|------|------|------|------|
-| DNS 来源 | 硬编码 / 外部文件 / DB | 外部文件 `xray-config-template.json` + `singbox-config-template.json` | 已存在、版本管理、人工编辑复杂规则 |
-| 变量存储 | config.json / DB / 代码 | config.json | 已有体系、用户可修改、版本管理 |
-| UI 编辑范围 | 全部配置项 / 高频变量 / 无 | 高频变量（6-8 个） | 避免 UX 灾难，开发者改代码即可 |
-| sing-box 支持 | 暂不支持 / 同步支持 | 同步支持 | 项目双后端，方案 F 天然支持 |
-| 旧代码路径 | 删除 / 保留 / 配置开关 | 配置开关 | 观察一个发布周期后删除 |
+| 决策 | 选择 | 理由 |
+|------|------|------|
+| 配置开关名称 | `config.use_new_config_builder` | 明确标识新旧路径切换 |
+| FullConfigTemplateItem 表利用 | 存储配置模板内容（Config/TunConfig 字段） | 复用现有表，避免新建表 |
+| Sing-box 模板文件 | `bin/singbox-config-template.json` | 与 Xray 模板并列 |
+| 迁移策略 | 配置开关保留旧路径，观察一个发布周期 | 降低迁移风险 |
+| 测试策略 | 快照测试 + 旧路径回归 + 迁移幂等性 | 确保兼容性 |
+| DNS 来源 | 外部文件 `xray-config-template.json` + `singbox-config-template.json` | 已存在、版本管理、人工编辑复杂规则 |
+| 变量存储 | config.json | 已有体系、用户可修改、版本管理 |
+| UI 编辑范围 | 高频变量（6-8 个） | 避免 UX 灾难，开发者改代码即可 |
+| sing-box 支持 | 同步支持 | 项目双后端，方案 F 天然支持 |
+| 旧代码路径 | 配置开关保留 | 观察一个发布周期后删除 |
 
 ### 4.3 测试策略
 
@@ -252,8 +402,8 @@ CREATE TABLE IF NOT EXISTS xray_templates (
 | Xray 兼容性 | xray 26.x 加载生成的配置 | `BuildPoolConfig_Xray26Loads` 范式 |
 | 变量替换边界 | `${var}` 未定义 / 空字符串 / 特殊字符 | GTest |
 | UI 编辑回归 | 修改 → 保存 → 重启 → 读取 | Catch2 UI 测试 |
-| 迁移幂等性 | 空 DB → 创建 → 有数据 DB → 迁移 | GTest |
 | 旧路径回归 | config flag 关闭时，byte-identical 到今天 | GTest |
+| 迁移幂等性 | 空 DB → 创建 → 有数据 DB → 迁移 | GTest |
 
 ---
 

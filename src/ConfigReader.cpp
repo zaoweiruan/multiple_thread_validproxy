@@ -123,7 +123,7 @@ bool ConfigReader::save(const std::string& configPath, const AppConfig& config) 
     try {
         fileStore.write(configPath, boost::json::serialize(root));
     } catch (const std::runtime_error& e) {
-        Logger::write("Failed to write config to: " + configPath, LogLevel::ERR);
+        Logger::write("Failed to write config to: " + utils::toWindowsPath(configPath), LogLevel::ERR);
         return false;
     }
 

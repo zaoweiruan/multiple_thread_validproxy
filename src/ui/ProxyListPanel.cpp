@@ -472,13 +472,9 @@ void ProxyListPanel::onContextMenu(wxDataViewEvent& event) {
     // xray process regardless of whether the proxy pool is running. Pool
     // injection is a separate menu item (ID_CONTEXT_ADD_TO_POOL).
     menu.Append(ID_CONTEXT_START_PROXY, "开启独立代理");
-    // Dedicated pool entry point: when the standalone pool feature is enabled,
-    // add the selected proxy to the pool (auto-starts the pool if needed). This
-    // is the discoverable "add proxy to pool" action from the proxy list.
-    bool poolEnabled = (controller_ != nullptr && controller_->isProxyPoolEnabled());
-    if (poolEnabled) {
-        menu.Append(ID_CONTEXT_ADD_TO_POOL, "加入代理池");
-    }
+    // Dedicated pool entry point: add the selected proxy to the pool.
+    // The pool is auto-started if needed, so this entry point is always usable.
+    menu.Append(ID_CONTEXT_ADD_TO_POOL, "加入代理池");
     PopupMenu(&menu);
     event.Skip();
 }
@@ -915,6 +911,15 @@ void ProxyListPanel::onAddToPool(wxCommandEvent& event) {
     std::string indexId = model_->getIndexIdAtRow(viewRow);
     if (indexId.empty()) return;
     if (!controller_) return;
+
+    // Check if the pool feature is enabled in configuration
+    if (!controller_->isProxyPoolEnabled()) {
+        wxMessageDialog dlg(this, "代理池功能未启用。请在配置中启用 standalone_pool.enabled 后再试。",
+                            "代理池", wxOK | wxICON_WARNING);
+        dlg.CentreOnScreen();
+        dlg.ShowModal();
+        return;
+    }
 
     // Auto-start the pool if it is not already running, so this entry point can
     // be used even when the pool has never been started.

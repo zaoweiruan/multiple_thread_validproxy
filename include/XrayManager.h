@@ -5,15 +5,16 @@
 #include <vector>
 #include <memory>
 #include <mutex>
+#include <sqlite3.h>
 #include "XrayInstance.h"
 
 class XrayManager {
 public:
     static XrayManager* getInstance();
-    static XrayManager* getInstance(const std::string& xrayPath, const std::string& configDir, int workers);
+    static XrayManager* getInstance(const std::string& xrayPath, const std::string& configDir, int workers, sqlite3* db = nullptr);
     static void release();
     
-    XrayManager(const std::string& xrayPath, const std::string& configDir, int workers = 4);
+    XrayManager(const std::string& xrayPath, const std::string& configDir, int workers = 4, sqlite3* db = nullptr);
     ~XrayManager();
     
     int start(int testCount, int startPort, int apiPort);
@@ -39,6 +40,7 @@ public:
     std::string xrayPath_;
     std::string configDir_;
     int workers_;
+    sqlite3* db_;  // Optional: for ConfigBuilder template loading
 
     // Running flag for lifecycle tracking
     bool stopped_{false};

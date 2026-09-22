@@ -31,6 +31,7 @@
 #include "Logger.h"
 #include "version.h"
 #include "service/DatabaseConnectionService.h"
+#include "FullConfigTemplateDAO.h"
 
 
 namespace {
@@ -62,13 +63,21 @@ void logError(const std::string& msg, LogLevel level = LogLevel::ERR) {
 static bool openDatabase(const config::AppConfig& config, sqlite3*& db, const std::string& context) {
     if (sqlite3_open_v2(config.database_path.c_str(), &db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX, nullptr) != SQLITE_OK) {
         Logger::write(context + " - Failed to open database: " + std::string(sqlite3_errmsg(db)), LogLevel::ERR);
-        Logger::write(context + " - Database path from config: " + config.database_path, LogLevel::ERR);
+        Logger::write(context + " - Database path from config: " + utils::toWindowsPath(config.database_path), LogLevel::ERR);
         std::cerr << context << " - Failed to open database: " << sqlite3_errmsg(db) << std::endl;
-        std::cerr << context << " - Database path from config: " << config.database_path << std::endl;
+        std::cerr << context << " - Database path from config: " << utils::toWindowsPath(config.database_path) << std::endl;
         return false;
     }
     // Apply performance pragmas (WAL, cache, sync, etc.) and composite dedup index
     service::DatabaseConnectionService::applyPragmas(db);
+    
+    // Seed default config templates if table is empty
+    {
+        db::FullConfigTemplateDAO configTemplateDao(db);
+        configTemplateDao.createTableIfNotExists();
+        configTemplateDao.seedDefaultTemplates();
+    }
+    
     return true;
 }
 
@@ -534,7 +543,7 @@ int main(int argc, char* argv[]) {
         std::filesystem::path configDirFs = std::filesystem::path(exeBaseDir) / "config";
         std::string configDirStr = configDirFs.string();
         
-        XrayManager* xrayMgr = XrayManager::getInstance(appConfig->proxy.xray_executable, configDirStr, appConfig->xray_workers);
+        XrayManager* xrayMgr = XrayManager::getInstance(appConfig->proxy.xray_executable, configDirStr, appConfig->xray_workers, db);
         int started = xrayMgr->start(1, appConfig->xray_start_port, appConfig->xray_api_port);
         
         if (started == 0) {

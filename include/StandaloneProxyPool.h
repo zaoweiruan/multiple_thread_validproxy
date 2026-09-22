@@ -73,9 +73,11 @@ class StandaloneProxyPool {
 public:
     // cfg: parsed standalone_pool config. xrayPath: xray-core binary.
     // configDir: working dir for the pool's xray instance (writes config + logs).
+    // db: optional SQLite database connection for ConfigBuilder template loading.
     StandaloneProxyPool(const config::StandalonePoolConfig& cfg,
                         const std::string& xrayPath,
-                        const std::string& configDir);
+                        const std::string& configDir,
+                        sqlite3* db = nullptr);
     ~StandaloneProxyPool();
 
     bool start();
@@ -128,6 +130,7 @@ private:
     config::StandalonePoolConfig cfg_;
     std::string xrayPath_;
     std::string configDir_;
+    sqlite3* db_;  // Optional: for ConfigBuilder template loading
     std::shared_ptr<XrayInstance> instance_;
     std::unique_ptr<xray::XrayApi> api_;
     ProxyHealthEvaluator evaluator_;

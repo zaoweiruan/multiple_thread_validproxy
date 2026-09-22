@@ -4,6 +4,7 @@
 #include "XrayManager.h"
 #include "PortManager.h"
 #include "Logger.h"
+#include "Utils.h"
 #include <thread>
 #include <chrono>
 
@@ -63,10 +64,10 @@ XrayManager* XrayManager::getInstance() {
     return instance_;
 }
 
-XrayManager* XrayManager::getInstance(const std::string& xrayPath, const std::string& configDir, int workers) {
+XrayManager* XrayManager::getInstance(const std::string& xrayPath, const std::string& configDir, int workers, sqlite3* db) {
     std::lock_guard<std::mutex> lock(instanceMutex_);
     if (!instance_) {
-        instance_ = new XrayManager(xrayPath, configDir, workers);
+        instance_ = new XrayManager(xrayPath, configDir, workers, db);
     }
     return instance_;
 }
@@ -86,8 +87,8 @@ void XrayManager::release() {
     }
 }
 
-XrayManager::XrayManager(const std::string& xrayPath, const std::string& configDir, int workers)
-    : xrayPath_(xrayPath), configDir_(configDir), workers_(workers) {}
+XrayManager::XrayManager(const std::string& xrayPath, const std::string& configDir, int workers, sqlite3* db)
+    : xrayPath_(xrayPath), configDir_(configDir), workers_(workers), db_(db) {}
 
 XrayManager::~XrayManager() {
     if (!stopped_) {
@@ -104,7 +105,7 @@ int XrayManager::start(int count, int startPort, int apiPort) {
         count = workers_;
     }
     
-    Logger::write("XrayManager::start: count=" + std::to_string(count) + ", startPort=" + std::to_string(startPort) + ", apiPort=" + std::to_string(apiPort) + ", configDir=" + configDir_, LogLevel::REPORT);
+    Logger::write("XrayManager::start: count=" + std::to_string(count) + ", startPort=" + std::to_string(startPort) + ", apiPort=" + std::to_string(apiPort) + ", configDir=" + utils::toWindowsPath(configDir_), LogLevel::REPORT);
     
     std::vector<std::unique_ptr<XrayInstance>> startedInstances;
     int actualCount = 0;
@@ -136,7 +137,7 @@ int XrayManager::start(int count, int startPort, int apiPort) {
             break;
         }
 
-        std::unique_ptr<XrayInstance> instance = std::make_unique<XrayInstance>(xrayPath_, socksPort, apiPortAddr, configDir_);
+        std::unique_ptr<XrayInstance> instance = std::make_unique<XrayInstance>(xrayPath_, socksPort, apiPortAddr, configDir_, db_);
         if (instance->start()) {
             if (!waitInstanceReady(instance.get(), apiPortAddr)) {
                 Logger::write("XrayManager: API port " + std::to_string(apiPortAddr)

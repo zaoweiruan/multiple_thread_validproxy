@@ -595,6 +595,12 @@ bool isValidUrlFormat(const std::string& url) {
         }
     }
 
+    std::string toWindowsPath(const std::string& path) {
+        std::string result = path;
+        std::replace(result.begin(), result.end(), '/', '\\');
+        return result;
+    }
+
     ProxyListMaps buildProxyListMaps(const std::vector<db::models::ProfileExItem>& exItems) {
         ProxyListMaps maps;
         for (const db::models::ProfileExItem& ex : exItems) {

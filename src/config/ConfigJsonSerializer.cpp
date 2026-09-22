@@ -113,17 +113,11 @@ boost::json::object ConfigJsonSerializer::serialize(const AppConfig& config) con
     if (!config.proxy.xray_asset_dir.empty()) {
         proxyObj["xray_asset_dir"] = config.proxy.xray_asset_dir;
     }
-    if (!config.proxy.template_config_path.empty()) {
-        proxyObj["template_config_path"] = config.proxy.template_config_path;
-    }
     if (!config.proxy.singbox_executable.empty()) {
         proxyObj["singbox_executable"] = config.proxy.singbox_executable;
     }
     if (!config.proxy.singbox_asset_dir.empty()) {
         proxyObj["singbox_asset_dir"] = config.proxy.singbox_asset_dir;
-    }
-    if (!config.proxy.singbox_template_config_path.empty()) {
-        proxyObj["singbox_template_config_path"] = config.proxy.singbox_template_config_path;
     }
     proxyObj["scoring_delay_weight"] = config.proxy.scoring_delay_weight;
     proxyObj["scoring_stability_weight"] = config.proxy.scoring_stability_weight;

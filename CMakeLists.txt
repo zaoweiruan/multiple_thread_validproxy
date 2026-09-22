@@ -134,6 +134,7 @@ set(CORE_SOURCES
     src/ProfileitemDAO.cpp
     src/SubitemDAO.cpp
     src/ProfileExItemDAO.cpp
+    src/FullConfigTemplateDAO.cpp
     src/ProxyBatchTester.cpp
     src/ProxyFinder.cpp
     src/ProxyTester.cpp
@@ -160,6 +161,7 @@ set(CORE_SOURCES
     src/config/ConfigJsonParser.cpp
     src/config/ConfigJsonSerializer.cpp
     src/config/ConfigValidator.cpp
+    src/config/ConfigBuilder.cpp
     src/share/UriCodec.cpp
     src/share/Ipv6Formatter.cpp
     src/share/VLESSUriBuilder.cpp
@@ -695,10 +697,15 @@ add_test(NAME FloatingWidgetStateTest COMMAND test_floating_widget_state)
 # -- ConfigGenerator unit tests (SQLite + boost_json, now delegates to extracted components) --
 add_executable(test_config_generator
     tests/test_config_generator.cpp
+    tests/test_config_builder.cpp
     src/ConfigGenerator.cpp
+    src/config/ConfigBuilder.cpp
+    src/ConfigReader.cpp
+    src/FullConfigTemplateDAO.cpp
     src/ProfileitemDAO.cpp
 
     src/utils/DnsCache.cpp
+    src/utils/Base64Utils.cpp
     src/ProfileExItemDAO.cpp
     src/Logger.cpp
     src/LoggerInstance.cpp
@@ -707,7 +714,13 @@ add_executable(test_config_generator
     src/config/ProfileNormalizer.cpp
     src/config/StreamSettingsBuilder.cpp
     src/config/OutboundBuilderFactory.cpp
+    src/config/SingBoxOutboundBuilderFactory.cpp
     src/config/XrayConfigAssembler.cpp
+    src/config/ConfigPathResolver.cpp
+    src/config/ConfigFileStore.cpp
+    src/config/ConfigJsonParser.cpp
+    src/config/ConfigValidator.cpp
+    src/config/ConfigJsonSerializer.cpp
     src/config/outbound/VLESSOutboundBuilder.cpp
     src/config/outbound/VMessOutboundBuilder.cpp
     src/config/outbound/SSOutboundBuilder.cpp
@@ -717,6 +730,12 @@ add_executable(test_config_generator
     src/config/outbound/Hysteria2OutboundBuilder.cpp
     src/config/outbound/TUICOutboundBuilder.cpp
     src/config/outbound/WireGuardOutboundBuilder.cpp
+    src/config/outbound/SingBoxVLESSOutboundBuilder.cpp
+    src/config/outbound/SingBoxVMessOutboundBuilder.cpp
+    src/config/outbound/SingBoxSSOutboundBuilder.cpp
+    src/config/outbound/SingBoxTrojanOutboundBuilder.cpp
+    src/config/outbound/SingBoxHysteria2OutboundBuilder.cpp
+    src/config/outbound/SingBoxTUICOutboundBuilder.cpp
 )
 target_include_directories(test_config_generator PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(test_config_generator PRIVATE gtest_main gtest
@@ -735,6 +754,7 @@ add_test(NAME ConfigGeneratorTest COMMAND test_config_generator)
 add_executable(test_standalone_proxy_pool
     tests/TestStandaloneProxyPool.cpp
     src/ConfigGenerator.cpp
+    src/ConfigReader.cpp
     src/StandaloneProxyPool.cpp
     src/PortManager.cpp
     src/ProxyHealthEvaluator.cpp
@@ -743,14 +763,29 @@ add_executable(test_standalone_proxy_pool
     src/XrayApi.cpp
     src/ProfileitemDAO.cpp
     src/ProfileExItemDAO.cpp
+    src/FullConfigTemplateDAO.cpp
+    src/config/ConfigBuilder.cpp
+    src/config/ConfigFileStore.cpp
+    src/config/ConfigPathResolver.cpp
+    src/config/ConfigJsonParser.cpp
+    src/config/ConfigJsonSerializer.cpp
+    src/config/ConfigValidator.cpp
+    src/config/OutboundBuilderFactory.cpp
+    src/config/SingBoxOutboundBuilderFactory.cpp
+    src/config/outbound/SingBoxVLESSOutboundBuilder.cpp
+    src/config/outbound/SingBoxVMessOutboundBuilder.cpp
+    src/config/outbound/SingBoxSSOutboundBuilder.cpp
+    src/config/outbound/SingBoxTrojanOutboundBuilder.cpp
+    src/config/outbound/SingBoxHysteria2OutboundBuilder.cpp
+    src/config/outbound/SingBoxTUICOutboundBuilder.cpp
     src/utils/DnsCache.cpp
+    src/utils/Base64Utils.cpp
     src/Logger.cpp
     src/LoggerInstance.cpp
     src/Utils.cpp
     src/config/ProfileConfigRepository.cpp
     src/config/ProfileNormalizer.cpp
     src/config/StreamSettingsBuilder.cpp
-    src/config/OutboundBuilderFactory.cpp
     src/config/XrayConfigAssembler.cpp
     src/config/outbound/VLESSOutboundBuilder.cpp
     src/config/outbound/VMessOutboundBuilder.cpp
@@ -785,13 +820,28 @@ add_executable(test_proxy_probe_pool
     src/XrayInstance.cpp
     src/XrayApi.cpp
     src/PortManager.cpp
+    src/ConfigReader.cpp
+    src/FullConfigTemplateDAO.cpp
+    src/config/ConfigBuilder.cpp
+    src/config/ConfigFileStore.cpp
+    src/config/ConfigPathResolver.cpp
+    src/config/ConfigJsonParser.cpp
+    src/config/ConfigJsonSerializer.cpp
+    src/config/ConfigValidator.cpp
+    src/config/OutboundBuilderFactory.cpp
+    src/config/SingBoxOutboundBuilderFactory.cpp
+    src/config/outbound/SingBoxVLESSOutboundBuilder.cpp
+    src/config/outbound/SingBoxVMessOutboundBuilder.cpp
+    src/config/outbound/SingBoxSSOutboundBuilder.cpp
+    src/config/outbound/SingBoxTrojanOutboundBuilder.cpp
+    src/config/outbound/SingBoxHysteria2OutboundBuilder.cpp
+    src/config/outbound/SingBoxTUICOutboundBuilder.cpp
     src/Utils.cpp
     src/Logger.cpp
     src/LoggerInstance.cpp
     src/config/ProfileConfigRepository.cpp
     src/config/ProfileNormalizer.cpp
     src/config/StreamSettingsBuilder.cpp
-    src/config/OutboundBuilderFactory.cpp
     src/config/XrayConfigAssembler.cpp
     src/config/outbound/VLESSOutboundBuilder.cpp
     src/config/outbound/VMessOutboundBuilder.cpp
@@ -802,6 +852,7 @@ add_executable(test_proxy_probe_pool
     src/config/outbound/Hysteria2OutboundBuilder.cpp
     src/config/outbound/TUICOutboundBuilder.cpp
     src/config/outbound/WireGuardOutboundBuilder.cpp
+    src/utils/Base64Utils.cpp
     src/ProfileitemDAO.cpp
     src/ProfileExItemDAO.cpp
     src/utils/DnsCache.cpp
@@ -863,9 +914,20 @@ add_test(NAME ProxyBatchComponentsTest COMMAND test_proxy_batch_components)
 # -- ProxyBatchQuery integration tests (uses test DB) --
 add_executable(test_proxy_batch_query tests/test_proxy_batch_query.cpp src/test/ProxyBatchQuery.cpp
     src/ConfigGenerator.cpp src/ProfileitemDAO.cpp src/utils/DnsCache.cpp src/ProfileExItemDAO.cpp
+    src/ConfigReader.cpp src/FullConfigTemplateDAO.cpp src/config/ConfigBuilder.cpp
+    src/config/ConfigFileStore.cpp src/config/ConfigPathResolver.cpp
+    src/config/ConfigJsonParser.cpp src/config/ConfigJsonSerializer.cpp src/config/ConfigValidator.cpp
     src/Logger.cpp src/LoggerInstance.cpp src/Utils.cpp
     src/config/ProfileConfigRepository.cpp src/config/ProfileNormalizer.cpp
     src/config/StreamSettingsBuilder.cpp src/config/OutboundBuilderFactory.cpp
+    src/config/SingBoxOutboundBuilderFactory.cpp
+    src/config/outbound/SingBoxVLESSOutboundBuilder.cpp
+    src/config/outbound/SingBoxVMessOutboundBuilder.cpp
+    src/config/outbound/SingBoxSSOutboundBuilder.cpp
+    src/config/outbound/SingBoxTrojanOutboundBuilder.cpp
+    src/config/outbound/SingBoxHysteria2OutboundBuilder.cpp
+    src/config/outbound/SingBoxTUICOutboundBuilder.cpp
+    src/utils/Base64Utils.cpp
     src/config/XrayConfigAssembler.cpp
     src/config/outbound/VLESSOutboundBuilder.cpp
     src/config/outbound/VMessOutboundBuilder.cpp
@@ -1062,11 +1124,47 @@ endif()
 add_executable(test_xray_instance_stderr
     tests/test_xray_instance_stderr.cpp
     src/XrayInstance.cpp
+    src/ConfigReader.cpp
+    src/FullConfigTemplateDAO.cpp
+    src/config/ConfigBuilder.cpp
+    src/config/ConfigFileStore.cpp
+    src/config/ConfigPathResolver.cpp
+    src/config/ConfigJsonParser.cpp
+    src/config/ConfigJsonSerializer.cpp
+    src/config/ConfigValidator.cpp
+    src/config/OutboundBuilderFactory.cpp
+    src/config/SingBoxOutboundBuilderFactory.cpp
+    src/config/outbound/SingBoxVLESSOutboundBuilder.cpp
+    src/config/outbound/SingBoxVMessOutboundBuilder.cpp
+    src/config/outbound/SingBoxSSOutboundBuilder.cpp
+    src/config/outbound/SingBoxTrojanOutboundBuilder.cpp
+    src/config/outbound/SingBoxHysteria2OutboundBuilder.cpp
+    src/config/outbound/SingBoxTUICOutboundBuilder.cpp
+    src/config/outbound/VLESSOutboundBuilder.cpp
+    src/config/outbound/VMessOutboundBuilder.cpp
+    src/config/outbound/SSOutboundBuilder.cpp
+    src/config/outbound/TrojanOutboundBuilder.cpp
+    src/config/outbound/SOCKSOutboundBuilder.cpp
+    src/config/outbound/HTTPOutboundBuilder.cpp
+    src/config/outbound/Hysteria2OutboundBuilder.cpp
+    src/config/outbound/TUICOutboundBuilder.cpp
+    src/config/outbound/WireGuardOutboundBuilder.cpp
+    src/utils/Base64Utils.cpp
+    src/Utils.cpp
+    src/ProfileitemDAO.cpp
+    src/ProfileExItemDAO.cpp
+    src/config/ProfileConfigRepository.cpp
+    src/config/ProfileNormalizer.cpp
+    src/config/StreamSettingsBuilder.cpp
+    src/config/XrayConfigAssembler.cpp
     src/Logger.cpp
     src/LoggerInstance.cpp
 )
 target_include_directories(test_xray_instance_stderr PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_link_libraries(test_xray_instance_stderr PRIVATE gtest_main gtest)
+target_link_libraries(test_xray_instance_stderr PRIVATE gtest_main gtest
+    ${VCPKG_ROOT}/installed/x64-mingw-static/lib/libsqlite3.a
+    ${VCPKG_ROOT}/installed/x64-mingw-static/lib/libboost_json-gcc14-mt-x64-1_91.a
+    -lws2_32)
 set_target_properties(test_xray_instance_stderr PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
     RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
@@ -1095,12 +1193,47 @@ add_executable(test_xray_manager_startup
     src/XrayManager.cpp
     src/XrayInstance.cpp
     src/PortManager.cpp
+    src/ConfigReader.cpp
+    src/FullConfigTemplateDAO.cpp
+    src/config/ConfigBuilder.cpp
+    src/config/ConfigFileStore.cpp
+    src/config/ConfigPathResolver.cpp
+    src/config/ConfigJsonParser.cpp
+    src/config/ConfigJsonSerializer.cpp
+    src/config/ConfigValidator.cpp
+    src/config/OutboundBuilderFactory.cpp
+    src/config/SingBoxOutboundBuilderFactory.cpp
+    src/config/outbound/SingBoxVLESSOutboundBuilder.cpp
+    src/config/outbound/SingBoxVMessOutboundBuilder.cpp
+    src/config/outbound/SingBoxSSOutboundBuilder.cpp
+    src/config/outbound/SingBoxTrojanOutboundBuilder.cpp
+    src/config/outbound/SingBoxHysteria2OutboundBuilder.cpp
+    src/config/outbound/SingBoxTUICOutboundBuilder.cpp
+    src/config/outbound/VLESSOutboundBuilder.cpp
+    src/config/outbound/VMessOutboundBuilder.cpp
+    src/config/outbound/SSOutboundBuilder.cpp
+    src/config/outbound/TrojanOutboundBuilder.cpp
+    src/config/outbound/SOCKSOutboundBuilder.cpp
+    src/config/outbound/HTTPOutboundBuilder.cpp
+    src/config/outbound/Hysteria2OutboundBuilder.cpp
+    src/config/outbound/TUICOutboundBuilder.cpp
+    src/config/outbound/WireGuardOutboundBuilder.cpp
+    src/utils/Base64Utils.cpp
+    src/ProfileitemDAO.cpp
+    src/ProfileExItemDAO.cpp
+    src/config/ProfileConfigRepository.cpp
+    src/config/ProfileNormalizer.cpp
+    src/config/StreamSettingsBuilder.cpp
+    src/config/XrayConfigAssembler.cpp
     src/Utils.cpp
     src/Logger.cpp
     src/LoggerInstance.cpp
 )
 target_include_directories(test_xray_manager_startup PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_link_libraries(test_xray_manager_startup PRIVATE gtest_main gtest -lws2_32)
+target_link_libraries(test_xray_manager_startup PRIVATE gtest_main gtest
+    ${VCPKG_ROOT}/installed/x64-mingw-static/lib/libsqlite3.a
+    ${VCPKG_ROOT}/installed/x64-mingw-static/lib/libboost_json-gcc14-mt-x64-1_91.a
+    -lws2_32)
 set_target_properties(test_xray_manager_startup PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
     RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
@@ -1198,8 +1331,19 @@ add_test(NAME ProcessInspectorTest COMMAND test_process_inspector)
 # -- RegionBatchResolver unit tests (ip-api.com region resolution) --------------------
 add_executable(test_region_batch_resolver tests/test_region_batch_resolver.cpp
     src/RegionBatchResolver.cpp src/ConfigGenerator.cpp src/ProfileitemDAO.cpp
+    src/ConfigReader.cpp src/FullConfigTemplateDAO.cpp src/config/ConfigBuilder.cpp
+    src/config/ConfigFileStore.cpp src/config/ConfigPathResolver.cpp
+    src/config/ConfigJsonParser.cpp src/config/ConfigJsonSerializer.cpp src/config/ConfigValidator.cpp
     src/config/ProfileConfigRepository.cpp src/config/ProfileNormalizer.cpp
     src/config/StreamSettingsBuilder.cpp src/config/OutboundBuilderFactory.cpp
+    src/config/SingBoxOutboundBuilderFactory.cpp
+    src/config/outbound/SingBoxVLESSOutboundBuilder.cpp
+    src/config/outbound/SingBoxVMessOutboundBuilder.cpp
+    src/config/outbound/SingBoxSSOutboundBuilder.cpp
+    src/config/outbound/SingBoxTrojanOutboundBuilder.cpp
+    src/config/outbound/SingBoxHysteria2OutboundBuilder.cpp
+    src/config/outbound/SingBoxTUICOutboundBuilder.cpp
+    src/utils/Base64Utils.cpp
     src/config/XrayConfigAssembler.cpp
     src/config/outbound/VLESSOutboundBuilder.cpp
     src/config/outbound/VMessOutboundBuilder.cpp

@@ -1898,11 +1898,11 @@ int XrayApi::grpcConnect(const std::string& host, int port) {
         sock = socket(ap->ai_family, ap->ai_socktype, ap->ai_protocol);
         if (sock == INVALID_SOCKET) continue;
 
-        DWORD rcvTimeout = 5000;
+        DWORD rcvTimeout = 10000;
         setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO,
                    reinterpret_cast<const char*>(&rcvTimeout), sizeof(rcvTimeout));
 
-        DWORD sndTimeout = 5000;
+        DWORD sndTimeout = 10000;
         setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO,
                    reinterpret_cast<const char*>(&sndTimeout), sizeof(sndTimeout));
 
@@ -2039,7 +2039,7 @@ bool XrayApi::grpcSendReceive(int sock, const std::string& path,
     bool sawGrpcStatus = false;
 
     const std::chrono::steady_clock::time_point absoluteDeadline =
-        std::chrono::steady_clock::now() + std::chrono::seconds(30);
+        std::chrono::steady_clock::now() + std::chrono::seconds(60);
 
     while (!done && frameCount < MAX_FRAMES) {
         if (std::chrono::steady_clock::now() >= absoluteDeadline) {

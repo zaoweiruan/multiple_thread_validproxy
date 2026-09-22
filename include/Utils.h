@@ -47,6 +47,10 @@ namespace utils {
     // treated as invalid (untested / failed).
     bool isDelayValid(const std::string& delayStr);
 
+    // Convert forward slashes to backslashes (Windows native path format).
+    // Used in log messages so file paths display with Windows separators.
+    std::string toWindowsPath(const std::string& path);
+
     // Process management utilities
     bool isProcessRunning(const std::string& processName);
     void killProcessByName(const std::string& processName);
