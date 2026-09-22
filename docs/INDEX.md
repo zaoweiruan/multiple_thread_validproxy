@@ -1,4 +1,4 @@
-updated: 2026-09-21
+updated: 2026-09-22
 title: "docs: project document index"
 type: meta
 status: maintained
@@ -24,7 +24,7 @@ status: maintained
 | [提示模式规范](#35-提示模式规范) | 1 | `docs/prompt-patterns.md` |
 | [可用技能参考](#36-可用技能参考) | 1 | `docs/available-skills-reference.md` |
 | [整体架构](#4-整体架构) | 3 | `docs/architecture.md` |
-| [设计规范](#5-设计规范) | 12 | `docs/design/` |
+| [设计规范](#5-设计规范) | 13 | `docs/design/` |
 | [需求与脑暴](#6-需求与脑暴) | 4 | `docs/superpowers/brainstorm/` |
 | [技术方案](#7-技术方案) | 6 | `docs/superpowers/specs/` |
 | [规范化设计](#75-规范化设计) | 47 | `docs/specs/` |
@@ -118,6 +118,7 @@ status: maintained
 | 8 | [`docs/design/2026-09-02-Design-ProxyListPanel-TestOnlineResultDialog-v1.0.md`](./design/2026-09-02-Design-ProxyListPanel-TestOnlineResultDialog-v1.0.md) | **ProxyListPanel「测试在线代理」结果弹窗单击定位设计 v1.1** — 失败列表改用可单击 wxListCtrl 对话框，单击某行复用 LocateProxyEvent 在**订阅窗口 + 代理列表**双定位（selectSubBySubId/findRowBySubId/getSubIdByProxyIndexId/扩展 MainFrame 处理器） | — |
 | 9 | [`docs/design/2026-09-03-Design-StandaloneFloatingWidget-DoubleClickToggleMaximize-v1.0.md`](./design/2026-09-03-Design-StandaloneFloatingWidget-DoubleClickToggleMaximize-v1.0.md) | **悬浮窗双击切换主界面最大化/还原设计 v1.0** — 进程监控悬浮窗(`StandaloneFloatingWidget`，`parent=MainFrame`)上双击左键，经 `wxDynamicCast(parentWindow_, wxFrame)` → `Maximize(!IsMaximized())` 切换主界面最大化⇄还原；新增 `onLeftDClick` 处理器 + 构造器 `Bind(wxEVT_LEFT_DCLICK,...)`；Orb/Panel 模式均生效，双击列表行定位不切换，单击展开/拖拽/右键菜单不破坏 | — |
 | 10 | [`docs/design/2026-09-21-Design-ConfigTemplate-Inheritance-v1.0.md`](./design/2026-09-21-Design-ConfigTemplate-Inheritance-v1.0.md) | **配置模板继承机制设计 v1.0** — 解决 6 个模板独立无继承、配置重复定义、内容不一致问题；设计 `parent_id` 字段支持模板层级，实现递归加载和深合并算法；基础模板（log/dns）只定义一次，子模板只存增量配置；预计工作量 4.5 天，风险中低 | — |
+| 11 | [`docs/design/2026-09-22-Design-ConfigPipeline-v1.0.md`](./design/2026-09-22-Design-ConfigPipeline-v1.0.md) | **配置生成管线（ConfigPipeline）设计方案 v1.0** — 将 ConfigBuilder 硬编码的配置生成逻辑重构为可编排的步骤管线（Pipeline），支持零代码新增配置模式变体、标签/协议可配置、步骤类型可扩展；参照自动任务步骤编排模式，分 6 阶段实施，预计工作量 4.5 天，向后兼容现有模板/占位符机制 | — |
 
 ---
 
@@ -471,6 +472,7 @@ status: maintained
   | 1 | [`docs/code-reviews/2026-05-07-logger-configreader-fixes-review.md`](./code-reviews/2026-05-07-logger-configreader-fixes-review.md) | **Logger + ConfigReader 修复审查报告** — P0 日志格式 BUG + Logger 审计发现 | 5.1 KB |
   | 2 | [`docs/ce-code-review/20260507-e45fc331/`](./ce-code-review/20260507-e45fc331/) | **Code-Embodiment 综合审查** — 6 个维度(adv/agent/native/correctness/maintainability/testing/reliability + learnings) | 7 文件 |
   | 3 | [`docs/reviews/2026-09-21-Review-ConfigTemplate-Fragment-v1.0.md`](./reviews/2026-09-21-Review-ConfigTemplate-Fragment-v1.0.md) | **配置模板片段化方案独立评审** — 评审对象 `2026-09-21-Spec-ConfigTemplate-Fragment-v1.0.md`；技术可行性 ⭐⭐⭐⭐、架构一致性 ⭐⭐⭐⭐⭐、可维护性 ⭐⭐⭐⭐、测试覆盖 ⭐⭐⭐、文档完整性 ⭐⭐⭐⭐；发现 4 个需要澄清的问题（DNS 配置差异/数组去重策略/循环引用检测/父模板不存在处理）；建议调整实施顺序（单元测试提前）、补充性能测试、明确 DNS 处理策略（推荐方案 B 由代码生成）；结论 ✅ Approved with Comments | ⏳ draft |
+| 4 | [`docs/reviews/2026-09-22-Review-ConfigPipeline-v1.0.md`](./reviews/2026-09-22-Review-ConfigPipeline-v1.0.md) | **ConfigPipeline 设计方案独立评审** — 评审对象 `2026-09-22-Design-ConfigPipeline-v1.0.md`；架构设计 ✅ 优秀、向后兼容 ✅ 良好；发现 6 个设计缺口（R1 PipelineContext 引用安全/R2 add_outbound source:"profile" 语义不完整/R3 SingBox 管线定义缺失/R4 modify_field JSONPath 语法模糊/R5 错误处理策略不完整/R6 配置加载流程未定义）+ 5 个实施注意事项（R7 步骤幂等性/R8 StepRegistry 线程安全/R9 validateConfig 集成/R10 工时估算偏低建议 6-7d/R11 与模板继承机制交互）；结论 ✅ Approved with Comments | ✅ completed |
 
  ## 12. 进展与状态跟踪
 

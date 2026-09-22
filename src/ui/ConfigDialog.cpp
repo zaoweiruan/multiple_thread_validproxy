@@ -6,6 +6,8 @@
 #include <wx/propgrid/advprops.h>
 #include <wx/msgdlg.h>
 #include <wx/stdpaths.h>
+#include <wx/notebook.h>
+#include <wx/listctrl.h>
 
 #include <filesystem>
 #include <fstream>
@@ -13,24 +15,33 @@
 #include <algorithm>
 
 #include "Utils.h"
+#include "FullConfigTemplateDAO.h"
 
 // -------------------------------------------------------------------
 wxBEGIN_EVENT_TABLE(ConfigDialog, wxDialog)
     EVT_BUTTON(wxID_OK, ConfigDialog::onOk)
     EVT_BUTTON(wxID_CANCEL, ConfigDialog::onCancel)
     EVT_PG_CHANGED(wxID_ANY, ConfigDialog::onPropertyChanged)
+    EVT_LIST_ITEM_SELECTED(wxID_ANY, ConfigDialog::onTemplateSelection)
 wxEND_EVENT_TABLE()
 
 // -------------------------------------------------------------------
-ConfigDialog::ConfigDialog(wxWindow* parent, const config::AppConfig& cfg)
+ConfigDialog::ConfigDialog(wxWindow* parent, const config::AppConfig& cfg, sqlite3* db)
     : wxDialog(parent, wxID_ANY, L"配置编辑器",
                wxDefaultPosition, wxDefaultSize,
                wxDEFAULT_DIALOG_STYLE | wxRESIZE_BORDER)
+    , db_(db)
 {
     wxBoxSizer* topSizer = new wxBoxSizer(wxVERTICAL);
 
-    // Property grid (single page, categories for grouping)
-    propGrid_ = new wxPropertyGrid(this, wxID_ANY,
+    // Notebook with tabs
+    notebook_ = new wxNotebook(this, wxID_ANY);
+
+    // === Tab 1: 应用配置 (existing PropertyGrid) ===
+    wxPanel* configTab = new wxPanel(notebook_);
+    wxBoxSizer* configTabSizer = new wxBoxSizer(wxVERTICAL);
+
+    propGrid_ = new wxPropertyGrid(configTab, wxID_ANY,
                                    wxDefaultPosition, wxDefaultSize,
                                    wxPG_DEFAULT_STYLE | wxPG_BOLD_MODIFIED);
 
@@ -235,21 +246,30 @@ ConfigDialog::ConfigDialog(wxWindow* parent, const config::AppConfig& cfg)
 
     propGrid_->SetPropertyAttributeAll(wxPG_BOOL_USE_CHECKBOX, true);
 
-    topSizer->Add(propGrid_, 1, wxEXPAND | wxALL, 8);
+    configTabSizer->Add(propGrid_, 1, wxEXPAND | wxALL, 8);
+    configTab->SetSizer(configTabSizer);
+
+    notebook_->AddPage(configTab, L"应用配置");
+
+    // === Tab 2: 模板种子 ===
+    createTemplateTab();
+
+    topSizer->Add(notebook_, 1, wxEXPAND | wxALL, 8);
 
     // Buttons
     wxSizer* btnSizer = CreateSeparatedButtonSizer(wxOK | wxCANCEL);
     if (btnSizer) topSizer->Add(btnSizer, 0, wxEXPAND | wxALL, 8);
 
     SetSizer(topSizer);
-    Layout();  // Ensure layout before setting splitter
-    // Set splitter at 0.6x of previous width (450)
-    propGrid_->SetSplitterPosition(450);
+    Layout();
     topSizer->Fit(this);
     topSizer->SetSizeHints(this);
-    SetMinSize(wxSize(1000, 600));
-    SetSize(wxSize(1000, 600));
-    CentreOnScreen();  // Center dialog on screen
+    SetMinSize(wxSize(1100, 650));
+    SetSize(wxSize(1100, 650));
+    CentreOnScreen();
+
+    // Load templates after layout
+    loadTemplates();
 
     loadConfig(cfg);
 }
@@ -696,4 +716,107 @@ void ConfigDialog::onPropertyChanged(wxPropertyGridEvent& event) {
         }
         refreshAutoTaskChainDisplay();
     }
+}
+
+// ================================================================
+// 模板种子 Tab 实现
+// ================================================================
+
+void ConfigDialog::createTemplateTab() {
+    wxPanel* templateTab = new wxPanel(notebook_);
+    wxBoxSizer* mainSizer = new wxBoxSizer(wxVERTICAL);
+
+    // 工具栏
+    wxBoxSizer* toolSizer = new wxBoxSizer(wxHORIZONTAL);
+    toolSizer->Add(new wxStaticText(templateTab, wxID_ANY, L"模板列表:"), 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 4);
+    
+    templateList_ = new wxListCtrl(templateTab, wxID_ANY,
+                                   wxDefaultPosition, wxDefaultSize,
+                                   wxLC_REPORT);
+    templateList_->InsertColumn(0, L"ID", wxLIST_FORMAT_LEFT, 140);
+    templateList_->InsertColumn(1, L"类型", wxLIST_FORMAT_CENTER, 80);
+    templateList_->InsertColumn(2, L"父模板", wxLIST_FORMAT_LEFT, 120);
+    templateList_->InsertColumn(3, L"备注", wxLIST_FORMAT_LEFT, 250);
+    templateList_->InsertColumn(4, L"启用", wxLIST_FORMAT_CENTER, 50);
+    toolSizer->Add(templateList_, 1, wxEXPAND | wxRIGHT, 8);
+
+    wxBoxSizer* btnSizer = new wxBoxSizer(wxVERTICAL);
+    wxButton* btnSave = new wxButton(templateTab, wxID_ANY, L"保存选中");
+    btnSave->Bind(wxEVT_BUTTON, &ConfigDialog::onTemplateSave, this);
+    wxButton* btnRefresh = new wxButton(templateTab, wxID_ANY, L"刷新");
+    btnRefresh->Bind(wxEVT_BUTTON, &ConfigDialog::onTemplateRefresh, this);
+    btnSizer->Add(btnSave, 0, wxEXPAND | wxBOTTOM, 4);
+    btnSizer->Add(btnRefresh, 0, wxEXPAND);
+    toolSizer->Add(btnSizer, 0, wxEXPAND);
+
+    mainSizer->Add(toolSizer, 0, wxEXPAND | wxALL, 8);
+
+    // 编辑器
+    mainSizer->Add(new wxStaticText(templateTab, wxID_ANY, L"JSON 配置:"), 0, wxLEFT | wxBOTTOM, 8);
+    templateEditor_ = new wxTextCtrl(templateTab, wxID_ANY, L"",
+                                     wxDefaultPosition, wxDefaultSize,
+                                     wxTE_MULTILINE | wxTE_WORDWRAP | wxTE_DONTWRAP);
+    templateEditor_->SetFont(wxFont(10, wxFONTFAMILY_MODERN, wxFONTSTYLE_NORMAL, wxFONTWEIGHT_NORMAL));
+    mainSizer->Add(templateEditor_, 1, wxEXPAND | wxALL, 8);
+
+    templateTab->SetSizer(mainSizer);
+    notebook_->AddPage(templateTab, L"模板种子");
+}
+
+void ConfigDialog::loadTemplates() {
+    if (!db_ || !templateList_ || !templateEditor_) return;
+
+    db::FullConfigTemplateDAO dao(db_);
+    dao.createTableIfNotExists();
+    templates_ = dao.getAll();
+    dao.seedDefaultTemplates();  // Ensure default templates exist
+    templates_ = dao.getAll();
+
+    templateList_->DeleteAllItems();
+    for (const auto& item : templates_) {
+        int row = templateList_->InsertItem(templates_.size() - 1, wxString(item.id));
+        wxString coreTypeStr = (item.coreType == 2) ? L"Xray" : (item.coreType == 24) ? L"SingBox" : wxString::Format(L"%d", item.coreType);
+        templateList_->SetItem(row, 1, coreTypeStr);
+        templateList_->SetItem(row, 2, item.parentId.empty() ? L"(基础)" : wxString(item.parentId));
+        templateList_->SetItem(row, 3, wxString(item.remarks));
+        templateList_->SetItem(row, 4, item.enabled ? L"✓" : L"✗");
+    }
+
+    // Select first item
+    if (!templates_.empty()) {
+        templateList_->SetItemState(0, wxLIST_STATE_SELECTED | wxLIST_STATE_FOCUSED, wxLIST_STATE_SELECTED | wxLIST_STATE_FOCUSED);
+        templateEditor_->ChangeValue(wxString(templates_[0].config));
+    }
+}
+
+void ConfigDialog::onTemplateSelection(wxListEvent& event) {
+    long sel = templateList_->GetNextItem(-1, wxLIST_NEXT_ALL, wxLIST_STATE_SELECTED);
+    if (sel < 0 || sel >= static_cast<long>(templates_.size())) return;
+
+    const auto& item = templates_[sel];
+    templateEditor_->ChangeValue(wxString(item.config));
+}
+
+void ConfigDialog::onTemplateSave(wxCommandEvent& event) {
+    if (!templateList_ || !templateEditor_ || !db_) return;
+
+    long sel = templateList_->GetNextItem(-1, wxLIST_NEXT_ALL, wxLIST_STATE_SELECTED);
+    if (sel < 0 || sel >= static_cast<long>(templates_.size())) {
+        wxMessageBox(L"请先选择要保存的模板", L"提示", wxOK | wxICON_INFORMATION);
+        return;
+    }
+
+    db::FullConfigTemplateDAO dao(db_);
+    templates_[sel].config = templateEditor_->GetValue().ToStdString();
+    
+    if (dao.save(templates_[sel])) {
+        wxMessageBox(L"模板已保存", L"成功", wxOK | wxICON_INFORMATION);
+        loadTemplates();
+    } else {
+        wxMessageBox(L"保存失败，请查看日志", L"错误", wxOK | wxICON_ERROR);
+    }
+}
+
+void ConfigDialog::onTemplateRefresh(wxCommandEvent& event) {
+    loadTemplates();
 }

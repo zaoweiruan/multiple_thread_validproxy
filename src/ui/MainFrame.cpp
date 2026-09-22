@@ -1166,7 +1166,7 @@ void MainFrame::onMenuConfig(wxCommandEvent&) {
         delete configDialog_;
         configDialog_ = nullptr;
     }
-    configDialog_ = new ConfigDialog(this, controller_->getConfig());
+    configDialog_ = new ConfigDialog(this, controller_->getConfig(), db_);
     if (configDialog_->ShowModal() == wxID_OK) {
         config::AppConfig cfg = configDialog_->getConfig();
         // Saving config while a USER-INITIATED async operation is running
