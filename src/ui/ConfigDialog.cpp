@@ -1,5 +1,7 @@
 #include "ConfigDialog.h"
 
+#include <windows.h>
+
 #include <wx/sizer.h>
 #include <wx/tokenzr.h>
 #include <wx/display.h>
@@ -318,24 +320,61 @@ ConfigDialog::ConfigDialog(wxWindow* parent, const config::AppConfig& cfg, sqlit
 
     SetSizer(topSizer);
     Layout();
-    topSizer->Fit(this);
-    topSizer->SetSizeHints(this);
-    // 尺寸：宽度满足「模板列表 + 组件链编辑（Bundle 列表 | 组件表）+
-    // 配置 JSON 预览」同屏布局；高度按屏幕可用区域自适应，下限 780
-    // （此前硬编码 1100x650 会把「组件链编辑」Tab 的 JSON 预览框压成 0 高，
-    //  只剩上方标签可见）。
-    int screenW = 0;
-    int screenH = 0;
-    wxDisplaySize(&screenW, &screenH);
-    int dialogH = 780;
-    if (screenH > 0) {
-        const int usable = static_cast<int>(screenH * 0.85);
-        if (usable > dialogH) {
-            dialogH = (usable > 1200) ? 1200 : usable;
+
+    // 尺寸策略：以屏幕为硬上限，绝不让对话框超出屏幕（否则顶部 Tab 栏会被
+    // 顶出可视区，表现为「无法切换 Tab」）。
+    //
+    // 坑（2026-10-08）：①topSizer->SetSizeHints(this) 把「内容理想尺寸」
+    // 写进 size hint（应用配置的属性网格几十行 → 1170 高），随后 SetSize
+    // 被 wx 拒绝（不能缩到 hint 之下）→ 对话框 1950x1170、顶部 T=-90；
+    // ②改用 SetSizeHints(0,0) + SetSize 后仍超屏（1860x1110），因为
+    // 对「有 sizer 的窗口」SetSize 会被 sizer 布局再次拉回内容尺寸。
+    // 最终方案：SetMaxSize 卡死上限 + 不调用 Fit()，让窗口停在上限内。
+    // 上限取「本对话框所在显示器的工作区」而非 wxDisplaySize()（后者返回
+    // 默认主显示器尺寸，多显示器 / 低分辨率主屏时会算出比当前屏幕更大的值
+    // ——UI 测试沙箱 1280x720 上就曾因此得到 740 > 720 而超屏）。
+    int maxW = 1440;
+    int maxH = 900;
+    {
+        // 取本窗口所在显示器的客户区（Win32：任务栏不占客户区）。
+        // 不用 wxDisplaySize()：它返回默认主显示器尺寸，多显示器或低分辨率
+        // 主屏时会算出比当前屏幕更大的上限（UI 测试沙箱 1280x720 上曾因此
+        // 得到 740 > 720 而超屏）。
+        // 对话框尚未显示，GetHwnd() 不可用；用主显示器（与 CentreOnScreen
+        // 的落点一致）的工作区作为上限。
+        HMONITOR mon = ::MonitorFromPoint(POINT{ 0, 0 }, MONITOR_DEFAULTTOPRIMARY);
+        MONITORINFO mi{};
+        mi.cbSize = sizeof(mi);
+        if (mon != nullptr && ::GetMonitorInfoW(mon, &mi)) {
+            const int cw = mi.rcWork.right - mi.rcWork.left;
+            const int ch = mi.rcWork.bottom - mi.rcWork.top;
+            if (cw > 0) maxW = cw;
+            if (ch > 0) maxH = ch;
         }
     }
-    SetMinSize(wxSize(1100, 780));
-    SetSize(wxSize(1440, dialogH));
+    const int margin = 20;              // 留边，避免贴边被任务栏/边框吃掉
+    maxW -= margin;
+    maxH -= margin;
+    if (maxW < 640)  maxW = 640;
+    if (maxH < 480)  maxH = 480;
+
+    const int minW = 1100;
+    const int minH = 780;
+    int wantW = 1440;
+    int wantH = 918;
+    if (wantW > maxW) wantW = maxW;
+    if (wantH > maxH) wantH = maxH;
+    // 屏幕比 min 还小时以屏幕为准：SetMinSize 不得大于 SetMaxSize，
+    // 否则 wx 会把窗口撑到 min 高度而超屏（低分辨率屏必现）。
+    const int effMinW = (minW < maxW) ? minW : maxW;
+    const int effMinH = (minH < maxH) ? minH : maxH;
+    if (wantW < effMinW) wantW = effMinW;
+    if (wantH < effMinH) wantH = effMinH;
+
+    SetMinSize(wxSize(effMinW, effMinH));
+    SetMaxSize(wxSize(maxW, maxH));
+    SetSizeHints(0, 0);
+    SetSize(wxSize(wantW, wantH));
     CentreOnScreen();
 
     // Load templates after layout

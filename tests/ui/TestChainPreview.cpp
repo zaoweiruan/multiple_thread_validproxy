@@ -143,10 +143,21 @@ TEST_CASE("ConfigDialog chain-edit tab renders a visible JSON preview box",
     RECT dlgRect{};
     REQUIRE(::GetWindowRect(dlg, &dlgRect) != 0);
     const int dlgH = dlgRect.bottom - dlgRect.top;
-    INFO("dialog height=" << dlgH);
+    const int dlgW = dlgRect.right - dlgRect.left;
+    INFO("dialog size=" << dlgW << "x" << dlgH);
 
-    // 对话框本体必须有足够高度容纳「编辑区 + 预览区」
-    REQUIRE(dlgH >= 760);
+    // 核心断言（bug 2026-10-08）：对话框必须完整落在屏幕内。
+    // 曾因 SetSizeHints 把内容理想尺寸（属性网格几十行 → 1170 高）写成
+    // size hint，SetSize 被 wx 拒绝而超屏，CentreOnScreen() 后顶部 T=-90，
+    // notebook 的 Tab 栏被顶出可视区 → 用户表现为「无法切换 Tab」。
+    const int scrW = ::GetSystemMetrics(SM_CXSCREEN);
+    const int scrH = ::GetSystemMetrics(SM_CYSCREEN);
+    INFO("screen=" << scrW << "x" << scrH);
+    REQUIRE(scrH > 0);
+    REQUIRE(dlgH <= scrH);
+    REQUIRE(dlgW <= scrW);
+    REQUIRE(dlgRect.top >= 0);      // 顶部不可出屏（Tab 栏会消失）
+    REQUIRE(dlgRect.left >= 0);
 
     // 统计 Edit 控件：模板配置 tab 有 1 个 JSON 编辑器；组件链编辑 tab
     // 有 2 个（参数 JSON + 配置预览）。未切页时至少 1 个必须可见且有高度。
