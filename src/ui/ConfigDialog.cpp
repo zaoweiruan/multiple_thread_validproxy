@@ -1864,13 +1864,12 @@ void ConfigDialog::createChainEditTab() {
     editSizer->Add(editStatus, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, 6);
     editPanel->SetSizer(editSizer);
 
-    wxPanel* topPanel = new wxPanel(chainTab);
-    wxBoxSizer* topSizer = new wxBoxSizer(wxVERTICAL);
-    topSizer->Add(editPanel, 1, wxEXPAND | wxALL, 4);
-    topPanel->SetSizer(topSizer);
-
+    // editPanel 与 previewPanel 都直接挂在 chainTab 上，因此直接进入
+    // chainTab 的 mainSizer。不可再套一层 topPanel：那样 editPanel 会变成
+    // topSizer（属 topPanel）的子项，而它的 parent 是 chainTab，违反
+    // 「sizer 管理的控件其 parent 必须是该 sizer 所属窗口」断言。
     wxBoxSizer* mainSizer = new wxBoxSizer(wxVERTICAL);
-    mainSizer->Add(topPanel, 3, wxEXPAND | wxALL, 4);
+    mainSizer->Add(editPanel, 3, wxEXPAND | wxALL, 4);
     mainSizer->Add(previewPanel, 2, wxEXPAND | wxALL, 4);
     chainTab->SetSizer(mainSizer);
 

@@ -91,6 +91,31 @@ bool hasDebugAlert(DWORD pid) {
     return probe.hwnd != nullptr;
 }
 
+// UI 测试沙箱给子进程设了 VALIDPROXY_ASSERT_LOG=1（tests/ui/framework/
+// Application.cpp:108），wx 断言因此**只写 stderr、不弹窗**——所以 hasDebugAlert
+// 在测试里恒为 false，必须改读 stderr 里的 "WX_ASSERT" 标记。
+// 用法：在触发可疑操作前先清空（fx.clearChildStderr()），操作后断言
+// fx.childStderrHasAssert() == false。
+std::string readAllText(const std::wstring& path) {
+    HANDLE h = ::CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE,
+                             nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (h == INVALID_HANDLE_VALUE) return std::string();
+    LARGE_INTEGER size{};
+    DWORD got = 0;
+    std::string text;
+    if (::GetFileSizeEx(h, &size) && size.QuadPart > 0 &&
+        size.QuadPart < 4 * 1024 * 1024) {
+        text.resize(static_cast<std::size_t>(size.QuadPart));
+        if (::ReadFile(h, &text[0], static_cast<DWORD>(text.size()), &got, nullptr)) {
+            text.resize(got);
+        } else {
+            text.clear();
+        }
+    }
+    ::CloseHandle(h);
+    return text;
+}
+
 } // namespace
 
 TEST_CASE("ConfigDialog chain-edit tab renders a visible JSON preview box",
@@ -143,6 +168,50 @@ TEST_CASE("ConfigDialog chain-edit tab renders a visible JSON preview box",
 // 回归：切到「组件链编辑」Tab 并点「解析」不得触发 wxWidgets 断言弹窗。
 // 曾因 editPanel 的 sizer 里放了 parent=chainTab 的控件，
 // wxSizer::SetContainingWindow 在 Debug 下断言失败（bug 2026-10-08）。
+// 回归：打开配置对话框（工具栏「配置」按钮 ID_TOOL_CONFIG = wxID_HIGHEST+205）
+// 不得触发 wx 断言弹窗，也不得在 stderr 留下 WX_ASSERT。
+//
+// 断言来源：wxSizer::SetContainingWindow 的 ASSERT_WINDOW_PARENT_IS
+// （wxWidgets/src/common/sizer.cpp:1003）——「sizer 管理的所有控件，其 parent
+// 必须是该 sizer 所属窗口」。曾因 createChainEditTab 把 editPanel（parent=
+// chainTab）塞进 topPanel 的 sizer 而触发（bug 2026-10-08）。
+//
+// 注意：AppProcess 会给子进程设 VALIDPROXY_ASSERT_LOG=1，使 wx 断言只写 stderr
+// 而不弹窗（Application.cpp:108），所以本用例必须**读 stderr** 才能发现断言；
+// hasDebugAlert() 在测试进程里恒为 false。
+TEST_CASE("ConfigDialog: opening via toolbar raises no wx assert", "[chainassert]") {
+    AppFixture fx;
+    REQUIRE(fx.mainWindow().valid());
+
+    HWND hMain = findWindow(fx.pid(), L"Proxy Manager");
+    REQUIRE(hMain != nullptr);
+
+    // 记录操作前的 stderr 长度，便于只检查本次操作新增的断言
+    const std::wstring errPath = fx.app().stderrPath();
+    const std::string before = readAllText(errPath);
+
+    // 工具栏「配置」按钮：ID_TOOL_CONFIG = wxID_HIGHEST(6000) + 205 = 6205
+    // （注意与菜单 ID_MENU_CONFIG = 6110 区分）
+    ::SendMessageTimeoutW(hMain, WM_COMMAND, MAKEWPARAM(6205, 0), 0,
+                          SMTO_NORMAL, 10000, nullptr);
+
+    HWND dlg = nullptr;
+    for (int i = 0; i < 40 && dlg == nullptr; ++i) {
+        ::Sleep(250);
+        dlg = findWindow(fx.pid(), L"配置编辑器");
+    }
+    REQUIRE(dlg != nullptr);
+    REQUIRE_FALSE(hasDebugAlert(fx.pid()));
+
+    // 断言在测试沙箱被 VALIDPROXY_ASSERT_LOG 静音为 stderr 输出，必须读它
+    const std::string after = readAllText(errPath);
+    const std::string added = after.size() > before.size()
+                                   ? after.substr(before.size())
+                                   : std::string();
+    INFO("new child stderr:\n" << added);
+    REQUIRE(added.find("WX_ASSERT") == std::string::npos);
+}
+
 TEST_CASE("ConfigDialog chain-edit tab resolves without wx assert", "[chainpreview]") {
     AppFixture fx;
     REQUIRE(fx.mainWindow().valid());
