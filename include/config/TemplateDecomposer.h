@@ -58,6 +58,15 @@ public:
     /// @return 成功保存的数量
     int decomposeAndSave(bool overwrite = false) const;
 
+    /// 为库表中每个模板生成组件链并保存到 FullConfigTemplateItem：
+    ///   - BASE 模板     → 链 = [自身 bundle]
+    ///   - 非 BASE 模板  → 链 = [同 CoreType 的 BASE bundle, 自身 bundle]
+    ///     （base 打底，后加载覆盖先加载）
+    /// 同时写 BundleVersion 版本快照（BundleChainResolver::getCurrentVersions）
+    /// 与 TemplateType="bundleChain"（使模板列表 ✅/⚠️ 同步状态可用）。
+    /// @return 成功更新的模板数
+    int generateChains() const;
+
     /// 映射模板 ID → TemplateType
     static TemplateType inferTemplateType(const std::string& templateId);
 

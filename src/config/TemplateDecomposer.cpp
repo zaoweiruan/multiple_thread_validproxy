@@ -1,4 +1,5 @@
 #include "config/TemplateDecomposer.h"
+#include "config/BundleChainResolver.h"
 #include "Logger.h"
 #include <sstream>
 #include <algorithm>
@@ -18,6 +19,7 @@ const std::vector<std::pair<std::string, ComponentType>>& sectionMap() {
         {"inbounds", ComponentType::INBOUND},
         {"outbounds", ComponentType::OUTBOUND},
         {"routing", ComponentType::ROUTING},
+        {"route", ComponentType::ROUTING},  // sing-box 使用单数节名
         {"observatory", ComponentType::OBSERVATORY},
         {"burstObservatory", ComponentType::BURST_OBSERVATORY},
         {"geodata", ComponentType::GEODATA},
@@ -44,12 +46,13 @@ std::optional<ComponentType> TemplateDecomposer::sectionToComponentType(
 
 TemplateType TemplateDecomposer::inferTemplateType(
     const std::string& templateId) {
-    // 按 ID 后缀推断 TemplateType
+    // 按 ID 后缀/前缀推断 TemplateType（pool_ 前缀与 _pool_ 中缀都识别）
     if (templateId.find("_base_") != std::string::npos)
         return TemplateType::BASE;
     if (templateId.find("_test_") != std::string::npos)
         return TemplateType::TEST;
-    if (templateId.find("_pool_") != std::string::npos)
+    if (templateId.find("_pool_") != std::string::npos ||
+        templateId.rfind("pool_", 0) == 0)
         return TemplateType::POOL;
     // default 映射为 STANDALONE
     if (templateId.find("_default_") != std::string::npos)
@@ -213,4 +216,103 @@ int TemplateDecomposer::decomposeAndSave(bool overwrite) const {
         }
     }
     return saved;
+}
+
+int TemplateDecomposer::generateChains() const {
+    db::FullConfigTemplateDAO tmplDao(db_);
+    ComponentBundleDAO bundleDao(db_);
+
+    const std::vector<db::FullConfigTemplateItem> templates = tmplDao.getAll();
+    const std::vector<ComponentBundle> bundles = bundleDao.getAll();
+
+    // bundle id → bundle
+    std::map<std::string, ComponentBundle> bundlesById;
+    for (std::vector<ComponentBundle>::const_iterator it = bundles.begin();
+         it != bundles.end(); ++it) {
+        bundlesById[it->id] = *it;
+    }
+
+    // 每个 CoreType 的 BASE bundle（同一 core 取第一个）
+    std::map<int, std::string> baseByCore;
+    for (std::map<std::string, ComponentBundle>::const_iterator it = bundlesById.begin();
+         it != bundlesById.end(); ++it) {
+        if (it->second.templateType != TemplateType::BASE) {
+            continue;
+        }
+        const int core = (it->second.coreType == CoreType::XRAY) ? 2 : 24;
+        if (baseByCore.count(core) == 0) {
+            baseByCore[core] = it->second.id;
+        }
+    }
+
+    BundleChainResolver resolver(db_);
+    int updated = 0;
+    for (std::vector<db::FullConfigTemplateItem>::const_iterator it = templates.begin();
+         it != templates.end(); ++it) {
+        const std::string templateId = it->id;
+
+        // 本模板自身的 bundle 必须已拆解
+        std::map<std::string, ComponentBundle>::const_iterator selfIt =
+            bundlesById.find(templateId);
+        if (selfIt == bundlesById.end()) {
+            Logger::write("[TemplateDecomposer] generateChains: bundle missing, skip "
+                              + templateId,
+                          LogLevel::WARN);
+            continue;
+        }
+
+        // 组装 bundleIds：base 打底 + 自身
+        std::vector<std::string> bundleIds;
+        const int core = (selfIt->second.coreType == CoreType::XRAY) ? 2 : 24;
+        std::map<int, std::string>::const_iterator baseIt = baseByCore.find(core);
+        if (selfIt->second.templateType != TemplateType::BASE) {
+            if (baseIt == baseByCore.end()) {
+                Logger::write("[TemplateDecomposer] generateChains: no BASE bundle for core "
+                                  + std::to_string(core) + ", skip " + templateId,
+                              LogLevel::WARN);
+                continue;
+            }
+            bundleIds.push_back(baseIt->second);
+        }
+        bundleIds.push_back(templateId);
+
+        // 链 JSON
+        boost::json::object root;
+        boost::json::array idsArr;
+        for (std::vector<std::string>::const_iterator bi = bundleIds.begin();
+             bi != bundleIds.end(); ++bi) {
+            idsArr.push_back(boost::json::value(*bi));
+        }
+        root["bundleIds"] = idsArr;
+        root["params"] = boost::json::object();
+
+        // 版本快照
+        BundleChain chain;
+        chain.bundleIds = bundleIds;
+        const std::vector<BundleVersionInfo> versions = resolver.getCurrentVersions(chain);
+        boost::json::array verArr;
+        for (std::vector<BundleVersionInfo>::const_iterator vi = versions.begin();
+             vi != versions.end(); ++vi) {
+            boost::json::object verObj;
+            verObj["bundleId"] = vi->bundleId;
+            verObj["version"] = vi->version;
+            verArr.push_back(verObj);
+        }
+
+        db::FullConfigTemplateItem updatedItem = *it;
+        updatedItem.bundleChain = boost::json::serialize(root);
+        updatedItem.bundleVersion = boost::json::serialize(verArr);
+        updatedItem.templateType = "bundleChain";
+
+        if (!tmplDao.save(updatedItem)) {
+            Logger::write("[TemplateDecomposer] generateChains: save failed " + templateId,
+                          LogLevel::WARN);
+            continue;
+        }
+        ++updated;
+        Logger::write("[TemplateDecomposer] generateChains: " + templateId + " -> "
+                          + updatedItem.bundleChain,
+                      LogLevel::INFO);
+    }
+    return updated;
 }

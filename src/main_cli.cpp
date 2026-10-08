@@ -96,6 +96,8 @@ void printHelp() {
               << "  -TA, -test-all      Test all proxies in the database\n"
               << "  -D, -dedup           Remove duplicate proxies from database\n"
               << "  -DC, -decompose       Decompose templates into ComponentBundle entries\n"
+<< "  -GC, -generate-chains  Generate component chains (base+test/standalone/pool)\n"
+<< "                         from decomposed Bundles and save to template table\n"
               << "  -TU, -tourl         Export proxies (delay>0) to share links file\n"
               << "  -S, -sync [src[:dst]] Sync valid proxies from source to target DB\n"
                << "  -IS, -import-sub-config <file|url>  Batch import subitems from file or URL\n"
@@ -276,8 +278,10 @@ int main(int argc, char* argv[]) {
         } else if (arg == "-D" || arg == "-dedup" || arg == "--dedup") {
             commandMode = "dedup";
         } else if (arg == "-DC" || arg == "-decompose" || arg == "--decompose") {
-            commandMode = "decompose";
-        } else if (arg == "-TA" || arg == "-test-all" || arg == "--test-all") {
+commandMode = "decompose";
+} else if (arg == "-GC" || arg == "-generate-chains" || arg == "--generate-chains") {
+commandMode = "generatechains";
+} else if (arg == "-TA" || arg == "-test-all" || arg == "--test-all") {
             commandMode = "test-all";
         } else if (arg == "-TU" || arg == "-tourl" || arg == "--tourl") {
             commandMode = "tourl";
@@ -1007,6 +1011,50 @@ int main(int argc, char* argv[]) {
         Logger::close();
         
         return 0;
+    }
+    
+    // -GC: 拆解模板为组件包 + 为每个模板生成组件链（base[+test/standalone/pool]）保存到库表
+    if (commandMode == "generatechains") {
+        Logger::init(logDir.string(), commandMode);
+        
+        std::optional<config::AppConfig> appConfig = config::ConfigReader::load(configPath);
+        if (!appConfig) {
+            logError("Failed to load config from: " + configPath);
+            Logger::close();
+            return 1;
+        }
+        
+        Logger::setFileEnabled(appConfig->log_enabled);
+        Logger::setFileLevel(Logger::stringToLevel(appConfig->log_file_level));
+        Logger::setConsoleLevel(Logger::stringToLevel(appConfig->log_console_level));
+        logInfo("validproxy generate-chains starting...");
+        
+        sqlite3* db = nullptr;
+        if (!openDatabase(*appConfig, db, "[main] generate-chains")) {
+            Logger::close();
+            return 1;
+        }
+        sqlite3_busy_timeout(db, 5000);
+        sqlite3_exec(db, "PRAGMA journal_mode=WAL", nullptr, nullptr, nullptr);
+        sqlite3_exec(db, "PRAGMA synchronous=NORMAL", nullptr, nullptr, nullptr);
+        
+        // 1) 拆解库表中现有模板为组件包（缺失时）
+        config::TemplateDecomposer decomposer(db);
+        int bundles = decomposer.decomposeAndSave(true);
+        
+        // 2) 生成组件链并保存到 FullConfigTemplateItem
+        int chains = decomposer.generateChains();
+        
+        std::cout << "Generate-chains complete: " << bundles << " bundles, "
+                  << chains << " templates updated" << std::endl;
+        
+        sqlite3_close(db);
+        Logger::write("generate-chains completed (" + std::to_string(bundles)
+                          + " bundles, " + std::to_string(chains) + " templates)",
+                      LogLevel::REPORT);
+        Logger::close();
+        
+        return chains >= 0 ? 0 : 1;
     }
     
     if (!singleSubId.empty()) {

@@ -568,4 +568,95 @@ TEST_F(TemplateDecomposerTest, Decompose_NestedParamsPreserved) {
     }
 }
 
+// ---------------------------------------------------------------------
+// generateChains: 拆解后为模板生成 base[+test/standalone/pool] 组件链
+// ---------------------------------------------------------------------
+
+TEST_F(TemplateDecomposerTest, GenerateChains_BasePlusSelf) {
+    // 播种 3 个 Xray 模板（base / test / pool）
+    insertTemplate("xray_base_001", 2, makeXrayTestConfig());
+    insertTemplate("xray_test_001", 2, makeXrayTestConfig());
+    insertTemplate("xray_pool_001", 2, makeXrayTestConfig());
+
+    // 先拆解出 bundles
+    const int bundles = composer->decomposeAndSave(false);
+    ASSERT_EQ(bundles, 3);
+
+    // 生成链
+    const int updated = composer->generateChains();
+    ASSERT_EQ(updated, 3);
+
+    db::FullConfigTemplateDAO dao(db);
+    ASSERT_TRUE(dao.createTableIfNotExists());
+
+    // base 模板：链 = [自身]
+    {
+        const std::optional<db::FullConfigTemplateItem> base =
+            dao.getById("xray_base_001");
+        ASSERT_TRUE(base.has_value());
+        EXPECT_EQ(base->templateType, "bundleChain");
+        ASSERT_FALSE(base->bundleChain.empty());
+        const boost::json::value v = boost::json::parse(base->bundleChain);
+        ASSERT_TRUE(v.is_object());
+        const boost::json::array& ids = v.as_object().at("bundleIds").as_array();
+        ASSERT_EQ(ids.size(), 1u);
+        EXPECT_STREQ(ids[0].as_string().c_str(), "xray_base_001");
+        ASSERT_FALSE(base->bundleVersion.empty());
+    }
+
+    // test 模板：链 = [base, self]
+    {
+        const std::optional<db::FullConfigTemplateItem> test =
+            dao.getById("xray_test_001");
+        ASSERT_TRUE(test.has_value());
+        EXPECT_EQ(test->templateType, "bundleChain");
+        const boost::json::value v = boost::json::parse(test->bundleChain);
+        const boost::json::array& ids = v.as_object().at("bundleIds").as_array();
+        ASSERT_EQ(ids.size(), 2u);
+        EXPECT_STREQ(ids[0].as_string().c_str(), "xray_base_001");
+        EXPECT_STREQ(ids[1].as_string().c_str(), "xray_test_001");
+        // 版本快照应含两条 bundleId
+        EXPECT_NE(test->bundleVersion.find("xray_base_001"),
+                  std::string::npos);
+        EXPECT_NE(test->bundleVersion.find("xray_test_001"),
+                  std::string::npos);
+    }
+
+    // pool 模板：链 = [base, self]
+    {
+        const std::optional<db::FullConfigTemplateItem> pool =
+            dao.getById("xray_pool_001");
+        ASSERT_TRUE(pool.has_value());
+        const boost::json::value v = boost::json::parse(pool->bundleChain);
+        const boost::json::array& ids = v.as_object().at("bundleIds").as_array();
+        ASSERT_EQ(ids.size(), 2u);
+        EXPECT_STREQ(ids[0].as_string().c_str(), "xray_base_001");
+        EXPECT_STREQ(ids[1].as_string().c_str(), "xray_pool_001");
+    }
+}
+
+TEST_F(TemplateDecomposerTest, GenerateChains_SkipWhenBundleMissing) {
+    // 一个模板的 bundle 被删除（模拟未拆解），其余正常
+    insertTemplate("xray_base_001", 2, makeXrayTestConfig());
+    insertTemplate("xray_test_001", 2, makeXrayTestConfig());
+    insertTemplate("orphan_ghost_001", 2, makeXrayTestConfig());
+
+    ASSERT_EQ(composer->decomposeAndSave(false), 3);
+
+    // 删除 orphan 的 bundle，制造「bundle 缺失」
+    ComponentBundleDAO bundleDao(db);
+    ASSERT_TRUE(bundleDao.deleteById("orphan_ghost_001"));
+
+    const int updated = composer->generateChains();
+    // 只有 2 个仍有 bundle 的模板被更新
+    ASSERT_EQ(updated, 2);
+
+    db::FullConfigTemplateDAO dao(db);
+    const std::optional<db::FullConfigTemplateItem> orphan =
+        dao.getById("orphan_ghost_001");
+    ASSERT_TRUE(orphan.has_value());
+    EXPECT_TRUE(orphan->bundleChain.empty());
+    EXPECT_NE(orphan->templateType, "bundleChain");
+}
+
 } // namespace
