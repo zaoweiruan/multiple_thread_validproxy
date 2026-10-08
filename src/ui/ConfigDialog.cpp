@@ -22,6 +22,54 @@
 #include "ComponentListPanel.h"
 #include "config/BundleChainResolver.h"
 
+namespace {
+
+// boost::json 无内置 pretty-print，手写缩进式序列化（2 空格/层）。
+std::string prettyJson(const boost::json::value& value, int indent) {
+    const std::string pad(static_cast<std::size_t>(indent) * 2, ' ');
+    const std::string padIn(static_cast<std::size_t>(indent + 1) * 2, ' ');
+
+    if (value.is_object()) {
+        const boost::json::object& obj = value.as_object();
+        if (obj.empty()) {
+            return "{}";
+        }
+        std::string out = "{\n";
+        std::size_t index = 0;
+        for (const boost::json::key_value_pair& kv : obj) {
+            out += padIn + "\"" + std::string(kv.key()) + "\": "
+                 + prettyJson(kv.value(), indent + 1);
+            if (++index < obj.size()) {
+                out += ",";
+            }
+            out += "\n";
+        }
+        out += pad + "}";
+        return out;
+    }
+
+    if (value.is_array()) {
+        const boost::json::array& arr = value.as_array();
+        if (arr.empty()) {
+            return "[]";
+        }
+        std::string out = "[\n";
+        for (std::size_t i = 0; i < arr.size(); ++i) {
+            out += padIn + prettyJson(arr[i], indent + 1);
+            if (i + 1 < arr.size()) {
+                out += ",";
+            }
+            out += "\n";
+        }
+        out += pad + "]";
+        return out;
+    }
+
+    return boost::json::serialize(value);
+}
+
+} // namespace
+
 // -------------------------------------------------------------------
 wxBEGIN_EVENT_TABLE(ConfigDialog, wxDialog)
     EVT_BUTTON(wxID_OK, ConfigDialog::onOk)
@@ -1738,10 +1786,20 @@ void ConfigDialog::createChainEditTab() {
             statusText = L"解析失败：" + wxString::FromUTF8(result.errorMessage);
         }
         chainStatus_->SetLabel(statusText);
+
+        // 配置预览（resolveToConfig 填充 result.config）
+        if (result.success && result.config.is_object()) {
+            showChainPreview(prettyJson(result.config, 0));
+        } else if (!result.errorMessage.empty()) {
+            showChainPreview(wxString::Format(L"// 解析失败：%s",
+                                              result.errorMessage).ToStdString());
+        } else {
+            showChainPreview(std::string());
+        }
     };
 
     wxStaticText* hint = new wxStaticText(chainTab, wxID_ANY,
-        L"左侧编辑组件链（顺序添加 Bundle + 参数 JSON），「解析」后右侧显示合并组件；"
+        L"左侧编辑组件链（顺序添加 Bundle + 参数 JSON），「解析」后右侧显示合并组件并生成下方配置预览；"
         L"「保存」会把链写入当前模板（templateType=bundleChain）。");
     wxButton* saveBtn = new wxButton(chainTab, wxID_ANY, L"保存链到当前模板");
     saveBtn->Bind(wxEVT_BUTTON, &ConfigDialog::onChainSave, this);
@@ -1755,13 +1813,31 @@ void ConfigDialog::createChainEditTab() {
     bodySizer->Add(chainEditor_, 1, wxEXPAND | wxRIGHT, 8);
     bodySizer->Add(componentListPanel_, 1, wxEXPAND, 0);
 
+    // 配置 JSON 预览（resolveToConfig 的输出，占位符已替换）
+    wxBoxSizer* previewTitleSizer = new wxBoxSizer(wxHORIZONTAL);
+    previewTitleSizer->Add(new wxStaticText(chainTab, wxID_ANY,
+        L"配置 JSON 预览（resolveToConfig 输出）:"), 0, wxALIGN_CENTER_VERTICAL);
+    chainPreview_ = new wxTextCtrl(chainTab, wxID_ANY, wxEmptyString,
+                                  wxDefaultPosition, wxSize(-1, 220),
+                                  wxTE_MULTILINE | wxTE_READONLY | wxTE_DONTWRAP);
+    chainPreview_->SetFont(wxFont(9, wxFONTFAMILY_MODERN, wxFONTSTYLE_NORMAL,
+                                  wxFONTWEIGHT_NORMAL));
+
     wxBoxSizer* mainSizer = new wxBoxSizer(wxVERTICAL);
     mainSizer->Add(titleSizer, 0, wxEXPAND | wxALL, 6);
-    mainSizer->Add(bodySizer, 1, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, 6);
-    mainSizer->Add(chainStatus_, 0, wxALL, 6);
+    mainSizer->Add(bodySizer, 3, wxEXPAND | wxLEFT | wxRIGHT, 6);
+    mainSizer->Add(chainStatus_, 0, wxEXPAND | wxLEFT | wxRIGHT | wxTOP, 6);
+    mainSizer->Add(previewTitleSizer, 0, wxEXPAND | wxLEFT | wxRIGHT | wxTOP, 6);
+    mainSizer->Add(chainPreview_, 2, wxEXPAND | wxALL, 6);
     chainTab->SetSizer(mainSizer);
 
     templateSubNotebook_->AddPage(chainTab, L"组件链编辑");
+}
+
+void ConfigDialog::showChainPreview(const std::string& jsonText) {
+    if (chainPreview_ != nullptr) {
+        chainPreview_->ChangeValue(wxString::FromUTF8(jsonText.c_str()));
+    }
 }
 
 void ConfigDialog::syncChainEditorFromSelection() {

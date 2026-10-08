@@ -39,6 +39,10 @@ public:
     /// 使用当前链解析生成组件+冲突（供外层 ComponentListPanel 显示）
     config::BundleChainResolveResult resolve() const;
 
+    /// 解析并生成最终配置 JSON（占位符替换 + 组件应用）。
+    /// 与 resolve() 的区别：result.config 被填充，供 UI 显示配置预览。
+    config::BundleChainResolveResult resolveToConfig() const;
+
     /// 设置当前模板的 CoreType（阶段 8.4：Bundle 选择器按核心过滤）
     void setCoreType(config::CoreType coreType) { coreType_ = coreType; }
 

@@ -101,6 +101,7 @@ private:
     void createChainEditTab();
     void syncChainEditorFromSelection();
     void onChainSave(wxCommandEvent& event);
+    void showChainPreview(const std::string& jsonText);
 
     config::AppConfig editedConfig_;
     std::vector<std::string> stepOrder_;
@@ -138,6 +139,7 @@ private:
     BundleChainEditor* chainEditor_{nullptr};
     ComponentListPanel* componentListPanel_{nullptr};
     wxStaticText* chainStatus_{nullptr};
+    wxTextCtrl* chainPreview_{nullptr};
 
     wxDECLARE_EVENT_TABLE();
 };

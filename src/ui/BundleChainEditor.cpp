@@ -91,6 +91,21 @@ config::BundleChainResolveResult BundleChainEditor::resolve() const {
     return resolver.resolveBundleChain(getChain());
 }
 
+config::BundleChainResolveResult BundleChainEditor::resolveToConfig() const {
+    config::BundleChainResolver resolver(db_);
+    // 预览用上下文：按当前模板核心类型选择后端，无 profile（占位符取
+    // chain.params / 默认值），db 指向当前连接供组件解析使用。
+    config::PipelineContext ctx;
+    ctx.proxyType = (coreType_ == config::CoreType::SINGBOX)
+                        ? config::ProxyType::SingBox
+                        : config::ProxyType::Xray;
+    ctx.hasProfile = false;
+    ctx.vars = config::ConfigVariables();
+    ctx.db = db_;
+    ctx.clientName = "chain-preview";
+    return resolver.resolveToConfig(getChain(), ctx);
+}
+
 void BundleChainEditor::refreshBundleList() {
     bundleList_->DeleteAllItems();
     config::ComponentBundleDAO dao(db_);
@@ -139,7 +154,8 @@ void BundleChainEditor::onRemoveBundle(wxCommandEvent& event) {
 void BundleChainEditor::onResolve(wxCommandEvent& event) {
     (void)event;
     wxBusyCursor busy;
-    const config::BundleChainResolveResult result = resolve();
+    // 解析并生成最终配置（result.config 供 UI 预览）
+    const config::BundleChainResolveResult result = resolveToConfig();
     if (onResolved) {
         onResolved(result);
     }
