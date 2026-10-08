@@ -70,6 +70,27 @@ BOOL CALLBACK enumChildProc(HWND child, LPARAM lp) {
     return TRUE;
 }
 
+// 进程内是否弹出了 wxWidgets Debug Alert（断言失败弹窗）
+bool hasDebugAlert(DWORD pid) {
+    WindowSearch probe{ pid, L"", nullptr };
+    // 先按标题找，再遍历一遍所有可见窗口做兜底
+    ::EnumWindows([](HWND hwnd, LPARAM lp) -> BOOL {
+        auto* ctx = reinterpret_cast<WindowSearch*>(lp);
+        DWORD wpid = 0;
+        ::GetWindowThreadProcessId(hwnd, &wpid);
+        if (wpid != ctx->pid) return TRUE;
+        wchar_t title[256] = { 0 };
+        ::GetWindowTextW(hwnd, title, 256);
+        if (std::wstring(title).find(L"Debug Alert") != std::wstring::npos ||
+            std::wstring(title).find(L"wxWidgets Debug") != std::wstring::npos) {
+            ctx->hwnd = hwnd;
+            return FALSE;
+        }
+        return TRUE;
+    }, reinterpret_cast<LPARAM>(&probe));
+    return probe.hwnd != nullptr;
+}
+
 } // namespace
 
 TEST_CASE("ConfigDialog chain-edit tab renders a visible JSON preview box",
@@ -117,4 +138,91 @@ TEST_CASE("ConfigDialog chain-edit tab renders a visible JSON preview box",
     INFO("edits=" << col.rects.size() << " visible=" << visible
                   << " maxHeight=" << maxH);
     REQUIRE(visible >= 1);
+}
+
+// 回归：切到「组件链编辑」Tab 并点「解析」不得触发 wxWidgets 断言弹窗。
+// 曾因 editPanel 的 sizer 里放了 parent=chainTab 的控件，
+// wxSizer::SetContainingWindow 在 Debug 下断言失败（bug 2026-10-08）。
+TEST_CASE("ConfigDialog chain-edit tab resolves without wx assert", "[chainpreview]") {
+    AppFixture fx;
+    REQUIRE(fx.mainWindow().valid());
+
+    HWND hMain = findWindow(fx.pid(), L"Proxy Manager");
+    REQUIRE(hMain != nullptr);
+    ::SendMessageTimeoutW(hMain, WM_COMMAND, MAKEWPARAM(kConfigCmd, 0), 0,
+                          SMTO_NORMAL, 10000, nullptr);
+
+    HWND dlg = nullptr;
+    for (int i = 0; i < 40 && dlg == nullptr; ++i) {
+        ::Sleep(250);
+        dlg = findWindow(fx.pid(), L"配置编辑器");
+    }
+    REQUIRE(dlg != nullptr);
+    REQUIRE_FALSE(hasDebugAlert(fx.pid()));
+
+    // 切到「组件链编辑」子 Tab。
+    // wx notebook 的页签标题控件（SysListView32）是自绘的，只有当前页的
+    // 控件在 HWND 树中；用 Ctrl+PageDown（wx 的标准「下一子页」键）逐页
+    // 前进，同时检测目标页的控件是否已出现在树里。
+    HWND target = nullptr;
+    ::SetForegroundWindow(dlg);
+    ::SetFocus(dlg);
+    ::Sleep(300);
+    for (int attempt = 0; attempt < 6 && target == nullptr; ++attempt) {
+        struct Found { HWND h; } found{ nullptr };
+        ::EnumChildWindows(dlg, [](HWND w, LPARAM lp) -> BOOL {
+            auto* f = reinterpret_cast<Found*>(lp);
+            const int len = ::GetWindowTextLengthW(w);
+            if (len == 0 || len > 32) return TRUE;
+            std::vector<wchar_t> buf(static_cast<std::size_t>(len) + 1, 0);
+            ::GetWindowTextW(w, buf.data(), static_cast<int>(buf.size()));
+            const std::wstring text(buf.data());
+            // 预览框标签只在「组件链编辑」页存在
+            if (text.find(L"配置 JSON 预览") != std::wstring::npos) {
+                f->h = w;
+                return FALSE;
+            }
+            return TRUE;
+        }, reinterpret_cast<LPARAM>(&found));
+        if (found.h) {
+            target = found.h;
+            break;
+        }
+        // Ctrl+PageDown：切到下一个子 Tab
+        ::SetForegroundWindow(dlg);
+        ::SendMessageW(dlg, WM_KEYDOWN, VK_CONTROL, 0);
+        ::SendMessageW(dlg, WM_KEYDOWN, VK_NEXT, 0);
+        ::SendMessageW(dlg, WM_KEYUP, VK_NEXT, 0);
+        ::SendMessageW(dlg, WM_KEYUP, VK_CONTROL, 0);
+        ::Sleep(700);
+    }
+    INFO("chain-edit tab item hwnd found: " << (target != nullptr));
+    REQUIRE(target != nullptr);
+    ::Sleep(800);
+
+    // 点「解析」按钮（WM_COMMAND id 0 = wxID_ANY 不可用，改用 BM_CLICK）
+    struct ParseBtn { HWND h; } parse{ nullptr };
+    ::EnumChildWindows(dlg, [](HWND w, LPARAM lp) -> BOOL {
+        auto* p = reinterpret_cast<ParseBtn*>(lp);
+        const int len = ::GetWindowTextLengthW(w);
+        if (len == 0 || len > 16) return TRUE;
+        std::vector<wchar_t> buf(static_cast<std::size_t>(len) + 1, 0);
+        ::GetWindowTextW(w, buf.data(), static_cast<int>(buf.size()));
+        if (std::wstring(buf.data()) == L"解析") {
+            p->h = w;
+            return FALSE;
+        }
+        return TRUE;
+    }, reinterpret_cast<LPARAM>(&parse));
+
+    if (parse.h) {
+        ::SendMessageTimeoutW(parse.h, BM_CLICK, 0, 0, SMTO_NORMAL, 10000, nullptr);
+        ::Sleep(2000);
+    } else {
+        WARN("解析按钮未找到（仅验证无断言）");
+    }
+
+    // 核心断言：不得弹出 wxWidgets Debug Alert
+    INFO("debug alert present: " << hasDebugAlert(fx.pid()));
+    REQUIRE_FALSE(hasDebugAlert(fx.pid()));
 }

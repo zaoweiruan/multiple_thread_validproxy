@@ -1786,9 +1786,44 @@ void ConfigDialog::onBundleRefresh(wxCommandEvent& event) {
 
 void ConfigDialog::createChainEditTab() {
     wxPanel* chainTab = new wxPanel(templateSubNotebook_);
-    chainEditor_ = new BundleChainEditor(chainTab, db_);
-    componentListPanel_ = new ComponentListPanel(chainTab, db_);
 
+    // 配置 JSON 预览（resolveToConfig 的输出，占位符已替换）。
+    // 上下两个独立 panel（编辑区 / 预览区），预览框有 220px 初始高度与
+    // 160px 最小高度——对话框高度不足时 sizer 曾把预览框压成 0 高
+    // （只剩上方标签可见）。
+    //
+    // 父子关系约束：wxSizer::SetContainingWindow 会在 Debug 下断言
+    // 「sizer 管理的所有控件的 parent 必须是该 sizer 所属窗口」。因此
+    // editPanel 的 sizer 里不能放 parent 为 chainTab 的控件——必须先建
+    // editPanel、再以它为 parent 建控件。同理 previewPanel。
+    wxPanel* previewPanel = new wxPanel(chainTab);
+    wxStaticText* previewLabel = new wxStaticText(previewPanel, wxID_ANY,
+        L"配置 JSON 预览（resolveToConfig 输出）:");
+    wxTextCtrl* previewBox = new wxTextCtrl(previewPanel, wxID_ANY, wxEmptyString,
+                                           wxDefaultPosition, wxSize(-1, 220),
+                                           wxTE_MULTILINE | wxTE_READONLY | wxTE_DONTWRAP);
+    previewBox->SetFont(wxFont(9, wxFONTFAMILY_MODERN, wxFONTSTYLE_NORMAL,
+                               wxFONTWEIGHT_NORMAL));
+    // 硬下限：对话框高度不足时 sizer 会把可扩展控件压到 min size，
+    // 不设 min size 时 wxTextCtrl 可被压成 0 高（只剩上方标签可见）。
+    previewBox->SetMinSize(wxSize(200, 160));
+    wxBoxSizer* previewSizer = new wxBoxSizer(wxVERTICAL);
+    previewSizer->Add(previewLabel, 0, wxEXPAND | wxALL, 4);
+    previewSizer->Add(previewBox, 1, wxEXPAND | wxALL, 4);
+    previewPanel->SetSizer(previewSizer);
+
+    // 编辑区：控件一律以 editPanel 为 parent（不可用 chainTab）。
+    wxPanel* editPanel = new wxPanel(chainTab);
+    wxStaticText* editHint = new wxStaticText(editPanel, wxID_ANY,
+        L"左侧编辑组件链（顺序添加 Bundle + 参数 JSON），「解析」后右侧显示合并组件并生成下方配置预览；"
+        L"「保存」会把链写入当前模板（templateType=bundleChain）。");
+    wxButton* editSaveBtn = new wxButton(editPanel, wxID_ANY, L"保存链到当前模板");
+    editSaveBtn->Bind(wxEVT_BUTTON, &ConfigDialog::onChainSave, this);
+    wxStaticText* editStatus = new wxStaticText(editPanel, wxID_ANY, L"");
+    chainStatus_ = editStatus;
+
+    BundleChainEditor* chainEditor = new BundleChainEditor(editPanel, db_);
+    chainEditor_ = chainEditor;
     chainEditor_->onResolved = [this](const config::BundleChainResolveResult& result) {
         componentListPanel_->setComponents(result.components, result.sources);
         componentListPanel_->setConflictStatus(result.conflicts);
@@ -1812,45 +1847,21 @@ void ConfigDialog::createChainEditTab() {
         }
     };
 
-    wxStaticText* hint = new wxStaticText(chainTab, wxID_ANY,
-        L"左侧编辑组件链（顺序添加 Bundle + 参数 JSON），「解析」后右侧显示合并组件并生成下方配置预览；"
-        L"「保存」会把链写入当前模板（templateType=bundleChain）。");
-    wxButton* saveBtn = new wxButton(chainTab, wxID_ANY, L"保存链到当前模板");
-    saveBtn->Bind(wxEVT_BUTTON, &ConfigDialog::onChainSave, this);
-    chainStatus_ = new wxStaticText(chainTab, wxID_ANY, L"");
+    ComponentListPanel* componentPanel = new ComponentListPanel(editPanel, db_);
+    componentListPanel_ = componentPanel;
 
-    wxBoxSizer* titleSizer = new wxBoxSizer(wxHORIZONTAL);
-    titleSizer->Add(hint, 1, wxEXPAND | wxRIGHT, 8);
-    titleSizer->Add(saveBtn, 0, 0, 0);
+    wxBoxSizer* editTitleSizer = new wxBoxSizer(wxHORIZONTAL);
+    editTitleSizer->Add(editHint, 1, wxEXPAND | wxRIGHT, 8);
+    editTitleSizer->Add(editSaveBtn, 0, 0, 0);
 
-    wxBoxSizer* bodySizer = new wxBoxSizer(wxHORIZONTAL);
-    bodySizer->Add(chainEditor_, 1, wxEXPAND | wxRIGHT, 8);
-    bodySizer->Add(componentListPanel_, 1, wxEXPAND, 0);
+    wxBoxSizer* editBodySizer = new wxBoxSizer(wxHORIZONTAL);
+    editBodySizer->Add(chainEditor, 1, wxEXPAND | wxRIGHT, 8);
+    editBodySizer->Add(componentPanel, 1, wxEXPAND, 0);
 
-    // 配置 JSON 预览（resolveToConfig 的输出，占位符已替换）。
-    // 上下两个独立 panel（编辑区 / 预览区），预览框有 200px 初始高度，
-    // 不再用单一 sizer 的 proportion 挤占——对话框高度不足时预览区曾被
-    // 压成 0 高（只剩标签可见）。
-    wxPanel* previewPanel = new wxPanel(chainTab);
-    wxTextCtrl* previewBox = new wxTextCtrl(previewPanel, wxID_ANY, wxEmptyString,
-                                           wxDefaultPosition, wxSize(-1, 220),
-                                           wxTE_MULTILINE | wxTE_READONLY | wxTE_DONTWRAP);
-    previewBox->SetFont(wxFont(9, wxFONTFAMILY_MODERN, wxFONTSTYLE_NORMAL,
-                               wxFONTWEIGHT_NORMAL));
-    // 硬下限：对话框高度不足时 sizer 会把可扩展控件压到 min size，
-    // 不设 min size 时 wxTextCtrl 可被压成 0 高（只剩上方标签可见）。
-    previewBox->SetMinSize(wxSize(200, 160));
-    wxBoxSizer* previewSizer = new wxBoxSizer(wxVERTICAL);
-    previewSizer->Add(new wxStaticText(previewPanel, wxID_ANY,
-        L"配置 JSON 预览（resolveToConfig 输出）:"), 0, wxEXPAND | wxALL, 4);
-    previewSizer->Add(previewBox, 1, wxEXPAND | wxALL, 4);
-    previewPanel->SetSizer(previewSizer);
-
-    wxPanel* editPanel = new wxPanel(chainTab);
     wxBoxSizer* editSizer = new wxBoxSizer(wxVERTICAL);
-    editSizer->Add(titleSizer, 0, wxEXPAND | wxALL, 6);
-    editSizer->Add(bodySizer, 1, wxEXPAND | wxLEFT | wxRIGHT, 6);
-    editSizer->Add(chainStatus_, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, 6);
+    editSizer->Add(editTitleSizer, 0, wxEXPAND | wxALL, 6);
+    editSizer->Add(editBodySizer, 1, wxEXPAND | wxLEFT | wxRIGHT, 6);
+    editSizer->Add(editStatus, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, 6);
     editPanel->SetSizer(editSizer);
 
     wxPanel* topPanel = new wxPanel(chainTab);
