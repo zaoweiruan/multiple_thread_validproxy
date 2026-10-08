@@ -85,9 +85,13 @@ private:
     ~ComponentRegistry() = default;
     ComponentRegistry(const ComponentRegistry&) = delete;
     ComponentRegistry& operator=(const ComponentRegistry&) = delete;
-    
+
+    /// 首次访问时幂等注册默认组件类型（见 .cpp 中 instance() 说明）
+    void ensureDefaults();
+
     std::unordered_map<ComponentType, ComponentMetadata> metadata_;
     std::unordered_map<std::string, ComponentType> sectionMap_;
+    bool defaultsRegistered_{false};
 };
 
 } // namespace config

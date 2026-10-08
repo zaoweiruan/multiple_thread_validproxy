@@ -302,3 +302,32 @@ TEST_F(ComponentRegistryTest, CombinationStrategyCounts) {
     EXPECT_EQ(mergeCount, 1);
     EXPECT_EQ(appendCount, 2);
 }
+
+// ---------------------------------------------------------------------------
+// 生产路径回归：instance() 必须在未显式 registerDefaultTypes() 时也已注册，
+// 否则 UI 组件列表全显示 unknown，且 mergeComponents 拿不到 APPEND/MERGE
+// 策略导致 inbounds/outbounds 被误按 OVERRIDE 覆盖（bug 2026-10-08）。
+// ---------------------------------------------------------------------------
+TEST(ComponentRegistryAutoRegister, InstanceRegistersDefaultsWithoutExplicitCall) {
+    ComponentRegistry& registry = ComponentRegistry::instance();
+    // 不调用 registerDefaultTypes()，模拟生产代码首次访问
+    EXPECT_EQ(registry.count(), 15);
+    EXPECT_TRUE(registry.isRegistered(ComponentType::INBOUND));
+    EXPECT_TRUE(registry.isRegistered(ComponentType::OUTBOUND));
+
+    // 关键：数组组件策略必须为 APPEND（否则链合并会覆盖而非追加）
+    EXPECT_EQ(registry.getStrategy(ComponentType::INBOUND),
+              CombinationStrategy::APPEND);
+    EXPECT_EQ(registry.getStrategy(ComponentType::OUTBOUND),
+              CombinationStrategy::APPEND);
+    EXPECT_EQ(registry.getStrategy(ComponentType::ROUTING),
+              CombinationStrategy::MERGE);
+
+    // UI 依赖的显示字段不可为空
+    const ComponentMetadata* inMeta =
+        registry.getMetadata(ComponentType::INBOUND);
+    ASSERT_NE(inMeta, nullptr);
+    EXPECT_FALSE(inMeta->displayName.empty());
+    EXPECT_EQ(inMeta->configSection, "inbounds");
+    EXPECT_EQ(registry.typeToString(ComponentType::OUTBOUND), "outbounds");
+}

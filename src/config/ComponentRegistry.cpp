@@ -6,7 +6,22 @@ namespace config {
 
 ComponentRegistry& ComponentRegistry::instance() {
     static ComponentRegistry registry;
+    // 首次访问时自动注册 15 种默认组件类型。
+    // 生产代码此前从未显式调用 registerDefaultTypes()，导致 getMetadata()
+    // 恒返回 nullptr：UI 组件列表全显示 unknown，且 BundleChainResolver::
+    // mergeComponents 拿不到策略，数组组件（inbounds/outbounds）被误按
+    // OVERRIDE 覆盖而非 APPEND 追加。ensureDefaults 幂等，测试显式调用
+    // registerDefaultTypes() 仍然有效（其内部会先 clear 再全量注册）。
+    registry.ensureDefaults();
     return registry;
+}
+
+void ComponentRegistry::ensureDefaults() {
+    if (defaultsRegistered_) {
+        return;
+    }
+    defaultsRegistered_ = true;
+    registerDefaultTypes();
 }
 
 void ComponentRegistry::registerType(const ComponentMetadata& metadata) {
@@ -201,6 +216,10 @@ void ComponentRegistry::registerDefaultTypes() {
 void ComponentRegistry::clear() {
     metadata_.clear();
     sectionMap_.clear();
+    // 清空即视为「未注册默认类型」：下次 instance() 会重新注册 15 种默认类型，
+    // 保证生产路径与测试路径上单例始终可用（直接持有引用调 clear() 的用例
+    // 不经过 instance()，仍可观察到空表）。
+    defaultsRegistered_ = false;
 }
 
 size_t ComponentRegistry::count() const {
