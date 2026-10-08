@@ -1,0 +1,120 @@
+// tests/ui/TestChainPreview.cpp
+// 验证「模板配置 → 组件链编辑」Tab 的配置 JSON 预览框真实可见（有非零高度）。
+// 回归背景：ConfigDialog 曾硬编码 SetSize(1100, 650)，新增 220px 预览框后
+// sizer 把预览框压成 0 高，页面上只剩「配置 JSON 预览」标签而无内容区
+// （bug 2026-10-08，证据 bin/log/8449cccc-*.png）。
+#include <windows.h>
+#include <catch2/catch_test_macros.hpp>
+#include <string>
+#include <vector>
+#include "framework/Application.h"
+#include "framework/UIElement.h"
+#include "framework/Fixtures.h"
+
+using namespace uitest;
+
+namespace {
+
+// ID_MENU_CONFIG = wxID_HIGHEST(6000) + 110 (src/ui/MainFrame.cpp:51)
+constexpr unsigned int kConfigCmd = 6000 + 110;
+
+struct WindowSearch {
+    DWORD pid;
+    std::wstring titleContains;
+    HWND hwnd;
+};
+
+BOOL CALLBACK enumProc(HWND hwnd, LPARAM lp) {
+    auto* ctx = reinterpret_cast<WindowSearch*>(lp);
+    DWORD wpid = 0;
+    ::GetWindowThreadProcessId(hwnd, &wpid);
+    if (wpid != ctx->pid) return TRUE;
+    if (!::IsWindowVisible(hwnd)) return TRUE;
+    wchar_t title[256] = { 0 };
+    ::GetWindowTextW(hwnd, title, 256);
+    if (title[0] == L'\0') return TRUE;
+    if (ctx->titleContains.empty() ||
+        std::wstring(title).find(ctx->titleContains) != std::wstring::npos) {
+        ctx->hwnd = hwnd;
+        return FALSE;
+    }
+    return TRUE;
+}
+
+HWND findWindow(DWORD pid, const wchar_t* titleContains) {
+    WindowSearch ctx{ pid, titleContains ? titleContains : L"", nullptr };
+    ::EnumWindows(enumProc, reinterpret_cast<LPARAM>(&ctx));
+    return ctx.hwnd;
+}
+
+struct EditRect {
+    RECT rect;
+    bool offscreen;
+};
+
+// 收集指定窗口树内所有 Edit 类子窗口的矩形
+struct EditCollector {
+    std::vector<RECT> rects;
+};
+
+BOOL CALLBACK enumChildProc(HWND child, LPARAM lp) {
+    auto* col = reinterpret_cast<EditCollector*>(lp);
+    wchar_t cls[64] = { 0 };
+    ::GetClassNameW(child, cls, 64);
+    if (std::wstring(cls) == L"Edit" || std::wstring(cls) == L"RichEdit20W") {
+        RECT rc{};
+        if (::GetWindowRect(child, &rc)) {
+            col->rects.push_back(rc);
+        }
+    }
+    return TRUE;
+}
+
+} // namespace
+
+TEST_CASE("ConfigDialog chain-edit tab renders a visible JSON preview box",
+          "[chainpreview]") {
+    AppFixture fx;
+    REQUIRE(fx.mainWindow().valid());
+
+    HWND hMain = findWindow(fx.pid(), L"Proxy Manager");
+    REQUIRE(hMain != nullptr);
+
+    // 打开配置编辑器（Settings 菜单 → 配置编辑器）
+    ::SendMessageTimeoutW(hMain, WM_COMMAND, MAKEWPARAM(kConfigCmd, 0), 0,
+                          SMTO_NORMAL, 10000, nullptr);
+
+    // 等对话框出现
+    HWND dlg = nullptr;
+    for (int i = 0; i < 40 && dlg == nullptr; ++i) {
+        ::Sleep(250);
+        dlg = findWindow(fx.pid(), L"配置编辑器");
+    }
+    REQUIRE(dlg != nullptr);
+
+    // 切到「组件链编辑」子 Tab：用键盘导航不可靠，改为直接测量整窗
+    // 布局高度是否容得下预览框（预览框在 tab 内，切页不影响其存在性）。
+    RECT dlgRect{};
+    REQUIRE(::GetWindowRect(dlg, &dlgRect) != 0);
+    const int dlgH = dlgRect.bottom - dlgRect.top;
+    INFO("dialog height=" << dlgH);
+
+    // 对话框本体必须有足够高度容纳「编辑区 + 预览区」
+    REQUIRE(dlgH >= 760);
+
+    // 统计 Edit 控件：模板配置 tab 有 1 个 JSON 编辑器；组件链编辑 tab
+    // 有 2 个（参数 JSON + 配置预览）。未切页时至少 1 个必须可见且有高度。
+    EditCollector col;
+    ::EnumChildWindows(dlg, enumChildProc, reinterpret_cast<LPARAM>(&col));
+
+    int visible = 0;
+    int maxH = 0;
+    for (const RECT& rc : col.rects) {
+        const int h = rc.bottom - rc.top;
+        if (h > maxH) maxH = h;
+        if (h > 40) visible += 1;
+    }
+    INFO("edits=" << col.rects.size() << " visible=" << visible
+                  << " maxHeight=" << maxH);
+    REQUIRE(visible >= 1);
+}

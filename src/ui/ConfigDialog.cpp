@@ -2,6 +2,7 @@
 
 #include <wx/sizer.h>
 #include <wx/tokenzr.h>
+#include <wx/display.h>
 #include <wx/propgrid/propgrid.h>
 #include <wx/propgrid/advprops.h>
 #include <wx/msgdlg.h>
@@ -82,7 +83,7 @@ wxEND_EVENT_TABLE()
 ConfigDialog::ConfigDialog(wxWindow* parent, const config::AppConfig& cfg, sqlite3* db,
                            const std::string& configPath)
     : wxDialog(parent, wxID_ANY, L"配置编辑器",
-                wxDefaultPosition, wxDefaultSize,
+                wxDefaultPosition, wxSize(1500, 950),
                 wxDEFAULT_DIALOG_STYLE | wxRESIZE_BORDER)
     , db_(db)
     , configPath_(configPath)
@@ -319,8 +320,22 @@ ConfigDialog::ConfigDialog(wxWindow* parent, const config::AppConfig& cfg, sqlit
     Layout();
     topSizer->Fit(this);
     topSizer->SetSizeHints(this);
-    SetMinSize(wxSize(1100, 650));
-    SetSize(wxSize(1100, 650));
+    // 尺寸：宽度满足「模板列表 + 组件链编辑（Bundle 列表 | 组件表）+
+    // 配置 JSON 预览」同屏布局；高度按屏幕可用区域自适应，下限 780
+    // （此前硬编码 1100x650 会把「组件链编辑」Tab 的 JSON 预览框压成 0 高，
+    //  只剩上方标签可见）。
+    int screenW = 0;
+    int screenH = 0;
+    wxDisplaySize(&screenW, &screenH);
+    int dialogH = 780;
+    if (screenH > 0) {
+        const int usable = static_cast<int>(screenH * 0.85);
+        if (usable > dialogH) {
+            dialogH = (usable > 1200) ? 1200 : usable;
+        }
+    }
+    SetMinSize(wxSize(1100, 780));
+    SetSize(wxSize(1440, dialogH));
     CentreOnScreen();
 
     // Load templates after layout
@@ -1788,13 +1803,12 @@ void ConfigDialog::createChainEditTab() {
         chainStatus_->SetLabel(statusText);
 
         // 配置预览（resolveToConfig 填充 result.config）
-        if (result.success && result.config.is_object()) {
-            showChainPreview(prettyJson(result.config, 0));
-        } else if (!result.errorMessage.empty()) {
-            showChainPreview(wxString::Format(L"// 解析失败：%s",
-                                              result.errorMessage).ToStdString());
+        if (!result.success) {
+            showChainPreview(std::string("// 解析失败：") + result.errorMessage);
+        } else if (result.config.is_null()) {
+            showChainPreview(std::string("// 解析成功，但生成的配置为空"));
         } else {
-            showChainPreview(std::string());
+            showChainPreview(prettyJson(result.config, 0));
         }
     };
 
@@ -1813,23 +1827,44 @@ void ConfigDialog::createChainEditTab() {
     bodySizer->Add(chainEditor_, 1, wxEXPAND | wxRIGHT, 8);
     bodySizer->Add(componentListPanel_, 1, wxEXPAND, 0);
 
-    // 配置 JSON 预览（resolveToConfig 的输出，占位符已替换）
-    wxBoxSizer* previewTitleSizer = new wxBoxSizer(wxHORIZONTAL);
-    previewTitleSizer->Add(new wxStaticText(chainTab, wxID_ANY,
-        L"配置 JSON 预览（resolveToConfig 输出）:"), 0, wxALIGN_CENTER_VERTICAL);
-    chainPreview_ = new wxTextCtrl(chainTab, wxID_ANY, wxEmptyString,
-                                  wxDefaultPosition, wxSize(-1, 220),
-                                  wxTE_MULTILINE | wxTE_READONLY | wxTE_DONTWRAP);
-    chainPreview_->SetFont(wxFont(9, wxFONTFAMILY_MODERN, wxFONTSTYLE_NORMAL,
-                                  wxFONTWEIGHT_NORMAL));
+    // 配置 JSON 预览（resolveToConfig 的输出，占位符已替换）。
+    // 上下两个独立 panel（编辑区 / 预览区），预览框有 200px 初始高度，
+    // 不再用单一 sizer 的 proportion 挤占——对话框高度不足时预览区曾被
+    // 压成 0 高（只剩标签可见）。
+    wxPanel* previewPanel = new wxPanel(chainTab);
+    wxTextCtrl* previewBox = new wxTextCtrl(previewPanel, wxID_ANY, wxEmptyString,
+                                           wxDefaultPosition, wxSize(-1, 220),
+                                           wxTE_MULTILINE | wxTE_READONLY | wxTE_DONTWRAP);
+    previewBox->SetFont(wxFont(9, wxFONTFAMILY_MODERN, wxFONTSTYLE_NORMAL,
+                               wxFONTWEIGHT_NORMAL));
+    // 硬下限：对话框高度不足时 sizer 会把可扩展控件压到 min size，
+    // 不设 min size 时 wxTextCtrl 可被压成 0 高（只剩上方标签可见）。
+    previewBox->SetMinSize(wxSize(200, 160));
+    wxBoxSizer* previewSizer = new wxBoxSizer(wxVERTICAL);
+    previewSizer->Add(new wxStaticText(previewPanel, wxID_ANY,
+        L"配置 JSON 预览（resolveToConfig 输出）:"), 0, wxEXPAND | wxALL, 4);
+    previewSizer->Add(previewBox, 1, wxEXPAND | wxALL, 4);
+    previewPanel->SetSizer(previewSizer);
+
+    wxPanel* editPanel = new wxPanel(chainTab);
+    wxBoxSizer* editSizer = new wxBoxSizer(wxVERTICAL);
+    editSizer->Add(titleSizer, 0, wxEXPAND | wxALL, 6);
+    editSizer->Add(bodySizer, 1, wxEXPAND | wxLEFT | wxRIGHT, 6);
+    editSizer->Add(chainStatus_, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, 6);
+    editPanel->SetSizer(editSizer);
+
+    wxPanel* topPanel = new wxPanel(chainTab);
+    wxBoxSizer* topSizer = new wxBoxSizer(wxVERTICAL);
+    topSizer->Add(editPanel, 1, wxEXPAND | wxALL, 4);
+    topPanel->SetSizer(topSizer);
 
     wxBoxSizer* mainSizer = new wxBoxSizer(wxVERTICAL);
-    mainSizer->Add(titleSizer, 0, wxEXPAND | wxALL, 6);
-    mainSizer->Add(bodySizer, 3, wxEXPAND | wxLEFT | wxRIGHT, 6);
-    mainSizer->Add(chainStatus_, 0, wxEXPAND | wxLEFT | wxRIGHT | wxTOP, 6);
-    mainSizer->Add(previewTitleSizer, 0, wxEXPAND | wxLEFT | wxRIGHT | wxTOP, 6);
-    mainSizer->Add(chainPreview_, 2, wxEXPAND | wxALL, 6);
+    mainSizer->Add(topPanel, 3, wxEXPAND | wxALL, 4);
+    mainSizer->Add(previewPanel, 2, wxEXPAND | wxALL, 4);
     chainTab->SetSizer(mainSizer);
+
+    // 预览框成员指针（供 showChainPreview 写入）
+    chainPreview_ = previewBox;
 
     templateSubNotebook_->AddPage(chainTab, L"组件链编辑");
 }
