@@ -1,12 +1,15 @@
 ---
 title: "配置生成管线（ConfigPipeline）设计方案"
 type: design
-status: draft
+status: approved
 date: 2026-09-22
-version: "1.0"
+version: "1.2"
 ---
 
 # 配置生成管线（ConfigPipeline）设计方案
+
+> **实施状态**: 全部 6 个阶段完成（Phase 1-6 ✅）
+> **验证结果**: 构建 0 errors + ConfigGeneratorTest 98/98 passed + 全量 ctest 48/48（100% pass rate）
 
 ## 1. 背景与动机
 
@@ -84,18 +87,23 @@ public:
 };
 ```
 
-#### 2.2.2 PipelineContext
+#### 2.2.2 PipelineContext（值类型，消除引用安全风险）
+
+> **评审 R1 修复**：profile/vars 改为值传递，消除悬垂引用风险。
 
 ```cpp
 // include/config/PipelineContext.h
 struct PipelineContext {
     ProxyType proxyType;
-    const db::models::Profileitem* profile;  // nullable
-    const ConfigVariables& vars;
-    sqlite3* db;
+    db::models::Profileitem profile;   // 值传递，可为空（无 profile 时各字段为空）
+    bool hasProfile = false;           // profile 是否有效（address 非空）
+    ConfigVariables vars;              // 值传递
+    sqlite3* db = nullptr;             // 非拥有指针，仅用于 DB 查询
     std::string clientName;
 };
 ```
+
+**说明**：`ConfigVariables` 含 `socksPort`/`apiPort`/`probeUrl`/`observatoryInterval`/`balancerStrategy`，值拷贝开销可忽略。`Profileitem` 同样为轻量结构体。
 
 #### 2.2.3 StepRegistry（步骤注册表）
 
@@ -157,7 +165,7 @@ private:
 | 类型 | 参数 | 说明 |
 |------|------|------|
 | `replace_variables` | `{socksPort, apiPort, probeUrl, ...}` | 占位符替换（复用现有 `replacePlaceholders()`） |
-| `add_outbound` | `{tag, protocol, settings?, source?}` | 添加出站；`source:"profile"` 表示从 profile 生成 |
+| `add_outbound` | `{tag, protocol, settings?, source?}` | 添加出站；`source:"profile"` 表示从 `ctx.profile` 生成（`hasProfile==false` 或 `address` 为空时跳过此步骤，不添加出站也不报错） |
 | `add_inbound` | `{tag, protocol, settings, ...}` | 添加/修改入站 |
 | `merge_routing` | `{inboundTag, outboundTag?, balancerTag?}` | 合并路由规则（复用现有 `mergeSocksInboundRule()`） |
 | `add_observatory` | `{subjectSelector, probeUrl, probeInterval}` | 添加 observatory 配置 |
@@ -165,7 +173,27 @@ private:
 | `add_stats` | `{}` | 添加 stats 配置（空对象） |
 | `add_policy` | `{levels, system}` | 添加 policy 配置 |
 | `add_api` | `{tag, listen, services}` | 添加 API 入站配置 |
-| `modify_field` | `{path, value}` | 修改任意 JSON 字段（JSONPath 简化版） |
+| `modify_field` | `{path, value}` | 修改任意 JSON 字段；`path` 语法：`.` 分隔层级 + `[n]` 数组索引（如 `routing.rules[0].inboundTag`、`inbounds[0].port`、`log.access`），不存在时逐级创建对象/数组 |
+
+### 2.3.3 模板继承与 Pipeline 交互（评审 R11 补充）
+
+Pipeline 在 `loadTemplateById()` **之后**执行，仅修改运行时字段：
+
+```
+loadTemplateById("xray_test_001")  // 递归加载父模板 + 深合并 → 完整基础配置
+  │
+  └── ConfigPipeline::execute()     // 按步骤顺序修改配置
+        ├── replace_variables       // 替换 ${socksPort} 等占位符
+        ├── add_outbound            // 添加代理出站（source:"profile"）
+        ├── merge_routing           // 合并 socks 路由规则
+        └── ...
+```
+
+**设计原则**：
+- 模板提供**静态基础结构**（log/dns/routing/api/stats/policy/balancers）
+- Pipeline 步骤仅添加**运行时动态字段**（outbounds、占位符替换、routing 合并）
+- 两者职责分离，互不干扰
+- Pipeline 不修改模板的 log/dns/api/stats/policy/balancers 等静态配置
 
 #### 2.3.2 步骤参数占位符
 
@@ -214,21 +242,113 @@ private:
 }
 ```
 
----
+### 2.5 错误处理策略（评审 R5 补充）
 
-## 3. 迁移策略
+每步独立 try-catch，错误策略由步骤参数 `onError` 控制（默认 `"continue"`）：
+
+| 策略 | 行为 | 适用场景 |
+|------|------|---------|
+| `continue` | 记录 WARN 日志，跳过该步继续执行后续步骤 | 默认，大多数步骤 |
+| `fail_fast` | 记录 ERR 日志，抛出异常终止整个管线 | 关键步骤（如 `replace_variables`） |
+| `fallback` | 记录 ERR 日志，整个管线回退到硬编码路径重新执行 | 需要保障配置完整性的场景 |
+
+```json
+{"type": "replace_variables", "params": {}, "onError": "fail_fast"},
+{"type": "add_outbound", "params": {"tag": "proxy", "source": "profile"}, "onError": "continue"},
+{"type": "modify_field", "params": {"path": "log.access", "value": null}, "onError": "continue"}
+```
+
+### 2.6 SingBox 管线定义（评审 R3 补充）
+
+SingBox 与 Xray 的 JSON 结构差异较大（`outbounds`→`outbounds`、`inbounds`→`inbounds`、`routing`→`route`），通过 `modify_field` 步骤适配：
+
+```json
+{
+  "config_pipeline": {
+    "test_singbox": {
+      "template": "singbox_test_001",
+      "steps": [
+        {"type": "replace_variables", "params": {}},
+        {"type": "add_outbound", "params": {"tag": "proxy", "source": "profile"}, "onError": "continue"},
+        {"type": "add_outbound", "params": {"tag": "direct", "protocol": "direct"}},
+        {"type": "merge_routing", "params": {"inboundTag": "socks", "outboundTag": "proxy"}}
+      ]
+    }
+  }
+}
+```
+
+SingBox 步骤的 `add_outbound` handler 根据 `ctx.proxyType` 自动分派到 SingBox outbound 格式。
+
+### 2.7 配置加载流程（评审 R6 补充）
+
+```
+应用启动
+  │
+  ├── ConfigReader::load() → 读取 config.json
+  │     └── 解析 "config_pipeline" 段 → boost::json::value pipelineJson
+  │
+  └── AppController 构造
+        └── ConfigPipeline pipeline(db)
+              └── pipeline.loadConfig(pipelineJson)  // 解析 + 校验步骤类型
+                    ├── 步骤类型不存在 → WARN 日志，跳过
+                    ├── params JSON 解析失败 → WARN 日志，跳过
+                    └── 全部合法 → 存入 pipelines_ map
+
+每次 build() 调用
+  │
+  ├── 检查 pipelines_ 是否为空
+  │     ├── 空 → 硬编码路径（现有 buildXxxConfig）
+  │     └── 非空 → ConfigPipeline::execute()（管线路径）
+  │                  ├── 管线执行成功 → validateConfig() → 返回
+  │                  └── 管线执行失败 + onError="fallback" → 回退硬编码路径
+  │
+  └── 返回配置
+```
+
+### 2.8 步骤幂等性（评审 R7 补充）
+
+所有步骤设计为**幂等**——重复执行同一配置产生相同结果：
+- `replace_variables`：替换已完成占位符后再次执行无效果
+- `add_outbound`：按 tag 去重，已存在同名 outbound 则更新 settings 而非追加
+- `merge_routing`：先移除已有 socks 规则再添加，天然幂等
+- `modify_field`：覆盖写入，幂等
+- `add_stats`/`add_policy`/`add_api`：覆盖写入对应顶级键，幂等
+
+### 2.9 StepRegistry 线程安全（评审 R8 补充）
+
+```cpp
+class StepRegistry {
+public:
+    static StepRegistry& instance();  // Meyer's Singleton
+    void registerHandler(...);         // 初始化阶段调用，无需锁
+    const std::shared_ptr<const StepHandler> getHandler(...) const;  // 只读，线程安全
+private:
+    std::unordered_map<...> handlers_;  // 初始化后只读
+};
+```
+
+**约定**：`registerHandler()` 仅在应用启动阶段（`main()` → `AppController` 构造前）调用一次，之后只读。管线执行器读取 `getHandler()` 为 const 操作，天然线程安全。
+
+### 2.10 validateConfig 集成（评审 R9 补充）
+
+`ConfigPipeline::execute()` 执行完成后调用 `ConfigBuilder::validateConfig()` 校验结果。校验失败时：
+- 若 `onError="fallback"` → 抛出异常触发回退
+- 若 `onError="continue"` → 记录 WARN 日志，仍返回配置（与现有行为一致）
+
+---
 
 ### 3.1 分阶段实施
 
-| 阶段 | 内容 | 工时 | 风险 |
-|------|------|------|------|
-| **Phase 1** | 基础设施：StepHandler 接口 + StepRegistry + PipelineContext + PipelineConfig 解析 | 1d | 低 |
-| **Phase 2** | 核心步骤实现：replace_variables + add_outbound + merge_routing | 1d | 低 |
-| **Phase 3** | 扩展步骤：add_observatory + add_balancer + modify_field + 剩余步骤 | 0.5d | 低 |
-| **Phase 4** | ConfigBuilder 集成：build() 委托给 Pipeline + 回退到硬编码路径 | 0.5d | 中 |
-| **Phase 5** | 单元测试：每个步骤类型 + 完整管线 + 回退路径 | 1d | 中 |
-| **Phase 6** | 文档 + 配置示例 + 迁移指南 | 0.5d | 低 |
-| **总计** | | **4.5d** | |
+| 阶段 | 内容 | 工时 | 风险 | 状态 |
+|------|------|------|------|------|
+| **Phase 1** | 基础设施：StepHandler 接口 + StepRegistry + PipelineContext + PipelineConfig 解析 | 1.5d | 低 | ✅ 完成 |
+| **Phase 2** | 核心步骤实现：replace_variables + add_outbound + merge_routing | 1.5d | 低 | ✅ 完成 |
+| **Phase 3** | 扩展步骤：add_inbound + add_observatory + add_balancer + add_stats + add_policy + add_api + modify_field | 1d | 低 | ✅ 完成 |
+| **Phase 4** | ConfigBuilder 集成：build() 委托给 Pipeline + 回退到硬编码路径 | 0.5d | 中 | ✅ 完成 |
+| **Phase 5** | 单元测试：每个步骤类型 + 完整管线 + 回退路径 | 1.5d | 中 | ✅ 完成 (98 tests) |
+| **Phase 6** | 文档 + 配置示例 + 迁移指南 | 0.5d | 低 | ✅ 完成 |
+| **总计** | | **6.5d** | | |
 
 ### 3.2 向后兼容
 
@@ -279,7 +399,7 @@ ConfigBuilder::build()
 
 ## 5. 未来扩展
 
-- **UI 可视化编排**：在配置对话框的"模板种子" tab 旁增加"管线编排" tab，列表显示步骤，支持拖拽排序
+- **UI 可视化编排**：在配置对话框的"模板配置" tab 旁增加"管线编排" tab，列表显示步骤，支持拖拽排序
 - **步骤条件执行**：步骤支持 `if` 条件表达式（如 `if: "${enableObservatory}"`）
 - **步骤模板复用**：步骤组可提取为命名模板，多个模式引用同一组步骤
 - **步骤日志**：每步执行前后输出 TRACE 日志，便于调试

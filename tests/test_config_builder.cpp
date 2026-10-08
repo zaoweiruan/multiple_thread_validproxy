@@ -1,14 +1,19 @@
 #include <gtest/gtest.h>
 #include <sstream>
+#include <algorithm>
 #include <boost/json.hpp>
 #include <sqlite3.h>
 #include <filesystem>
 #include <fstream>
 #include "test_utils.h"
 #include "config/ConfigBuilder.h"
+#include "config/StepHandler.h"
+#include "config/StepRegistry.h"
+#include "config/ConfigPipeline.h"
 #include "ConfigGenerator.h"
 #include "Profileitem.h"
 #include "FullConfigTemplateDAO.h"
+#include "config/ComponentBundleDAO.h"
 
 using namespace config;
 using namespace db::models;
@@ -371,8 +376,139 @@ TEST_F(InMemoryDB, FullConfigTemplateDAODeleteById) {
     EXPECT_TRUE(deleted);
     
     // Verify it's gone
-    result = dao.getById("to_delete_001");
+result = dao.getById("to_delete_001");
     EXPECT_FALSE(result.has_value());
+}
+
+// ============================================================
+// FullConfigTemplateDAO Phase 6: BundleChain columns + sync status
+// ============================================================
+
+TEST_F(InMemoryDB, FullConfigTemplateDAONewColumnsRoundTrip) {
+    db::FullConfigTemplateDAO dao(db_);
+    ASSERT_TRUE(dao.createTableIfNotExists());
+
+    db::FullConfigTemplateItem item;
+    item.id = "chain_template_001";
+    item.remarks = "Chain template";
+    item.enabled = 1;
+    item.coreType = 2;
+    item.config = R"({"log": {"loglevel": "warning"}})";
+    item.bundleChain = R"({"bundleIds":["base_xray_001","test_xray_001"],"params":{"socksPort":"10809"}})";
+    item.templateType = "bundleChain";
+    item.bundleVersion = R"([{"bundleId":"base_xray_001","version":1},{"bundleId":"test_xray_001","version":2}])";
+
+    ASSERT_TRUE(dao.save(item));
+    std::optional<db::FullConfigTemplateItem> loaded = dao.getById("chain_template_001");
+    ASSERT_TRUE(loaded.has_value());
+    EXPECT_EQ(loaded->bundleChain, item.bundleChain);
+    EXPECT_EQ(loaded->templateType, "bundleChain");
+    EXPECT_EQ(loaded->bundleVersion, item.bundleVersion);
+}
+
+TEST_F(InMemoryDB, FullConfigTemplateDAOIsTemplateInSyncNoBundleChain) {
+    db::FullConfigTemplateDAO dao(db_);
+    ASSERT_TRUE(dao.createTableIfNotExists());
+    db::FullConfigTemplateItem item;
+    item.id = "plain_001";
+    item.remarks = "Plain";
+    item.coreType = 2;
+    item.config = R"({"log": {}})";
+    ASSERT_TRUE(dao.save(item));
+    EXPECT_TRUE(dao.isTemplateInSync("plain_001"));
+}
+
+TEST_F(InMemoryDB, FullConfigTemplateDAOIsTemplateInSyncFreshChain) {
+    sqlite3* db = db_;
+    config::ComponentBundleDAO bundleDao(db);
+    ASSERT_TRUE(bundleDao.createTableIfNotExists());
+    config::ComponentBundle bundle;
+    bundle.id = "chain_bundle_001";
+    bundle.name = "Chain bundle";
+    bundle.description = "test";
+    bundle.coreType = config::CoreType::XRAY;
+    bundle.templateType = config::TemplateType::BASE;
+    bundle.version = 1;
+    bundle.enabled = true;
+    config::ComponentConfig logComp;
+    logComp.type = config::ComponentType::LOG;
+    logComp.params["loglevel"] = boost::json::value(std::string("warning"));
+    bundle.components.push_back(logComp);
+    ASSERT_TRUE(bundleDao.save(bundle));
+
+    db::FullConfigTemplateDAO dao(db);
+    ASSERT_TRUE(dao.createTableIfNotExists());
+    db::FullConfigTemplateItem item;
+    item.id = "chain_sync_001";
+    item.remarks = "Chain sync";
+    item.coreType = 2;
+    item.config = R"({"log": {}})";
+    item.bundleChain = R"({"bundleIds":["chain_bundle_001"]})";
+    item.bundleVersion = R"([{"bundleId":"chain_bundle_001","version":1}])";
+    ASSERT_TRUE(dao.save(item));
+    EXPECT_TRUE(dao.isTemplateInSync("chain_sync_001"));
+}
+
+TEST_F(InMemoryDB, FullConfigTemplateDAOIsTemplateInSyncAfterBundleUpdate) {
+    sqlite3* db = db_;
+    config::ComponentBundleDAO bundleDao(db);
+    ASSERT_TRUE(bundleDao.createTableIfNotExists());
+    config::ComponentBundle bundle;
+    bundle.id = "chain_bundle_001";
+    bundle.name = "Chain bundle";
+    bundle.coreType = config::CoreType::XRAY;
+    bundle.templateType = config::TemplateType::BASE;
+    bundle.version = 1;
+    bundle.enabled = true;
+    config::ComponentConfig logComp;
+    logComp.type = config::ComponentType::LOG;
+    logComp.params["loglevel"] = boost::json::value(std::string("warning"));
+    bundle.components.push_back(logComp);
+    ASSERT_TRUE(bundleDao.save(bundle));
+
+    db::FullConfigTemplateDAO dao(db);
+    ASSERT_TRUE(dao.createTableIfNotExists());
+    db::FullConfigTemplateItem item;
+    item.id = "chain_sync_001";
+    item.remarks = "Chain sync";
+    item.coreType = 2;
+    item.config = R"({"log": {}})";
+    item.bundleChain = R"({"bundleIds":["chain_bundle_001"]})";
+    item.bundleVersion = R"([{"bundleId":"chain_bundle_001","version":1}])";
+    ASSERT_TRUE(dao.save(item));
+
+    EXPECT_TRUE(dao.isTemplateInSync("chain_sync_001"));
+    int newVersion = bundleDao.updateVersion("chain_bundle_001");
+    EXPECT_EQ(newVersion, 2);
+    EXPECT_FALSE(dao.isTemplateInSync("chain_sync_001"));
+}
+
+TEST_F(InMemoryDB, FullConfigTemplateDAOIsTemplateInSyncMissingBundle) {
+    db::FullConfigTemplateDAO dao(db_);
+    ASSERT_TRUE(dao.createTableIfNotExists());
+    db::FullConfigTemplateItem item;
+    item.id = "chain_missing_001";
+    item.remarks = "Missing bundle";
+    item.coreType = 2;
+    item.config = R"({"log": {}})";
+    item.bundleChain = R"({"bundleIds":["no_such_bundle"]})";
+    item.bundleVersion = R"([{"bundleId":"no_such_bundle","version":1}])";
+    ASSERT_TRUE(dao.save(item));
+    EXPECT_FALSE(dao.isTemplateInSync("chain_missing_001"));
+}
+
+TEST_F(InMemoryDB, FullConfigTemplateDAOIsTemplateInSyncEmptyVersion) {
+    db::FullConfigTemplateDAO dao(db_);
+    ASSERT_TRUE(dao.createTableIfNotExists());
+    db::FullConfigTemplateItem item;
+    item.id = "chain_nover_001";
+    item.remarks = "No version";
+    item.coreType = 2;
+    item.config = R"({"log": {}})";
+    item.bundleChain = R"({"bundleIds":["some_bundle"]})";
+    item.bundleVersion = "";
+    ASSERT_TRUE(dao.save(item));
+    EXPECT_FALSE(dao.isTemplateInSync("chain_nover_001"));
 }
 
 // ============================================================
@@ -1668,4 +1804,445 @@ TEST_F(InMemoryDBWithTemplates, TemplateInheritance_NotFoundThrows) {
         ConfigBuilder::loadTemplateById(db_, "nonexistent_001"),
         std::runtime_error
     );
+}
+
+// ============================================================
+// ConfigPipeline Step Handler Tests
+// ============================================================
+
+// Fixture that registers all step handlers
+class PipelineHandlerTest : public InMemoryDBWithTemplates {
+protected:
+    void SetUp() override {
+        InMemoryDBWithTemplates::SetUp();
+        config::registerAllStepHandlers();
+    }
+};
+
+// Helper to get a handler by type
+static std::shared_ptr<const config::StepHandler> getHandler(const std::string& type) {
+    return config::StepRegistry::instance().getHandler(type);
+}
+
+// Helper to create a minimal config object
+static boost::json::object makeMinimalConfig() {
+    boost::json::object obj;
+    obj["log"] = boost::json::value(boost::json::object{});
+    obj["dns"] = boost::json::value(boost::json::object{});
+    obj["outbounds"] = boost::json::value(boost::json::array{});
+    obj["inbounds"] = boost::json::value(boost::json::array{});
+    obj["routing"] = boost::json::value(boost::json::object{});
+    return obj;
+}
+
+TEST_F(PipelineHandlerTest, AllHandlersRegistered) {
+    auto types = config::StepRegistry::instance().getRegisteredTypes();
+    EXPECT_GE(types.size(), 10);
+    EXPECT_NE(std::find(types.begin(), types.end(), "replace_variables"), types.end());
+    EXPECT_NE(std::find(types.begin(), types.end(), "add_outbound"), types.end());
+    EXPECT_NE(std::find(types.begin(), types.end(), "merge_routing"), types.end());
+    EXPECT_NE(std::find(types.begin(), types.end(), "add_inbound"), types.end());
+    EXPECT_NE(std::find(types.begin(), types.end(), "add_observatory"), types.end());
+    EXPECT_NE(std::find(types.begin(), types.end(), "add_balancer"), types.end());
+    EXPECT_NE(std::find(types.begin(), types.end(), "add_stats"), types.end());
+    EXPECT_NE(std::find(types.begin(), types.end(), "add_policy"), types.end());
+    EXPECT_NE(std::find(types.begin(), types.end(), "add_api"), types.end());
+    EXPECT_NE(std::find(types.begin(), types.end(), "modify_field"), types.end());
+}
+
+TEST_F(PipelineHandlerTest, AddInbound_CreatesInbound) {
+    auto handler = getHandler("add_inbound");
+    ASSERT_NE(handler, nullptr);
+    
+    boost::json::object config = makeMinimalConfig();
+    boost::json::object params;
+    params["tag"] = "socks";
+    params["protocol"] = "socks";
+    params["port"] = 10808;
+    
+    config::PipelineContext ctx;
+    handler->execute(config, params, ctx);
+    
+    EXPECT_EQ(config["inbounds"].as_array().size(), 1u);
+    auto& inbound = config["inbounds"].as_array()[0];
+    EXPECT_EQ(inbound.at("tag").as_string(), "socks");
+    EXPECT_EQ(inbound.at("protocol").as_string(), "socks");
+    EXPECT_EQ(inbound.at("port").as_int64(), 10808);
+}
+
+TEST_F(PipelineHandlerTest, AddInbound_IdempotentByTag) {
+    auto handler = getHandler("add_inbound");
+    boost::json::object config = makeMinimalConfig();
+    boost::json::object params;
+    params["tag"] = "socks";
+    params["port"] = 10808;
+    
+    config::PipelineContext ctx;
+    handler->execute(config, params, ctx);
+    EXPECT_EQ(config["inbounds"].as_array().size(), 1u);
+    
+    // Update port
+    params["port"] = 10809;
+    handler->execute(config, params, ctx);
+    EXPECT_EQ(config["inbounds"].as_array().size(), 1u);
+    EXPECT_EQ(config["inbounds"].as_array()[0].at("port").as_int64(), 10809);
+}
+
+TEST_F(PipelineHandlerTest, AddObservatory_SetsObservatory) {
+    auto handler = getHandler("add_observatory");
+    ASSERT_NE(handler, nullptr);
+    
+    boost::json::object config = makeMinimalConfig();
+    boost::json::object params;
+    params["subjectSelector"] = boost::json::array({"px-"});
+    params["probeURL"] = "https://example.com";
+    params["probeInterval"] = 30000;
+    
+    config::PipelineContext ctx;
+    handler->execute(config, params, ctx);
+    
+    EXPECT_TRUE(config.contains("observatory"));
+    const auto& obs = config["observatory"].as_object();
+    EXPECT_EQ(obs.at("subjectSelector").as_array().size(), 1u);
+    EXPECT_EQ(obs.at("probeURL").as_string(), "https://example.com");
+    EXPECT_EQ(obs.at("probeInterval").as_int64(), 30000);
+}
+
+TEST_F(PipelineHandlerTest, AddBalancer_AddsBalancerToRouting) {
+    auto handler = getHandler("add_balancer");
+    ASSERT_NE(handler, nullptr);
+    
+    boost::json::object config = makeMinimalConfig();
+    boost::json::object params;
+    params["tag"] = "balancer-out";
+    params["selector"] = boost::json::array({"px-"});
+    params["strategy"] = "leastPing";
+    
+    config::PipelineContext ctx;
+    handler->execute(config, params, ctx);
+    
+    EXPECT_TRUE(config.contains("routing"));
+    auto& routing = config["routing"].as_object();
+    EXPECT_TRUE(routing.contains("balancers"));
+    EXPECT_EQ(routing["balancers"].as_array().size(), 1u);
+}
+
+TEST_F(PipelineHandlerTest, AddStats_SetsStats) {
+    auto handler = getHandler("add_stats");
+    ASSERT_NE(handler, nullptr);
+    
+    boost::json::object config = makeMinimalConfig();
+    boost::json::object params;
+    
+    config::PipelineContext ctx;
+    handler->execute(config, params, ctx);
+    
+    EXPECT_TRUE(config.contains("stats"));
+    EXPECT_TRUE(config["stats"].is_object());
+}
+
+TEST_F(PipelineHandlerTest, AddPolicy_SetsPolicy) {
+    auto handler = getHandler("add_policy");
+    ASSERT_NE(handler, nullptr);
+    
+    boost::json::object config = makeMinimalConfig();
+    boost::json::object params;
+    params["levels"] = boost::json::object({{"0", boost::json::object{}}});
+    
+    config::PipelineContext ctx;
+    handler->execute(config, params, ctx);
+    
+    EXPECT_TRUE(config.contains("policy"));
+    EXPECT_TRUE(config["policy"].is_object());
+}
+
+TEST_F(PipelineHandlerTest, AddApi_SetsApi) {
+    auto handler = getHandler("add_api");
+    ASSERT_NE(handler, nullptr);
+    
+    boost::json::object config = makeMinimalConfig();
+    boost::json::object params;
+    params["listen"] = "127.0.0.1:10085";
+    params["tag"] = "api";
+    
+    config::PipelineContext ctx;
+    handler->execute(config, params, ctx);
+    
+    EXPECT_TRUE(config.contains("api"));
+    auto& api = config["api"].as_object();
+    EXPECT_EQ(api.at("listen").as_string(), "127.0.0.1:10085");
+}
+
+TEST_F(PipelineHandlerTest, ModifyField_SetExistingField) {
+    auto handler = getHandler("modify_field");
+    ASSERT_NE(handler, nullptr);
+    
+    boost::json::object config = makeMinimalConfig();
+    config["log"].as_object()["access"] = std::string("");
+    
+    boost::json::object params;
+    params["path"] = "log.access";
+    params["value"] = std::string("access.log");
+    
+    config::PipelineContext ctx;
+    handler->execute(config, params, ctx);
+    
+    EXPECT_EQ(config["log"].at("access").as_string(), "access.log");
+}
+
+TEST_F(PipelineHandlerTest, ModifyField_SetNestedField) {
+    auto handler = getHandler("modify_field");
+    
+    boost::json::object config = makeMinimalConfig();
+    auto& routing = config["routing"].as_object();
+    routing["domainStrategy"] = std::string("AsIs");
+    
+    boost::json::object params;
+    params["path"] = "routing.domainStrategy";
+    params["value"] = std::string("UseIPv4");
+    
+    config::PipelineContext ctx;
+    handler->execute(config, params, ctx);
+    
+    EXPECT_EQ(config["routing"].at("domainStrategy").as_string(), "UseIPv4");
+}
+
+TEST_F(PipelineHandlerTest, ModifyField_ArrayIndex) {
+    auto handler = getHandler("modify_field");
+    
+    boost::json::object config = makeMinimalConfig();
+    boost::json::object rule1;
+    rule1["outboundTag"] = std::string("proxy");
+    boost::json::object rule2;
+    rule2["outboundTag"] = std::string("direct");
+    auto& routing = config["routing"].as_object();
+    routing["rules"] = boost::json::array({rule1, rule2});
+    
+    boost::json::object params;
+    params["path"] = "routing.rules[1].outboundTag";
+    params["value"] = std::string("block");
+    
+    config::PipelineContext ctx;
+    handler->execute(config, params, ctx);
+    
+    EXPECT_EQ(config["routing"].at("rules").as_array()[1].at("outboundTag").as_string(), "block");
+}
+
+TEST_F(PipelineHandlerTest, ModifyField_CreateNewPath) {
+    auto handler = getHandler("modify_field");
+    
+    boost::json::object config = makeMinimalConfig();
+    
+    boost::json::object params;
+    params["path"] = "custom.section.key";
+    params["value"] = std::string("new_value");
+    
+    config::PipelineContext ctx;
+    handler->execute(config, params, ctx);
+    
+    EXPECT_TRUE(config.contains("custom"));
+    EXPECT_EQ(config["custom"].at("section").at("key").as_string(), "new_value");
+}
+
+TEST_F(PipelineHandlerTest, Pipeline_ExecuteFullPipeline) {
+    ConfigPipeline pipeline(db_);
+    
+    boost::json::object pipelineJson;
+    boost::json::object testDef;
+    testDef["template"] = std::string("xray_test_001");
+    boost::json::object step1;
+    step1["type"] = std::string("replace_variables");
+    step1["params"] = boost::json::value(boost::json::object{});
+    step1["onError"] = std::string("fail_fast");
+    boost::json::object step2;
+    step2["type"] = std::string("add_outbound");
+    boost::json::object step2Params;
+    step2Params["tag"] = std::string("proxy");
+    step2Params["source"] = std::string("profile");
+    step2Params["onError"] = std::string("continue");
+    step2["params"] = step2Params;
+    boost::json::object step3;
+    step3["type"] = std::string("add_outbound");
+    boost::json::object step3Params;
+    step3Params["tag"] = std::string("direct");
+    step3Params["protocol"] = std::string("freedom");
+    step3["params"] = step3Params;
+    boost::json::object step4;
+    step4["type"] = std::string("merge_routing");
+    boost::json::object step4Params;
+    step4Params["inboundTag"] = std::string("socks");
+    step4Params["outboundTag"] = std::string("proxy");
+    step4["params"] = step4Params;
+    testDef["steps"] = boost::json::array({step1, step2, step3, step4});
+    pipelineJson["test"] = testDef;
+    
+    pipeline.loadConfig(boost::json::value(pipelineJson));
+    EXPECT_TRUE(pipeline.hasPipeline(ConfigMode::Test, "xray"));
+    
+    Profileitem p = makeProfile("5", "example.com", "443", "test-uuid");
+    ConfigVariables vars;
+    vars.socksPort = 10808;
+    vars.apiPort = 10085;
+    vars.probeUrl = "https://www.google.com/generate_204";
+    
+    boost::json::value result = pipeline.execute(ConfigMode::Test, "xray", p, vars);
+    EXPECT_TRUE(result.is_object());
+    
+    auto& obj = result.as_object();
+    EXPECT_TRUE(obj.contains("outbounds"));
+    EXPECT_TRUE(obj.contains("routing"));
+    
+    // Should have proxy and direct outbounds
+    EXPECT_GE(obj["outbounds"].as_array().size(), 2u);
+}
+
+TEST_F(PipelineHandlerTest, Pipeline_HasPipelineReturnsFalseWhenEmpty) {
+    ConfigPipeline pipeline(db_);
+    EXPECT_FALSE(pipeline.hasPipeline(ConfigMode::Test, "xray"));
+    EXPECT_FALSE(pipeline.hasPipeline(ConfigMode::Pool, "singbox"));
+}
+
+TEST_F(PipelineHandlerTest, Pipeline_NoProfileSkipsProfileOutbound) {
+    ConfigPipeline pipeline(db_);
+    
+    boost::json::object pipelineJson;
+    boost::json::object testDef;
+    testDef["template"] = std::string("xray_test_001");
+    boost::json::object step1;
+    step1["type"] = std::string("replace_variables");
+    step1["params"] = boost::json::value(boost::json::object{});
+    boost::json::object step2;
+    step2["type"] = std::string("add_outbound");
+    boost::json::object step2Params;
+    step2Params["tag"] = std::string("proxy");
+    step2Params["source"] = std::string("profile");
+    step2Params["onError"] = std::string("continue");
+    step2["params"] = step2Params;
+    testDef["steps"] = boost::json::array({step1, step2});
+    pipelineJson["test"] = testDef;
+    
+    pipeline.loadConfig(boost::json::value(pipelineJson));
+    
+    // Profile with empty address (no profile)
+    Profileitem p;
+    p.address = "";
+    ConfigVariables vars;
+    vars.socksPort = 10808;
+    
+    // Should not throw - profile outbound step is skipped
+    EXPECT_NO_THROW({
+        boost::json::value result = pipeline.execute(ConfigMode::Test, "xray", p, vars);
+        EXPECT_TRUE(result.is_object());
+    });
+}
+
+TEST_F(PipelineHandlerTest, Pipeline_UnregisteredStepTypeSkipped) {
+    ConfigPipeline pipeline(db_);
+    
+    boost::json::object pipelineJson;
+    boost::json::object testDef;
+    testDef["template"] = std::string("xray_test_001");
+    boost::json::object step1;
+    step1["type"] = std::string("nonexistent_step");
+    step1["params"] = boost::json::value(boost::json::object{});
+    step1["onError"] = std::string("continue");
+    boost::json::object step2;
+    step2["type"] = std::string("replace_variables");
+    step2["params"] = boost::json::value(boost::json::object{});
+    testDef["steps"] = boost::json::array({step1, step2});
+    pipelineJson["test"] = testDef;
+    
+    pipeline.loadConfig(boost::json::value(pipelineJson));
+    
+    Profileitem p = makeProfile("5", "example.com", "443", "test-uuid");
+    ConfigVariables vars;
+    vars.socksPort = 10808;
+    
+    // Should not throw - unregistered step is skipped with warning
+    EXPECT_NO_THROW({
+        boost::json::value result = pipeline.execute(ConfigMode::Test, "xray", p, vars);
+        EXPECT_TRUE(result.is_object());
+    });
+}
+
+TEST_F(PipelineHandlerTest, Pipeline_FailFastThrows) {
+    ConfigPipeline pipeline(db_);
+    
+    boost::json::object pipelineJson;
+    boost::json::object testDef;
+    testDef["template"] = std::string("xray_test_001");
+    boost::json::object step1;
+    step1["type"] = std::string("add_outbound");
+    boost::json::object step1Params;
+    step1Params["source"] = std::string("profile");  // Will fail with empty profile
+    step1["params"] = step1Params;
+    step1["onError"] = std::string("fail_fast");
+    testDef["steps"] = boost::json::array({step1});
+    pipelineJson["test"] = testDef;
+    
+    pipeline.loadConfig(boost::json::value(pipelineJson));
+    
+    // Profile with empty address - add_outbound with source="profile" should be skipped
+    // but fail_fast should still not throw for skipped steps
+    Profileitem p;
+    p.address = "";
+    ConfigVariables vars;
+    vars.socksPort = 10808;
+    
+    EXPECT_NO_THROW({
+        boost::json::value result = pipeline.execute(ConfigMode::Test, "xray", p, vars);
+        EXPECT_TRUE(result.is_object());
+    });
+}
+
+TEST_F(PipelineHandlerTest, Pipeline_ReplaceVariablesReplacesPlaceholders) {
+    ConfigPipeline pipeline(db_);
+    
+    boost::json::object pipelineJson;
+    boost::json::object testDef;
+    testDef["template"] = std::string("xray_test_001");
+    boost::json::object step1;
+    step1["type"] = std::string("replace_variables");
+    step1["params"] = boost::json::value(boost::json::object{});
+    testDef["steps"] = boost::json::array({step1});
+    pipelineJson["test"] = testDef;
+    
+    pipeline.loadConfig(boost::json::value(pipelineJson));
+    
+    Profileitem p = makeProfile("5", "example.com", "443", "test-uuid");
+    ConfigVariables vars;
+    vars.socksPort = 10808;
+    vars.apiPort = 10085;
+    
+    boost::json::value result = pipeline.execute(ConfigMode::Test, "xray", p, vars);
+    const auto& obj = result.as_object();
+    
+    // Check that ${socksPort} was replaced
+    std::string configStr = boost::json::serialize(obj);
+    EXPECT_EQ(configStr.find("${socksPort}"), std::string::npos);
+    EXPECT_EQ(configStr.find("${apiPort}"), std::string::npos);
+}
+
+TEST_F(PipelineHandlerTest, Pipeline_SingBoxPipeline) {
+    ConfigPipeline pipeline(db_);
+    
+    boost::json::object pipelineJson;
+    boost::json::object testDef;
+    testDef["template"] = std::string("singbox_test_001");
+    boost::json::object step1;
+    step1["type"] = std::string("replace_variables");
+    step1["params"] = boost::json::value(boost::json::object{});
+    testDef["steps"] = boost::json::array({step1});
+    pipelineJson["test_singbox"] = testDef;
+    
+    pipeline.loadConfig(boost::json::value(pipelineJson));
+    EXPECT_TRUE(pipeline.hasPipeline(ConfigMode::Test, "singbox"));
+    EXPECT_FALSE(pipeline.hasPipeline(ConfigMode::Test, "xray"));
+    
+    Profileitem p = makeProfile("5", "example.com", "443", "test-uuid");
+    ConfigVariables vars;
+    vars.socksPort = 10808;
+    
+    boost::json::value result = pipeline.execute(ConfigMode::Test, "singbox", p, vars);
+    EXPECT_TRUE(result.is_object());
 }

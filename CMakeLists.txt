@@ -162,6 +162,9 @@ set(CORE_SOURCES
     src/config/ConfigJsonSerializer.cpp
     src/config/ConfigValidator.cpp
     src/config/ConfigBuilder.cpp
+    src/config/StepRegistry.cpp
+    src/config/ConfigPipeline.cpp
+    src/config/StepHandlers.cpp
     src/share/UriCodec.cpp
     src/share/Ipv6Formatter.cpp
     src/share/VLESSUriBuilder.cpp
@@ -192,6 +195,15 @@ set(CORE_SOURCES
     src/config/outbound/SingBoxTrojanOutboundBuilder.cpp
     src/config/outbound/SingBoxHysteria2OutboundBuilder.cpp
     src/config/outbound/SingBoxTUICOutboundBuilder.cpp
+    src/config/ComponentBundleDAO.cpp
+    src/config/ComponentRegistry.cpp
+    src/config/ComponentResolver.cpp
+    src/config/ConflictDetector.cpp
+    src/config/BundleChainResolver.cpp
+    src/config/StepToComponentMapper.cpp
+    src/config/ConfigGenerator.cpp
+    src/config/SchemaValidator.cpp
+    src/config/TemplateDecomposer.cpp
     src/test/ProxyBatchQuery.cpp
     src/test/XrayWorkerPool.cpp
     src/test/ProxyTestCounters.cpp
@@ -285,6 +297,12 @@ if(wxWidgets_FOUND)
         src/ui/LogPanel.cpp
         src/ui/ConfigDialog.h
         src/ui/ConfigDialog.cpp
+        src/ui/ComponentListPanel.h
+        src/ui/ComponentListPanel.cpp
+        src/ui/BundleChainEditor.h
+        src/ui/BundleChainEditor.cpp
+        src/ui/BundleSelectorDialog.h
+        src/ui/BundleSelectorDialog.cpp
         src/ui/StandaloneFloatingWidget.h
         src/ui/StandaloneFloatingWidget.cpp
         src/ui/AddPoolMemberDialog.h
@@ -698,8 +716,32 @@ add_test(NAME FloatingWidgetStateTest COMMAND test_floating_widget_state)
 add_executable(test_config_generator
     tests/test_config_generator.cpp
     tests/test_config_builder.cpp
+    tests/test_component_bundle.cpp
+    tests/test_component_registry.cpp
+    tests/test_component_resolver.cpp
+    tests/test_conflict_detector.cpp
+    tests/test_bundle_chain_resolver.cpp
+    tests/test_step_to_component_mapper.cpp
+    tests/test_config_generator_phase9.cpp
+    tests/test_schema_validator.cpp
+    tests/test_template_decomposer.cpp
+    tests/test_phase11_integration.cpp
+    tests/test_phase11_cross_bundle.cpp
+    tests/test_phase11_performance.cpp
     src/ConfigGenerator.cpp
     src/config/ConfigBuilder.cpp
+    src/config/StepRegistry.cpp
+    src/config/ConfigPipeline.cpp
+    src/config/StepHandlers.cpp
+    src/config/ComponentBundleDAO.cpp
+    src/config/ComponentRegistry.cpp
+    src/config/ComponentResolver.cpp
+    src/config/ConflictDetector.cpp
+    src/config/BundleChainResolver.cpp
+    src/config/StepToComponentMapper.cpp
+    src/config/ConfigGenerator.cpp
+    src/config/SchemaValidator.cpp
+    src/config/TemplateDecomposer.cpp
     src/ConfigReader.cpp
     src/FullConfigTemplateDAO.cpp
     src/ProfileitemDAO.cpp
@@ -765,6 +807,9 @@ add_executable(test_standalone_proxy_pool
     src/ProfileExItemDAO.cpp
     src/FullConfigTemplateDAO.cpp
     src/config/ConfigBuilder.cpp
+    src/config/StepRegistry.cpp
+    src/config/ConfigPipeline.cpp
+    src/config/StepHandlers.cpp
     src/config/ConfigFileStore.cpp
     src/config/ConfigPathResolver.cpp
     src/config/ConfigJsonParser.cpp
@@ -796,6 +841,15 @@ add_executable(test_standalone_proxy_pool
     src/config/outbound/Hysteria2OutboundBuilder.cpp
     src/config/outbound/TUICOutboundBuilder.cpp
     src/config/outbound/WireGuardOutboundBuilder.cpp
+    src/config/ComponentBundleDAO.cpp
+    src/config/ComponentResolver.cpp
+    src/config/ConflictDetector.cpp
+    src/config/BundleChainResolver.cpp
+    src/config/StepToComponentMapper.cpp
+    src/config/ConfigGenerator.cpp
+    src/config/SchemaValidator.cpp
+    src/config/TemplateDecomposer.cpp
+    src/config/ComponentRegistry.cpp
 )
 target_include_directories(test_standalone_proxy_pool PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_compile_definitions(test_standalone_proxy_pool PRIVATE USE_GRPC_API=1)
@@ -823,6 +877,9 @@ add_executable(test_proxy_probe_pool
     src/ConfigReader.cpp
     src/FullConfigTemplateDAO.cpp
     src/config/ConfigBuilder.cpp
+    src/config/StepRegistry.cpp
+    src/config/ConfigPipeline.cpp
+    src/config/StepHandlers.cpp
     src/config/ConfigFileStore.cpp
     src/config/ConfigPathResolver.cpp
     src/config/ConfigJsonParser.cpp
@@ -856,6 +913,15 @@ add_executable(test_proxy_probe_pool
     src/ProfileitemDAO.cpp
     src/ProfileExItemDAO.cpp
     src/utils/DnsCache.cpp
+    src/config/ComponentBundleDAO.cpp
+    src/config/ComponentResolver.cpp
+    src/config/ConflictDetector.cpp
+    src/config/BundleChainResolver.cpp
+    src/config/StepToComponentMapper.cpp
+    src/config/ConfigGenerator.cpp
+    src/config/SchemaValidator.cpp
+    src/config/TemplateDecomposer.cpp
+    src/config/ComponentRegistry.cpp
 )
 target_include_directories(test_proxy_probe_pool PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_compile_definitions(test_proxy_probe_pool PRIVATE USE_GRPC_API=1)
@@ -915,6 +981,7 @@ add_test(NAME ProxyBatchComponentsTest COMMAND test_proxy_batch_components)
 add_executable(test_proxy_batch_query tests/test_proxy_batch_query.cpp src/test/ProxyBatchQuery.cpp
     src/ConfigGenerator.cpp src/ProfileitemDAO.cpp src/utils/DnsCache.cpp src/ProfileExItemDAO.cpp
     src/ConfigReader.cpp src/FullConfigTemplateDAO.cpp src/config/ConfigBuilder.cpp
+    src/config/StepRegistry.cpp src/config/ConfigPipeline.cpp src/config/StepHandlers.cpp
     src/config/ConfigFileStore.cpp src/config/ConfigPathResolver.cpp
     src/config/ConfigJsonParser.cpp src/config/ConfigJsonSerializer.cpp src/config/ConfigValidator.cpp
     src/Logger.cpp src/LoggerInstance.cpp src/Utils.cpp
@@ -937,7 +1004,17 @@ add_executable(test_proxy_batch_query tests/test_proxy_batch_query.cpp src/test/
     src/config/outbound/HTTPOutboundBuilder.cpp
     src/config/outbound/Hysteria2OutboundBuilder.cpp
     src/config/outbound/TUICOutboundBuilder.cpp
-    src/config/outbound/WireGuardOutboundBuilder.cpp)
+    src/config/outbound/WireGuardOutboundBuilder.cpp
+    src/config/ComponentBundleDAO.cpp
+    src/config/ComponentResolver.cpp
+    src/config/ConflictDetector.cpp
+    src/config/BundleChainResolver.cpp
+    src/config/StepToComponentMapper.cpp
+    src/config/ConfigGenerator.cpp
+    src/config/SchemaValidator.cpp
+    src/config/TemplateDecomposer.cpp
+    src/config/ComponentRegistry.cpp
+)
 target_include_directories(test_proxy_batch_query PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(test_proxy_batch_query PRIVATE gtest_main gtest
     ${VCPKG_ROOT}/installed/x64-mingw-static/lib/libboost_json-gcc14-mt-x64-1_91.a
@@ -1127,6 +1204,9 @@ add_executable(test_xray_instance_stderr
     src/ConfigReader.cpp
     src/FullConfigTemplateDAO.cpp
     src/config/ConfigBuilder.cpp
+    src/config/StepRegistry.cpp
+    src/config/ConfigPipeline.cpp
+    src/config/StepHandlers.cpp
     src/config/ConfigFileStore.cpp
     src/config/ConfigPathResolver.cpp
     src/config/ConfigJsonParser.cpp
@@ -1159,6 +1239,15 @@ add_executable(test_xray_instance_stderr
     src/config/XrayConfigAssembler.cpp
     src/Logger.cpp
     src/LoggerInstance.cpp
+    src/config/ComponentBundleDAO.cpp
+    src/config/ComponentResolver.cpp
+    src/config/ConflictDetector.cpp
+    src/config/BundleChainResolver.cpp
+    src/config/StepToComponentMapper.cpp
+    src/config/ConfigGenerator.cpp
+    src/config/SchemaValidator.cpp
+    src/config/TemplateDecomposer.cpp
+    src/config/ComponentRegistry.cpp
 )
 target_include_directories(test_xray_instance_stderr PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(test_xray_instance_stderr PRIVATE gtest_main gtest
@@ -1196,6 +1285,9 @@ add_executable(test_xray_manager_startup
     src/ConfigReader.cpp
     src/FullConfigTemplateDAO.cpp
     src/config/ConfigBuilder.cpp
+    src/config/StepRegistry.cpp
+    src/config/ConfigPipeline.cpp
+    src/config/StepHandlers.cpp
     src/config/ConfigFileStore.cpp
     src/config/ConfigPathResolver.cpp
     src/config/ConfigJsonParser.cpp
@@ -1228,6 +1320,15 @@ add_executable(test_xray_manager_startup
     src/Utils.cpp
     src/Logger.cpp
     src/LoggerInstance.cpp
+    src/config/ComponentBundleDAO.cpp
+    src/config/ComponentResolver.cpp
+    src/config/ConflictDetector.cpp
+    src/config/BundleChainResolver.cpp
+    src/config/StepToComponentMapper.cpp
+    src/config/ConfigGenerator.cpp
+    src/config/SchemaValidator.cpp
+    src/config/TemplateDecomposer.cpp
+    src/config/ComponentRegistry.cpp
 )
 target_include_directories(test_xray_manager_startup PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(test_xray_manager_startup PRIVATE gtest_main gtest
@@ -1332,6 +1433,7 @@ add_test(NAME ProcessInspectorTest COMMAND test_process_inspector)
 add_executable(test_region_batch_resolver tests/test_region_batch_resolver.cpp
     src/RegionBatchResolver.cpp src/ConfigGenerator.cpp src/ProfileitemDAO.cpp
     src/ConfigReader.cpp src/FullConfigTemplateDAO.cpp src/config/ConfigBuilder.cpp
+    src/config/StepRegistry.cpp src/config/ConfigPipeline.cpp src/config/StepHandlers.cpp
     src/config/ConfigFileStore.cpp src/config/ConfigPathResolver.cpp
     src/config/ConfigJsonParser.cpp src/config/ConfigJsonSerializer.cpp src/config/ConfigValidator.cpp
     src/config/ProfileConfigRepository.cpp src/config/ProfileNormalizer.cpp

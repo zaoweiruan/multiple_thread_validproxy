@@ -13,6 +13,7 @@
 #include "config/ConfigJsonParser.h"
 #include "config/sections/LogConfigParser.h"
 #include "FullConfigTemplateDAO.h"
+#include "config/StepRegistry.h"
 
 #include <sqlite3.h>
 #include <windows.h>
@@ -132,6 +133,9 @@ int main(int argc, char* argv[]) {
         configTemplateDao.createTableIfNotExists();
         configTemplateDao.seedDefaultTemplates();
     }
+
+    // Register all ConfigPipeline step handlers
+    config::registerAllStepHandlers();
 
     // Strip non-wxWidgets flags from argv before passing to wxEntry
     // (-ui, --ui, --gui are CLI-legacy flags from the old hybrid binary)

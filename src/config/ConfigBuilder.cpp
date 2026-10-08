@@ -1,4 +1,5 @@
 #include "config/ConfigBuilder.h"
+#include "config/ConfigPipeline.h"
 #include "Logger.h"
 #include "ConfigReader.h"
 #include "FullConfigTemplateDAO.h"
@@ -15,6 +16,20 @@
 #include <boost/json.hpp>
 
 namespace config {
+
+// Static member initialization
+ConfigPipeline* ConfigBuilder::pipeline_ = nullptr;
+
+// Static methods for pipeline management
+void ConfigBuilder::setPipeline(ConfigPipeline* pipeline) {
+    pipeline_ = pipeline;
+    std::string status = pipeline ? "enabled" : "disabled";
+    Logger::write(std::string("[ConfigBuilder] Pipeline ") + status, LogLevel::INFO);
+}
+
+bool ConfigBuilder::hasPipeline() {
+    return pipeline_ != nullptr;
+}
 
 // Helper: Convert ConfigVariables to a map for variable replacement
 static std::unordered_map<std::string, std::string> variablesToMap(const ConfigVariables& vars) {
@@ -64,7 +79,7 @@ static std::string replacePlaceholders(const std::string& input,
 // 统一路由：移除现有 socks 入站规则，添加新的 socks→outbound 规则
 // outboundTag: 出站标签 (proxy 或 balancer-out)
 // useBalancerTag: 使用 balancerTag 而非 outboundTag (仅 Pool 模式)
-static void mergeSocksInboundRule(boost::json::object& root,
+static void doMergeSocksInboundRule(boost::json::object& root,
                                   const std::string& outboundTag,
                                   bool useBalancerTag = false) {
     if (!root.contains("routing")) {
@@ -303,7 +318,7 @@ boost::json::value ConfigBuilder::loadTemplate(const std::string& templateKey) c
 
 boost::json::value ConfigBuilder::replaceVariables(
     const boost::json::value& config,
-    const ConfigVariables& vars) const {
+    const ConfigVariables& vars) {
     // Convert ConfigVariables to a map
     auto variables = variablesToMap(vars);
     
@@ -327,6 +342,13 @@ boost::json::value ConfigBuilder::build(
     const db::models::Profileitem& profile,
     const ConfigVariables& vars) {
     
+    // Phase 4: Check if pipeline is configured for this mode
+    if (pipeline_ != nullptr && pipeline_->hasPipeline(mode, "xray")) {
+        Logger::write("[ConfigBuilder] Using pipeline for Test/Standalone/Pool mode", LogLevel::DEBUG);
+        return pipeline_->execute(mode, "xray", profile, vars);
+    }
+    
+    // Fallback to hardcoded path (legacy behavior)
     ProxyType proxyType = getDefaultProxyType();
     
     switch (mode) {
@@ -347,6 +369,15 @@ boost::json::value ConfigBuilder::build(
     const db::models::Profileitem& profile,
     const ConfigVariables& vars) {
     
+    // Phase 4: Check if pipeline is configured for this mode
+    if (pipeline_ != nullptr && pipeline_->hasPipeline(mode, clientName)) {
+        std::string logMsg = "[ConfigBuilder] Using pipeline for mode=" + 
+            std::to_string(static_cast<int>(mode)) + " client=" + clientName;
+        Logger::write(logMsg, LogLevel::DEBUG);
+        return pipeline_->execute(mode, clientName, profile, vars);
+    }
+    
+    // Fallback to hardcoded path (legacy behavior)
     ProxyType proxyType = resolveProxyType(clientName);
     
     switch (mode) {
@@ -523,7 +554,7 @@ boost::json::value ConfigBuilder::buildTestConfig(
     root["outbounds"] = outbounds;
     
     // Merge routing: keep template's rules, add socks→proxy
-    mergeSocksInboundRule(root, "proxy");
+    doMergeSocksInboundRule(root, "proxy");
 
     return boost::json::value(root);
 }
@@ -578,7 +609,7 @@ boost::json::value ConfigBuilder::buildStandaloneConfig(
     
     // Routing (aligned with template)
     // Merge routing: keep template's rules, add socks→proxy
-    mergeSocksInboundRule(root, "proxy");
+    doMergeSocksInboundRule(root, "proxy");
 
     return root;
 }
@@ -670,9 +701,34 @@ boost::json::value ConfigBuilder::buildPoolConfig(
     routing["balancers"] = balancers;
     
     // Add socks→balancer-out rule
-    mergeSocksInboundRule(root, "balancer-out", true);
+    doMergeSocksInboundRule(root, "balancer-out", true);
 
     return root;
+}
+
+boost::json::object ConfigBuilder::buildOutboundFromProfile(
+    const db::models::Profileitem& profile,
+    ProxyType proxyType,
+    const std::string& tag) {
+    if (proxyType == ProxyType::SingBox) {
+        SingBoxOutboundBuilderFactory factory;
+        return factory.create(profile, tag);
+    }
+    OutboundBuilderFactory factory;
+    return factory.create(profile, tag);
+}
+
+void ConfigBuilder::mergeSocksInboundRule(
+    boost::json::object& config,
+    const std::string& inboundTag,
+    const std::string& outboundTag,
+    const std::string& balancerTag) {
+    (void)inboundTag; // inbound tag is "socks" by convention
+    if (!balancerTag.empty()) {
+        doMergeSocksInboundRule(config, balancerTag, true);
+    } else if (!outboundTag.empty()) {
+        doMergeSocksInboundRule(config, outboundTag, false);
+    }
 }
 
 } // namespace config

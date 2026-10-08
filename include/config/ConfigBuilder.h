@@ -6,6 +6,11 @@
 #include <sqlite3.h>
 #include "Profileitem.h"
 
+// Forward declaration to avoid circular dependency
+namespace config {
+class ConfigPipeline;
+}
+
 namespace config {
 
 /// 配置生成模式
@@ -70,6 +75,14 @@ public:
     /// @return 始终返回 true - ConfigBuilder 是唯一配置生成路径
     static bool isEnableNewConfigBuilder(const std::string& configPath = "");
     
+    /// 设置配置管线（在应用启动时调用）
+    /// @param pipeline 配置管线指针（可为 nullptr 表示禁用管线）
+    static void setPipeline(ConfigPipeline* pipeline);
+    
+    /// 检查是否启用了配置管线
+    /// @return true 如果管线已设置
+    static bool hasPipeline();
+    
     /// 主入口：根据模式生成配置（自动使用默认代理客户端）
     /// @param mode 配置模式（Test/Standalone/Pool）
     /// @param profile 代理节点配置
@@ -112,6 +125,35 @@ public:
         const boost::json::value& parent,
         const boost::json::value& child,
         int maxDepth = 10);
+    
+    /// 替换占位符（公共 API，供 Pipeline 步骤使用）
+    /// @param config 配置 JSON
+    /// @param vars 运行时变量
+    /// @return 替换后的配置 JSON
+    static boost::json::value replaceVariables(
+        const boost::json::value& config,
+        const ConfigVariables& vars);
+    
+    /// 从 Profileitem 生成 outbound 配置（公共 API，供 Pipeline 步骤使用）
+    /// @param profile 代理节点配置
+    /// @param proxyType 代理后端类型
+    /// @param tag 出站标签
+    /// @return outbound JSON 对象
+    static boost::json::object buildOutboundFromProfile(
+        const db::models::Profileitem& profile,
+        ProxyType proxyType,
+        const std::string& tag);
+    
+    /// 合并 SOCKS 入站路由规则（公共 API，供 Pipeline 步骤使用）
+    /// @param config 配置 JSON 对象
+    /// @param inboundTag 入站标签
+    /// @param outboundTag 出站标签（可选）
+    /// @param balancerTag 均衡器标签（可选）
+    static void mergeSocksInboundRule(
+        boost::json::object& config,
+        const std::string& inboundTag,
+        const std::string& outboundTag = "",
+        const std::string& balancerTag = "");
     
     /// 从数据库加载模板（按 ID），支持递归继承
     /// @param db SQLite 数据库连接
@@ -167,17 +209,12 @@ private:
     /// @param templateKey 模板键（如 "test_xray"、"standalone_singbox"）
     /// @return 模板 JSON
     boost::json::value loadTemplate(const std::string& templateKey) const;
-    
-    /// 替换变量
-    /// @param config 配置 JSON
-    /// @param vars 变量
-    /// @return 替换后的配置 JSON
-    boost::json::value replaceVariables(
-        const boost::json::value& config,
-        const ConfigVariables& vars) const;
-    
+
     /// SQLite 数据库连接
     sqlite3* db_;
+    
+    /// 配置管线（静态，应用启动时设置）
+    static ConfigPipeline* pipeline_;
 };
 
 /// 代理客户端信息

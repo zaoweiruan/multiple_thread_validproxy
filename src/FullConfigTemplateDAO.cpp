@@ -1,6 +1,8 @@
 #include "FullConfigTemplateDAO.h"
 #include "Logger.h"
 #include <sqlite3.h>
+#include <map>
+#include <boost/json.hpp>
 
 namespace db {
 
@@ -31,11 +33,22 @@ bool FullConfigTemplateDAO::createTableIfNotExists() const {
         int rc = sqlite3_prepare_v2(db_, colSql, -1, &colStmt, nullptr);
         if (rc == SQLITE_OK) {
             bool hasParentId = false;
+            bool hasBundleChain = false;
+            bool hasTemplateType = false;
+            bool hasBundleVersion = false;
             while (sqlite3_step(colStmt) == SQLITE_ROW) {
                 const char* name = reinterpret_cast<const char*>(sqlite3_column_text(colStmt, 1));
-                if (name && std::string(name) == "ParentId") {
-                    hasParentId = true;
-                    break;
+                if (name) {
+                    std::string colName(name);
+                    if (colName == "ParentId") {
+                        hasParentId = true;
+                    } else if (colName == "BundleChain") {
+                        hasBundleChain = true;
+                    } else if (colName == "TemplateType") {
+                        hasTemplateType = true;
+                    } else if (colName == "BundleVersion") {
+                        hasBundleVersion = true;
+                    }
                 }
             }
             sqlite3_finalize(colStmt);
@@ -50,6 +63,42 @@ bool FullConfigTemplateDAO::createTableIfNotExists() const {
                     Logger::write("[FullConfigTemplateDAO] Failed to add ParentId column: " + msg, LogLevel::WARN);
                 } else {
                     Logger::write("[FullConfigTemplateDAO] Added ParentId column to existing table", LogLevel::INFO);
+                }
+            }
+            if (!hasBundleChain) {
+                const char* alterSql = "ALTER TABLE FullConfigTemplateItem ADD COLUMN BundleChain varchar";
+                char* errMsg = nullptr;
+                rc = sqlite3_exec(db_, alterSql, nullptr, nullptr, &errMsg);
+                if (rc != SQLITE_OK) {
+                    std::string msg = errMsg ? errMsg : sqlite3_errmsg(db_);
+                    if (errMsg) sqlite3_free(errMsg);
+                    Logger::write("[FullConfigTemplateDAO] Failed to add BundleChain column: " + msg, LogLevel::WARN);
+                } else {
+                    Logger::write("[FullConfigTemplateDAO] Added BundleChain column to existing table", LogLevel::INFO);
+                }
+            }
+            if (!hasTemplateType) {
+                const char* alterSql = "ALTER TABLE FullConfigTemplateItem ADD COLUMN TemplateType varchar";
+                char* errMsg = nullptr;
+                rc = sqlite3_exec(db_, alterSql, nullptr, nullptr, &errMsg);
+                if (rc != SQLITE_OK) {
+                    std::string msg = errMsg ? errMsg : sqlite3_errmsg(db_);
+                    if (errMsg) sqlite3_free(errMsg);
+                    Logger::write("[FullConfigTemplateDAO] Failed to add TemplateType column: " + msg, LogLevel::WARN);
+                } else {
+                    Logger::write("[FullConfigTemplateDAO] Added TemplateType column to existing table", LogLevel::INFO);
+                }
+            }
+            if (!hasBundleVersion) {
+                const char* alterSql = "ALTER TABLE FullConfigTemplateItem ADD COLUMN BundleVersion varchar";
+                char* errMsg = nullptr;
+                rc = sqlite3_exec(db_, alterSql, nullptr, nullptr, &errMsg);
+                if (rc != SQLITE_OK) {
+                    std::string msg = errMsg ? errMsg : sqlite3_errmsg(db_);
+                    if (errMsg) sqlite3_free(errMsg);
+                    Logger::write("[FullConfigTemplateDAO] Failed to add BundleVersion column: " + msg, LogLevel::WARN);
+                } else {
+                    Logger::write("[FullConfigTemplateDAO] Added BundleVersion column to existing table", LogLevel::INFO);
                 }
             }
         } else {
@@ -68,7 +117,10 @@ bool FullConfigTemplateDAO::createTableIfNotExists() const {
         "Config varchar,"
         "TunConfig varchar,"
         "AddProxyOnly INTEGER DEFAULT 0,"
-        "ProxyDetour varchar"
+        "ProxyDetour varchar,"
+        "BundleChain varchar,"
+        "TemplateType varchar,"
+        "BundleVersion varchar"
         ");";
     
     char* errMsg = nullptr;
@@ -469,7 +521,8 @@ void FullConfigTemplateDAO::finalizeStatement(sqlite3_stmt* stmt) const {
 
 std::optional<FullConfigTemplateItem> FullConfigTemplateDAO::getById(const std::string& id) const {
     const char* sql = 
-        "SELECT Id, ParentId, Remarks, Enabled, CoreType, Config, TunConfig, AddProxyOnly, ProxyDetour "
+        "SELECT Id, ParentId, Remarks, Enabled, CoreType, Config, TunConfig, AddProxyOnly, ProxyDetour, "
+        "BundleChain, TemplateType, BundleVersion "
         "FROM FullConfigTemplateItem WHERE Id = ?";
     
     sqlite3_stmt* stmt = nullptr;
@@ -490,6 +543,9 @@ std::optional<FullConfigTemplateItem> FullConfigTemplateDAO::getById(const std::
         item.tunConfig = sqlite3_column_text(stmt, 6) ? reinterpret_cast<const char*>(sqlite3_column_text(stmt, 6)) : "";
         item.addProxyOnly = sqlite3_column_int(stmt, 7);
         item.proxyDetour = sqlite3_column_text(stmt, 8) ? reinterpret_cast<const char*>(sqlite3_column_text(stmt, 8)) : "";
+        item.bundleChain = sqlite3_column_text(stmt, 9) ? reinterpret_cast<const char*>(sqlite3_column_text(stmt, 9)) : "";
+        item.templateType = sqlite3_column_text(stmt, 10) ? reinterpret_cast<const char*>(sqlite3_column_text(stmt, 10)) : "";
+        item.bundleVersion = sqlite3_column_text(stmt, 11) ? reinterpret_cast<const char*>(sqlite3_column_text(stmt, 11)) : "";
         finalizeStatement(stmt);
         return item;
     }
@@ -500,7 +556,8 @@ std::optional<FullConfigTemplateItem> FullConfigTemplateDAO::getById(const std::
 
 std::optional<FullConfigTemplateItem> FullConfigTemplateDAO::getByCoreType(int coreType) const {
     const char* sql = 
-        "SELECT Id, ParentId, Remarks, Enabled, CoreType, Config, TunConfig, AddProxyOnly, ProxyDetour "
+        "SELECT Id, ParentId, Remarks, Enabled, CoreType, Config, TunConfig, AddProxyOnly, ProxyDetour, "
+        "BundleChain, TemplateType, BundleVersion "
         "FROM FullConfigTemplateItem WHERE CoreType = ? LIMIT 1";
     
     sqlite3_stmt* stmt = nullptr;
@@ -521,6 +578,9 @@ std::optional<FullConfigTemplateItem> FullConfigTemplateDAO::getByCoreType(int c
         item.tunConfig = sqlite3_column_text(stmt, 6) ? reinterpret_cast<const char*>(sqlite3_column_text(stmt, 6)) : "";
         item.addProxyOnly = sqlite3_column_int(stmt, 7);
         item.proxyDetour = sqlite3_column_text(stmt, 8) ? reinterpret_cast<const char*>(sqlite3_column_text(stmt, 8)) : "";
+        item.bundleChain = sqlite3_column_text(stmt, 9) ? reinterpret_cast<const char*>(sqlite3_column_text(stmt, 9)) : "";
+        item.templateType = sqlite3_column_text(stmt, 10) ? reinterpret_cast<const char*>(sqlite3_column_text(stmt, 10)) : "";
+        item.bundleVersion = sqlite3_column_text(stmt, 11) ? reinterpret_cast<const char*>(sqlite3_column_text(stmt, 11)) : "";
         finalizeStatement(stmt);
         return item;
     }
@@ -532,7 +592,8 @@ std::optional<FullConfigTemplateItem> FullConfigTemplateDAO::getByCoreType(int c
 std::vector<FullConfigTemplateItem> FullConfigTemplateDAO::getAllEnabled() const {
     std::vector<FullConfigTemplateItem> items;
     const char* sql = 
-        "SELECT Id, ParentId, Remarks, Enabled, CoreType, Config, TunConfig, AddProxyOnly, ProxyDetour "
+        "SELECT Id, ParentId, Remarks, Enabled, CoreType, Config, TunConfig, AddProxyOnly, ProxyDetour, "
+        "BundleChain, TemplateType, BundleVersion "
         "FROM FullConfigTemplateItem WHERE Enabled = 1";
     
     sqlite3_stmt* stmt = nullptr;
@@ -551,6 +612,9 @@ std::vector<FullConfigTemplateItem> FullConfigTemplateDAO::getAllEnabled() const
         item.tunConfig = sqlite3_column_text(stmt, 6) ? reinterpret_cast<const char*>(sqlite3_column_text(stmt, 6)) : "";
         item.addProxyOnly = sqlite3_column_int(stmt, 7);
         item.proxyDetour = sqlite3_column_text(stmt, 8) ? reinterpret_cast<const char*>(sqlite3_column_text(stmt, 8)) : "";
+        item.bundleChain = sqlite3_column_text(stmt, 9) ? reinterpret_cast<const char*>(sqlite3_column_text(stmt, 9)) : "";
+        item.templateType = sqlite3_column_text(stmt, 10) ? reinterpret_cast<const char*>(sqlite3_column_text(stmt, 10)) : "";
+        item.bundleVersion = sqlite3_column_text(stmt, 11) ? reinterpret_cast<const char*>(sqlite3_column_text(stmt, 11)) : "";
         items.push_back(item);
     }
     
@@ -561,7 +625,8 @@ std::vector<FullConfigTemplateItem> FullConfigTemplateDAO::getAllEnabled() const
 std::vector<FullConfigTemplateItem> FullConfigTemplateDAO::getAll() const {
     std::vector<FullConfigTemplateItem> items;
     const char* sql = 
-        "SELECT Id, ParentId, Remarks, Enabled, CoreType, Config, TunConfig, AddProxyOnly, ProxyDetour "
+        "SELECT Id, ParentId, Remarks, Enabled, CoreType, Config, TunConfig, AddProxyOnly, ProxyDetour, "
+        "BundleChain, TemplateType, BundleVersion "
         "FROM FullConfigTemplateItem";
     
     sqlite3_stmt* stmt = nullptr;
@@ -580,6 +645,9 @@ std::vector<FullConfigTemplateItem> FullConfigTemplateDAO::getAll() const {
         item.tunConfig = sqlite3_column_text(stmt, 6) ? reinterpret_cast<const char*>(sqlite3_column_text(stmt, 6)) : "";
         item.addProxyOnly = sqlite3_column_int(stmt, 7);
         item.proxyDetour = sqlite3_column_text(stmt, 8) ? reinterpret_cast<const char*>(sqlite3_column_text(stmt, 8)) : "";
+        item.bundleChain = sqlite3_column_text(stmt, 9) ? reinterpret_cast<const char*>(sqlite3_column_text(stmt, 9)) : "";
+        item.templateType = sqlite3_column_text(stmt, 10) ? reinterpret_cast<const char*>(sqlite3_column_text(stmt, 10)) : "";
+        item.bundleVersion = sqlite3_column_text(stmt, 11) ? reinterpret_cast<const char*>(sqlite3_column_text(stmt, 11)) : "";
         items.push_back(item);
     }
     
@@ -590,8 +658,9 @@ std::vector<FullConfigTemplateItem> FullConfigTemplateDAO::getAll() const {
 bool FullConfigTemplateDAO::save(const FullConfigTemplateItem& item) const {
     const char* sql = 
         "INSERT OR REPLACE INTO FullConfigTemplateItem "
-        "(Id, ParentId, Remarks, Enabled, CoreType, Config, TunConfig, AddProxyOnly, ProxyDetour) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
+        "(Id, ParentId, Remarks, Enabled, CoreType, Config, TunConfig, AddProxyOnly, ProxyDetour, "
+        "BundleChain, TemplateType, BundleVersion) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
     
     sqlite3_stmt* stmt = nullptr;
     if (!prepareStatement(&stmt, sql)) {
@@ -607,6 +676,9 @@ bool FullConfigTemplateDAO::save(const FullConfigTemplateItem& item) const {
     sqlite3_bind_text(stmt, 7, item.tunConfig.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_int(stmt, 8, item.addProxyOnly);
     sqlite3_bind_text(stmt, 9, item.proxyDetour.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 10, item.bundleChain.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 11, item.templateType.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 12, item.bundleVersion.c_str(), -1, SQLITE_TRANSIENT);
     
     int rc = sqlite3_step(stmt);
     finalizeStatement(stmt);
@@ -637,6 +709,73 @@ bool FullConfigTemplateDAO::deleteById(const std::string& id) const {
         return false;
     }
     
+    return true;
+}
+
+bool FullConfigTemplateDAO::isTemplateInSync(const std::string& templateId) const {
+    std::optional<FullConfigTemplateItem> item = getById(templateId);
+    if (!item.has_value()) {
+        return false;
+    }
+    // Templates without a BundleChain are always considered in sync
+    if (item->bundleChain.empty()) {
+        return true;
+    }
+    
+    // Parse recorded versions: [{"bundleId":"...","version":N}, ...]
+    std::map<std::string, int> recorded;
+    boost::system::error_code ec;
+    boost::json::value recVal = boost::json::parse(item->bundleVersion, ec);
+    if (!ec && recVal.is_array()) {
+        for (const boost::json::value& entry : recVal.as_array()) {
+            if (!entry.is_object()) {
+                continue;
+            }
+            const boost::json::object& entryObj = entry.as_object();
+            if (entryObj.contains("bundleId") && entryObj.at("bundleId").is_string() &&
+                entryObj.contains("version") && entryObj.at("version").is_int64()) {
+                recorded[std::string(entryObj.at("bundleId").get_string().c_str())] =
+                    static_cast<int>(entryObj.at("version").as_int64());
+            }
+        }
+    }
+    
+    // Parse the BundleChain to obtain referenced bundle ids
+    boost::json::value chainVal = boost::json::parse(item->bundleChain, ec);
+    if (ec || !chainVal.is_object()) {
+        return false;
+    }
+    const boost::json::object& chainObj = chainVal.as_object();
+    if (!chainObj.contains("bundleIds") || !chainObj.at("bundleIds").is_array()) {
+        return false;
+    }
+    
+    // Compare each bundle's current version against the recorded version
+    for (const boost::json::value& idVal : chainObj.at("bundleIds").as_array()) {
+        if (!idVal.is_string()) {
+            continue;
+        }
+        std::string bundleId = std::string(idVal.get_string().c_str());
+        std::map<std::string, int>::const_iterator rit = recorded.find(bundleId);
+        if (rit == recorded.end()) {
+            // Referenced bundle has no recorded version -> not in sync
+            return false;
+        }
+        
+        int currentVersion = -1;
+        sqlite3_stmt* stmt = nullptr;
+        const char* sql = "SELECT Version FROM ComponentBundle WHERE Id = ?";
+        if (prepareStatement(&stmt, sql)) {
+            sqlite3_bind_text(stmt, 1, bundleId.c_str(), -1, SQLITE_TRANSIENT);
+            if (sqlite3_step(stmt) == SQLITE_ROW) {
+                currentVersion = sqlite3_column_int(stmt, 0);
+            }
+            finalizeStatement(stmt);
+        }
+        if (currentVersion < 0 || currentVersion > rit->second) {
+            return false;
+        }
+    }
     return true;
 }
 

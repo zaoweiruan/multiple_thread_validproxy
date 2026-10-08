@@ -15,6 +15,7 @@
 #include "ToolbarIcons.h"
 #include "NetworkMonitor.h"
 #include "version.h"
+#include "config/ConfigPathResolver.h"
 
 #include <wx/sizer.h>
 #include <wx/splitter.h>
@@ -1166,7 +1167,10 @@ void MainFrame::onMenuConfig(wxCommandEvent&) {
         delete configDialog_;
         configDialog_ = nullptr;
     }
-    configDialog_ = new ConfigDialog(this, controller_->getConfig(), db_);
+    // 获取 config.json 路径
+    std::string configPath = config::ConfigPathResolver(config::ConfigPathResolver::detectExeDir())
+                                .defaultConfigPath();
+    configDialog_ = new ConfigDialog(this, controller_->getConfig(), db_, configPath);
     if (configDialog_->ShowModal() == wxID_OK) {
         config::AppConfig cfg = configDialog_->getConfig();
         // Saving config while a USER-INITIATED async operation is running

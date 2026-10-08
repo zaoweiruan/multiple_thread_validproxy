@@ -19,6 +19,10 @@ struct FullConfigTemplateItem {
     std::string tunConfig;
     int addProxyOnly = 0;
     std::string proxyDetour;
+    // Phase 6: BundleChain support
+    std::string bundleChain;   // JSON: {"bundleIds":[...],"params":{...}}; empty = not used
+    std::string templateType;  // "components" | "bundleChain" | "steps"
+    std::string bundleVersion; // JSON: [{"bundleId":"...","version":N},...]
 };
 
 /// DAO for FullConfigTemplateItem table
@@ -71,6 +75,10 @@ public:
     /// Inserts default Xray (CoreType=2) and SingBox (CoreType=24) config templates
     /// @return Number of templates inserted (0 if table already has data)
     int seedDefaultTemplates() const;
+
+    /// Check whether the template is in sync with its referenced Bundles
+    /// (returns false when any referenced Bundle version has advanced)
+    bool isTemplateInSync(const std::string& templateId) const;
 
 private:
     sqlite3* db_;

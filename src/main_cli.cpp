@@ -32,6 +32,7 @@
 #include "version.h"
 #include "service/DatabaseConnectionService.h"
 #include "FullConfigTemplateDAO.h"
+#include "config/TemplateDecomposer.h"
 
 
 namespace {
@@ -94,6 +95,7 @@ void printHelp() {
               << "  -T, -test-sub <id>   Test proxies from subscription by ID\n"
               << "  -TA, -test-all      Test all proxies in the database\n"
               << "  -D, -dedup           Remove duplicate proxies from database\n"
+              << "  -DC, -decompose       Decompose templates into ComponentBundle entries\n"
               << "  -TU, -tourl         Export proxies (delay>0) to share links file\n"
               << "  -S, -sync [src[:dst]] Sync valid proxies from source to target DB\n"
                << "  -IS, -import-sub-config <file|url>  Batch import subitems from file or URL\n"
@@ -273,6 +275,8 @@ int main(int argc, char* argv[]) {
             }
         } else if (arg == "-D" || arg == "-dedup" || arg == "--dedup") {
             commandMode = "dedup";
+        } else if (arg == "-DC" || arg == "-decompose" || arg == "--decompose") {
+            commandMode = "decompose";
         } else if (arg == "-TA" || arg == "-test-all" || arg == "--test-all") {
             commandMode = "test-all";
         } else if (arg == "-TU" || arg == "-tourl" || arg == "--tourl") {
@@ -963,6 +967,46 @@ int main(int argc, char* argv[]) {
         Logger::close();
         
         return result ? 0 : 1;
+    }
+    
+    if (commandMode == "decompose") {
+        Logger::init(logDir.string(), commandMode);
+        
+        std::optional<config::AppConfig> appConfig = config::ConfigReader::load(configPath);
+        if (!appConfig) {
+            logError("Failed to load config from: " + configPath);
+            Logger::close();
+            return 1;
+        }
+        
+        Logger::setFileEnabled(appConfig->log_enabled);
+        Logger::setFileLevel(Logger::stringToLevel(appConfig->log_file_level));
+        Logger::setConsoleLevel(Logger::stringToLevel(appConfig->log_console_level));
+        logInfo("validproxy decompose starting...");
+        
+        sqlite3* db = nullptr;
+        if (!openDatabase(*appConfig, db, "[main] decompose")) {
+            Logger::close();
+            return 1;
+        }
+        sqlite3_busy_timeout(db, 5000);
+        sqlite3_exec(db, "PRAGMA journal_mode=WAL", nullptr, nullptr, nullptr);
+        sqlite3_exec(db, "PRAGMA cache_size=-8000", nullptr, nullptr, nullptr);
+        sqlite3_exec(db, "PRAGMA synchronous=NORMAL", nullptr, nullptr, nullptr);
+        sqlite3_exec(db, "PRAGMA temp_store=MEMORY", nullptr, nullptr, nullptr);
+        sqlite3_exec(db, "PRAGMA mmap_size=268435456", nullptr, nullptr, nullptr);
+        sqlite3_exec(db, "PRAGMA journal_size_limit=67108864", nullptr, nullptr, nullptr);
+        
+        config::TemplateDecomposer decomposer(db);
+        int saved = decomposer.decomposeAndSave(true);
+        
+        std::cout << "Decomposition complete: " << saved << " bundles saved" << std::endl;
+        
+        sqlite3_close(db);
+        Logger::write("decompose completed (" + std::to_string(saved) + " bundles)", LogLevel::REPORT);
+        Logger::close();
+        
+        return 0;
     }
     
     if (!singleSubId.empty()) {
