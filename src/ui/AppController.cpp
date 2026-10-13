@@ -1710,10 +1710,15 @@ void AppController::adoptDanglingStandaloneProxies() {
 }
 
 bool AppController::stopStandaloneProxy(const std::string& indexId) {
-    // Snapshot the watch key and process handle under the lock, then clear
-    // the map entry BEFORE terminating the process. This prevents the
-    // ProcessExitListener thread's notifyFn from re-acquiring standaloneMutex_
-    // while we are still holding it (which would deadlock during unwatch join).
+bool AppController::stopStandaloneProxy(const std::string& indexId) {
+    // P0-2 four-phase sequence (Spec §3.2).
+    //
+    // The real invariant here is NOT "clear the bookkeeping before terminating" —
+    // it is "never call unwatch() while holding standaloneMutex_". unwatch() joins the
+    // watcher thread, and that thread may be inside notifyFn blocked on
+    // standaloneMutex_ => a deterministic AppHang. Clearing the map entry first (the
+    // old order) is also harmful: if TerminateProcess fails we would have no handle
+    // left to retry with, and the port would stay occupied with no way back.
     proc::ProcessExitListener::WatchKey key = 0;
     HANDLE hProcess = nullptr;
     int socksPort = -1;
@@ -1726,15 +1731,10 @@ bool AppController::stopStandaloneProxy(const std::string& indexId) {
         key = it->second.watchKey;
         hProcess = it->second.processHandle;
         socksPort = it->second.socksPort;
-        it->second.processHandle = nullptr;
-        it->second.running = false;
-        it->second.watchKey = 0;
+        // Intentionally do NOT touch it->second in this phase.
     }
 
-    // Terminate the process WITHOUT holding standaloneMutex_. The listener
-    // thread may call notifyFn concurrently; notifyFn grabs standaloneMutex_
-    // only to mark running=false and queue a UI event — both safe because we
-    // already cleared the entry above.
+    // Phase 2 — terminate WITHOUT the lock (notifyFn must be able to take it).
     bool terminated = false;
     if (hProcess) {
         const BOOL termOk = TerminateProcess(hProcess, 1);
@@ -1743,36 +1743,58 @@ bool AppController::stopStandaloneProxy(const std::string& indexId) {
             Logger::write("[StandaloneProxy] TerminateProcess FAILED (err="
                           + std::to_string(err) + ") for " + indexId, LogLevel::ERR);
         } else {
-            // Bounded wait for the process to actually exit. TerminateProcess is
-            // asynchronous: the OS may still report the SOCKS port as LISTEN in
-            // GetExtendedTcpTable for a short window (<200ms) until the kernel
-            // reclaims the listening socket. Waiting here guarantees that by the
-            // time this call returns, the port is free, so an immediate restart of
-            // another proxy does NOT trip isPortAvailable()'s "port occupied ->
-            // use shifted port" prompt. The 3s is only a worst-case bound; a clean
-            // termination returns far sooner.
+            // bugfix #74: TerminateProcess is asynchronous, so the kernel may keep
+            // reporting the SOCKS port as LISTEN for a short window (<200ms). Waiting
+            // here guarantees the port is free by the time we return. 3s is only a
+            // worst-case bound; a clean termination returns far sooner.
             WaitForSingleObject(hProcess, 3000);
             terminated = true;
         }
-        CloseHandle(hProcess);
     }
 
-    // Unwatch AFTER termination: the listener thread is either already dead
-    // (process exited) or about to exit; join will not block indefinitely.
+    if (!terminated) {
+        // Phase 3b — keep the bookkeeping intact (processHandle / running / watchKey
+        // all preserved) so a later stopStandaloneProxy can retry with the same
+        // handle. The handle is still closed by shutdownStandaloneProxies on exit, so
+        // there is no leak; staying watched lets a natural exit still refresh the UI.
+        Logger::write("[StandaloneProxy] Stop FAILED for " + indexId
+                      + " on SOCKS5 :" + std::to_string(socksPort)
+                      + " (processHandle="
+                      + std::to_string(reinterpret_cast<intptr_t>(hProcess)) + ")",
+                      LogLevel::ERR);
+        return false;
+    }
+
+    // Phase 3a-1 — clear the bookkeeping under the lock. Re-find instead of reusing
+    // the phase-1 iterator: notifyFn may have run concurrently during phase 2.
+    {
+        std::lock_guard<std::mutex> lock(standaloneMutex_);
+        auto it = standaloneProxies_.find(indexId);
+        if (it != standaloneProxies_.end()) {
+            it->second.processHandle = nullptr;
+            it->second.running = false;
+            it->second.watchKey = 0;
+            standaloneProxies_.erase(it);
+        }
+    }
+
+    // Phase 3a-2 — everything that can block runs WITHOUT the lock.
+    CloseHandle(hProcess);
     if (key != 0) {
         exitListener_->unwatch(key);
     }
 
-    if (terminated) {
-        Logger::write("[StandaloneProxy] Stopped " + indexId + " on SOCKS5 :"
-                      + std::to_string(socksPort), LogLevel::REPORT);
-    } else {
-        Logger::write("[StandaloneProxy] Stop FAILED for " + indexId
-                      + " on SOCKS5 :" + std::to_string(socksPort)
-                      + " (processHandle=" + std::to_string(reinterpret_cast<intptr_t>(hProcess))
-                      + ")", LogLevel::ERR);
+    // P0-2(c): process exit != port released. Bounded convergence check, LISTEN only.
+    if (!utils::waitPortReleased(socksPort, 1000)) {
+        Logger::write("[AppController] SOCKS port " + std::to_string(socksPort)
+                      + " still LISTEN 1s after stop; a restarted proxy will need a
+                       shifted port", LogLevel::WARN);
+        utils::logPortOccupants(socksPort);
     }
-    return terminated;
+
+    Logger::write("[StandaloneProxy] Stopped " + indexId + " on SOCKS5 :"
+                  + std::to_string(socksPort), LogLevel::REPORT);
+    return true;
 }
 
 void AppController::shutdownStandaloneProxies() {

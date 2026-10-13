@@ -265,6 +265,30 @@ TEST(PortCheckTest, WaitPortReleased_TimesOutWhenListenerHeld) {
     closesocket(sock);
     WSACleanup();
 }
+
+// T7 (Spec §3.2 / Task 2 P0-2): the convergence check AppController::stopStandaloneProxy
+// relies on. A socket we created and then closed must be reported released within the
+// budget — this is the contract that lets a just-stopped proxy rebind the same port.
+// Pure `utils` contract only: no PortManager (test_utils does not link it), no xray.
+TEST(PortCheckTest, WaitPortReleased_TrueAfterSyntheticClose) {
+    WSADATA wsaData;
+    ASSERT_EQ(WSAStartup(MAKEWORD(2, 2), &wsaData), 0);
+    const int testPort = 19884;   // 避开已用的 19881/19882/19883
+    SOCKET sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    ASSERT_NE(sock, INVALID_SOCKET);
+    sockaddr_in addr = {};
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    addr.sin_port = htons(static_cast<u_short>(testPort));
+    ASSERT_EQ(bind(sock, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)), 0) << "Cannot bind test port " << testPort;
+    ASSERT_EQ(listen(sock, 1), 0);
+    // Closing the listening socket is what stopStandaloneProxy does after the process
+    // is gone; the kernel may hold the LISTEN row for a short window afterwards.
+    closesocket(sock);
+    EXPECT_TRUE(utils::waitPortReleased(testPort, 1000))
+        << "A locally closed LISTEN socket must be reported released within the budget";
+    WSACleanup();
+}
 TEST(PortCheckTest, FindAvailablePortReturnsNextFreePort) {
     // Create a listening socket to block a specific port
     WSADATA wsaData;
