@@ -111,6 +111,7 @@ boost::json::object ConfigJsonSerializer::serialize(const AppConfig& config) con
     // proxy
     boost::json::object proxyObj;
     proxyObj["socks_base_port"] = config.proxy.socks_base_port;
+    proxyObj["api_base_port"] = config.proxy.api_base_port;
     if (!config.proxy.xray_executable.empty()) {
         proxyObj["xray_executable"] = config.proxy.xray_executable;
     }

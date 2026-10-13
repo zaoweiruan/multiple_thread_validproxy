@@ -875,7 +875,26 @@ bool AppController::startStandaloneProxy(const std::string& indexId, int overrid
     config::ConfigBuilder builder(db_);
     config::ConfigVariables vars;
     vars.socksPort = socksPort;
-    vars.apiPort = 10085;  // Standalone API port (fixed)
+    const int apiBase = (config_.proxy.api_base_port > 0)
+                            ? config_.proxy.api_base_port
+                            : 10085;
+    int apiPort = apiBase;
+    if (utils::isPortBlocking(apiPort)) {
+        const int shifted = utils::findAvailablePort(apiPort + 1, 32);
+        if (shifted > 0) {
+            apiPort = shifted;
+        } else {
+            // Never let 0 reach the config template (it would render
+            // "api.listen": "127.0.0.1:0"), and the 5s failure branches downstream
+            // only cover timeout / crash / connectivity, not an invalid config.
+            Logger::write("[AppController] no free gRPC API port in ["
+                          + std::to_string(apiBase + 1) + ", "
+                          + std::to_string(apiBase + 32) + "] (base="
+                          + std::to_string(apiBase) + ")", LogLevel::ERR);
+            return false;
+        }
+    }
+    vars.apiPort = apiPort;
     
     std::string backend = useSingBox ? "singbox" : "xray";
     boost::json::value configJson = builder.build(config::ConfigMode::Standalone, backend, profile, vars);

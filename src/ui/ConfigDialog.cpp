@@ -127,6 +127,9 @@ ConfigDialog::ConfigDialog(wxWindow* parent, const config::AppConfig& cfg, sqlit
         propGrid_->Append(useSbProp);
     }
     propGrid_->Append(new wxIntProperty(L"SOCKS 监听端口", "proxy_socks_base_port", cfg.proxy.socks_base_port));
+      // 独立代理 API 端口（2026-10-12 Spec StandalonePortImmediateRebind）
+      // 原为硬编码 10085 且不校验可用性；被占用时启动会自动向后顺延 32 个端口
+      propGrid_->Append(new wxIntProperty(L"独立代理 API 端口", "proxy_api_base_port", cfg.proxy.api_base_port));
 
     // Xray 后端路径组（use_singbox=false 时可见）——指针存成员供 applyBackendVisibility 使用
     xrayBackendCat_ = new wxPropertyCategory(L"Xray 后端路径");
@@ -439,6 +442,7 @@ void ConfigDialog::loadConfig(const config::AppConfig& cfg) {
     propGrid_->SetPropertyValue("proxy_xray_executable", wxString(cfg.proxy.xray_executable));
     propGrid_->SetPropertyValue("proxy_use_singbox", cfg.proxy.use_singbox);
     propGrid_->SetPropertyValue("proxy_socks_base_port", cfg.proxy.socks_base_port);
+      propGrid_->SetPropertyValue("proxy_api_base_port", cfg.proxy.api_base_port);
     propGrid_->SetPropertyValue("proxy_xray_asset_dir", wxString(cfg.proxy.xray_asset_dir));
     propGrid_->SetPropertyValue("proxy_singbox_executable", wxString(cfg.proxy.singbox_executable));
     propGrid_->SetPropertyValue("proxy_singbox_asset_dir", wxString(cfg.proxy.singbox_asset_dir));
@@ -566,6 +570,7 @@ bool ConfigDialog::saveConfig() {
     editedConfig_.proxy.xray_executable = propGrid_->GetPropertyValueAsString("proxy_xray_executable").ToStdString();
     editedConfig_.proxy.use_singbox = propGrid_->GetPropertyValueAsBool("proxy_use_singbox");
     editedConfig_.proxy.socks_base_port = propGrid_->GetPropertyValueAsInt("proxy_socks_base_port");
+      editedConfig_.proxy.api_base_port = propGrid_->GetPropertyValueAsInt("proxy_api_base_port");
     editedConfig_.proxy.xray_asset_dir = propGrid_->GetPropertyValueAsString("proxy_xray_asset_dir").ToStdString();
     editedConfig_.proxy.singbox_executable = propGrid_->GetPropertyValueAsString("proxy_singbox_executable").ToStdString();
     editedConfig_.proxy.singbox_asset_dir = propGrid_->GetPropertyValueAsString("proxy_singbox_asset_dir").ToStdString();

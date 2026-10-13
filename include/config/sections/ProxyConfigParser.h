@@ -25,6 +25,14 @@ inline void ProxyConfigParser::parse(const boost::json::value& root, AppConfig& 
         } else if (proxy.contains("socks_base_port")) {
             Logger::write("WARNING: config.proxy.socks_base_port has wrong type (expected int64), using default", LogLevel::WARN);
         }
+        // 2026-10-12 Spec StandalonePortImmediateRebind (Task 3 / P0-3):
+        // standalone API port, previously hard-coded 10085 in AppController.
+        if (proxy.contains("api_base_port") && proxy.at("api_base_port").is_int64()) {
+            config.proxy.api_base_port = static_cast<int>(proxy.at("api_base_port").as_int64());
+            if (config.proxy.api_base_port <= 0) config.proxy.api_base_port = 10085;
+        } else if (proxy.contains("api_base_port")) {
+            Logger::write("WARNING: config.proxy.api_base_port has wrong type (expected int64), using default", LogLevel::WARN);
+        }
         if (proxy.contains("xray_executable") && proxy.at("xray_executable").is_string()) {
             std::string rawPath = proxy.at("xray_executable").as_string().c_str();
             std::filesystem::path p(rawPath);

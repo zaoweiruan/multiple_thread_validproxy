@@ -109,6 +109,9 @@ struct AppConfig {
     // Proxy configuration (standalone proxy)
     struct {
         int socks_base_port = 10808;
+        // Standalone proxy gRPC API base port. Was the hard-coded literal 10085 in
+        // AppController (no availability check); now configurable and validated.
+        int api_base_port = 10085;
         std::string xray_executable;         // Xray executable path (moved from top-level)
         std::string xray_asset_dir;
         bool use_singbox = false;            // Proxy backend selector: true=sing-box, false=Xray
