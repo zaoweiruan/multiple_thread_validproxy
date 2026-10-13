@@ -127,6 +127,9 @@ ConfigDialog::ConfigDialog(wxWindow* parent, const config::AppConfig& cfg, sqlit
         propGrid_->Append(useSbProp);
     }
     propGrid_->Append(new wxIntProperty(L"SOCKS 监听端口", "proxy_socks_base_port", cfg.proxy.socks_base_port));
+      // TIME_WAIT 是否算作端口占用（2026-10-12 Spec StandalonePortImmediateRebind，Task 1 / P0-1）
+      // true = 恢复旧行为：TIME_WAIT 残留也算占用（会触发顺延）；false = 新行为（默认）
+      propGrid_->Append(new wxBoolProperty(L"TIME_WAIT 视为端口占用（回滚开关）", "port_time_wait_blocking", cfg.port.time_wait_blocking));
       // 独立代理 API 端口（2026-10-12 Spec StandalonePortImmediateRebind）
       // 原为硬编码 10085 且不校验可用性；被占用时启动会自动向后顺延 32 个端口
       propGrid_->Append(new wxIntProperty(L"独立代理 API 端口", "proxy_api_base_port", cfg.proxy.api_base_port));
@@ -442,6 +445,7 @@ void ConfigDialog::loadConfig(const config::AppConfig& cfg) {
     propGrid_->SetPropertyValue("proxy_xray_executable", wxString(cfg.proxy.xray_executable));
     propGrid_->SetPropertyValue("proxy_use_singbox", cfg.proxy.use_singbox);
     propGrid_->SetPropertyValue("proxy_socks_base_port", cfg.proxy.socks_base_port);
+      propGrid_->SetPropertyValue("port_time_wait_blocking", cfg.port.time_wait_blocking);
       propGrid_->SetPropertyValue("proxy_api_base_port", cfg.proxy.api_base_port);
     propGrid_->SetPropertyValue("proxy_xray_asset_dir", wxString(cfg.proxy.xray_asset_dir));
     propGrid_->SetPropertyValue("proxy_singbox_executable", wxString(cfg.proxy.singbox_executable));
@@ -570,6 +574,7 @@ bool ConfigDialog::saveConfig() {
     editedConfig_.proxy.xray_executable = propGrid_->GetPropertyValueAsString("proxy_xray_executable").ToStdString();
     editedConfig_.proxy.use_singbox = propGrid_->GetPropertyValueAsBool("proxy_use_singbox");
     editedConfig_.proxy.socks_base_port = propGrid_->GetPropertyValueAsInt("proxy_socks_base_port");
+      editedConfig_.port.time_wait_blocking = propGrid_->GetPropertyValueAsBool("port_time_wait_blocking");
       editedConfig_.proxy.api_base_port = propGrid_->GetPropertyValueAsInt("proxy_api_base_port");
     editedConfig_.proxy.xray_asset_dir = propGrid_->GetPropertyValueAsString("proxy_xray_asset_dir").ToStdString();
     editedConfig_.proxy.singbox_executable = propGrid_->GetPropertyValueAsString("proxy_singbox_executable").ToStdString();

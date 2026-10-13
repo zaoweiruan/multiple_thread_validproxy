@@ -391,11 +391,6 @@ bool isValidUrlFormat(const std::string& url) {
         return g_timeWaitBlocking.load(std::memory_order_relaxed);
     }
 
-    bool isPortBlocking(int port) {
-        bool timeWaitHit = false;
-        if (scanPortStatesRaw(port, &timeWaitHit)) return true;
-        return timeWaitHit && configTimeWaitBlocking();
-    }
 
     bool isPortListening(int port) {
         bool timeWaitHit = false;

@@ -875,6 +875,11 @@ bool AppController::startStandaloneProxy(const std::string& indexId, int overrid
     config::ConfigBuilder builder(db_);
     config::ConfigVariables vars;
     vars.socksPort = socksPort;
+    // P0-3: the API port used to be the hard-coded literal 10085 with no
+    // availability check, so a second standalone proxy (or the pool) collided on
+    // it and fell into the 5s failure branches. Honour the configured base and
+    // shift away from a genuinely occupied port. Note that a TIME_WAIT-only row
+    // does NOT block a bind on Windows (tw5), so it will NOT trigger a shift here.
     const int apiBase = (config_.proxy.api_base_port > 0)
                             ? config_.proxy.api_base_port
                             : 10085;
@@ -1729,7 +1734,6 @@ void AppController::adoptDanglingStandaloneProxies() {
 }
 
 bool AppController::stopStandaloneProxy(const std::string& indexId) {
-bool AppController::stopStandaloneProxy(const std::string& indexId) {
     // P0-2 four-phase sequence (Spec §3.2).
     //
     // The real invariant here is NOT "clear the bookkeeping before terminating" —
@@ -1806,8 +1810,7 @@ bool AppController::stopStandaloneProxy(const std::string& indexId) {
     // P0-2(c): process exit != port released. Bounded convergence check, LISTEN only.
     if (!utils::waitPortReleased(socksPort, 1000)) {
         Logger::write("[AppController] SOCKS port " + std::to_string(socksPort)
-                      + " still LISTEN 1s after stop; a restarted proxy will need a
-                       shifted port", LogLevel::WARN);
+                      + " still LISTEN 1s after stop; a restarted proxy will need a shifted port", LogLevel::WARN);
         utils::logPortOccupants(socksPort);
     }
 
