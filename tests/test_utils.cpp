@@ -82,6 +82,10 @@ TEST(UrlValidationTest, InvalidLocalhostNoDot) {
 }
 
 #include <iphlpapi.h>
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <iphlpapi.h>
+#include <vector>
 #include <vector>
 
 // Test-local oracle: does the kernel table still show a TIME_WAIT row for `port`?
@@ -289,8 +293,6 @@ TEST(PortCheckTest, WaitPortReleased_TrueAfterSyntheticClose) {
         << "A locally closed LISTEN socket must be reported released within the budget";
     WSACleanup();
 }
-TEST(PortCheckTest, FindAvailablePortReturnsNextFreePort) {
-
 // T5 (P1-3): within the snapshot TTL, three consecutive probes must not each pay a
 // full two-family table enumeration. A refresh costs +2 on the counter (one per
 // address family), so 3 probes inside the TTL are expected to add <= 4.
@@ -324,6 +326,8 @@ TEST(PortCheckTest, SnapshotCache_EnumeratesOnceWithinTtl) {
     utils::invalidatePortSnapshot();
     WSACleanup();
 }
+TEST(PortCheckTest, FindAvailablePortReturnsNextFreePort) {
+
     // Create a listening socket to block a specific port
     WSADATA wsaData;
     ASSERT_EQ(WSAStartup(MAKEWORD(2, 2), &wsaData), 0);
