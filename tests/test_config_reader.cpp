@@ -1,17 +1,80 @@
 #include <gtest/gtest.h>
 #include <fstream>
 #include <filesystem>
+#include <cstdio>
+#include <string>
+#include <utility>
+#include <vector>
 #include "test_utils.h"
 #include "ConfigReader.h"
 
 using namespace config;
 
 // ============================================================
+// Modal-dialog interception.
+//
+// ConfigReader's default error reporter (src/ConfigReader.cpp:35-37) calls
+// MessageBoxA(). Under a headless test runner that modal dialog blocks the
+// process until something dismisses it: loading a missing config file stalled
+// the whole ConfigReaderTest suite for ~82 s.
+//
+// ErrorReporter is a plain function POINTER (include/ConfigReader.h:139,
+// `void(*)(const std::string&, const std::string&)`), so it cannot capture --
+// the captured state has to live in namespace-scope storage that the free
+// function below writes into. TearDown() restores the original pointer, so
+// every other test binary keeps the real MessageBoxA behaviour.
+// ============================================================
+namespace {
+struct CapturedError {
+    std::string title;
+    std::string message;
+};
+
+std::vector<CapturedError> g_capturedErrors;
+
+void captureErrorReport(const std::string& title, const std::string& message) {
+    g_capturedErrors.push_back(CapturedError{title, message});
+    std::fprintf(stderr, "[ConfigReader error] %s: %s\n", title.c_str(), message.c_str());
+}
+}  // namespace
+
+// ============================================================
 // ConfigReader Test Fixture - uses TempDir for file I/O
 // ============================================================
 class ConfigReaderTest : public ::testing::Test {
 protected:
+    // Each TEST_F instance builds its own TempDir, and TempDir() derives a RANDOM
+    // directory name ("test_tmp_<8 hex>", see tests/test_utils.h:19-31). A file
+    // written by one TEST_F is therefore NOT visible to any other TEST_F -- every
+    // test has to create the files it reads.
     TempDir tempDir_;
+
+    // ConfigReader's error reporter is replaced for the duration of each test so
+    // the modal MessageBoxA is never shown; what it WOULD have displayed is kept
+    // in the file-scope g_capturedErrors vector (see captureErrorReport above).
+    void SetUp() override {
+        savedErrorReporter_ = ConfigReader::errorReporter_;
+        ConfigReader::errorReporter_ = &captureErrorReport;
+        g_capturedErrors.clear();
+    }
+
+    void TearDown() override {
+        ConfigReader::errorReporter_ = savedErrorReporter_;
+        g_capturedErrors.clear();
+    }
+
+    bool noConfigErrors() const { return g_capturedErrors.empty(); }
+
+    // Flattens every captured (title, message) pair into one string so an ASSERT
+    // can print what the dialog WOULD have said instead of just "false".
+    std::string errorSummary() const {
+        std::string out;
+        for (std::size_t i = 0; i < g_capturedErrors.size(); ++i) {
+            if (i != 0) out += "\n---\n";
+            out += g_capturedErrors[i].title + ": " + g_capturedErrors[i].message;
+        }
+        return out;
+    }
 
     void writeConfig(const std::string& filename, const std::string& content) {
         std::ofstream file(tempDir_.path() + "/" + filename);
@@ -22,6 +85,9 @@ protected:
     std::string configPath(const std::string& filename) {
         return tempDir_.path() + "/" + filename;
     }
+
+private:
+    ConfigReader::ErrorReporter savedErrorReporter_;
 };
 
 // ============================================================
@@ -275,14 +341,19 @@ TEST_F(ConfigReaderTest, PortTimeWaitBlocking_WrongTypeKeepsDefaultAndWarns) {
 }
 
 TEST_F(ConfigReaderTest, PortTimeWaitBlocking_SurvivesSaveRoundTrip) {
+    // This TEST_F has its own TempDir, so it must write the file it reads.
+    // Reading a file written by another TEST_F hits ConfigFileStore::read's
+    // failure path, which used to raise a modal MessageBox and stall the suite.
+    writeConfig("no_port.json", R"({"database_path":"x.db"})");
     auto cfg = ConfigReader::load(configPath("no_port.json"));
-    ASSERT_TRUE(cfg.has_value());
+    ASSERT_TRUE(cfg.has_value()) << errorSummary();
     cfg->port.time_wait_blocking = true;
-    ASSERT_TRUE(ConfigReader::save(configPath("rt_port.json"), *cfg));
+    ASSERT_TRUE(ConfigReader::save(configPath("rt_port.json"), *cfg)) << errorSummary();
     const auto reloaded = ConfigReader::load(configPath("rt_port.json"));
-    ASSERT_TRUE(reloaded.has_value());
+    ASSERT_TRUE(reloaded.has_value()) << errorSummary();
     EXPECT_TRUE(reloaded->port.time_wait_blocking)
         << "port.time_wait_blocking must survive save/reload";
+    EXPECT_TRUE(noConfigErrors()) << "a clean round-trip must not report any config error";
 }
 
 // ============================================================
@@ -307,12 +378,15 @@ TEST_F(ConfigReaderTest, ProxyApiBasePort_ReadsExplicitValue) {
 }
 
 TEST_F(ConfigReaderTest, ProxyApiBasePort_SurvivesSaveRoundTrip) {
+    // This TEST_F has its own TempDir, so it must write the file it reads.
+    writeConfig("no_api_base.json", R"({"database_path":"x.db"})");
     auto cfg = ConfigReader::load(configPath("no_api_base.json"));
-    ASSERT_TRUE(cfg.has_value());
+    ASSERT_TRUE(cfg.has_value()) << errorSummary();
     cfg->proxy.api_base_port = 10200;
-    ASSERT_TRUE(ConfigReader::save(configPath("rt_api_base.json"), *cfg));
+    ASSERT_TRUE(ConfigReader::save(configPath("rt_api_base.json"), *cfg)) << errorSummary();
     const auto reloaded = ConfigReader::load(configPath("rt_api_base.json"));
-    ASSERT_TRUE(reloaded.has_value());
+    ASSERT_TRUE(reloaded.has_value()) << errorSummary();
     EXPECT_EQ(reloaded->proxy.api_base_port, 10200)
         << "proxy.api_base_port must survive save/reload";
+    EXPECT_TRUE(noConfigErrors()) << "a clean round-trip must not report any config error";
 }
