@@ -1900,8 +1900,19 @@ bool AppController::startProxyPool() {
         poolCfg.probeUrl = config_.test_url;
         if (attempt > 0) {
             // Shift the scan window past the port that was busy on the last try.
-            poolCfg.socksPort = 10809 + attempt;
-            poolCfg.apiPort = 10810 + attempt;
+            // P1-2: shift relative to the *configured* base ports instead of the
+            // hard-coded 10809/10810, so a user-configured base is honoured on
+            // every attempt. Byte-identical under the default config (where the
+            // configured bases are 10809/10810 anyway) — and resolvePoolPorts
+            // still validates each shifted port, so the guess stays a hint.
+            const int baseSocks = (config_.standalone_pool.socksPort > 0)
+                                      ? config_.standalone_pool.socksPort
+                                      : 10809;
+            const int baseApi = (config_.standalone_pool.apiPort > 0)
+                                    ? config_.standalone_pool.apiPort
+                                    : 10810;
+            poolCfg.socksPort = baseSocks + attempt;
+            poolCfg.apiPort = baseApi + attempt;
         }
         if (!proxy::resolvePoolPorts(poolCfg)) {
             Logger::write("[AppController] no free port available for proxy pool (attempt "
