@@ -290,6 +290,40 @@ TEST(PortCheckTest, WaitPortReleased_TrueAfterSyntheticClose) {
     WSACleanup();
 }
 TEST(PortCheckTest, FindAvailablePortReturnsNextFreePort) {
+
+// T5 (P1-3): within the snapshot TTL, three consecutive probes must not each pay a
+// full two-family table enumeration. A refresh costs +2 on the counter (one per
+// address family), so 3 probes inside the TTL are expected to add <= 4.
+TEST(PortCheckTest, SnapshotCache_EnumeratesOnceWithinTtl) {
+    WSADATA wsaData;
+    ASSERT_EQ(WSAStartup(MAKEWORD(2, 2), &wsaData), 0);
+    const int testPort = 19885;
+    SOCKET sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    ASSERT_NE(sock, INVALID_SOCKET);
+    sockaddr_in addr = {};
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    addr.sin_port = htons(static_cast<u_short>(testPort));
+    ASSERT_EQ(bind(sock, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)), 0);
+    ASSERT_EQ(listen(sock, 1), 0);
+    // The kernel state just changed outside the cache's knowledge.
+    utils::invalidatePortSnapshot();
+
+    const long before = utils::testing::g_tcpTableEnumerationCount.load(
+                             std::memory_order_relaxed);
+    EXPECT_TRUE(utils::isPortBlocking(testPort));
+    EXPECT_TRUE(utils::isPortBlocking(testPort));
+    EXPECT_TRUE(utils::isPortBlocking(testPort));
+    const long delta = utils::testing::g_tcpTableEnumerationCount.load(
+                            std::memory_order_relaxed) - before;
+
+    EXPECT_GT(delta, 0L) << "the cache must have been populated at least once";
+    EXPECT_LE(delta, 4L) << "3 probes inside the TTL must not cost 3 full enumerations";
+
+    closesocket(sock);
+    utils::invalidatePortSnapshot();
+    WSACleanup();
+}
     // Create a listening socket to block a specific port
     WSADATA wsaData;
     ASSERT_EQ(WSAStartup(MAKEWORD(2, 2), &wsaData), 0);
@@ -304,6 +338,7 @@ TEST(PortCheckTest, FindAvailablePortReturnsNextFreePort) {
 
     ASSERT_EQ(bind(testSock, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)), 0);
     ASSERT_EQ(listen(testSock, 1), 0);
+    utils::invalidatePortSnapshot();
 
     // findAvailablePort should skip port 19877 and return 19878 (or higher)
     int found = utils::findAvailablePort(19877, 10);
@@ -333,6 +368,7 @@ TEST(PortCheckTest, OccupiedOnWildcardReportedUnavailable) {
     ASSERT_EQ(bind(sock, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)), 0)
         << "Cannot bind wildcard test port 19878";
     ASSERT_EQ(listen(sock, 1), 0);
+    utils::invalidatePortSnapshot();
 
     EXPECT_FALSE(utils::isPortAvailable(19878))
         << "Wildcard (0.0.0.0) listener must make the port unavailable";
@@ -367,6 +403,7 @@ TEST(PortCheckTest, OccupiedOnIpv6ReportedUnavailable) {
         WSACleanup();
         GTEST_SKIP() << "Cannot bind IPv6 test port 19879";
     }
+    utils::invalidatePortSnapshot();
 
     EXPECT_FALSE(utils::isPortAvailable(19879))
         << "IPv6 ([::]) listener must make the port unavailable";
@@ -390,6 +427,7 @@ TEST(PortCheckTest, FindAvailablePortSkipsWildcardOccupied) {
 
     ASSERT_EQ(bind(sock, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)), 0);
     ASSERT_EQ(listen(sock, 1), 0);
+    utils::invalidatePortSnapshot();
 
     int found = utils::findAvailablePort(19880, 10);
     EXPECT_NE(found, 19880)

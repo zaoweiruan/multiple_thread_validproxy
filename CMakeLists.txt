@@ -656,6 +656,9 @@ add_test(NAME AutoTaskTest COMMAND test_autotask)
 # -- Utils unit tests (pure functions, no external deps beyond gtest) --
 add_executable(test_utils tests/test_utils.cpp src/Utils.cpp src/Logger.cpp src/LoggerInstance.cpp)
 target_include_directories(test_utils PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+# P1-3 (Spec §6 Task 6 Step 2): exposes utils::testing::g_tcpTableEnumerationCount so
+# T5 SnapshotCache_EnumeratesOnceWithinTtl can observe snapshot refreshes.
+target_compile_definitions(test_utils PRIVATE TEST_BUILD=1)
 target_link_libraries(test_utils PRIVATE gtest_main gtest -lws2_32)
 set_target_properties(test_utils PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests

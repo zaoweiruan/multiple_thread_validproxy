@@ -264,7 +264,124 @@ bool isValidUrlFormat(const std::string& url) {
             }
             return listening;
         }
+        // ---- TCP 端点表快照缓存（P1-3）------------------------------------
+        // 值返回：调用方在锁外拿到的是拷贝，杜绝「返回引用 + 锁已析构」的数据竞争
+        // （rev.1 缺陷：调用方无锁访问 unordered_set，与其它线程 rehash 竞争）。
+        struct TcpPortSnapshot {
+            std::unordered_set<int> listening;   // 处于 LISTEN 的本地端口
+            std::unordered_set<int> timeWait;    // 处于 TIME_WAIT 的本地端口
+            ULONGLONG stampMs = 0;               // 0 表示「尚无有效快照」
+        };
+
+        std::mutex g_snapMutex;
+        TcpPortSnapshot g_snap;
+        const ULONGLONG kSnapTtlMs = 250;        // 200-500ms 取中值
+
+        // 一次枚举，把某个地址族全表的 LISTEN / TIME_WAIT 端口填充进 out。
+        // 返回 true 表示枚举成功（即使 out 为空）；false 表示 GetExtendedTcpTable 失败。
+        bool scanPortStatesRawFamily(int af, TcpPortSnapshot* out) {
+#ifdef TEST_BUILD
+            // T5 专用的枚举计数钩子：每次枚举一个地址族 +1。
+            // portSnapshot() 一次刷新调用本函数两次，因此「一次刷新 = 计数 +2」。
+            testing::g_tcpTableEnumerationCount.fetch_add(1, std::memory_order_relaxed);
+#endif
+            DWORD size = 0;
+            GetExtendedTcpTable(nullptr, &size, FALSE, af, TCP_TABLE_OWNER_PID_ALL, 0);
+            if (size == 0) return false;
+            std::vector<unsigned char> buf(size);
+            if (af == AF_INET) {
+                PMIB_TCPTABLE_OWNER_PID table =
+                    reinterpret_cast<PMIB_TCPTABLE_OWNER_PID>(buf.data());
+                if (GetExtendedTcpTable(table, &size, FALSE, AF_INET,
+                                        TCP_TABLE_OWNER_PID_ALL, 0) != NO_ERROR) {
+                    return false;
+                }
+                for (DWORD i = 0; i < table->dwNumEntries; ++i) {
+                    const int p = ntohs(table->table[i].dwLocalPort);
+                    const DWORD st = table->table[i].dwState;
+                    if (st == MIB_TCP_STATE_LISTEN)           out->listening.insert(p);
+                    else if (st == MIB_TCP_STATE_TIME_WAIT)   out->timeWait.insert(p);
+                }
+                return true;
+            }
+            PMIB_TCP6TABLE_OWNER_PID table6 =
+                reinterpret_cast<PMIB_TCP6TABLE_OWNER_PID>(buf.data());
+            if (GetExtendedTcpTable(table6, &size, FALSE, AF_INET6,
+                                    TCP_TABLE_OWNER_PID_ALL, 0) != NO_ERROR) {
+                return false;
+            }
+            for (DWORD i = 0; i < table6->dwNumEntries; ++i) {
+                const int p = ntohs(table6->table[i].dwLocalPort);
+                // dwState 在 IPv4/IPv6 两族都是 DWORD，可与 MIB_TCP_STATE_* 跨族比较。
+                const DWORD st = table6->table[i].dwState;
+                if (st == MIB_TCP_STATE_LISTEN)           out->listening.insert(p);
+                else if (st == MIB_TCP_STATE_TIME_WAIT)   out->timeWait.insert(p);
+            }
+            return true;
+        }
+
+        // 命中条件只看 stampMs，不看 listening 是否为空：否则「系统确实没有 LISTEN
+        // 端点」或「枚举失败」这两种情况会让缓存永不命中且 stampMs 不更新，
+        // 退化为每次全量枚举（rev.1 缺陷）。
+        TcpPortSnapshot portSnapshot() {
+            std::lock_guard<std::mutex> lock(g_snapMutex);
+            const ULONGLONG now = GetTickCount64();
+            if (g_snap.stampMs != 0 && (now - g_snap.stampMs) < kSnapTtlMs) {
+                return g_snap;                   // 值拷贝（典型 1-3k 个 int，~100µs 级）
+            }
+            TcpPortSnapshot fresh;
+            // 两族都要枚举。`(v4Rows > 0) ? 0 : scan(AF_INET6)` 是错的：v4Rows 是
+            // 「IPv4 全表行数」而非「本端口是否命中」，任何真实机器恒 > 0，结果
+            // IPv6 几乎永不被枚举 —— 会重新引入 bugfix #17/#73 修掉的 IPv6 漏报。
+            const bool ok4 = scanPortStatesRawFamily(AF_INET, &fresh);
+            const bool ok6 = scanPortStatesRawFamily(AF_INET6, &fresh);
+            if (!ok4 && !ok6) {
+                // 两族枚举都失败：不写 stampMs，让下次调用重试，避免把失败缓存 250ms。
+                return g_snap;
+            }
+            fresh.stampMs = now;
+            g_snap = fresh;
+            return g_snap;
+        }
+
+        // 带缓存版的端口判定：isPortBlocking 的实现改调本函数。
+        // isPortListening 与 waitPortReleased 必须继续走无缓存的 scanPortStatesRaw，
+        // 否则会读到 250ms 内的旧快照而提前返回 true（见 §8 R-3）。
+        bool isPortBlockingCached(int port) {
+            TcpPortSnapshot snap = portSnapshot();
+            if (snap.listening.find(port) != snap.listening.end()) return true;
+            if (configTimeWaitBlocking() &&
+                snap.timeWait.find(port) != snap.timeWait.end()) return true;
+            return false;
+        }
     }  // namespace
+
+    // 丢弃已缓存的快照，迫使下一次 portSnapshot() 重新枚举内核表。
+    // 两个调用点：① waitPortReleased 观测到 LISTEN 行消失的那一刻 —— 那正是我们
+    // *确知*缓存刚变陈旧的唯一时机，若不在此时失效，关闭独立代理后至多一个 TTL
+    // （250ms）内 isPortBlocking 仍会报告该端口被占用，从而重新触发端口顺延/弹窗
+    // （本 Spec P1-3 + G1/G2 要消除的现象）；② 直接创建/销毁 socket 的测试。
+    void invalidatePortSnapshot() {
+        std::lock_guard<std::mutex> lock(g_snapMutex);
+        g_snap = TcpPortSnapshot{};
+    }
+
+#ifdef TEST_BUILD
+    // T5（P1-3）专用的枚举计数钩子：scanPortStatesRawFamily 每枚举一个地址族 +1。
+    // portSnapshot() 一次刷新调用它两次，因此「一次刷新 = 计数 +2」。
+    // 仅测试构建编译；声明在 include/Utils.h（同样由 TEST_BUILD 包裹）。
+    namespace testing {
+        std::atomic<long> g_tcpTableEnumerationCount{0};
+    }  // namespace testing
+#endif
+
+    // P1-3: the sole occupancy oracle now goes through the 250 ms snapshot cache,
+    // so a scan over N candidate ports costs one table enumeration instead of N.
+    // isPortListening / waitPortReleased deliberately stay uncached — they must
+    // observe the instant the LISTEN row disappears.
+    bool isPortBlocking(int port) {
+        return isPortBlockingCached(port);
+    }
 
     void setTimeWaitBlocking(bool blocking) {
         g_timeWaitBlocking.store(blocking, std::memory_order_relaxed);

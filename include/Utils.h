@@ -44,6 +44,22 @@ namespace utils {
     // Returns true as soon as the port is not listening; budgetMs is only a
     // fallback ceiling (normal path returns on the first poll, <20ms).
     bool waitPortReleased(int port, int budgetMs);
+    // Drops the cached TCP-table snapshot so the next isPortBlocking() re-enumerates
+    // the kernel table. Two callers: (1) waitPortReleased, the moment it observes a
+    // LISTEN row disappear — the one point where we *know* the snapshot just became
+    // stale, and without this a just-freed port would keep reporting "occupied" for
+    // the rest of the 250ms TTL and be shifted away from; (2) tests that create or
+    // destroy sockets directly (kernel state changed outside our knowledge).
+    void invalidatePortSnapshot();
+
+#ifdef TEST_BUILD
+    // Test-only observability hook for T5 (P1-3 snapshot cache): incremented once
+    // per address-family enumeration inside scanPortStatesRawFamily. One snapshot
+    // refresh enumerates both families, so a refresh costs +2.
+    namespace testing {
+        extern std::atomic<long> g_tcpTableEnumerationCount;
+    }
+#endif
     // Process-level rollback switch for TIME_WAIT blocking. Published by
     // AppController from `port.time_wait_blocking` at startup (constructor) and
     // on config save. Struct is a plain atomic read — never touch ConfigReader
