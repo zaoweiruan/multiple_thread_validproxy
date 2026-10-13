@@ -50,6 +50,11 @@ using ui::ScopeGuard;
 // ---------------------------------------------------------------
 AppController::AppController(sqlite3* db, const config::AppConfig& cfg)
     : db_(db), config_(cfg) {
+
+    // P0-1: publish the TIME_WAIT rollback switch once, at startup. ConfigReader::load()
+    // is disk IO per call, so the probing hot path must never read the config file —
+    // it reads this atomic instead.
+    utils::setTimeWaitBlocking(config_.port.time_wait_blocking);
     if (!config_.network_monitor.enabled) {
         netMon_.setEnabled(false);
     } else {
@@ -141,6 +146,9 @@ bool AppController::saveConfig(const config::AppConfig& cfg) {
     // runs; only DB-path swaps require full idle (see MainFrame::onMenuConfig).
     std::lock_guard<std::mutex> lock(configMutex_);
     config_ = cfg;
+
+    // P0-1: keep the published rollback switch in sync after a config save.
+    utils::setTimeWaitBlocking(config_.port.time_wait_blocking);
     // Persist to config.json so changes survive restart
     std::string configPath = config::ConfigReader::getDefaultConfigPath();
     return config::ConfigReader::save(configPath, cfg);

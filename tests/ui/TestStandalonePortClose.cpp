@@ -121,14 +121,13 @@ std::vector<TcpRow> tcpRowsForPort(int port) {
     return out;
 }
 
-// Returns true if ANY row for `port` has state LISTEN or TIME_WAIT (exactly
-// Utils::isPortOccupiedInTable's predicate => isPortAvailable(port) would be
-// false).
+// LISTEN-only predicate — the production behaviour after P0-1 (utils::isPortListening).
+// TIME_WAIT deliberately no longer counts as occupancy: tw5 proved a port holding
+// only TIME_WAIT rows is immediately rebindable on Windows.
 bool predicateSaysOccupied(int port) {
     const std::vector<TcpRow> rows = tcpRowsForPort(port);
     for (std::size_t i = 0; i < rows.size(); ++i) {
-        if (rows[i].state == MIB_TCP_STATE_LISTEN
-            || rows[i].state == MIB_TCP_STATE_TIME_WAIT) {
+        if (rows[i].state == MIB_TCP_STATE_LISTEN) {
             return true;
         }
     }
@@ -175,11 +174,37 @@ bool xrayCanStart() {
         return false;
     }
     if (nul) ::CloseHandle(nul);
-
-    bool listening = false;
-    WSADATA wsa{};
-    if (::WSAStartup(MAKEWORD(2, 2), &wsa) == 0) {
-        SOCKET s = ::socket(AF_INET, SOCK_STREAM, 0);
+            // P0-1: the old blocking connect took ~2.16s per attempt on hosts with
+            // an LSP/TUN filter driver (25 attempts = 54s per case, so 3 cases blew
+            // past ctest's 120s timeout). Use a non-blocking connect bounded by
+            // select() at 200ms instead. A fresh socket per round is mandatory:
+            // a failed non-blocking connect leaves that socket unusable.
+            for (int i = 0; i < 25 && !listening; ++i) {
+                SOCKET probe = ::socket(AF_INET, SOCK_STREAM, 0);
+                if (probe != INVALID_SOCKET) {
+                    u_long nb = 1;
+                    ::ioctlsocket(probe, FIONBIO, &nb);
+                    const int rc = ::connect(probe, reinterpret_cast<sockaddr*>(&a),
+                                             sizeof(a));
+                    const bool fastFail =
+                        (rc == SOCKET_ERROR &&
+                         ::WSAGetLastError() != WSAEWOULDBLOCK);
+                    if (!fastFail) {
+                        fd_set wr{};
+                        FD_ZERO(&wr);
+                        FD_SET(probe, &wr);
+                        timeval tv{};
+                        tv.tv_sec  = 0;
+                        tv.tv_usec = 200000;  // 200ms bound
+                        if (::select(0, nullptr, &wr, nullptr, &tv) > 0) {
+                            listening = true;
+                        }
+                    }
+                    ::closesocket(probe);
+                    if (listening) break;
+                }
+                ::Sleep(100);
+            }
         if (s != INVALID_SOCKET) {
             sockaddr_in a{};
             a.sin_family = AF_INET;

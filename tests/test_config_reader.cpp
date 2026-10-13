@@ -239,4 +239,54 @@ TEST_F(ConfigReaderTest, SaveToCustomPath) {
     EXPECT_GT(content.size(), 0u);
     EXPECT_TRUE(content.find("workers") != std::string::npos);
     EXPECT_TRUE(content.find("5") != std::string::npos);
+// ============================================================
+// port.* section (2026-10-12 Spec StandalonePortImmediateRebind)
+// ============================================================
+
+TEST_F(ConfigReaderTest, PortTimeWaitBlocking_DefaultsToFalseWhenSectionMissing) {
+    writeConfig("no_port.json", R"({"database_path":"x.db"})");
+    const auto cfg = ConfigReader::load(configPath("no_port.json"));
+    ASSERT_TRUE(cfg.has_value());
+    EXPECT_FALSE(cfg->port.time_wait_blocking)
+        << "port.time_wait_blocking must default to false when the section is absent";
+}
+
+TEST_F(ConfigReaderTest, PortTimeWaitBlocking_ReadsFalseExplicitly) {
+    writeConfig("port_off.json", R"({"port":{"time_wait_blocking":false}})");
+    const auto cfg = ConfigReader::load(configPath("port_off.json"));
+    ASSERT_TRUE(cfg.has_value());
+    EXPECT_FALSE(cfg->port.time_wait_blocking);
+}
+
+TEST_F(ConfigReaderTest, PortTimeWaitBlocking_ReadsTrue) {
+    writeConfig("port_on.json", R"({"port":{"time_wait_blocking":true}})");
+    const auto cfg = ConfigReader::load(configPath("port_on.json"));
+    ASSERT_TRUE(cfg.has_value());
+    EXPECT_TRUE(cfg->port.time_wait_blocking);
+}
+
+TEST_F(ConfigReaderTest, PortTimeWaitBlocking_WrongTypeKeepsDefaultAndWarns) {
+    writeConfig("port_bad.json", R"({"port":{"time_wait_blocking":"yes"}})");
+    const auto cfg = ConfigReader::load(configPath("port_bad.json"));
+    ASSERT_TRUE(cfg.has_value());
+    EXPECT_FALSE(cfg->port.time_wait_blocking)
+        << "wrong type must keep the default, not adopt the value";
+}
+
+TEST_F(ConfigReaderTest, PortTimeWaitBlocking_SurvivesSaveRoundTrip) {
+    AppConfig original;
+    original.port.time_wait_blocking = true;
+    ASSERT_TRUE(ConfigReader::save(configPath("port_rt.json"), original));
+
+    std::ifstream in(configPath("port_rt.json"));
+    ASSERT_TRUE(in.is_open());
+    std::string content((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    in.close();
+    EXPECT_TRUE(content.find("time_wait_blocking") != std::string::npos)
+        << "serialization must write the key back or a save drops it (regression class: infoinfo_token)";
+
+    const auto reloaded = ConfigReader::load(configPath("port_rt.json"));
+    ASSERT_TRUE(reloaded.has_value());
+    EXPECT_TRUE(reloaded->port.time_wait_blocking);
+}
 }

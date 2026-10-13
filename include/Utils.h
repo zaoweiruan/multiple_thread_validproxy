@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 #include <unordered_map>
+#include <atomic>
 #include <windows.h>
 
 #include "Profileitem.h"
@@ -29,6 +30,27 @@ namespace utils {
     bool isPrintableAscii(const std::string& s);
     bool isPortAvailable(int port);
     int findAvailablePort(int startPort, int maxAttempts = 100);
+    // ---- Port predicates (2026-10-12 Spec StandalonePortImmediateRebind) ----
+    // Single authoritative occupancy predicate. Every caller (isPortAvailable,
+    // PortManager::isInUseUnlocked, the ProxyListPanel conflict dialog) derives
+    // from it so the `port.time_wait_blocking` rollback switch cannot be bypassed.
+    // Semantics: LISTEN always blocks; TIME_WAIT blocks ONLY when the switch is on.
+    bool isPortBlocking(int port);
+    // LISTEN only — never blocks on TIME_WAIT. Must stay UNCACHED: it is the sole
+    // dependency of waitPortReleased, and a cached read would return a stale
+    // "still listening" for up to the snapshot TTL.
+    bool isPortListening(int port);
+    // Bounded wait for the LISTEN row to disappear from the OS TCP table.
+    // Returns true as soon as the port is not listening; budgetMs is only a
+    // fallback ceiling (normal path returns on the first poll, <20ms).
+    bool waitPortReleased(int port, int budgetMs);
+    // Process-level rollback switch for TIME_WAIT blocking. Published by
+    // AppController from `port.time_wait_blocking` at startup (constructor) and
+    // on config save. Struct is a plain atomic read — never touch ConfigReader
+    // here: ConfigReader::load() reads from disk on every call and would put
+    // blocking disk IO on the port-probe hot path.
+    void setTimeWaitBlocking(bool blocking);
+    bool configTimeWaitBlocking();
     // Diagnostics: log every TCP endpoint (pid + state + process image name)
     // currently holding `port`. Used to capture ground truth when a standalone-
     // proxy start is blocked by a "port occupied" check (see 2026-08-31 port

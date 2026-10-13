@@ -102,6 +102,11 @@ boost::json::object ConfigJsonSerializer::serialize(const AppConfig& config) con
         autoTaskObj["state_file"] = config.auto_task.state_file;
     }
     root["auto_task"] = autoTaskObj;
+    {
+        boost::json::object portObj;
+        portObj["time_wait_blocking"] = config.port.time_wait_blocking;
+        root["port"] = portObj;
+    }
 
     // proxy
     boost::json::object proxyObj;

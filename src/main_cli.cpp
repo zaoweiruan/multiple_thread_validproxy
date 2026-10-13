@@ -96,8 +96,10 @@ void printHelp() {
               << "  -TA, -test-all      Test all proxies in the database\n"
               << "  -D, -dedup           Remove duplicate proxies from database\n"
               << "  -DC, -decompose       Decompose templates into ComponentBundle entries\n"
-<< "  -GC, -generate-chains  Generate component chains (base+test/standalone/pool)\n"
+
 << "                         from decomposed Bundles and save to template table\n"
+              << "  -RB, -rebuild-bundles Rebuild minimal (core x component-type) Bundles\n"
+              << "                         and rewrite each template's component chain\n"
               << "  -TU, -tourl         Export proxies (delay>0) to share links file\n"
               << "  -S, -sync [src[:dst]] Sync valid proxies from source to target DB\n"
                << "  -IS, -import-sub-config <file|url>  Batch import subitems from file or URL\n"
@@ -127,6 +129,7 @@ static int runDefaultTest(const std::string& configPath, const std::string& exeD
     Logger::init(logDir.string(), logMode);
 
     std::optional<config::AppConfig> appConfig = config::ConfigReader::load(configPath);
+    if (appConfig) utils::setTimeWaitBlocking(appConfig->port.time_wait_blocking);
     if (!appConfig) {
         logError("Failed to load config from: " + configPath);
         Logger::close();
@@ -205,6 +208,12 @@ ProxyBatchTester tester(db, *appConfig, exeDir, &g_cancelRequested);
 
 } // anonymous namespace
 
+// Every sub-command branch loads config.json itself (there is no single
+// configuration entry point), so the port-semantics rollback switch must be
+// published into utils right after each successful load. A CLI process never
+// constructs AppController, so unlike the GUI (AppController constructor +
+// saveConfig) it would otherwise leave g_timeWaitBlocking stuck at its default
+// false, making port.time_wait_blocking un-rollable for CLI runs.
 int main(int argc, char* argv[]) {
     SetConsoleCtrlHandler(consoleCtrlHandler, TRUE);
     CurlGlobalGuard curlGuard;  // RAII guard for curl global init/cleanup
@@ -277,11 +286,11 @@ int main(int argc, char* argv[]) {
             }
         } else if (arg == "-D" || arg == "-dedup" || arg == "--dedup") {
             commandMode = "dedup";
-        } else if (arg == "-DC" || arg == "-decompose" || arg == "--decompose") {
-commandMode = "decompose";
-} else if (arg == "-GC" || arg == "-generate-chains" || arg == "--generate-chains") {
-commandMode = "generatechains";
-} else if (arg == "-TA" || arg == "-test-all" || arg == "--test-all") {
+} else if (arg == "-DC" || arg == "-decompose" || arg == "--decompose") {
+            commandMode = "decompose";
+        } else if (arg == "-RB" || arg == "-rebuild-bundles" || arg == "--rebuild-bundles") {
+            commandMode = "rebuildbundles";
+        } else if (arg == "-TA" || arg == "-test-all" || arg == "--test-all") {
             commandMode = "test-all";
         } else if (arg == "-TU" || arg == "-tourl" || arg == "--tourl") {
             commandMode = "tourl";
@@ -358,6 +367,7 @@ commandMode = "generatechains";
     if (commandMode == "generator") {
         Logger::init(logDir.string(), commandMode);
         std::optional<config::AppConfig> appConfig = config::ConfigReader::load(configPath);
+        if (appConfig) utils::setTimeWaitBlocking(appConfig->port.time_wait_blocking);
         if (!appConfig) {
             logError("Failed to load config from: " + configPath);
             Logger::close();
@@ -419,6 +429,7 @@ commandMode = "generatechains";
         Logger::init(logDir.string(), commandMode);
         
         std::optional<config::AppConfig> appConfig = config::ConfigReader::load(configPath);
+        if (appConfig) utils::setTimeWaitBlocking(appConfig->port.time_wait_blocking);
         if (!appConfig) {
             logError("Failed to load config from: " + configPath);
             Logger::close();
@@ -522,6 +533,7 @@ commandMode = "generatechains";
         Logger::init(logDir.string(), commandMode);
         
         std::optional<config::AppConfig> appConfig = config::ConfigReader::load(configPath);
+        if (appConfig) utils::setTimeWaitBlocking(appConfig->port.time_wait_blocking);
         if (!appConfig) {
             logError("Failed to load config from: " + configPath);
             Logger::close();
@@ -595,6 +607,7 @@ commandMode = "generatechains";
         Logger::init(logDir.string(), commandMode);
         
         std::optional<config::AppConfig> appConfig = config::ConfigReader::load(configPath);
+        if (appConfig) utils::setTimeWaitBlocking(appConfig->port.time_wait_blocking);
         if (!appConfig) {
             logError("Failed to load config from: " + configPath);
             Logger::close();
@@ -692,6 +705,7 @@ commandMode = "generatechains";
         Logger::init(logDir.string(), commandMode);
         
         std::optional<config::AppConfig> appConfig = config::ConfigReader::load(configPath);
+        if (appConfig) utils::setTimeWaitBlocking(appConfig->port.time_wait_blocking);
         if (!appConfig) {
             logError("Failed to load config from: " + configPath);
             Logger::close();
@@ -733,6 +747,7 @@ commandMode = "generatechains";
         sqlite3* db = nullptr;
         
         std::optional<config::AppConfig> appConfig = config::ConfigReader::load(configPath);
+        if (appConfig) utils::setTimeWaitBlocking(appConfig->port.time_wait_blocking);
         if (!appConfig) {
             logError("Failed to load config from: " + configPath);
             Logger::close();
@@ -785,6 +800,7 @@ commandMode = "generatechains";
         Logger::init(logDir.string(), commandMode);
 
         std::optional<config::AppConfig> appConfig = config::ConfigReader::load(configPath);
+        if (appConfig) utils::setTimeWaitBlocking(appConfig->port.time_wait_blocking);
         if (!appConfig) {
             logError("Failed to load config from: " + configPath);
             Logger::close();
@@ -847,6 +863,7 @@ commandMode = "generatechains";
     if (commandMode == "cancel-task") {
         Logger::init(logDir.string(), commandMode);
         std::optional<config::AppConfig> appConfig = config::ConfigReader::load(configPath);
+        if (appConfig) utils::setTimeWaitBlocking(appConfig->port.time_wait_blocking);
         if (!appConfig) {
             logError("Failed to load config from: " + configPath);
             Logger::close();
@@ -895,6 +912,7 @@ commandMode = "generatechains";
         Logger::init(logDir.string(), commandMode);
 
         std::optional<config::AppConfig> appConfig = config::ConfigReader::load(configPath);
+        if (appConfig) utils::setTimeWaitBlocking(appConfig->port.time_wait_blocking);
         if (!appConfig) {
             logError("Failed to load config from: " + configPath);
             Logger::close();
@@ -942,6 +960,7 @@ commandMode = "generatechains";
         Logger::init(logDir.string(), commandMode);
         
         std::optional<config::AppConfig> appConfig = config::ConfigReader::load(configPath);
+        if (appConfig) utils::setTimeWaitBlocking(appConfig->port.time_wait_blocking);
         if (!appConfig) {
             logError("Failed to load config from: " + configPath);
             Logger::close();
@@ -977,6 +996,7 @@ commandMode = "generatechains";
         Logger::init(logDir.string(), commandMode);
         
         std::optional<config::AppConfig> appConfig = config::ConfigReader::load(configPath);
+        if (appConfig) utils::setTimeWaitBlocking(appConfig->port.time_wait_blocking);
         if (!appConfig) {
             logError("Failed to load config from: " + configPath);
             Logger::close();
@@ -1013,54 +1033,53 @@ commandMode = "generatechains";
         return 0;
     }
     
-    // -GC: 拆解模板为组件包 + 为每个模板生成组件链（base[+test/standalone/pool]）保存到库表
-    if (commandMode == "generatechains") {
+    // -RB: 按「代理类型 × 组件类型」重建最小粒度组件包，并回写各模板组件链
+    if (commandMode == "rebuildbundles") {
         Logger::init(logDir.string(), commandMode);
-        
+
         std::optional<config::AppConfig> appConfig = config::ConfigReader::load(configPath);
+        if (appConfig) utils::setTimeWaitBlocking(appConfig->port.time_wait_blocking);
         if (!appConfig) {
             logError("Failed to load config from: " + configPath);
             Logger::close();
             return 1;
         }
-        
+
         Logger::setFileEnabled(appConfig->log_enabled);
         Logger::setFileLevel(Logger::stringToLevel(appConfig->log_file_level));
         Logger::setConsoleLevel(Logger::stringToLevel(appConfig->log_console_level));
-        logInfo("validproxy generate-chains starting...");
-        
+        logInfo("validproxy rebuild-bundles starting...");
+
         sqlite3* db = nullptr;
-        if (!openDatabase(*appConfig, db, "[main] generate-chains")) {
+        if (!openDatabase(*appConfig, db, "[main] rebuild-bundles")) {
             Logger::close();
             return 1;
         }
         sqlite3_busy_timeout(db, 5000);
         sqlite3_exec(db, "PRAGMA journal_mode=WAL", nullptr, nullptr, nullptr);
         sqlite3_exec(db, "PRAGMA synchronous=NORMAL", nullptr, nullptr, nullptr);
-        
-        // 1) 拆解库表中现有模板为组件包（缺失时）
+
         config::TemplateDecomposer decomposer(db);
-        int bundles = decomposer.decomposeAndSave(true);
-        
-        // 2) 生成组件链并保存到 FullConfigTemplateItem
-        int chains = decomposer.generateChains();
-        
-        std::cout << "Generate-chains complete: " << bundles << " bundles, "
-                  << chains << " templates updated" << std::endl;
-        
+        const int saved = decomposer.rebuildBundlesAndChains();
+
+        std::cout << "Rebuild complete: " << saved << " minimal bundles" << std::endl;
+
         sqlite3_close(db);
-        Logger::write("generate-chains completed (" + std::to_string(bundles)
-                          + " bundles, " + std::to_string(chains) + " templates)",
+        Logger::write("rebuild-bundles completed (" + std::to_string(saved) + " bundles)",
                       LogLevel::REPORT);
         Logger::close();
-        
-        return chains >= 0 ? 0 : 1;
+
+        return 0;
     }
+
+    // 组件链只能经由「配置链 → 解析 → 保存」产生（配置编辑器「组件链编辑」页），
+    // 不再提供 CLI 自动生成：模板 = 组件链配置 + 组件包间整合关系，没有默认值。
     
     if (!singleSubId.empty()) {
         Logger::init(logDir.string(), commandMode.empty() ? "test" : commandMode);
         
         std::optional<config::AppConfig> appConfig = config::ConfigReader::load(configPath);
+        if (appConfig) utils::setTimeWaitBlocking(appConfig->port.time_wait_blocking);
         if (!appConfig) {
             logError("Failed to load config from: " + configPath);
             Logger::close();

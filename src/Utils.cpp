@@ -13,6 +13,9 @@
     #include <cctype>
     #include <vector>
     #include <iphlpapi.h>
+#include <atomic>
+#include <unordered_set>
+#include <mutex>
     #include "Logger.h"
 
 namespace utils {
@@ -178,16 +181,37 @@ bool isValidUrlFormat(const std::string& url) {
     // is permitted to COEXIST with an existing wildcard/specific listener (verified
     // live — an exclusive bind to 0.0.0.0:10808 succeeded while xray already held it),
     // so it cannot detect occupancy across processes. The TCP table does not have
-    // this blind spot. See docs/bugfix/2026-08-31-Bugfix-IsPortAvailable-Wildcard-v1.0.md.
-    static bool isPortOccupiedInTable(int port) {
-        bool occupied = false;
+    // =====================================================================
+    // Port occupancy predicates (2026-10-12 Spec StandalonePortImmediateRebind)
+    // Measured semantics on Windows (tw5 experiment, TcpTimedWaitDelay=0x1e=30s
+    // on this host): a port holding ONLY a TIME_WAIT row can be rebound via
+    // every variant (wildcard/loopback x no-flags/REUSEADDR/EXCLUSIVEADDRUSE).
+    // So TIME_WAIT is NOT a kernel-level obstacle to a rebind, and treating it
+    // as occupancy is what made a just-closed standalone proxy's port look busy
+    // for the whole 30s window — the "slow rebind / shifted port" symptom.
+    //
+    // bind()/connect() probing is still not a trustworthy oracle: an existing
+    // listener carrying SO_REUSEADDR (the xray/Go case) lets both a wildcard and
+    // a loopback bind succeed, and SO_REUSEADDR + SO_EXCLUSIVEADDRUSE are
+    // mutually exclusive (both set -> WSAEINVAL). The kernel TCP endpoint table
+    // remains the source of truth. See
+    // docs/bugfix/2026-10-12-Evidence-TimeWait-Bind-v1.0.md.
+    // =====================================================================
+    namespace {
+        std::atomic<bool> g_timeWaitBlocking{false};
 
-        // IPv4
-        {
+        // Contract: when listening == true we break early, so *timeWaitHit may
+        // not have been populated by the IPv6 pass yet. *timeWaitHit is only
+        // meaningful when listening == false.
+        // Returns listening; sets *timeWaitHit. NEVER reads the snapshot cache.
+        bool scanPortStatesRaw(int port, bool* timeWaitHit) {
+            *timeWaitHit = false;
+            bool listening = false;
+            // ---- AF_INET ----
             DWORD size = 0;
-            DWORD ret = GetExtendedTcpTable(nullptr, &size, FALSE, AF_INET,
-                                            TCP_TABLE_OWNER_PID_ALL, 0);
-            if (ret == ERROR_INSUFFICIENT_BUFFER && size > 0) {
+            GetExtendedTcpTable(nullptr, &size, FALSE, AF_INET,
+                                TCP_TABLE_OWNER_PID_ALL, 0);
+            if (size > 0) {
                 std::vector<unsigned char> buf(size);
                 PMIB_TCPTABLE_OWNER_PID table =
                     reinterpret_cast<PMIB_TCPTABLE_OWNER_PID>(buf.data());
@@ -195,65 +219,92 @@ bool isValidUrlFormat(const std::string& url) {
                                         TCP_TABLE_OWNER_PID_ALL, 0) == NO_ERROR) {
                     for (DWORD i = 0; i < table->dwNumEntries; ++i) {
                         if (ntohs(static_cast<u_short>(table->table[i].dwLocalPort))
-                                == static_cast<u_short>(port)) {
-                            DWORD st = table->table[i].dwState;
-                            if (st == MIB_TCP_STATE_LISTEN
-                                    || st == MIB_TCP_STATE_TIME_WAIT) {
-                                occupied = true;
-                                break;
-                            }
+                                != static_cast<u_short>(port)) {
+                            continue;
+                        }
+                        const DWORD st = table->table[i].dwState;
+                        if (st == MIB_TCP_STATE_LISTEN) {
+                            listening = true;
+                            break;
+                        }
+                        if (st == MIB_TCP_STATE_TIME_WAIT) {
+                            *timeWaitHit = true;
                         }
                     }
                 }
             }
-        }
-
-        // IPv6
-        if (!occupied) {
-            DWORD size = 0;
-            DWORD ret = GetExtendedTcpTable(nullptr, &size, FALSE, AF_INET6,
-                                            TCP_TABLE_OWNER_PID_ALL, 0);
-            if (ret == ERROR_INSUFFICIENT_BUFFER && size > 0) {
-                std::vector<unsigned char> buf(size);
-                PMIB_TCP6TABLE_OWNER_PID table =
-                    reinterpret_cast<PMIB_TCP6TABLE_OWNER_PID>(buf.data());
-                if (GetExtendedTcpTable(table, &size, FALSE, AF_INET6,
+            if (listening) {
+                return true;
+            }
+            // ---- AF_INET6 ----
+            size = 0;
+            GetExtendedTcpTable(nullptr, &size, FALSE, AF_INET6,
+                                TCP_TABLE_OWNER_PID_ALL, 0);
+            if (size > 0) {
+                std::vector<unsigned char> buf6(size);
+                PMIB_TCP6TABLE_OWNER_PID table6 =
+                    reinterpret_cast<PMIB_TCP6TABLE_OWNER_PID>(buf6.data());
+                if (GetExtendedTcpTable(table6, &size, FALSE, AF_INET6,
                                         TCP_TABLE_OWNER_PID_ALL, 0) == NO_ERROR) {
-                    for (DWORD i = 0; i < table->dwNumEntries; ++i) {
-                        if (ntohs(static_cast<u_short>(table->table[i].dwLocalPort))
-                                == static_cast<u_short>(port)) {
-                            DWORD st = table->table[i].dwState;
-                            if (st == MIB_TCP_STATE_LISTEN
-                                    || st == MIB_TCP_STATE_TIME_WAIT) {
-                                occupied = true;
-                                break;
-                            }
+                    for (DWORD i = 0; i < table6->dwNumEntries; ++i) {
+                        if (ntohs(static_cast<u_short>(table6->table[i].dwLocalPort))
+                                != static_cast<u_short>(port)) {
+                            continue;
+                        }
+                        const DWORD st = table6->table[i].dwState;
+                        if (st == MIB_TCP_STATE_LISTEN) {
+                            listening = true;
+                            break;
+                        }
+                        if (st == MIB_TCP_STATE_TIME_WAIT) {
+                            *timeWaitHit = true;
                         }
                     }
                 }
             }
+            return listening;
         }
+    }  // namespace
 
-        return occupied;
+    void setTimeWaitBlocking(bool blocking) {
+        g_timeWaitBlocking.store(blocking, std::memory_order_relaxed);
     }
 
-    bool isPortAvailable(int port) {
-        static bool wsaStarted = false;
-        if (!wsaStarted) {
-            WSADATA wsaData;
-            if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
+    bool configTimeWaitBlocking() {
+        return g_timeWaitBlocking.load(std::memory_order_relaxed);
+    }
+
+    bool isPortBlocking(int port) {
+        bool timeWaitHit = false;
+        if (scanPortStatesRaw(port, &timeWaitHit)) return true;
+        return timeWaitHit && configTimeWaitBlocking();
+    }
+
+    bool isPortListening(int port) {
+        bool timeWaitHit = false;
+        return scanPortStatesRaw(port, &timeWaitHit);
+    }
+
+    bool waitPortReleased(int port, int budgetMs) {
+        const ULONGLONG deadline = GetTickCount64() + static_cast<ULONGLONG>(budgetMs);
+        for (;;) {
+            if (!isPortListening(port)) {
+                return true;
+            }
+            if (GetTickCount64() >= deadline) {
                 return false;
             }
-            wsaStarted = true;
+            Sleep(20);
         }
-
-        // Consult the real system TCP table (netstat-grade). The port is available
-        // only if no endpoint currently holds it in LISTEN or TIME_WAIT. This catches
-        // wildcard listeners (e.g. xray on 0.0.0.0 / [::]) AND lingering TIME_WAIT
-        // sockets from a just-killed connection — the two historically broken cases.
-        return !isPortOccupiedInTable(port);
     }
 
+    // Single source of truth: isPortBlocking (LISTEN always blocks,
+    // TIME_WAIT only when the rollback switch is on). Winsock is no longer
+    // initialised here — scanPortStatesRaw goes through iphlpapi, which does
+    // not need it, and every caller that does need Winsock already sets it up.
+    bool isPortAvailable(int port) {
+        return !isPortBlocking(port);
+    }
     int findAvailablePort(int startPort, int maxAttempts) {
         for (int i = 0; i < maxAttempts; ++i) {
             int port = startPort + i;

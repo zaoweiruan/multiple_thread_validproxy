@@ -28,6 +28,7 @@
 #include "config/sections/ProxyProcessMonitorConfigParser.h"
 #include "config/sections/IndependentProbeConfigParser.h"
 #include "config/sections/StandalonePoolConfigParser.h"
+#include "config/sections/PortConfigParser.h"
 
 namespace config {
 
@@ -81,6 +82,7 @@ std::optional<AppConfig> ConfigReader::load(const std::string& configPath) {
     ProxyProcessMonitorConfigParser().parse(jv, config);
     IndependentProbeConfigParser().parse(jv, config);
     StandalonePoolConfigParser().parse(jv, config, exeDir);
+    PortConfigParser().parse(jv, config);   // 2-arg form: port.* holds no exeDir-resolvable paths
 
     // Step 5: Log SQL queries
     if (!config.sql_query.empty())

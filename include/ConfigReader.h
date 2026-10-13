@@ -121,6 +121,13 @@ struct AppConfig {
     } proxy;
 
     StandalonePoolConfig standalone_pool;
+
+        // TIME_WAIT semantics rollback switch (Spec StandalonePortImmediateRebind, P0-1).
+        // Published once by AppController into utils::setTimeWaitBlocking(); NEVER read
+        // on the probing hot path (ConfigReader::load() is disk IO per call).
+        struct {
+            bool time_wait_blocking = false;
+        } port;
 };
 
 class ConfigReader {
