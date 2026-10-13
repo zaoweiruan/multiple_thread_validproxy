@@ -191,7 +191,17 @@ bool XrayManager::evaluateInstanceHealth(int apiPort) {
     // (stop the process, free both ports) and remove it from the pool.
     // The heavy stop() call runs OUTSIDE instancesMutex_ to keep the critical
     // section short (stop() waits up to ~1s for process exit).
+    // Phase 1 — locate the instance bound to apiPort, stop its process and
+    // remove it from the pool. Both port reservations are deliberately KEPT
+    // (see the comment at the erase below).
+    // The heavy stop() call runs OUTSIDE instancesMutex_ to keep the critical
+    // section short (stop() waits up to ~1s for process exit, and the
+    // ~XrayInstance destructor may block on handle cleanup as well).
     int socksPort = -1;
+    // P2-2: `stale` MUST be declared before the lock_guard. Declared inside,
+    // its destructor would run while instancesMutex_ is still held, defeating
+    // the whole point of moving stop() out of the critical section.
+    std::unique_ptr<XrayInstance> stale;
     {
         std::lock_guard<std::mutex> lock(instancesMutex_);
         for (std::vector<std::unique_ptr<XrayInstance>>::iterator it = instances_.begin();
@@ -210,13 +220,28 @@ bool XrayManager::evaluateInstanceHealth(int apiPort) {
                               ") process alive but API port unresponsive (possible hang) — releasing resources and relaunching with original config", LogLevel::WARN);
             }
 
-            std::unique_ptr<XrayInstance> stale = std::move(*it);
+            // P2-2 change 1: detach the instance here, still under the lock, so
+            // the container stays consistent — but do NOT stop it here.
+            stale = std::move(*it);
             instances_.erase(it);
-            stale->stop();
-            PortManager::freePort(socksPort);
-            PortManager::freePort(apiPort);
+            // P2-2 change 2: the two PortManager::freePort() calls that used to
+            // sit here are gone. XrayManager::start() already registered both
+            // ports in PortManager (src/PortManager.cpp:36 usedPorts_.insert),
+            // and the replacement below binds the very same pair. Freeing them
+            // would open a window in which another thread's findAvailable()
+            // hands those ports to a different consumer — exactly the race R7
+            // describes. Keeping the reservation is the fix; no reservePort()
+            // is needed because the entries were never removed.
             break;
         }
+    }
+    if (stale) {
+        // P2-2: heavy work with instancesMutex_ released, so other workers can
+        // keep querying the instance list while the old process exits.
+        // ~XrayInstance (via reset) also runs outside the lock, for the same
+        // reason `stale` was declared before the lock_guard above.
+        stale->stop();
+        stale.reset();
     }
 
     if (socksPort < 0) {
