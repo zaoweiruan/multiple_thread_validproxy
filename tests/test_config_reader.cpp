@@ -239,6 +239,7 @@ TEST_F(ConfigReaderTest, SaveToCustomPath) {
     EXPECT_GT(content.size(), 0u);
     EXPECT_TRUE(content.find("workers") != std::string::npos);
     EXPECT_TRUE(content.find("5") != std::string::npos);
+}
 // ============================================================
 // port.* section (2026-10-12 Spec StandalonePortImmediateRebind)
 // ============================================================
@@ -270,23 +271,48 @@ TEST_F(ConfigReaderTest, PortTimeWaitBlocking_WrongTypeKeepsDefaultAndWarns) {
     const auto cfg = ConfigReader::load(configPath("port_bad.json"));
     ASSERT_TRUE(cfg.has_value());
     EXPECT_FALSE(cfg->port.time_wait_blocking)
-        << "wrong type must keep the default, not adopt the value";
+        << "a wrong-typed value must not flip the switch";
 }
 
 TEST_F(ConfigReaderTest, PortTimeWaitBlocking_SurvivesSaveRoundTrip) {
-    AppConfig original;
-    original.port.time_wait_blocking = true;
-    ASSERT_TRUE(ConfigReader::save(configPath("port_rt.json"), original));
-
-    std::ifstream in(configPath("port_rt.json"));
-    ASSERT_TRUE(in.is_open());
-    std::string content((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-    in.close();
-    EXPECT_TRUE(content.find("time_wait_blocking") != std::string::npos)
-        << "serialization must write the key back or a save drops it (regression class: infoinfo_token)";
-
-    const auto reloaded = ConfigReader::load(configPath("port_rt.json"));
+    auto cfg = ConfigReader::load(configPath("no_port.json"));
+    ASSERT_TRUE(cfg.has_value());
+    cfg->port.time_wait_blocking = true;
+    ASSERT_TRUE(ConfigReader::save(configPath("rt_port.json"), *cfg));
+    const auto reloaded = ConfigReader::load(configPath("rt_port.json"));
     ASSERT_TRUE(reloaded.has_value());
-    EXPECT_TRUE(reloaded->port.time_wait_blocking);
+    EXPECT_TRUE(reloaded->port.time_wait_blocking)
+        << "port.time_wait_blocking must survive save/reload";
 }
+
+// ============================================================
+// proxy.api_base_port (2026-10-12 Spec StandalonePortImmediateRebind, Task 3 / P0-3)
+// The standalone proxy API port used to be the hard-coded literal 10085 at
+// src/ui/AppController.cpp:880 with no availability check, so a second proxy
+// (or the pool) collided on it and fell into the 5s failure branches.
+// ============================================================
+
+TEST_F(ConfigReaderTest, ProxyApiBasePort_DefaultsTo10085WhenMissing) {
+    writeConfig("no_api_base.json", R"({"database_path":"x.db"})");
+    const auto cfg = ConfigReader::load(configPath("no_api_base.json"));
+    ASSERT_TRUE(cfg.has_value());
+    EXPECT_EQ(cfg->proxy.api_base_port, 10085);
+}
+
+TEST_F(ConfigReaderTest, ProxyApiBasePort_ReadsExplicitValue) {
+    writeConfig("api_base.json", R"({"database_path":"x.db","proxy":{"api_base_port":10150}})");
+    const auto cfg = ConfigReader::load(configPath("api_base.json"));
+    ASSERT_TRUE(cfg.has_value());
+    EXPECT_EQ(cfg->proxy.api_base_port, 10150);
+}
+
+TEST_F(ConfigReaderTest, ProxyApiBasePort_SurvivesSaveRoundTrip) {
+    auto cfg = ConfigReader::load(configPath("no_api_base.json"));
+    ASSERT_TRUE(cfg.has_value());
+    cfg->proxy.api_base_port = 10200;
+    ASSERT_TRUE(ConfigReader::save(configPath("rt_api_base.json"), *cfg));
+    const auto reloaded = ConfigReader::load(configPath("rt_api_base.json"));
+    ASSERT_TRUE(reloaded.has_value());
+    EXPECT_EQ(reloaded->proxy.api_base_port, 10200)
+        << "proxy.api_base_port must survive save/reload";
 }
