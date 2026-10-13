@@ -53,7 +53,10 @@ bool PortManager::isInUse(int port) {
 bool PortManager::isInUseUnlocked(int port) {
     // Check both the internal tracking set and the OS-level binding status.
     if (usedPorts_.find(port) != usedPorts_.end()) return true;
-    return !utils::isPortAvailable(port);
+    // P1-1: the sole occupancy oracle is utils::isPortBlocking (LISTEN, or TIME_WAIT when the
+    // port.time_wait_blocking rollback switch is on). Routing through isPortAvailable instead
+    // would hide that switch from this path. Do NOT bypass it by reading the TCP table here.
+    return utils::isPortBlocking(port);
 }
 
 std::vector<int> PortManager::allocateRange(int startPort, int count) {
