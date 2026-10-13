@@ -3,6 +3,7 @@
 
 #include <string>
 #include <vector>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <sqlite3.h>
@@ -35,6 +36,26 @@ public:
     // false if no instance is bound to apiPort or the relaunch failed.
     bool evaluateInstanceHealth(int apiPort);
 
+    // P2-1: rate-limited wrapper around evaluateInstanceHealth (Spec §3.7).
+    // Two independent reporters can fire for the same apiPort — the legacy
+    // setConnectFailureHook (2nd consecutive gRPC connect failure) and the new
+    // instanceHealthHook_ (CLI spawn failure / gRPC failure) — and both funnel
+    // into ProxyBatchTester::onXrayEndpointUnreachable. Without the cooldown a
+    // single flaky worker could relaunch the same instance twice within
+    // milliseconds, and a persistently broken instance would restart on every
+    // single queue item (50000+ items = a restart storm).
+    //
+    // Semantics: per-apiPort single-flight + 30s cooldown. The timestamp is
+    // written UNCONDITIONALLY on every attempt (a failed relaunch must also
+    // arm the cooldown, otherwise a persistently dead instance restarts on
+    // every report). Returns true only when the underlying evaluation actually
+    // ran and succeeded.
+    //
+    // Lock contract (four-tier order, see Spec §2.5):
+    //   per-port mutex -> instancesMutex_ -> PortManager::mutex_ -> g_snapMutex
+    // The per-port mutex must NEVER be acquired while holding any other lock.
+    bool evaluateInstanceHealthThrottled(int apiPort);
+
  private:
     std::vector<std::unique_ptr<XrayInstance>> instances_;
     std::string xrayPath_;
@@ -49,6 +70,15 @@ public:
     // XrayInstance::start() (contains 2s sleep) — it is only taken for
     // short read/commit sections and around stop()/clear in stopAll().
     mutable std::mutex instancesMutex_;
+
+    // P2-1 rate-limit state for evaluateInstanceHealthThrottled (Spec §3.7).
+    // g_portLockMapMutex is only held long enough to look up / create the
+    // per-apiPort mutex; it is released before that mutex is taken, so the
+    // map lock never nests with any other lock.
+    static const ULONGLONG kHealthRestartCooldownMs = 30000;  // 30s
+    std::map<int, ULONGLONG> lastHealthRestart_;  // guarded by the per-port mutex
+    static std::mutex g_portLockMapMutex;
+    static std::map<int, std::shared_ptr<std::mutex>> g_portLocks;
 
     static XrayManager* instance_;
     static std::mutex instanceMutex_;

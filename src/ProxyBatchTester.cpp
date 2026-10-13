@@ -109,6 +109,18 @@ void ProxyBatchTester::workerThreadFunc(int workerId, int socksPort, int apiPort
 std::string xrayApiAddr = "127.0.0.1:" + std::to_string(apiPort);
     xray::XrayApi xrayApi(config_.proxy.xray_executable, xrayApiAddr);
 
+    // P2-1: XrayApi reports "the backing instance looks unreachable" from every
+    // failure site (CLI spawn failure at src/XrayApi.cpp:171-175, and the second
+    // consecutive gRPC connect failure at :1952). Registered OUTSIDE the
+    // USE_GRPC_API guard on purpose: the CLI fallback (addOutbound, XrayApi.h:31)
+    // is compiled in BOTH configurations and is a hot path in the default build
+    // (XrayApi.cpp:2481/:2508 return addOutbound(...)), so it must be able to
+    // report too — before this, only the gRPC path could trigger a relaunch and
+    // a dead instance silently absorbed 50000+ CLI spawns.
+    // Rate limiting is the hook owner's job (XrayManager::
+    // evaluateInstanceHealthThrottled), so XrayApi stays a dumb reporter.
+    xrayApi.setInstanceHealthHook([this, apiPort] { onXrayEndpointUnreachable(apiPort); });
+
     // Lifecycle management: when grpcConnect fails twice consecutively, evaluate
     // the backing Xray instance process health. If the instance was successfully
     // relaunched (evaluateInstanceHealth returned true), instanceDead is cleared
@@ -120,7 +132,10 @@ std::string xrayApiAddr = "127.0.0.1:" + std::to_string(apiPort);
 #ifdef USE_GRPC_API
     xrayApi.setConnectFailureHook([this, &instanceDead, &relaunchedOk, apiPort]() {
         instanceDead.store(true, std::memory_order_relaxed);
-        relaunchedOk.store(xrayManager_->evaluateInstanceHealth(apiPort), std::memory_order_relaxed);
+        // P2-1: throttled variant — this hook and instanceHealthHook_ (registered
+        // above) can both fire for the same gRPC failure, and the 30s per-port
+        // cooldown makes the second one a no-op instead of a second restart.
+        relaunchedOk.store(xrayManager_->evaluateInstanceHealthThrottled(apiPort), std::memory_order_relaxed);
     });
 #endif
 
@@ -272,8 +287,17 @@ std::string xrayApiAddr = "127.0.0.1:" + std::to_string(apiPort);
                 }
             }
 
+            // P2-1: all three injection attempts failed and no relaunch rescued
+            // this item. Report the endpoint so XrayManager can evaluate/relaunch
+            // the backing instance before the next queue item hits the same dead
+            // process. Gated on retryCount>=3 so a single bad outbound JSON
+            // (configuration-level failure) never triggers an instance restart;
+            // the 30s per-apiPort cooldown inside Throttled absorbs the rest.
+            if (!addSuccess && retryCount >= 3) {
+                onXrayEndpointUnreachable(apiPort);
+            }
+
             if (!addSuccess) {
-                // gRPC injection errors must be visible at ERR level (user
                 // requirement); the raw Xray output dump below stays at DEBUG.
                 std::string displayErr = injectError.empty() ? xrayApi.getLastError() : injectError;
                 Logger::write("[Worker-" + std::to_string(workerId) + "] 注入xray outbound 错误: " + displayErr, LogLevel::ERR);
@@ -336,6 +360,21 @@ std::string xrayApiAddr = "127.0.0.1:" + std::to_string(apiPort);
 #endif
             } catch (...) {}
         }
+    }
+}
+
+void ProxyBatchTester::onXrayEndpointUnreachable(int apiPort) {
+    // P2-1: single sink for every "instance looks unreachable" report (XrayApi
+    // instanceHealthHook_). Throttled per apiPort, so both the CLI-spawn site
+    // and the gRPC site can call this on every failure without risking a restart
+    // storm. Deliberately wording-neutral: this fires after 1 CLI spawn failure
+    // as well as after 3 failed injections, so claiming a specific attempt count
+    // here would log something untrue.
+    const bool relaunched = xrayManager_->evaluateInstanceHealthThrottled(apiPort);
+    if (relaunched) {
+        Logger::write("[ProxyBatchTester] instance relaunch attempted after injection failures (api="
+                      + std::to_string(apiPort) + ")",
+                      LogLevel::WARN);
     }
 }
 

@@ -9,9 +9,10 @@
 #include <gtest/gtest.h>
 #include <cstdint>
 #include <cstring>
+#include <filesystem>
+#include <map>
 #include <string>
 #include <vector>
-#include <map>
 
 // The test fixture class XrayApiDirectTest is declared as friend in XrayApi.h,
 // granting access to private members inside the #ifdef USE_GRPC_API block.
@@ -1515,6 +1516,45 @@ TEST_F(XrayApiDirectTest, EncodeRealitySettingsSpiderYAlwaysPresent) {
     }
 }
 
+// ---- Lifecycle: instance-health reporting from the CLI fallback path (P2-1) ----
+
+// T8 (Spec §6 Task 7 / §3.7): the ONLY report site is addOutbound's
+// `runProcess` returned -1 branch (src/XrayApi.cpp:171-175) — i.e. the xray
+// binary is missing / CreateProcess failed. That is a configuration-independent
+// "this instance cannot serve" signal, so it must reach the health hook even
+// though the caller (ProxyBatchTester) may have retried zero times.
+//
+// NOTE on the fixture path: it must be a binary CreateProcess CANNOT spawn.
+// "xray.exe" is NOT usable here — this machine resolves it to
+// E:\soft\v2rayN-windows-64\bin\xray\xray.exe (it is on PATH), so the spawn
+// succeeds, xray exits with code 1 inside runProcess, and site 1 is skipped
+// in favour of the deliberate-unhooked site 2. Point at a path that is
+// guaranteed absent so CreateProcessA fails and runProcess returns -1.
+const char* const kMissingXrayPath = "C:\\__validproxy_test_missing_xray__.exe";
+
+TEST_F(XrayApiDirectTest, CliSpawnFailureReportsInstanceHealth) {
+    ASSERT_FALSE(std::filesystem::exists(kMissingXrayPath))
+        << "fixture path must stay absent, otherwise site 1 becomes unreachable";
+    xray::XrayApi api(kMissingXrayPath, "127.0.0.1:1");
+    int hookCount = 0;
+    api.setInstanceHealthHook([&hookCount]() { hookCount++; });
+
+    std::string out;
+    EXPECT_FALSE(api.addOutbound("{\"outbounds\":[]}", "proxy", out));
+    EXPECT_EQ(hookCount, 1) << "spawn failure must report instance health exactly once";
+
+    // The final-failure branch (src/XrayApi.cpp:197-203) is deliberately NOT
+    // hooked: it is reached by configuration-level failures, and hooking it
+    // would turn a bad outbound JSON into a whole-instance restart (Spec §3.7).
+    // It is structurally unreachable from this fixture: reaching it needs a
+    // *spawnable* xray that exits non-zero with empty output, whereas an
+    // unspawnable binary makes every call take the site-1 early return above.
+    // The "3 failed injections" gate therefore lives in ProxyBatchTester, and
+    // site 2 stays unhooked by construction, not by an assertion here.
+    EXPECT_FALSE(api.addOutbound("{\"outbounds\":[]}", "proxy", out));
+    EXPECT_EQ(hookCount, 2) << "site 1 reports on every unspawnable invocation";
+}
+
 // ---- Lifecycle: consecutive gRPC connect failure detection ----
 
 TEST_F(XrayApiDirectTest, ConsecutiveConnectFailuresTriggerHealthHook) {
@@ -1537,6 +1577,33 @@ TEST_F(XrayApiDirectTest, ConsecutiveConnectFailuresTriggerHealthHook) {
     EXPECT_LT(callGrpcConnect(api, "127.0.0.1", 1), 0);
     EXPECT_EQ(getConsecutiveFailures(api), 3);
     EXPECT_EQ(hookCount, 1);
+}
+
+// T9 (Spec §6 Task 7 / §3.7): the health hook fires IN PARALLEL with the
+// pre-existing connectFailureHook at the same "exactly 2nd consecutive
+// failure" point — it must never replace it, and must share its debounce so
+// that adding it creates no new restart trigger. Both counters therefore have
+// to be 0, then 1, then 1.
+TEST_F(XrayApiDirectTest, HealthHookFiresInParallelWithConnectFailureHook) {
+    // serverAddr uses a closed port (1) so every connect fails fast with
+    // WSAECONNREFUSED — no real Xray process is involved, and the xray path
+    // is irrelevant because only grpcConnect (a plain TCP connect) runs.
+    xray::XrayApi api("xray.exe", "127.0.0.1:1");
+    int connectHookCount = 0;
+    int healthHookCount = 0;
+    api.setConnectFailureHook([&connectHookCount]() { connectHookCount++; });
+    api.setInstanceHealthHook([&healthHookCount]() { healthHookCount++; });
+
+    EXPECT_LT(callGrpcConnect(api, "127.0.0.1", 1), 0);
+    EXPECT_EQ(healthHookCount, 0) << "1st failure must not fire either hook";
+
+    EXPECT_LT(callGrpcConnect(api, "127.0.0.1", 1), 0);
+    EXPECT_EQ(connectHookCount, 1);
+    EXPECT_EQ(healthHookCount, 1) << "health hook must fire together with the connect hook";
+
+    EXPECT_LT(callGrpcConnect(api, "127.0.0.1", 1), 0);
+    EXPECT_EQ(connectHookCount, 1) << "3rd failure must not re-fire the connect hook";
+    EXPECT_EQ(healthHookCount, 1) << "3rd failure must not re-fire the health hook";
 }
 
 TEST_F(XrayApiDirectTest, GrpcConnectSuccessResetsFailureCounter) {

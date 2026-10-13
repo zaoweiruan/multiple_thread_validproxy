@@ -11,6 +11,10 @@
 XrayManager* XrayManager::instance_ = nullptr;
 std::mutex XrayManager::instanceMutex_;
 
+// P2-1: per-apiPort single-flight registry for evaluateInstanceHealthThrottled.
+std::mutex XrayManager::g_portLockMapMutex;
+std::map<int, std::shared_ptr<std::mutex>> XrayManager::g_portLocks;
+
 /**
  * Bounded, crash-aware readiness check for a newly-started Xray instance.
  *
@@ -240,6 +244,30 @@ bool XrayManager::evaluateInstanceHealth(int apiPort) {
     PortManager::freePort(socksPort);
     PortManager::freePort(apiPort);
     return false;  // relaunch failed — ports freed; re-created on next start()
+}
+
+bool XrayManager::evaluateInstanceHealthThrottled(int apiPort) {
+    std::shared_ptr<std::mutex> portLock;
+    {
+        std::lock_guard<std::mutex> mapLock(g_portLockMapMutex);
+        std::map<int, std::shared_ptr<std::mutex>>::iterator it = g_portLocks.find(apiPort);
+        if (it == g_portLocks.end()) {
+            portLock = std::make_shared<std::mutex>();
+            g_portLocks[apiPort] = portLock;
+        } else {
+            portLock = it->second;
+        }
+    }  // g_portLockMapMutex released here — before the per-port mutex is taken
+
+    std::lock_guard<std::mutex> lock(*portLock);
+    const ULONGLONG now = GetTickCount64();
+    std::map<int, ULONGLONG>::iterator stamp = lastHealthRestart_.find(apiPort);
+    if (stamp != lastHealthRestart_.end() && stamp->second != 0 &&
+        (now - stamp->second) < kHealthRestartCooldownMs) {
+        return false;  // within the 30s cooldown — another reporter already ran
+    }
+    lastHealthRestart_[apiPort] = now;  // arm the cooldown even if the relaunch fails
+    return evaluateInstanceHealth(apiPort);
 }
 
 XrayInstance* XrayManager::getInstance(int index) {

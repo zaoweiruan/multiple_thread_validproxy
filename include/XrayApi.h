@@ -66,6 +66,19 @@ public:
                                           std::string& errorOut);
 #endif
 
+    // P2-1: report "the backing Xray instance cannot serve this worker" to the
+    // owner. Deliberately declared OUTSIDE `#ifdef USE_GRPC_API` (the public
+    // gRPC block above ends at :67): the CLI fallback `addOutbound` (:31, also
+    // outside the ifdef) fires this hook when it cannot even spawn the xray
+    // binary, so the setter must exist in every build, gRPC on or off.
+    // Invoked from:
+    //   - src/XrayApi.cpp:171-175  (runProcess returned -1: spawn failure)
+    //   - src/XrayApi.cpp:1935     (in parallel with connectFailureHook_)
+    // Registered by ProxyBatchTester (the only production owner) to route into
+    // XrayManager::evaluateInstanceHealthThrottled, which rate-limits restarts
+    // per API port. Throttling lives there, NOT here: XrayApi only reports.
+    void setInstanceHealthHook(std::function<void()> hook);
+
 private:
     std::string xrayPath_;
     std::string serverAddr_;  // format: "tcp://host:port" or "host:port"
@@ -211,6 +224,11 @@ private:
     static std::string encodeSenderSettings(const boost::json::object* streamSettings,
                                             const boost::json::object* mux);
 #endif
+
+    // P2-1 instance-health hook (see the setter in the public section). Kept
+    // OUTSIDE `#ifdef USE_GRPC_API` because the CLI fallback addOutbound path
+    // lives outside that ifdef too and is its primary trigger site.
+    std::function<void()> instanceHealthHook_;
 };
 
 } // namespace xray

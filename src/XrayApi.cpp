@@ -171,6 +171,15 @@ bool XrayApi::addOutbound(const std::string& outboundJson, const std::string& ta
     int exitCode = runProcess(cmd, output, &outboundJson);
     if (exitCode < 0) {
         lastError_ = "Failed to run xray api ado command (GetLastError=" + std::to_string(GetLastError()) + ")";
+        // P2-1 site 1 (the ONLY report site in this file). runProcess returns -1
+        // only when CreateProcess itself fails — the xray binary is missing or
+        // cannot be spawned. That is a configuration-independent "this instance
+        // cannot serve" signal, so it must reach the health hook even when the
+        // caller has not retried yet. Site 2 (:197-203) is deliberately left
+        // unhooked: it is dominated by configuration-level failures, and the CLI
+        // fallback is the hot path in a default build (see :2481 / :2508 in
+        // addOutboundDirect). Rate limiting is the hook owner's job, not ours.
+        if (instanceHealthHook_) instanceHealthHook_();
         return false;
     }
 
@@ -288,6 +297,14 @@ bool XrayApi::ping(std::string& resultOutput) {
 
 std::string XrayApi::getLastError() const {
     return lastError_;
+}
+
+// P2-1 instance-health hook setter. Defined BEFORE `#ifdef USE_GRPC_API` below
+// (:296) because the declaration is outside that ifdef: the CLI fallback
+// addOutbound (which lives here, in the always-compiled region) is its primary
+// trigger site, so the symbol must exist in every build configuration.
+void XrayApi::setInstanceHealthHook(std::function<void()> hook) {
+    instanceHealthHook_ = std::move(hook);
 }
 
 // ============================================================
@@ -1932,8 +1949,16 @@ int XrayApi::grpcConnect(const std::string& host, int port) {
         // backing Xray instance is likely unhealthy. Fire the hook once so the
         // caller can evaluate the instance process state (e.g. isRunning()).
         ++consecutiveConnectFailures_;
-        if (consecutiveConnectFailures_ == 2 && connectFailureHook_) {
-            connectFailureHook_();
+        if (consecutiveConnectFailures_ == 2) {
+            if (connectFailureHook_) {
+                connectFailureHook_();
+            }
+            // P2-1: fire in PARALLEL with the existing hook, never replacing it.
+            // Same "exactly 2nd consecutive failure" debounce, so adding this
+            // call cannot introduce a new restart trigger on its own.
+            if (instanceHealthHook_) {
+                instanceHealthHook_();
+            }
         }
         return -1;
     }
