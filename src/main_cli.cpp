@@ -100,6 +100,9 @@ void printHelp() {
 << "                         from decomposed Bundles and save to template table\n"
               << "  -RB, -rebuild-bundles Rebuild minimal (core x component-type) Bundles\n"
               << "                         and rewrite each template's component chain\n"
+              << "  -SM, -sync-materialize Re-materialize each template's Config column from\n"
+              << "                         its EXISTING component chain (does NOT rebuild\n"
+              << "                         bundles; safe after editing chains by hand)\n"
               << "  -TU, -tourl         Export proxies (delay>0) to share links file\n"
               << "  -S, -sync [src[:dst]] Sync valid proxies from source to target DB\n"
                << "  -IS, -import-sub-config <file|url>  Batch import subitems from file or URL\n"
@@ -290,6 +293,8 @@ int main(int argc, char* argv[]) {
             commandMode = "decompose";
         } else if (arg == "-RB" || arg == "-rebuild-bundles" || arg == "--rebuild-bundles") {
             commandMode = "rebuildbundles";
+        } else if (arg == "-SM" || arg == "-sync-materialize" || arg == "--sync-materialize") {
+            commandMode = "syncmaterialize";
         } else if (arg == "-TA" || arg == "-test-all" || arg == "--test-all") {
             commandMode = "test-all";
         } else if (arg == "-TU" || arg == "-tourl" || arg == "--tourl") {
@@ -1066,6 +1071,46 @@ int main(int argc, char* argv[]) {
 
         sqlite3_close(db);
         Logger::write("rebuild-bundles completed (" + std::to_string(saved) + " bundles)",
+                      LogLevel::REPORT);
+        Logger::close();
+
+        return 0;
+    }
+
+    // -SM, -sync-materialize: 仅按**现有组件链**重新物化各模板的 Config 列。
+    // 与 -RB 的区别：-RB 会按「core × component-type」重建最小包并改写链
+    // （曾把链里引用的 xray_DNS 拆成 xray_DNS_base/_pool/_standalone，导致物化丢 dns/log 节）；
+    // 本命令不碰组件包表，只跑 TemplateDecomposer::syncConfigsFromChains()。
+    if (commandMode == "syncmaterialize") {
+        Logger::init(logDir.string(), commandMode);
+
+        std::optional<config::AppConfig> appConfig = config::ConfigReader::load(configPath);
+        if (!appConfig) utils::setTimeWaitBlocking(appConfig->port.time_wait_blocking);
+        if (!appConfig) {
+            logError("Failed to load config from: " + configPath);
+            Logger::close();
+            return 1;
+        }
+
+        Logger::setFileEnabled(appConfig->log_enabled);
+        Logger::setFileLevel(Logger::stringToLevel(appConfig->log_file_level));
+        Logger::setConsoleLevel(Logger::stringToLevel(appConfig->log_console_level));
+        logInfo("validproxy sync-materialize starting...");
+
+        sqlite3* db = nullptr;
+        if (!openDatabase(*appConfig, db, "[main] sync-materialize")) {
+            Logger::close();
+            return 1;
+        }
+        sqlite3_busy_timeout(db, 5000);
+
+        config::TemplateDecomposer decomposer(db);
+        const int synced = decomposer.syncConfigsFromChains();
+
+        std::cout << "Materialize complete: " << synced << " templates" << std::endl;
+
+        sqlite3_close(db);
+        Logger::write("sync-materialize completed (" + std::to_string(synced) + " templates)",
                       LogLevel::REPORT);
         Logger::close();
 
