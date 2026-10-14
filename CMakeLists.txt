@@ -727,6 +727,7 @@ add_executable(test_config_generator
     tests/test_step_to_component_mapper.cpp
     tests/test_config_generator_phase9.cpp
     tests/test_schema_validator.cpp
+    tests/test_ech_switch.cpp
     tests/test_template_decomposer.cpp
     tests/test_phase11_integration.cpp
     tests/test_phase11_cross_bundle.cpp
@@ -745,6 +746,7 @@ add_executable(test_config_generator
     src/config/ConfigGenerator.cpp
     src/config/SchemaValidator.cpp
     src/config/TemplateDecomposer.cpp
+    src/config/StreamSettingsBuilder.cpp
     src/ConfigReader.cpp
     src/FullConfigTemplateDAO.cpp
     src/ProfileitemDAO.cpp

@@ -1,4 +1,5 @@
 #include "AppController.h"
+#include "config/StreamSettingsBuilder.h"
 #include "Events.h"
 #include "RefreshCommands.h"
 #include "UnifiedMonitorRows.h"
@@ -149,6 +150,9 @@ bool AppController::saveConfig(const config::AppConfig& cfg) {
 
     // P0-1: keep the published rollback switch in sync after a config save.
     utils::setTimeWaitBlocking(config_.port.time_wait_blocking);
+    // 同步 ECH 开关：否则「配置窗口勾选 ECH → 立即启动独立代理」用的仍是旧值
+    // （setEchEnabled 只在 ConfigReader::load() 里下发，即只在进程启动时）。
+    config::setEchEnabled(config_.proxy.ech_enabled);
     // Persist to config.json so changes survive restart
     std::string configPath = config::ConfigReader::getDefaultConfigPath();
     return config::ConfigReader::save(configPath, cfg);

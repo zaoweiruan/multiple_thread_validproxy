@@ -178,6 +178,9 @@ ConfigDialog::ConfigDialog(wxWindow* parent, const config::AppConfig& cfg, sqlit
       // 独立代理 API 端口（2026-10-12 Spec StandalonePortImmediateRebind）
       // 原为硬编码 10085 且不校验可用性；被占用时启动会自动向后顺延 32 个端口
       propGrid_->Append(new wxIntProperty(L"独立代理 API 端口", "proxy_api_base_port", cfg.proxy.api_base_port));
+      // 是否启用 ECH（2026-10-14 Spec EchSwitch）：
+      //   false = 生成配置时不输出 echConfigList；true = 输出并把值中空格替换为 '+'
+      propGrid_->Append(new wxBoolProperty(L"是否启用 ECH", "proxy_ech_enabled", cfg.proxy.ech_enabled));
 
     // Xray 后端路径组（use_singbox=false 时可见）——指针存成员供 applyBackendVisibility 使用
     xrayBackendCat_ = new wxPropertyCategory(L"Xray 后端路径");
@@ -488,6 +491,7 @@ void ConfigDialog::loadConfig(const config::AppConfig& cfg) {
     // Proxy fields
     propGrid_->SetPropertyValue("proxy_xray_executable", wxString(cfg.proxy.xray_executable));
     propGrid_->SetPropertyValue("proxy_use_singbox", cfg.proxy.use_singbox);
+    propGrid_->SetPropertyValue("proxy_ech_enabled", cfg.proxy.ech_enabled);
     propGrid_->SetPropertyValue("proxy_socks_base_port", cfg.proxy.socks_base_port);
       propGrid_->SetPropertyValue("port_time_wait_blocking", cfg.port.time_wait_blocking);
       propGrid_->SetPropertyValue("proxy_api_base_port", cfg.proxy.api_base_port);
@@ -617,6 +621,7 @@ bool ConfigDialog::saveConfig() {
     // Proxy fields
     editedConfig_.proxy.xray_executable = propGrid_->GetPropertyValueAsString("proxy_xray_executable").ToStdString();
     editedConfig_.proxy.use_singbox = propGrid_->GetPropertyValueAsBool("proxy_use_singbox");
+    editedConfig_.proxy.ech_enabled = propGrid_->GetPropertyValueAsBool("proxy_ech_enabled");
     editedConfig_.proxy.socks_base_port = propGrid_->GetPropertyValueAsInt("proxy_socks_base_port");
       editedConfig_.port.time_wait_blocking = propGrid_->GetPropertyValueAsBool("port_time_wait_blocking");
       editedConfig_.proxy.api_base_port = propGrid_->GetPropertyValueAsInt("proxy_api_base_port");

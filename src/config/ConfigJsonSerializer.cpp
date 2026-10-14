@@ -116,6 +116,7 @@ boost::json::object ConfigJsonSerializer::serialize(const AppConfig& config) con
         proxyObj["xray_executable"] = config.proxy.xray_executable;
     }
     proxyObj["use_singbox"] = config.proxy.use_singbox;
+    proxyObj["ech_enabled"] = config.proxy.ech_enabled;
     if (!config.proxy.xray_asset_dir.empty()) {
         proxyObj["xray_asset_dir"] = config.proxy.xray_asset_dir;
     }

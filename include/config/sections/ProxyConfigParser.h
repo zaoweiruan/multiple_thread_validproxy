@@ -46,6 +46,11 @@ inline void ProxyConfigParser::parse(const boost::json::value& root, AppConfig& 
         } else if (proxy.contains("use_singbox")) {
             Logger::write("WARNING: config.proxy.use_singbox has wrong type (expected bool), using default", LogLevel::WARN);
         }
+        if (proxy.contains("ech_enabled") && proxy.at("ech_enabled").is_bool()) {
+            config.proxy.ech_enabled = proxy.at("ech_enabled").as_bool();
+        } else if (proxy.contains("ech_enabled")) {
+            Logger::write("WARNING: config.proxy.ech_enabled has wrong type (expected bool), using default", LogLevel::WARN);
+        }
         if (proxy.contains("xray_asset_dir") && proxy.at("xray_asset_dir").is_string()) {
             std::string rawPath = proxy.at("xray_asset_dir").as_string().c_str();
             std::filesystem::path p(rawPath);

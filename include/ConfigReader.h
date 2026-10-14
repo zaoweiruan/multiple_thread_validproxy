@@ -115,6 +115,14 @@ struct AppConfig {
         std::string xray_executable;         // Xray executable path (moved from top-level)
         std::string xray_asset_dir;
         bool use_singbox = false;            // Proxy backend selector: true=sing-box, false=Xray
+        // ECH (Encrypted ClientHello) 开关。
+        //   false = 生成配置时**不输出** echConfigList；
+        //   true  = 输出，并把值中所有空格替换为 '+'
+        //          （修正订阅源把 base64url 的 '+' 误写成空格、
+        //            或 URL 解码时把 '+' 吃成空格的情况）。
+        // 由 AppController / main_cli 启动时下发到 config::setEchEnabled()，
+        // 与 time_wait_blocking 同一模式（避免改动 5 处 StreamSettingsBuilder::build 调用点）。
+        bool ech_enabled = false;
         std::string singbox_executable;      // sing-box executable path (only relevant when use_singbox=true)
         std::string singbox_asset_dir;       // sing-box geoip/geosite resource directory
         // Scoring weights (0.0-1.0, sum not required to equal 1.0)
