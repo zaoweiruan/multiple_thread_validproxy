@@ -44,11 +44,6 @@ public:
     /// @return Vector of bundles matching core type
     std::vector<ComponentBundle> getByCoreType(CoreType coreType) const;
     
-    /// Get all bundles by template type
-    /// @param templateType Template type (base/test/standalone/pool)
-    /// @return Vector of bundles matching template type
-    std::vector<ComponentBundle> getByTemplateType(TemplateType templateType) const;
-    
     /// Save bundle (insert or update)
     /// @param bundle Bundle to save
     /// @return True on success
@@ -82,12 +77,12 @@ public:
     /// @return True on success
     bool createTableIfNotExists() const;
     
-    /// Seed default bundles if table is empty
-    /// @return Number of bundles inserted (0 if table already has data)
-    int seedDefaultBundles() const;
-    
 private:
     sqlite3* db_;
+    
+    /// 迁移：移除旧库的 TemplateType 列（组件包不再从属于模板角色）
+    /// @return True on success
+    bool migrateDropTemplateTypeColumn() const;
     
     /// Prepare statement helper
     bool prepareStatement(sqlite3_stmt** stmt, const std::string& sql) const;

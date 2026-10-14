@@ -32,7 +32,6 @@ bool ComponentBundleDAO::createTableIfNotExists() const {
         "Name varchar NOT NULL,"
         "Description varchar,"
         "CoreType INTEGER NOT NULL,"
-        "TemplateType varchar NOT NULL,"
         "Version INTEGER NOT NULL DEFAULT 1,"
         "Enabled INTEGER NOT NULL DEFAULT 1,"
         "Components varchar NOT NULL,"
@@ -50,6 +49,62 @@ bool ComponentBundleDAO::createTableIfNotExists() const {
     }
     
     Logger::write("[ComponentBundleDAO] Created ComponentBundle table", LogLevel::INFO);
+    return migrateDropTemplateTypeColumn();
+}
+
+bool ComponentBundleDAO::migrateDropTemplateTypeColumn() const {
+    // 旧库的 ComponentBundle.TemplateType 为 NOT NULL 且无默认值；
+    // 组件包已不再从属于模板角色，该列必须移除，否则新 INSERT 会触发 NOT NULL 约束失败。
+    sqlite3_stmt* stmt = nullptr;
+    if (!prepareStatement(&stmt, "PRAGMA table_info(ComponentBundle)")) {
+        return false;
+    }
+    bool hasLegacyColumn = false;
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        const char* colName = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+        if (colName && std::string(colName) == "TemplateType") {
+            hasLegacyColumn = true;
+            break;
+        }
+    }
+    finalizeStatement(stmt);
+    if (!hasLegacyColumn) {
+        return true;
+    }
+
+    // 重建表（兼容不支持 ALTER TABLE DROP COLUMN 的旧 SQLite）
+    const char* migrate =
+        "PRAGMA foreign_keys=off;"
+        "BEGIN;"
+        "CREATE TABLE ComponentBundle_new ("
+        "Id varchar PRIMARY KEY,"
+        "Name varchar NOT NULL,"
+        "Description varchar,"
+        "CoreType INTEGER NOT NULL,"
+        "Version INTEGER NOT NULL DEFAULT 1,"
+        "Enabled INTEGER NOT NULL DEFAULT 1,"
+        "Components varchar NOT NULL,"
+        "CreatedAt TEXT NOT NULL,"
+        "UpdatedAt TEXT NOT NULL"
+        ");"
+        "INSERT INTO ComponentBundle_new "
+        "(Id, Name, Description, CoreType, Version, Enabled, Components, CreatedAt, UpdatedAt) "
+        "SELECT Id, Name, Description, CoreType, Version, Enabled, Components, CreatedAt, UpdatedAt "
+        "FROM ComponentBundle;"
+        "DROP TABLE ComponentBundle;"
+        "ALTER TABLE ComponentBundle_new RENAME TO ComponentBundle;"
+        "COMMIT;";
+
+    char* errMsg = nullptr;
+    int rc = sqlite3_exec(db_, migrate, nullptr, nullptr, &errMsg);
+    if (rc != SQLITE_OK) {
+        std::string msg = errMsg ? errMsg : sqlite3_errmsg(db_);
+        if (errMsg) sqlite3_free(errMsg);
+        Logger::write("[ComponentBundleDAO] Failed to drop TemplateType column: " + msg,
+                      LogLevel::ERR);
+        return false;
+    }
+    Logger::write("[ComponentBundleDAO] Dropped legacy TemplateType column", LogLevel::INFO);
     return true;
 }
 
@@ -74,7 +129,6 @@ std::string ComponentBundleDAO::serializeBundle(const ComponentBundle& bundle) c
     j["name"] = bundle.name;
     j["description"] = bundle.description;
     j["coreType"] = static_cast<int>(bundle.coreType);
-    j["templateType"] = static_cast<int>(bundle.templateType);
     j["version"] = bundle.version;
     j["enabled"] = bundle.enabled;
     
@@ -124,8 +178,6 @@ ComponentBundle ComponentBundleDAO::deserializeBundle(const std::string& json) c
     auto coreTypeIt = obj.find("coreType");
     bundle.coreType = static_cast<CoreType>(static_cast<int>(coreTypeIt != obj.end() ? coreTypeIt->value().as_int64() : 2));
     
-    auto templateTypeIt = obj.find("templateType");
-    bundle.templateType = static_cast<TemplateType>(static_cast<int>(templateTypeIt != obj.end() ? templateTypeIt->value().as_int64() : 0));
     
     auto versionIt = obj.find("version");
     bundle.version = static_cast<int>(versionIt != obj.end() ? versionIt->value().as_int64() : 1);
@@ -160,7 +212,7 @@ ComponentBundle ComponentBundleDAO::deserializeBundle(const std::string& json) c
 }
 
 std::optional<ComponentBundle> ComponentBundleDAO::getById(const std::string& id) const {
-    std::string sql = "SELECT Id, Name, Description, CoreType, TemplateType, Version, Enabled, Components FROM ComponentBundle WHERE Id = ?";
+    std::string sql = "SELECT Id, Name, Description, CoreType, Version, Enabled, Components FROM ComponentBundle WHERE Id = ?";
     sqlite3_stmt* stmt = nullptr;
     
     if (!prepareStatement(&stmt, sql)) {
@@ -174,24 +226,15 @@ std::optional<ComponentBundle> ComponentBundleDAO::getById(const std::string& id
         const char* nameStr = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
         const char* descStr = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
         int coreType = sqlite3_column_int(stmt, 3);
-        const char* templateTypeStr = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 4));
-        int version = sqlite3_column_int(stmt, 5);
-        int enabled = sqlite3_column_int(stmt, 6);
-        const char* componentsStr = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 7));
+        int version = sqlite3_column_int(stmt, 4);
+        int enabled = sqlite3_column_int(stmt, 5);
+        const char* componentsStr = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 6));
         
         ComponentBundle bundle;
         bundle.id = idStr ? idStr : "";
         bundle.name = nameStr ? nameStr : "";
         bundle.description = descStr ? descStr : "";
         bundle.coreType = static_cast<CoreType>(coreType);
-        
-        // Parse template type string
-        std::string templateType = templateTypeStr ? templateTypeStr : "";
-        if (templateType == "base") bundle.templateType = TemplateType::BASE;
-        else if (templateType == "test") bundle.templateType = TemplateType::TEST;
-        else if (templateType == "standalone") bundle.templateType = TemplateType::STANDALONE;
-        else if (templateType == "pool") bundle.templateType = TemplateType::POOL;
-        else bundle.templateType = TemplateType::BASE;
         
         bundle.version = version;
         bundle.enabled = (enabled != 0);
@@ -207,7 +250,7 @@ std::optional<ComponentBundle> ComponentBundleDAO::getById(const std::string& id
 
 std::optional<ComponentBundle> ComponentBundleDAO::getByIdAndVersion(
     const std::string& id, int version) const {
-    std::string sql = "SELECT Id, Name, Description, CoreType, TemplateType, Version, Enabled, Components FROM ComponentBundle WHERE Id = ? AND Version = ?";
+    std::string sql = "SELECT Id, Name, Description, CoreType, Version, Enabled, Components FROM ComponentBundle WHERE Id = ? AND Version = ?";
     sqlite3_stmt* stmt = nullptr;
     
     if (!prepareStatement(&stmt, sql)) {
@@ -222,22 +265,14 @@ std::optional<ComponentBundle> ComponentBundleDAO::getByIdAndVersion(
         const char* nameStr = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
         const char* descStr = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
         int coreType = sqlite3_column_int(stmt, 3);
-        const char* templateTypeStr = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 4));
-        int enabled = sqlite3_column_int(stmt, 6);
-        const char* componentsStr = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 7));
+        int enabled = sqlite3_column_int(stmt, 5);
+        const char* componentsStr = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 6));
         
         ComponentBundle bundle;
         bundle.id = idStr ? idStr : "";
         bundle.name = nameStr ? nameStr : "";
         bundle.description = descStr ? descStr : "";
         bundle.coreType = static_cast<CoreType>(coreType);
-        
-        std::string templateType = templateTypeStr ? templateTypeStr : "";
-        if (templateType == "base") bundle.templateType = TemplateType::BASE;
-        else if (templateType == "test") bundle.templateType = TemplateType::TEST;
-        else if (templateType == "standalone") bundle.templateType = TemplateType::STANDALONE;
-        else if (templateType == "pool") bundle.templateType = TemplateType::POOL;
-        else bundle.templateType = TemplateType::BASE;
         
         bundle.version = version;
         bundle.enabled = (enabled != 0);
@@ -253,7 +288,7 @@ std::optional<ComponentBundle> ComponentBundleDAO::getByIdAndVersion(
 
 std::vector<ComponentBundle> ComponentBundleDAO::getAll() const {
     std::vector<ComponentBundle> bundles;
-    std::string sql = "SELECT Id, Name, Description, CoreType, TemplateType, Version, Enabled, Components FROM ComponentBundle";
+    std::string sql = "SELECT Id, Name, Description, CoreType, Version, Enabled, Components FROM ComponentBundle";
     sqlite3_stmt* stmt = nullptr;
     
     if (!prepareStatement(&stmt, sql)) {
@@ -265,23 +300,15 @@ std::vector<ComponentBundle> ComponentBundleDAO::getAll() const {
         const char* nameStr = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
         const char* descStr = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
         int coreType = sqlite3_column_int(stmt, 3);
-        const char* templateTypeStr = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 4));
-        int version = sqlite3_column_int(stmt, 5);
-        int enabled = sqlite3_column_int(stmt, 6);
-        const char* componentsStr = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 7));
+        int version = sqlite3_column_int(stmt, 4);
+        int enabled = sqlite3_column_int(stmt, 5);
+        const char* componentsStr = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 6));
         
         ComponentBundle bundle;
         bundle.id = idStr ? idStr : "";
         bundle.name = nameStr ? nameStr : "";
         bundle.description = descStr ? descStr : "";
         bundle.coreType = static_cast<CoreType>(coreType);
-        
-        std::string templateType = templateTypeStr ? templateTypeStr : "";
-        if (templateType == "base") bundle.templateType = TemplateType::BASE;
-        else if (templateType == "test") bundle.templateType = TemplateType::TEST;
-        else if (templateType == "standalone") bundle.templateType = TemplateType::STANDALONE;
-        else if (templateType == "pool") bundle.templateType = TemplateType::POOL;
-        else bundle.templateType = TemplateType::BASE;
         
         bundle.version = version;
         bundle.enabled = (enabled != 0);
@@ -296,7 +323,7 @@ std::vector<ComponentBundle> ComponentBundleDAO::getAll() const {
 
 std::vector<ComponentBundle> ComponentBundleDAO::getAllEnabled() const {
     std::vector<ComponentBundle> bundles;
-    std::string sql = "SELECT Id, Name, Description, CoreType, TemplateType, Version, Enabled, Components FROM ComponentBundle WHERE Enabled = 1";
+    std::string sql = "SELECT Id, Name, Description, CoreType, Version, Enabled, Components FROM ComponentBundle WHERE Enabled = 1";
     sqlite3_stmt* stmt = nullptr;
     
     if (!prepareStatement(&stmt, sql)) {
@@ -308,23 +335,15 @@ std::vector<ComponentBundle> ComponentBundleDAO::getAllEnabled() const {
         const char* nameStr = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
         const char* descStr = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
         int coreType = sqlite3_column_int(stmt, 3);
-        const char* templateTypeStr = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 4));
-        int version = sqlite3_column_int(stmt, 5);
-        int enabled = sqlite3_column_int(stmt, 6);
-        const char* componentsStr = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 7));
+        int version = sqlite3_column_int(stmt, 4);
+        int enabled = sqlite3_column_int(stmt, 5);
+        const char* componentsStr = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 6));
         
         ComponentBundle bundle;
         bundle.id = idStr ? idStr : "";
         bundle.name = nameStr ? nameStr : "";
         bundle.description = descStr ? descStr : "";
         bundle.coreType = static_cast<CoreType>(coreType);
-        
-        std::string templateType = templateTypeStr ? templateTypeStr : "";
-        if (templateType == "base") bundle.templateType = TemplateType::BASE;
-        else if (templateType == "test") bundle.templateType = TemplateType::TEST;
-        else if (templateType == "standalone") bundle.templateType = TemplateType::STANDALONE;
-        else if (templateType == "pool") bundle.templateType = TemplateType::POOL;
-        else bundle.templateType = TemplateType::BASE;
         
         bundle.version = version;
         bundle.enabled = (enabled != 0);
@@ -350,45 +369,21 @@ std::vector<ComponentBundle> ComponentBundleDAO::getByCoreType(CoreType coreType
     return result;
 }
 
-std::vector<ComponentBundle> ComponentBundleDAO::getByTemplateType(TemplateType templateType) const {
-    std::vector<ComponentBundle> bundles = getAll();
-    std::vector<ComponentBundle> result;
-    
-    for (const auto& bundle : bundles) {
-        if (bundle.templateType == templateType) {
-            result.push_back(bundle);
-        }
-    }
-    
-    return result;
-}
-
 bool ComponentBundleDAO::save(const ComponentBundle& bundle) const {
-    std::string sql = "INSERT OR REPLACE INTO ComponentBundle (Id, Name, Description, CoreType, TemplateType, Version, Enabled, Components, CreatedAt, UpdatedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))";
+    std::string sql = "INSERT OR REPLACE INTO ComponentBundle (Id, Name, Description, CoreType, Version, Enabled, Components, CreatedAt, UpdatedAt) VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))";
     sqlite3_stmt* stmt = nullptr;
     
     if (!prepareStatement(&stmt, sql)) {
         return false;
     }
     
-    // Convert enum to string for storage
-    std::string templateTypeStr;
-    switch (bundle.templateType) {
-        case TemplateType::BASE: templateTypeStr = "base"; break;
-        case TemplateType::TEST: templateTypeStr = "test"; break;
-        case TemplateType::STANDALONE: templateTypeStr = "standalone"; break;
-        case TemplateType::POOL: templateTypeStr = "pool"; break;
-        default: templateTypeStr = "base"; break;
-    }
-    
     sqlite3_bind_text(stmt, 1, bundle.id.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_text(stmt, 2, bundle.name.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_text(stmt, 3, bundle.description.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_int(stmt, 4, static_cast<int>(bundle.coreType));
-    sqlite3_bind_text(stmt, 5, templateTypeStr.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_int(stmt, 6, bundle.version);
-    sqlite3_bind_int(stmt, 7, bundle.enabled ? 1 : 0);
-    sqlite3_bind_text(stmt, 8, serializeBundle(bundle).c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int(stmt, 5, bundle.version);
+    sqlite3_bind_int(stmt, 6, bundle.enabled ? 1 : 0);
+    sqlite3_bind_text(stmt, 7, serializeBundle(bundle).c_str(), -1, SQLITE_TRANSIENT);
     
     int rc = sqlite3_step(stmt);
     finalizeStatement(stmt);
@@ -488,402 +483,6 @@ int ComponentBundleDAO::getReferencedCount(const std::string& id) const {
     
     finalizeStatement(stmt);
     return count;
-}
-
-int ComponentBundleDAO::seedDefaultBundles() const {
-    // Check if table already has data
-    std::vector<ComponentBundle> existing = getAll();
-    if (!existing.empty()) {
-        Logger::write("[ComponentBundleDAO] Table already has bundles, skipping seed", LogLevel::INFO);
-        return 0;
-    }
-    
-    int inserted = 0;
-    
-    // === Xray Base Bundle ===
-    {
-        ComponentBundle bundle;
-        bundle.id = "base_xray_001";
-        bundle.name = "Xray Base Components";
-        bundle.description = "Shared base components for Xray (log, dns)";
-        bundle.coreType = CoreType::XRAY;
-        bundle.templateType = TemplateType::BASE;
-        bundle.version = 1;
-        bundle.enabled = true;
-        
-        // Log component
-        ComponentConfig logComp;
-        logComp.type = ComponentType::LOG;
-        logComp.params["loglevel"] = "warning";
-        bundle.components.push_back(logComp);
-        
-        // DNS component
-        ComponentConfig dnsComp;
-        dnsComp.type = ComponentType::DNS;
-        boost::json::object dnsParams;
-        dnsParams["servers"] = boost::json::array({"1.1.1.1", "8.8.8.8", "https://doh.pub/dns-query"});
-        dnsParams["fallback"] = boost::json::array({"1.1.1.1", "8.8.8.8"});
-        dnsParams["fallbackFilterGeoip"] = "cn";
-        dnsComp.params["dns"] = dnsParams;
-        bundle.components.push_back(dnsComp);
-        
-        if (save(bundle)) inserted++;
-    }
-    
-    // === SingBox Base Bundle ===
-    {
-        ComponentBundle bundle;
-        bundle.id = "base_singbox_001";
-        bundle.name = "SingBox Base Components";
-        bundle.description = "Shared base components for SingBox (log, dns)";
-        bundle.coreType = CoreType::SINGBOX;
-        bundle.templateType = TemplateType::BASE;
-        bundle.version = 1;
-        bundle.enabled = true;
-        
-        // Log component
-        ComponentConfig logComp;
-        logComp.type = ComponentType::LOG;
-        logComp.params["loglevel"] = "warn";
-        bundle.components.push_back(logComp);
-        
-        // DNS component
-        ComponentConfig dnsComp;
-        dnsComp.type = ComponentType::DNS;
-        boost::json::object dnsParams;
-        dnsParams["servers"] = boost::json::array({"https://doh.pub/dns-query", "https://dns.cloudflare.com/dns-query"});
-        dnsComp.params["dns"] = dnsParams;
-        bundle.components.push_back(dnsComp);
-        
-        if (save(bundle)) inserted++;
-    }
-    
-    // === Xray Test Bundle ===
-    {
-        ComponentBundle bundle;
-        bundle.id = "test_xray_001";
-        bundle.name = "Xray Test Components";
-        bundle.description = "Components for batch test configuration";
-        bundle.coreType = CoreType::XRAY;
-        bundle.templateType = TemplateType::TEST;
-        bundle.version = 1;
-        bundle.enabled = true;
-        
-        // API component
-        ComponentConfig apiComp;
-        apiComp.type = ComponentType::API;
-        apiComp.params["tag"] = "api";
-        apiComp.params["listen"] = "127.0.0.1:${apiPort}";
-        bundle.components.push_back(apiComp);
-        
-        // SOCKS inbound
-        ComponentConfig socksInbound;
-        socksInbound.type = ComponentType::INBOUND;
-        socksInbound.id = "socks";
-        boost::json::object socksParams;
-        socksParams["tag"] = "socks";
-        socksParams["listen"] = "127.0.0.1:${socksPort}";
-        socksParams["port"] = "${socksPort}";
-        socksParams["protocol"] = "mixed";
-        socksInbound.params["inbound"] = socksParams;
-        bundle.components.push_back(socksInbound);
-        
-        // Proxy outbound
-        ComponentConfig proxyOutbound;
-        proxyOutbound.type = ComponentType::OUTBOUND;
-        proxyOutbound.id = "proxy";
-        boost::json::object proxyParams;
-        proxyParams["tag"] = "proxy";
-        proxyParams["type"] = "proxy";
-        proxyOutbound.params["outbound"] = proxyParams;
-        bundle.components.push_back(proxyOutbound);
-        
-        // Routing component
-        ComponentConfig routingComp;
-        routingComp.type = ComponentType::ROUTING;
-        boost::json::object routingParams;
-        routingParams["domainStrategy"] = "AsIs";
-        boost::json::array rules;
-        boost::json::object socksRule;
-        socksRule["type"] = "field";
-        socksRule["inboundTag"] = boost::json::array({"socks"});
-        socksRule["outboundTag"] = "proxy";
-        rules.push_back(socksRule);
-        routingParams["rules"] = rules;
-        routingComp.params["routing"] = routingParams;
-        bundle.components.push_back(routingComp);
-        
-        // Observatory component
-        ComponentConfig obsComp;
-        obsComp.type = ComponentType::OBSERVATORY;
-        boost::json::object obsParams;
-        obsParams["subjectName"] = boost::json::array({"proxy"});
-        obsParams["probeUrl"] = "${probeUrl}";
-        obsParams["probeInterval"] = 60000;
-        obsComp.params["observatory"] = obsParams;
-        bundle.components.push_back(obsComp);
-        
-        // BurstObservatory component
-        ComponentConfig burstObsComp;
-        burstObsComp.type = ComponentType::BURST_OBSERVATORY;
-        boost::json::object burstObsParams;
-        burstObsComp.params["burstObservatory"] = burstObsParams;
-        bundle.components.push_back(burstObsComp);
-        
-        if (save(bundle)) inserted++;
-    }
-    
-    // === SingBox Test Bundle ===
-    {
-        ComponentBundle bundle;
-        bundle.id = "test_singbox_001";
-        bundle.name = "SingBox Test Components";
-        bundle.description = "Components for batch test configuration (SingBox)";
-        bundle.coreType = CoreType::SINGBOX;
-        bundle.templateType = TemplateType::TEST;
-        bundle.version = 1;
-        bundle.enabled = true;
-        
-        // SOCKS inbound
-        ComponentConfig socksInbound;
-        socksInbound.type = ComponentType::INBOUND;
-        socksInbound.id = "socks";
-        boost::json::object socksParams;
-        socksParams["tag"] = "socks";
-        socksParams["type"] = "socks";
-        socksParams["listen"] = "127.0.0.1:${socksPort}";
-        socksParams["listen_port"] = "${socksPort}";
-        socksInbound.params["inbound"] = socksParams;
-        bundle.components.push_back(socksInbound);
-        
-        // SOCKS outbound
-        ComponentConfig socksOutbound;
-        socksOutbound.type = ComponentType::OUTBOUND;
-        socksOutbound.id = "socks-out";
-        boost::json::object socksOutParams;
-        socksOutParams["tag"] = "socks-out";
-        socksOutParams["type"] = "socks";
-        socksOutbound.params["outbound"] = socksOutParams;
-        bundle.components.push_back(socksOutbound);
-        
-        // Route component (SingBox uses "route" instead of "routing")
-        ComponentConfig routeComp;
-        routeComp.type = ComponentType::ROUTING;
-        boost::json::object routeParams;
-        routeParams["rule_set"] = boost::json::array();
-        routeParams["rules"] = boost::json::array();
-        routeComp.params["route"] = routeParams;
-        bundle.components.push_back(routeComp);
-        
-        if (save(bundle)) inserted++;
-    }
-    
-    // === Xray Standalone Bundle ===
-    {
-        ComponentBundle bundle;
-        bundle.id = "standalone_xray_001";
-        bundle.name = "Xray Standalone Components";
-        bundle.description = "Components for standalone proxy configuration";
-        bundle.coreType = CoreType::XRAY;
-        bundle.templateType = TemplateType::STANDALONE;
-        bundle.version = 1;
-        bundle.enabled = true;
-        
-        // API component
-        ComponentConfig apiComp;
-        apiComp.type = ComponentType::API;
-        apiComp.params["tag"] = "api";
-        apiComp.params["listen"] = "127.0.0.1:${apiPort}";
-        bundle.components.push_back(apiComp);
-        
-        // SOCKS inbound
-        ComponentConfig socksInbound;
-        socksInbound.type = ComponentType::INBOUND;
-        socksInbound.id = "socks";
-        boost::json::object socksParams;
-        socksParams["tag"] = "socks";
-        socksParams["listen"] = "127.0.0.1:${socksPort}";
-        socksParams["port"] = "${socksPort}";
-        socksParams["protocol"] = "mixed";
-        socksInbound.params["inbound"] = socksParams;
-        bundle.components.push_back(socksInbound);
-        
-        // Proxy outbound
-        ComponentConfig proxyOutbound;
-        proxyOutbound.type = ComponentType::OUTBOUND;
-        proxyOutbound.id = "proxy";
-        boost::json::object proxyParams;
-        proxyParams["tag"] = "proxy";
-        proxyParams["type"] = "proxy";
-        proxyOutbound.params["outbound"] = proxyParams;
-        bundle.components.push_back(proxyOutbound);
-        
-        // Routing component
-        ComponentConfig routingComp;
-        routingComp.type = ComponentType::ROUTING;
-        boost::json::object routingParams;
-        routingParams["domainStrategy"] = "AsIs";
-        routingComp.params["routing"] = routingParams;
-        bundle.components.push_back(routingComp);
-        
-        if (save(bundle)) inserted++;
-    }
-    
-    // === SingBox Standalone Bundle ===
-    {
-        ComponentBundle bundle;
-        bundle.id = "standalone_singbox_001";
-        bundle.name = "SingBox Standalone Components";
-        bundle.description = "Components for standalone proxy configuration (SingBox)";
-        bundle.coreType = CoreType::SINGBOX;
-        bundle.templateType = TemplateType::STANDALONE;
-        bundle.version = 1;
-        bundle.enabled = true;
-        
-        // SOCKS inbound
-        ComponentConfig socksInbound;
-        socksInbound.type = ComponentType::INBOUND;
-        socksInbound.id = "socks";
-        boost::json::object socksParams;
-        socksParams["tag"] = "socks";
-        socksParams["type"] = "socks";
-        socksParams["listen"] = "127.0.0.1:${socksPort}";
-        socksParams["listen_port"] = "${socksPort}";
-        socksInbound.params["inbound"] = socksParams;
-        bundle.components.push_back(socksInbound);
-        
-        // SOCKS outbound
-        ComponentConfig socksOutbound;
-        socksOutbound.type = ComponentType::OUTBOUND;
-        socksOutbound.id = "socks-out";
-        boost::json::object socksOutParams;
-        socksOutParams["tag"] = "socks-out";
-        socksOutParams["type"] = "socks";
-        socksOutbound.params["outbound"] = socksOutParams;
-        bundle.components.push_back(socksOutbound);
-        
-        if (save(bundle)) inserted++;
-    }
-    
-    // === Xray Pool Bundle ===
-    {
-        ComponentBundle bundle;
-        bundle.id = "pool_xray_001";
-        bundle.name = "Xray Pool Components";
-        bundle.description = "Components for proxy pool configuration";
-        bundle.coreType = CoreType::XRAY;
-        bundle.templateType = TemplateType::POOL;
-        bundle.version = 1;
-        bundle.enabled = true;
-        
-        // API component
-        ComponentConfig apiComp;
-        apiComp.type = ComponentType::API;
-        apiComp.params["tag"] = "api";
-        apiComp.params["listen"] = "127.0.0.1:${apiPort}";
-        bundle.components.push_back(apiComp);
-        
-        // SOCKS inbound
-        ComponentConfig socksInbound;
-        socksInbound.type = ComponentType::INBOUND;
-        socksInbound.id = "socks";
-        boost::json::object socksParams;
-        socksParams["tag"] = "socks";
-        socksParams["listen"] = "127.0.0.1:${socksPort}";
-        socksParams["port"] = "${socksPort}";
-        socksParams["protocol"] = "mixed";
-        socksInbound.params["inbound"] = socksParams;
-        bundle.components.push_back(socksInbound);
-        
-        // Proxy outbound
-        ComponentConfig proxyOutbound;
-        proxyOutbound.type = ComponentType::OUTBOUND;
-        proxyOutbound.id = "proxy";
-        boost::json::object proxyParams;
-        proxyParams["tag"] = "proxy";
-        proxyParams["type"] = "proxy";
-        proxyOutbound.params["outbound"] = proxyParams;
-        bundle.components.push_back(proxyOutbound);
-        
-        // Balancer outbound
-        ComponentConfig balancerOutbound;
-        balancerOutbound.type = ComponentType::OUTBOUND;
-        balancerOutbound.id = "balancer";
-        boost::json::object balancerParams;
-        balancerParams["tag"] = "balancer-out";
-        balancerParams["type"] = "balancer";
-        boost::json::object balancerSettings;
-        balancerSettings["balancerTag"] = "balancer";
-        balancerParams["settings"] = balancerSettings;
-        balancerOutbound.params["outbound"] = balancerParams;
-        bundle.components.push_back(balancerOutbound);
-        
-        // Routing component with balancers
-        ComponentConfig routingComp;
-        routingComp.type = ComponentType::ROUTING;
-        boost::json::object routingParams;
-        boost::json::array balancers;
-        boost::json::object balancer;
-        balancer["tag"] = "balancer";
-        balancer["selector"] = boost::json::array();
-        balancer["strategy"] = "leastPing";
-        balancers.push_back(balancer);
-        routingParams["balancers"] = balancers;
-        routingComp.params["routing"] = routingParams;
-        bundle.components.push_back(routingComp);
-        
-        if (save(bundle)) inserted++;
-    }
-    
-    // === SingBox Pool Bundle ===
-    {
-        ComponentBundle bundle;
-        bundle.id = "pool_singbox_001";
-        bundle.name = "SingBox Pool Components";
-        bundle.description = "Components for proxy pool configuration (SingBox)";
-        bundle.coreType = CoreType::SINGBOX;
-        bundle.templateType = TemplateType::POOL;
-        bundle.version = 1;
-        bundle.enabled = true;
-        
-        // SOCKS inbound
-        ComponentConfig socksInbound;
-        socksInbound.type = ComponentType::INBOUND;
-        socksInbound.id = "socks";
-        boost::json::object socksParams;
-        socksParams["tag"] = "socks";
-        socksParams["type"] = "socks";
-        socksParams["listen"] = "127.0.0.1:${socksPort}";
-        socksParams["listen_port"] = "${socksPort}";
-        socksInbound.params["inbound"] = socksParams;
-        bundle.components.push_back(socksInbound);
-        
-        // SOCKS outbound
-        ComponentConfig socksOutbound;
-        socksOutbound.type = ComponentType::OUTBOUND;
-        socksOutbound.id = "socks-out";
-        boost::json::object socksOutParams;
-        socksOutParams["tag"] = "socks-out";
-        socksOutParams["type"] = "socks";
-        socksOutbound.params["outbound"] = socksOutParams;
-        bundle.components.push_back(socksOutbound);
-        
-        // Balancers (SingBox uses top-level "balancers")
-        ComponentConfig balancerComp;
-        balancerComp.type = ComponentType::ROUTING;
-        boost::json::array balancersJson;
-        boost::json::object balancer;
-        balancer["tag"] = "balancer";
-        balancer["selector"] = boost::json::array();
-        balancersJson.push_back(balancer);
-        balancerComp.params["balancers"] = balancersJson;
-        bundle.components.push_back(balancerComp);
-        
-        if (save(bundle)) inserted++;
-    }
-    
-    Logger::write("[ComponentBundleDAO] Seeded " + std::to_string(inserted) + " default bundles", LogLevel::INFO);
-    return inserted;
 }
 
 } // namespace config

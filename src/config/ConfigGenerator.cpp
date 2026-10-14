@@ -23,11 +23,8 @@ config::BundleChain parseBundleChainText(const std::string& jsonText) {
             }
         }
     }
-    if (obj.contains("params") && obj.at("params").is_object()) {
-        for (const boost::json::key_value_pair& kv : obj.at("params").as_object()) {
-            chain.params[std::string(kv.key())] = kv.value();
-        }
-    }
+    // 不再解析 params 段：模板不存具体参数值（占位符由运行期上下文填值）。
+    // 历史模板里的 params 段直接忽略。
     return chain;
 }
 

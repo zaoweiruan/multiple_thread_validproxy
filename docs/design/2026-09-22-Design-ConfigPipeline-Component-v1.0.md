@@ -429,14 +429,30 @@ CREATE INDEX idx_bundle_enabled ON ComponentBundle(Enabled);
 
 **所有组件的 `params` 都支持占位符**，在组件应用时自动解析。
 
-**支持的占位符**：
-| 占位符 | 说明 | 示例值 |
-|--------|------|--------|
-| `${socksPort}` | SOCKS 入站端口 | 10809 |
-| `${apiPort}` | API 端口 | 10085 |
-| `${probeUrl}` | 探测 URL | https://www.google.com/generate_204 |
-| `${balancerStrategy}` | 负载均衡策略 | leastPing |
-| `${observatoryInterval}` | 观测间隔（秒） | 5 |
+**支持的占位符**（共 8 个，以 `ConfigBuilder::variablesToMap()` 为准）：
+
+| 占位符 | 说明 | 类型 | 默认值 / 示例值 |
+|--------|------|------|--------|
+| `${socksPort}` | SOCKS 入站端口 | int | 0（由 `XrayInstance` 传入真实端口） |
+| `${apiPort}` | API 端口 | int | 0（仅 Xray 需要） |
+| `${probeUrl}` | 探测 URL | string | `https://www.google.com/generate_204` |
+| `${observatoryInterval}` | Observatory 间隔（**毫秒**） | int | 30000 |
+| `${balancerStrategy}` | 负载均衡策略 | string | `leastPing` |
+| `${enableObservatory}` | 是否启用 observatory | bool → `"true"`/`"false"` | true |
+| `${enableCnDirect}` | 是否启用 CN 直连分流 | bool → `"true"`/`"false"` | true |
+| `${blockQuic}` | 是否阻断 QUIC | bool → `"true"`/`"false"` | true |
+
+> **校正说明（2026-10-10）**：原表仅列 5 个（`socksPort`/`apiPort`/`probeUrl`/`balancerStrategy`/`observatoryInterval`），
+> 遗漏 `enableObservatory`/`enableCnDirect`/`blockQuic` 三个布尔占位符——它们在
+> `ConfigBuilder::variablesToMap()`（`src/config/ConfigBuilder.cpp:35-46`）与
+> `ComponentResolver::replacePlaceholdersInValue()`（`src/config/ComponentResolver.cpp:160-174`）中均被实际替换。
+> 另修正：`observatoryInterval` 单位为**毫秒**（默认 30000），原表写「秒」有误；
+> `StandaloneProxyPool.cpp:49` 传入的是 `intervalSec * 1000`。
+> 布尔占位符替换后是**字符串** `"true"`/`"false"`（`variablesToMap` 里即如此构造），
+> 若出现在数字字段需注意去掉引号——`replacePlaceholders()` 仅对「引号内纯数字」做去引号处理。
+>
+> 组件包「组件包配置」页右侧现内置这两张表（组件类型表由 `ComponentRegistry::getAllTypes()`
+> + `getMetadata()` 运行时生成，故不会再与代码漂移）。
 
 **示例**：
 ```json
@@ -1057,25 +1073,46 @@ ALTER TABLE FullConfigTemplateItem ADD COLUMN BundleChain varchar;
 └─────────────────────────────────────────────────────────────┘
 ```
 
-**组件类型与配置节映射**：
+**组件类型与配置节映射**（以 `ComponentRegistry::registerDefaultTypes()`
+`src/config/ComponentRegistry.cpp:135-214` 为准，枚举定义见
+`include/config/ComponentBundle.h:12-28`）：
 
-| 组件类型 | 配置节 | 类型 |
-|----------|--------|------|
-| `env` | `env` | EnvObject |
-| `log` | `log` | LogObject |
-| `api` | `api` | ApiObject |
-| `dns` | `dns` | DnsObject |
-| `routing` | `routing` | RoutingObject |
-| `policy` | `policy` | PolicyObject |
-| `inbound` | `inbounds[]` | InboundObject[] |
-| `outbound` | `outbounds[]` | OutboundObject[] |
-| `stats` | `stats` | StatsObject |
-| `fakedns` | `fakedns` | FakeDnsObject |
-| `metrics` | `metrics` | MetricsObject |
-| `observatory` | `observatory` | ObservatoryObject |
-| `burstObservatory` | `burstObservatory` | BurstObservatoryObject |
-| `geodata` | `geodata` | GeodataObject |
-| `version` | `version` | VersionObject |
+| 枚举 | 值 | Xray 配置节 | SingBox 配置节 | 组合策略 | 单例 | Xray | SingBox |
+|------|----|-------------|----------------|----------|------|------|---------|
+| `ENV` | 0 | `env` | （无） | OVERRIDE | 是 | ✅ | ❌ |
+| `LOG` | 1 | `log` | `log` | OVERRIDE | 是 | ✅ | ✅ |
+| `API` | 2 | `api` | （无） | OVERRIDE | 是 | ✅ | ❌ |
+| `DNS` | 3 | `dns` | `dns` | OVERRIDE | 是 | ✅ | ✅ |
+| `ROUTING` | 4 | `routing` | `route` | **MERGE** | 是 | ✅ | ✅ |
+| `POLICY` | 5 | `policy` | （无） | OVERRIDE | 是 | ✅ | ❌ |
+| `INBOUND` | 6 | `inbounds[]` | `inbounds[]` | **APPEND** | 否 | ✅ | ✅ |
+| `OUTBOUND` | 7 | `outbounds[]` | `outbounds[]` | **APPEND** | 否 | ✅ | ✅ |
+| `STATS` | 8 | `stats` | （无） | OVERRIDE | 是 | ✅ | ❌ |
+| `FAKEDNS` | 9 | `fakedns` | （无） | OVERRIDE | 是 | ✅ | ❌ |
+| `METRICS` | 10 | `metrics` | （无） | OVERRIDE | 是 | ✅ | ❌ |
+| `OBSERVATORY` | 11 | `observatory` | （无） | OVERRIDE | 是 | ✅ | ❌ |
+| `BURST_OBSERVATORY` | 12 | `burstObservatory` | （无） | OVERRIDE | 是 | ✅ | ❌ |
+| `GEODATA` | 13 | `geodata` | （无） | OVERRIDE | 是 | ✅ | ❌ |
+| `VERSION` | 14 | `version` | （无） | OVERRIDE | 是 | ✅ | ❌ |
+
+**Xray 官方对象类型**（仅供对照，与上表的「配置节」不是一回事）：
+
+```
+env→EnvObject          log→LogObject          api→ApiObject
+dns→DnsObject          routing→RoutingObject  policy→PolicyObject
+inbounds[]→InboundObject[]                   outbounds[]→OutboundObject[]
+stats→StatsObject      fakedns→FakeDnsObject  metrics→MetricsObject
+observatory→ObservatoryObject                burstObservatory→BurstObservatoryObject
+geodata→GeoDataObject  version→version
+```
+
+> **校正说明（2026-10-10）**：原表用 `inbound`/`outbound` **单数**作组件类型名，
+> 与代码不符——枚举是 `INBOUND`/`OUTBOUND`，配置节是 `inbounds`/`outbounds` **复数**。
+> 这一命名不一致曾导致实际缺陷：`ConflictDetector::detectDependencies` 用单数比较、
+> 注册表用复数，致依赖收集失效（见 `docs/bugfix/2026-09-24-Bugfix-ConflictDetector-Deps-Section-v1.0.md`）。
+> 本表补上枚举值、组合策略、单例标记与 SingBox 节名；其中 `ROUTING` 的 SingBox 节名为 `route`，
+> 是 `ComponentResolver::resolve()` 按 `ctx.proxyType` 做节段名归一的依据
+> （见 `src/config/ComponentResolver.cpp`，`applyRoutingComponent` 固定写 `routing`）。
 
 | 维度 | 旧架构（步骤） | 新架构（组件） |
 |------|----------------|----------------|

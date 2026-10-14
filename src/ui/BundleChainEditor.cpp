@@ -18,64 +18,61 @@ wxBEGIN_EVENT_TABLE(BundleChainEditor, wxPanel)
     EVT_LIST_ITEM_SELECTED(wxID_ANY, BundleChainEditor::onBundleSelected)
 wxEND_EVENT_TABLE()
 
-BundleChainEditor::BundleChainEditor(wxWindow* parent, sqlite3* db)
+BundleChainEditor::BundleChainEditor(wxWindow* parent, sqlite3* db, bool showButtons)
     : wxPanel(parent, wxID_ANY), db_(db) {
 
-    addBtn_ = new wxButton(this, wxID_ADD, wxT("添加 Bundle"));
-    removeBtn_ = new wxButton(this, wxID_REMOVE, wxT("移除"));
-    resolveBtn_ = new wxButton(this, wxID_EXECUTE, wxT("解析"));
-
-    bundleList_ = new wxListCtrl(this, wxID_ANY, wxDefaultPosition, wxSize(520, 200),
+    // Bundle 列表占满本控件：参数 (JSON) 输入框已废除（模板不该存具体参数值，
+    // 见下方 resolveToConfig 的占位符说明），本控件现在只有「按钮 + 列表」。
+    bundleList_ = new wxListCtrl(this, wxID_ANY, wxDefaultPosition, wxSize(-1, -1),
                                  wxLC_REPORT | wxLC_SINGLE_SEL);
-    bundleList_->InsertColumn(0, wxT("Bundle ID"), wxLIST_FORMAT_LEFT, 200);
-    bundleList_->InsertColumn(1, wxT("名称"), wxLIST_FORMAT_LEFT, 160);
-    bundleList_->InsertColumn(2, wxT("版本"), wxLIST_FORMAT_LEFT, 60);
-
-    wxStaticText* paramLabel = new wxStaticText(this, wxID_ANY, wxT("参数 (JSON)"));
-    paramEditor_ = new wxTextCtrl(this, wxID_ANY, wxT("{}"),
-                                  wxDefaultPosition, wxSize(520, 120),
-                                  wxTE_MULTILINE);
-
-    wxBoxSizer* btnSizer = new wxBoxSizer(wxHORIZONTAL);
-    btnSizer->Add(addBtn_, 0, wxRIGHT, 6);
-    btnSizer->Add(removeBtn_, 0, wxRIGHT, 6);
-    btnSizer->Add(resolveBtn_, 0, 0, 0);
+    bundleList_->InsertColumn(0, wxT("Bundle ID"), wxLIST_FORMAT_LEFT, 130);
+    bundleList_->InsertColumn(1, wxT("名称"), wxLIST_FORMAT_LEFT, 100);
+    bundleList_->InsertColumn(2, wxT("版本"), wxLIST_FORMAT_LEFT, 50);
 
     wxBoxSizer* topSizer = new wxBoxSizer(wxVERTICAL);
-    topSizer->Add(btnSizer, 0, wxALL, 6);
-    topSizer->Add(bundleList_, 1, wxEXPAND | wxLEFT | wxRIGHT, 6);
-    topSizer->Add(paramLabel, 0, wxTOP | wxLEFT | wxRIGHT, 8);
-    topSizer->Add(paramEditor_, 0, wxEXPAND | wxALL, 6);
+
+    if (showButtons) {
+        addBtn_ = new wxButton(this, wxID_ADD, wxT("添加 Bundle"));
+        removeBtn_ = new wxButton(this, wxID_REMOVE, wxT("移除"));
+        resolveBtn_ = new wxButton(this, wxID_EXECUTE, wxT("解析"));
+
+        wxBoxSizer* btnSizer = new wxBoxSizer(wxHORIZONTAL);
+        btnSizer->Add(addBtn_, 0, wxRIGHT, 6);
+        btnSizer->Add(removeBtn_, 0, wxRIGHT, 6);
+        btnSizer->Add(resolveBtn_, 0, 0, 0);
+        topSizer->Add(btnSizer, 0, wxALL, 6);
+    }
+    topSizer->Add(bundleList_, 1, wxEXPAND | wxALL, 6);
     SetSizer(topSizer);
 
     refreshBundleList();
 }
 
+void BundleChainEditor::triggerAddBundle() {
+    wxCommandEvent e(wxID_ANY);
+    onAddBundle(e);
+}
+
+void BundleChainEditor::triggerRemoveBundle() {
+    wxCommandEvent e(wxID_ANY);
+    onRemoveBundle(e);
+}
+
+void BundleChainEditor::triggerResolve() {
+    wxCommandEvent e(wxID_ANY);
+    onResolve(e);
+}
+
 void BundleChainEditor::setChain(const config::BundleChain& chain) {
     chain_ = chain;
     refreshBundleList();
-    paramEditor_->ChangeValue(wxT("{}"));
-    if (!chain_.params.empty()) {
-        boost::json::object obj;
-        for (const auto& kv : chain_.params) {
-            obj[kv.first] = kv.second;
-        }
-        paramEditor_->ChangeValue(wxString(boost::json::serialize(obj)));
-    }
 }
 
 config::BundleChain BundleChainEditor::getChain() const {
+    // params 字段已废除：模板不应存具体参数值（占位符由运行期上下文填值）。
+    // 保留 chain_.bundleIds 即可。
     config::BundleChain chain = chain_;
-    // 从编辑器解析 JSON 参数（失败时保留原值）
-    const std::string text = std::string(paramEditor_->GetValue().ToUTF8());
-    boost::system::error_code ec;
-    boost::json::value v = boost::json::parse(text, ec);
-    if (!ec && v.is_object()) {
-        chain.params.clear();
-        for (const boost::json::key_value_pair& kv : v.as_object()) {
-            chain.params[std::string(kv.key())] = kv.value();
-        }
-    }
+    chain.params.clear();
     return chain;
 }
 
@@ -83,7 +80,6 @@ void BundleChainEditor::clear() {
     chain_.bundleIds.clear();
     chain_.params.clear();
     refreshBundleList();
-    paramEditor_->ChangeValue(wxT("{}"));
 }
 
 config::BundleChainResolveResult BundleChainEditor::resolve() const {
@@ -103,6 +99,10 @@ config::BundleChainResolveResult BundleChainEditor::resolveToConfig() const {
     ctx.vars = config::ConfigVariables();
     ctx.db = db_;
     ctx.clientName = "chain-preview";
+    // 预览保留 ${...} 占位符原文：模板不存具体参数值（值由运行期上下文提供），
+    // 预览的用途是让人看出生成结果的结构与「运行期还需哪些参数」。
+    // 真实生成路径（ConfigGenerator）不做此设置，仍会替换成实际值。
+    ctx.substitutePlaceholders = false;
     return resolver.resolveToConfig(getChain(), ctx);
 }
 

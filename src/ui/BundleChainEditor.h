@@ -27,7 +27,13 @@
 /// 解析时调用 BundleChainResolver 生成组件与冲突，供外层 ComponentListPanel 显示。
 class BundleChainEditor : public wxPanel {
 public:
-    BundleChainEditor(wxWindow* parent, sqlite3* db);
+    /// @param showButtons false = 不显示内置「添加/移除/解析」按钮条，只显示列表。
+///        组件链编辑页需把三栏表头放进**同一条** header 行才能让三个列表框
+///        顶/底严格对齐，此时由调用方（以自己的窗口为 parent）重建这三个按钮，
+///        再调 triggerAddBundle()/triggerRemoveBundle()/triggerResolve()。
+///        控件不可跨 parent 搬运——wxSizer::SetContainingWindow 会断言
+///        「sizer 管理的控件 parent 必须是该 sizer 所属窗口」。
+    BundleChainEditor(wxWindow* parent, sqlite3* db, bool showButtons = true);
 
     /// 设置当前链（刷新 Bundle 列表 + 参数编辑器）
     void setChain(const config::BundleChain& chain);
@@ -49,6 +55,11 @@ public:
     /// 解析完成回调（外层通过此回调把组件/冲突交给 ComponentListPanel）
     std::function<void(const config::BundleChainResolveResult&)> onResolved;
 
+    /// 由 ConfigDialog 重建的同名按钮触发（保持行为与内置按钮一致）
+    void triggerAddBundle();
+    void triggerRemoveBundle();
+    void triggerResolve();
+
 private:
     void refreshBundleList();
     void onAddBundle(wxCommandEvent& event);
@@ -60,7 +71,6 @@ private:
     config::CoreType coreType_{config::CoreType::XRAY};
     config::BundleChain chain_;
     wxListCtrl* bundleList_;
-    wxTextCtrl* paramEditor_;
     wxButton* addBtn_;
     wxButton* removeBtn_;
     wxButton* resolveBtn_;

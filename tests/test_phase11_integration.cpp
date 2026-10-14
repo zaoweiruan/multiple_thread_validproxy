@@ -70,7 +70,6 @@ protected:
         bundle.name = id;
         bundle.description = "integration test bundle";
         bundle.coreType = core;
-        bundle.templateType = tmpl;
         bundle.version = version;
         bundle.enabled = true;
         bundle.components = components;
@@ -363,12 +362,11 @@ TEST_F(IntegrationTest, ComponentBundleSchemaValid) {
     boost::json::object obj;
     obj["id"] = boost::json::value(std::string("valid_bundle"));
     obj["coreType"] = boost::json::value(std::int64_t(2));
-    obj["templateType"] = boost::json::value(std::string("BASE"));
     obj["version"] = boost::json::value(std::int64_t(1));
     obj["enabled"] = boost::json::value(true);
     boost::json::array comps;
     boost::json::object comp;
-    comp["type"] = boost::json::value(std::string("log"));
+    comp["type"] = boost::json::value(std::int64_t(1));  // ComponentType::LOG（整数枚举）
     comps.push_back(comp);
     obj["components"] = comps;
 
@@ -383,7 +381,6 @@ TEST_F(IntegrationTest, ComponentBundleSchemaRejectsInvalidCoreType) {
     boost::json::object obj;
     obj["id"] = boost::json::value(std::string("bad_bundle"));
     obj["coreType"] = boost::json::value(std::int64_t(99));  // invalid
-    obj["templateType"] = boost::json::value(std::string("BASE"));
     obj["version"] = boost::json::value(std::int64_t(1));
     obj["enabled"] = boost::json::value(true);
     boost::json::array comps;

@@ -37,7 +37,6 @@ protected:
         bundle.name = "Test Bundle";
         bundle.description = "Test description";
         bundle.coreType = CoreType::XRAY;
-        bundle.templateType = TemplateType::TEST;
         bundle.version = 1;
         bundle.enabled = true;
         
@@ -68,7 +67,6 @@ TEST_F(ComponentBundleDAOTest, SaveAndGetById) {
     EXPECT_EQ(result->name, "Test Bundle");
     EXPECT_EQ(result->description, "Test description");
     EXPECT_EQ(result->coreType, CoreType::XRAY);
-    EXPECT_EQ(result->templateType, TemplateType::TEST);
     EXPECT_EQ(result->version, 1);
     EXPECT_TRUE(result->enabled);
     EXPECT_EQ(result->components.size(), 1);
@@ -162,61 +160,28 @@ TEST_F(ComponentBundleDAOTest, GetByCoreType) {
     EXPECT_EQ(singboxBundles[0].id, "singbox_bundle");
 }
 
-TEST_F(ComponentBundleDAOTest, GetByTemplateType) {
-    ComponentBundle testBundle = createTestBundle();
-    testBundle.templateType = TemplateType::TEST;
-    testBundle.id = "test_bundle";
-    EXPECT_TRUE(dao->save(testBundle));
-    
-    ComponentBundle baseBundle = createTestBundle();
-    baseBundle.templateType = TemplateType::BASE;
-    baseBundle.id = "base_bundle";
-    EXPECT_TRUE(dao->save(baseBundle));
-    
-    auto testBundles = dao->getByTemplateType(TemplateType::TEST);
-    EXPECT_EQ(testBundles.size(), 1);
-    EXPECT_EQ(testBundles[0].id, "test_bundle");
-    
-    auto baseBundles = dao->getByTemplateType(TemplateType::BASE);
-    EXPECT_EQ(baseBundles.size(), 1);
-    EXPECT_EQ(baseBundles[0].id, "base_bundle");
-}
+TEST_F(ComponentBundleDAOTest, CreateTableDropsLegacyTemplateTypeColumn) {
+    // 旧库结构：TemplateType 为 NOT NULL 且无默认值
+    char* err = nullptr;
+    ASSERT_EQ(SQLITE_OK, sqlite3_exec(db,
+        "DROP TABLE IF EXISTS ComponentBundle;"
+        "CREATE TABLE ComponentBundle ("
+        "Id varchar PRIMARY KEY, Name varchar NOT NULL, Description varchar,"
+        "CoreType INTEGER NOT NULL, TemplateType varchar NOT NULL,"
+        "Version INTEGER NOT NULL DEFAULT 1, Enabled INTEGER NOT NULL DEFAULT 1,"
+        "Components varchar NOT NULL, CreatedAt TEXT NOT NULL, UpdatedAt TEXT NOT NULL);",
+        nullptr, nullptr, &err));
+    if (err) sqlite3_free(err);
 
-TEST_F(ComponentBundleDAOTest, SeedDefaultBundles) {
-    auto all = dao->getAll();
-    EXPECT_EQ(all.size(), 0);
-    
-    int inserted = dao->seedDefaultBundles();
-    EXPECT_EQ(inserted, 8);
-    
-    all = dao->getAll();
-    EXPECT_EQ(all.size(), 8);
-    
-    // Verify specific bundles exist
-    auto baseXray = dao->getById("base_xray_001");
-    ASSERT_TRUE(baseXray.has_value());
-    EXPECT_EQ(baseXray->templateType, TemplateType::BASE);
-    EXPECT_EQ(baseXray->coreType, CoreType::XRAY);
-    
-    auto testXray = dao->getById("test_xray_001");
-    ASSERT_TRUE(testXray.has_value());
-    EXPECT_EQ(testXray->templateType, TemplateType::TEST);
-    
-    auto poolSingbox = dao->getById("pool_singbox_001");
-    ASSERT_TRUE(poolSingbox.has_value());
-    EXPECT_EQ(poolSingbox->templateType, TemplateType::POOL);
-    EXPECT_EQ(poolSingbox->coreType, CoreType::SINGBOX);
-}
+    ASSERT_TRUE(dao->createTableIfNotExists());
 
-TEST_F(ComponentBundleDAOTest, SeedDefaultBundlesIdempotent) {
-    dao->seedDefaultBundles();
-    auto all1 = dao->getAll();
-    
-    int inserted2 = dao->seedDefaultBundles();
-    EXPECT_EQ(inserted2, 0);
-    
-    auto all2 = dao->getAll();
-    EXPECT_EQ(all1.size(), all2.size());
+    // 列已移除：新写入（不再提供 TemplateType）必须成功
+    ComponentBundle bundle = createTestBundle();
+    EXPECT_TRUE(dao->save(bundle));
+
+    // 幂等：再次调用不应失败
+    EXPECT_TRUE(dao->createTableIfNotExists());
+    EXPECT_EQ(1u, dao->getAll().size());
 }
 
 TEST_F(ComponentBundleDAOTest, ComponentSerialization) {
@@ -237,7 +202,6 @@ TEST_F(ComponentBundleDAOTest, ComplexComponentSerialization) {
     bundle.id = "complex_bundle";
     bundle.name = "Complex Bundle";
     bundle.coreType = CoreType::XRAY;
-    bundle.templateType = TemplateType::TEST;
     bundle.version = 1;
     bundle.enabled = true;
     

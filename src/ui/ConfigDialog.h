@@ -60,33 +60,11 @@ private:
     void onTemplateRefresh(wxCommandEvent& event);
 
     // 配置管线 tab
-    void createPipelineTab();
-    void loadPipelineConfig();
-    void savePipelineConfig();
-    void initializeDefaultPipelines();
-    void fillTemplateChoice();
+    // 注：「配置管线」UI 已于 2026-10-10 移除（setPipeline() 全仓库无调用点，
+    // 管线永不执行，属未启用的遗留半成品）。组件链方案已覆盖「可编排」需求。
+    // 底层 ConfigPipeline / StepRegistry / StepHandler 类及其单测全部保留未动。
     bool readConfigJson(boost::json::value& root) const;
     bool writeConfigJson(const boost::json::value& root) const;
-    void onPipelineSelection(wxListEvent& event);
-    void onPipelineDelete(wxCommandEvent& event);
-    void onPipelineSave(wxCommandEvent& event);
-    void onStepSelection(wxListEvent& event);
-    void onStepAdd(wxCommandEvent& event);
-    void onStepDelete(wxCommandEvent& event);
-    void onStepMoveUp(wxCommandEvent& event);
-    void onStepMoveDown(wxCommandEvent& event);
-    void onTemplateChoice(wxCommandEvent& event);
-    void onGeneratePreview(wxCommandEvent& event);
-    void onClearPreview(wxCommandEvent& event);
-    bool generatePreviewConfig(boost::json::value& config) const;
-    bool validateStepParams(const std::string& type,
-                            const boost::json::object& params) const;
-    void refreshStepList();
-    void refreshStepParamEditor();
-    void refreshPipelineList();
-    std::vector<std::string> getAvailableTemplateIds() const;
-    std::vector<std::string> getAvailableStepTypes() const;
-    std::string getStepDisplayName(const std::string& type) const;
     std::string formatJson(const boost::json::value& value) const;
 
     // 组件包配置 tab
@@ -94,8 +72,11 @@ private:
     void loadBundles();
     void onBundleSelection(wxListEvent& event);
     void onBundleSave(wxCommandEvent& event);
+    void onBundleNew(wxCommandEvent& event);
     void onBundleDelete(wxCommandEvent& event);
     void onBundleRefresh(wxCommandEvent& event);
+    void populateBundleTypeTable();
+    void populateBundleVarTable();
 
     // 组件链编辑 tab（阶段 8.2/8.4/8.5）
     void createChainEditTab();
@@ -116,16 +97,10 @@ private:
     wxTextCtrl* templateEditor_{nullptr};
     std::vector<db::FullConfigTemplateItem> templates_;
 
-    // 配置管线 tab 控件
-    wxListCtrl* pipelineList_{nullptr};
-    std::unordered_map<std::string, config::PipelineDefinition> pipelines_;
-    wxChoice* templateChoice_{nullptr};
-    wxListCtrl* stepList_{nullptr};
-    wxTextCtrl* stepParamEditor_{nullptr};
-    wxTextCtrl* previewEditor_{nullptr};
-    wxStaticText* previewStatus_{nullptr};
-    std::string currentPipelineName_;
-    int currentStepIndex_{-1};
+    // 注：原「配置管线」控件（pipelineList_ / pipelines_ / templateChoice_ /
+    // stepList_ / stepParamEditor_ / previewEditor_ / previewStatus_ /
+    // currentPipelineName_ / currentStepIndex_）已随该 Tab 一并移除。
+    // 注意 stepOrder_ 仍在（AutoTask 步骤顺序，与管线无关，勿删）。
 
     sqlite3* db_{nullptr};
     std::string configPath_;
@@ -133,6 +108,10 @@ private:
     // 组件包配置 tab 控件
     wxListCtrl* bundleList_{nullptr};
     wxTextCtrl* bundleEditor_{nullptr};
+    /// 组件类型速查表（由 ComponentRegistry 运行时生成）
+    wxListCtrl* bundleTypeTable_{nullptr};
+    /// 占位符速查表（与 ConfigBuilder::variablesToMap 对应）
+    wxListCtrl* bundleVarTable_{nullptr};
     std::vector<config::ComponentBundle> bundles_;
 
     // 组件链编辑 tab 控件（阶段 8）
@@ -140,6 +119,9 @@ private:
     ComponentListPanel* componentListPanel_{nullptr};
     wxStaticText* chainStatus_{nullptr};
     wxTextCtrl* chainPreview_{nullptr};
+    /// 「当前模板：<id>（<备注>）」——显示在组件链编辑页最上方，
+    /// 随模板列表选中项变化（syncChainEditorFromSelection 中刷新）
+    wxStaticText* chainTemplateLabel_{nullptr};
 
     wxDECLARE_EVENT_TABLE();
 };

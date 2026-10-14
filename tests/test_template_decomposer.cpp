@@ -3,6 +3,8 @@
 #include <sqlite3.h>
 #include <string>
 #include <vector>
+#include <set>
+#include <sstream>
 #include <memory>
 #include <optional>
 
@@ -66,6 +68,21 @@ protected:
         sqlite3_finalize(stmt);
     }
 
+    // 直接写模板的 bundleChain（用于构造「链引用了已删除包」等场景）
+    void setTemplateChain(const std::string& id, const std::string& chainJson) {
+        sqlite3_stmt* stmt = nullptr;
+        ASSERT_EQ(SQLITE_OK, sqlite3_prepare_v2(
+            db,
+            "UPDATE FullConfigTemplateItem SET BundleChain = ? WHERE Id = ?",
+            -1, &stmt, nullptr));
+        ASSERT_EQ(SQLITE_OK, sqlite3_bind_text(stmt, 1, chainJson.c_str(), -1,
+                                                SQLITE_TRANSIENT));
+        ASSERT_EQ(SQLITE_OK, sqlite3_bind_text(stmt, 2, id.c_str(), -1,
+                                                SQLITE_TRANSIENT));
+        ASSERT_EQ(SQLITE_DONE, sqlite3_step(stmt));
+        sqlite3_finalize(stmt);
+    }
+
     // Build a standard Xray template config JSON
     static std::string makeXrayTestConfig() {
         return R"({
@@ -80,6 +97,15 @@ protected:
             "routing": {"domainStrategy": "AsIs",
                         "rules": [{"type": "field","inboundTag": ["api"],
                                     "outboundTag": "api"}]}
+        })";
+    }
+
+    static std::string makePlaceholderConfig() {
+        return R"({
+            "api": {"tag": "api", "listen": "127.0.0.1:${apiPort}",
+                    "services": ["HandlerService"]},
+            "inbounds": [{"tag": "socks", "listen": "127.0.0.1",
+                          "port": "${socksPort}", "protocol": "mixed"}]
         })";
     }
 
@@ -189,7 +215,7 @@ TEST_F(TemplateDecomposerTest, Decompose_XrayTest_Components) {
 
     EXPECT_EQ(result.bundle.id, "xray_test_001");
     EXPECT_EQ(result.bundle.coreType, CoreType::XRAY);
-    EXPECT_EQ(result.bundle.templateType, TemplateType::TEST);
+    EXPECT_EQ(result.role, TemplateType::TEST);
     EXPECT_EQ(result.bundle.version, 1);
     EXPECT_TRUE(result.bundle.enabled);
 
@@ -228,7 +254,7 @@ TEST_F(TemplateDecomposerTest, Decompose_XrayBase_Components) {
 
     EXPECT_EQ(result.bundle.id, "xray_base_001");
     EXPECT_EQ(result.bundle.coreType, CoreType::XRAY);
-    EXPECT_EQ(result.bundle.templateType, TemplateType::BASE);
+    EXPECT_EQ(result.role, TemplateType::BASE);
 
     // Should have: log + dns = 2 components
     ASSERT_EQ(result.bundle.components.size(), 2u);
@@ -252,7 +278,7 @@ TEST_F(TemplateDecomposerTest, Decompose_XrayDefault_Components) {
     auto result = composer->decompose("xray_default_001");
     ASSERT_TRUE(result.success);
 
-    EXPECT_EQ(result.bundle.templateType, TemplateType::STANDALONE);
+    EXPECT_EQ(result.role, TemplateType::STANDALONE);
 
     // Should have: 1 inbound + routing = 2 components
     ASSERT_EQ(result.bundle.components.size(), 2u);
@@ -363,7 +389,7 @@ TEST_F(TemplateDecomposerTest, Decompose_Outbounds) {
 
     auto result = composer->decompose("xray_pool_001");
     ASSERT_TRUE(result.success);
-    EXPECT_EQ(result.bundle.templateType, TemplateType::POOL);
+    EXPECT_EQ(result.role, TemplateType::POOL);
 
     // Should have: 1 inbound + 3 outbounds + routing = 5 components
     EXPECT_EQ(result.bundle.components.size(), 5u);
@@ -453,7 +479,6 @@ TEST_F(TemplateDecomposerTest, DecomposeAndSave_CreatesBundles) {
     auto bundleOpt = dao.getById("xray_base_001");
     ASSERT_TRUE(bundleOpt);
     EXPECT_EQ(bundleOpt->coreType, CoreType::XRAY);
-    EXPECT_EQ(bundleOpt->templateType, TemplateType::BASE);
     EXPECT_EQ(bundleOpt->components.size(), 2u);
 }
 
@@ -568,95 +593,383 @@ TEST_F(TemplateDecomposerTest, Decompose_NestedParamsPreserved) {
     }
 }
 
+
 // ---------------------------------------------------------------------
-// generateChains: 拆解后为模板生成 base[+test/standalone/pool] 组件链
+// planMinimalBundles / rebuildBundlesAndChains:
+// 组件包按「代理类型 × 组件类型」拆到最小粒度
 // ---------------------------------------------------------------------
 
-TEST_F(TemplateDecomposerTest, GenerateChains_BasePlusSelf) {
-    // 播种 3 个 Xray 模板（base / test / pool）
-    insertTemplate("xray_base_001", 2, makeXrayTestConfig());
+// 仅含 routing、规则数不同的配置（用于制造同类型内容不一致）
+static std::string makeRoutingOnlyCfg(int ruleCount) {
+    std::ostringstream os;
+    os << R"({"routing": {"domainStrategy": "AsIs", "rules": [)";
+    for (int i = 0; i < ruleCount; ++i) {
+        if (i > 0) os << ",";
+        os << R"({"type":"field","inboundTag":["api"],"outboundTag":"api"})";
+    }
+    os << "]}}";
+    return os.str();
+}
+
+TEST_F(TemplateDecomposerTest, PlanMinimalBundles_SplitsByCoreAndType) {
+    insertTemplate("xray_base_001", 2, makeXrayBaseConfig());
     insertTemplate("xray_test_001", 2, makeXrayTestConfig());
-    insertTemplate("xray_pool_001", 2, makeXrayTestConfig());
 
-    // 先拆解出 bundles
-    const int bundles = composer->decomposeAndSave(false);
-    ASSERT_EQ(bundles, 3);
+    const TemplateDecomposer::BundlePlan plan = composer->planMinimalBundles();
 
-    // 生成链
-    const int updated = composer->generateChains();
-    ASSERT_EQ(updated, 3);
-
-    db::FullConfigTemplateDAO dao(db);
-    ASSERT_TRUE(dao.createTableIfNotExists());
-
-    // base 模板：链 = [自身]
-    {
-        const std::optional<db::FullConfigTemplateItem> base =
-            dao.getById("xray_base_001");
-        ASSERT_TRUE(base.has_value());
-        EXPECT_EQ(base->templateType, "bundleChain");
-        ASSERT_FALSE(base->bundleChain.empty());
-        const boost::json::value v = boost::json::parse(base->bundleChain);
-        ASSERT_TRUE(v.is_object());
-        const boost::json::array& ids = v.as_object().at("bundleIds").as_array();
-        ASSERT_EQ(ids.size(), 1u);
-        EXPECT_STREQ(ids[0].as_string().c_str(), "xray_base_001");
-        ASSERT_FALSE(base->bundleVersion.empty());
+    std::set<std::string> ids;
+    for (size_t i = 0; i < plan.bundles.size(); ++i) {
+        ids.insert(plan.bundles[i].id);
+        // 每个包只含一个组件
+        EXPECT_EQ(1u, plan.bundles[i].components.size()) << plan.bundles[i].id;
     }
 
-    // test 模板：链 = [base, self]
-    {
-        const std::optional<db::FullConfigTemplateItem> test =
-            dao.getById("xray_test_001");
-        ASSERT_TRUE(test.has_value());
-        EXPECT_EQ(test->templateType, "bundleChain");
-        const boost::json::value v = boost::json::parse(test->bundleChain);
-        const boost::json::array& ids = v.as_object().at("bundleIds").as_array();
-        ASSERT_EQ(ids.size(), 2u);
-        EXPECT_STREQ(ids[0].as_string().c_str(), "xray_base_001");
-        EXPECT_STREQ(ids[1].as_string().c_str(), "xray_test_001");
-        // 版本快照应含两条 bundleId
-        EXPECT_NE(test->bundleVersion.find("xray_base_001"),
-                  std::string::npos);
-        EXPECT_NE(test->bundleVersion.find("xray_test_001"),
-                  std::string::npos);
+    // 每个组件类型仅一个角色使用 → 共享包，不带角色后缀
+    EXPECT_EQ(1u, ids.count("xray_LOG"));
+    EXPECT_EQ(1u, ids.count("xray_DNS"));
+    EXPECT_EQ(1u, ids.count("xray_API"));
+    EXPECT_EQ(1u, ids.count("xray_POLICY"));
+    EXPECT_EQ(1u, ids.count("xray_INBOUND"));
+    EXPECT_EQ(1u, ids.count("xray_STATS"));
+    EXPECT_EQ(1u, ids.count("xray_ROUTING"));
+    EXPECT_EQ(7u, plan.bundles.size());
+}
+
+TEST_F(TemplateDecomposerTest, PlanMinimalBundles_SharedBundleAcrossRoles) {
+    // 两个角色的 INBOUND 内容完全一致 → 合并为同一个包
+    const std::string cfg = R"({"inbounds":[{"tag":"socks","port":10808}]})";
+    insertTemplate("xray_test_001", 2, cfg);
+    insertTemplate("xray_default_001", 2, cfg);
+
+    const TemplateDecomposer::BundlePlan plan = composer->planMinimalBundles();
+    ASSERT_EQ(1u, plan.bundles.size());
+    EXPECT_EQ("xray_INBOUND", plan.bundles[0].id);
+
+    // 共享包只产出一次，不得按角色重复
+    std::set<std::string> ids;
+    for (size_t i = 0; i < plan.bundles.size(); ++i) {
+        EXPECT_TRUE(ids.insert(plan.bundles[i].id).second) << plan.bundles[i].id;
     }
 
-    // pool 模板：链 = [base, self]
-    {
-        const std::optional<db::FullConfigTemplateItem> pool =
-            dao.getById("xray_pool_001");
-        ASSERT_TRUE(pool.has_value());
-        const boost::json::value v = boost::json::parse(pool->bundleChain);
-        const boost::json::array& ids = v.as_object().at("bundleIds").as_array();
-        ASSERT_EQ(ids.size(), 2u);
-        EXPECT_STREQ(ids[0].as_string().c_str(), "xray_base_001");
-        EXPECT_STREQ(ids[1].as_string().c_str(), "xray_pool_001");
+    // 两个模板都引用这同一个包
+    ASSERT_EQ(1u, plan.chains.count("xray_test_001"));
+    ASSERT_EQ(1u, plan.chains.count("xray_default_001"));
+    EXPECT_EQ("xray_INBOUND", plan.chains.at("xray_test_001")[0]);
+    EXPECT_EQ("xray_INBOUND", plan.chains.at("xray_default_001")[0]);
+}
+
+TEST_F(TemplateDecomposerTest, PlanMinimalBundles_RoutingSplitByRole) {
+    insertTemplate("xray_pool_001", 2, makeRoutingOnlyCfg(6));
+    insertTemplate("xray_default_001", 2, makeRoutingOnlyCfg(3));
+    insertTemplate("xray_test_001", 2, makeRoutingOnlyCfg(1));
+
+    const TemplateDecomposer::BundlePlan plan = composer->planMinimalBundles();
+
+    // 同一 (Xray, ROUTING) 内容不一致 → 按角色拆成 3 个包
+    ASSERT_EQ(3u, plan.bundles.size());
+    std::set<std::string> ids;
+    for (size_t i = 0; i < plan.bundles.size(); ++i) {
+        ids.insert(plan.bundles[i].id);
+    }
+    EXPECT_EQ(1u, ids.count("xray_ROUTING_pool"));
+    EXPECT_EQ(1u, ids.count("xray_ROUTING_standalone"));
+    EXPECT_EQ(1u, ids.count("xray_ROUTING_test"));
+
+    // 各模板只引用自己角色对应的包
+    EXPECT_EQ("xray_ROUTING_pool", plan.chains.at("xray_pool_001")[0]);
+    EXPECT_EQ("xray_ROUTING_standalone", plan.chains.at("xray_default_001")[0]);
+    EXPECT_EQ("xray_ROUTING_test", plan.chains.at("xray_test_001")[0]);
+}
+
+TEST_F(TemplateDecomposerTest, PlanMinimalBundles_PoolChainIncludesLogDns) {
+    insertTemplate("xray_base_001", 2, makeXrayBaseConfig());
+    insertTemplate("pool_xray_001", 2, makeRoutingOnlyCfg(2));
+
+    const TemplateDecomposer::BundlePlan plan = composer->planMinimalBundles();
+
+    const std::vector<std::string>& ids = plan.chains.at("pool_xray_001");
+    // LOG(1) DNS(3) ROUTING(4) → 按 ComponentType 枚举序
+    ASSERT_EQ(3u, ids.size());
+    EXPECT_EQ("xray_LOG", ids[0]);
+    EXPECT_EQ("xray_DNS", ids[1]);
+    EXPECT_EQ("xray_ROUTING", ids[2]);
+
+    // base 模板的链只含自身组件，不含 ROUTING
+    const std::vector<std::string>& baseIds = plan.chains.at("xray_base_001");
+    ASSERT_EQ(2u, baseIds.size());
+    EXPECT_EQ("xray_LOG", baseIds[0]);
+    EXPECT_EQ("xray_DNS", baseIds[1]);
+}
+
+TEST_F(TemplateDecomposerTest, PlanMinimalBundles_NoDefaultInjection) {
+    // test 模板不含 LOG/DNS → 链中不得凭空出现 base 的包
+    insertTemplate("xray_base_001", 2, makeXrayBaseConfig());
+    insertTemplate("xray_test_001", 2, makeXrayTestConfig());
+
+    const TemplateDecomposer::BundlePlan plan = composer->planMinimalBundles();
+    const std::vector<std::string>& ids = plan.chains.at("xray_test_001");
+    for (size_t i = 0; i < ids.size(); ++i) {
+        EXPECT_NE("xray_LOG", ids[i]);
+        EXPECT_NE("xray_DNS", ids[i]);
     }
 }
 
-TEST_F(TemplateDecomposerTest, GenerateChains_SkipWhenBundleMissing) {
-    // 一个模板的 bundle 被删除（模拟未拆解），其余正常
-    insertTemplate("xray_base_001", 2, makeXrayTestConfig());
+TEST_F(TemplateDecomposerTest, RebuildBundlesAndChains_WritesBundlesAndChains) {
+    insertTemplate("xray_base_001", 2, makeXrayBaseConfig());
+    insertTemplate("pool_xray_001", 2, makeRoutingOnlyCfg(2));
+
+    const int saved = composer->rebuildBundlesAndChains();
+    EXPECT_EQ(3, saved);
+
+    ComponentBundleDAO dao(db);
+    EXPECT_EQ(3u, dao.getAll().size());
+
+    db::FullConfigTemplateDAO tdao(db);
+    std::optional<db::FullConfigTemplateItem> tpl = tdao.getById("pool_xray_001");
+    ASSERT_TRUE(tpl.has_value());
+    EXPECT_EQ("bundleChain", tpl->templateType);
+
+    boost::json::value v = boost::json::parse(tpl->bundleChain);
+    ASSERT_TRUE(v.is_object());
+    const boost::json::array& arr = v.as_object().at("bundleIds").as_array();
+    ASSERT_EQ(3u, arr.size());
+    EXPECT_EQ("xray_LOG", std::string(arr[0].as_string().c_str()));
+    EXPECT_EQ("xray_DNS", std::string(arr[1].as_string().c_str()));
+    EXPECT_EQ("xray_ROUTING", std::string(arr[2].as_string().c_str()));
+
+    // 版本快照已写入
+    EXPECT_FALSE(tpl->bundleVersion.empty());
+}
+
+TEST_F(TemplateDecomposerTest, RebuildBundlesAndChains_RemovesStaleBundles) {
+    // 先按旧模型（模板名包）落库，再重建 → 旧包应被清除
+    insertTemplate("xray_base_001", 2, makeXrayBaseConfig());
+
+    EXPECT_EQ(1, composer->decomposeAndSave(false));
+    ComponentBundleDAO dao(db);
+    ASSERT_EQ(1u, dao.getAll().size());
+    EXPECT_EQ("xray_base_001", dao.getAll()[0].id);
+
+    const int saved = composer->rebuildBundlesAndChains();
+    EXPECT_EQ(2, saved);  // xray_LOG + xray_DNS
+
+    const std::vector<ComponentBundle> after = dao.getAll();
+    EXPECT_EQ(2u, after.size());
+    EXPECT_FALSE(dao.exists("xray_base_001"));
+}
+
+TEST_F(TemplateDecomposerTest, SyncConfigFromChain_MaterializesConfigFromBundles) {
+    // seed base(LOG+DNS) 与 test(API/POLICY/INBOUND/STATS/ROUTING)
+    insertTemplate("xray_base_001", 2, makeXrayBaseConfig());
     insertTemplate("xray_test_001", 2, makeXrayTestConfig());
-    insertTemplate("orphan_ghost_001", 2, makeXrayTestConfig());
+    ASSERT_EQ(7, composer->rebuildBundlesAndChains());
 
-    ASSERT_EQ(composer->decomposeAndSave(false), 3);
+    // Config 列应被物化为链解析结果
+    db::FullConfigTemplateDAO dao(db);
+    std::optional<db::FullConfigTemplateItem> base = dao.getById("xray_base_001");
+    ASSERT_TRUE(base.has_value());
+    const boost::json::value baseCfg = boost::json::parse(base->config);
+    ASSERT_TRUE(baseCfg.is_object());
+    EXPECT_EQ(1u, baseCfg.as_object().count("log"));
+    EXPECT_EQ(1u, baseCfg.as_object().count("dns"));
+    EXPECT_EQ(0u, baseCfg.as_object().count("routing"));
+}
 
-    // 删除 orphan 的 bundle，制造「bundle 缺失」
-    ComponentBundleDAO bundleDao(db);
-    ASSERT_TRUE(bundleDao.deleteById("orphan_ghost_001"));
+TEST_F(TemplateDecomposerTest, SyncConfigFromChain_PropagatesBundleChangeToAllTemplates) {
+    insertTemplate("xray_base_001", 2, makeXrayBaseConfig());
+    insertTemplate("xray_test_001", 2, makeXrayTestConfig());
+    ASSERT_EQ(7, composer->rebuildBundlesAndChains());
 
-    const int updated = composer->generateChains();
-    // 只有 2 个仍有 bundle 的模板被更新
-    ASSERT_EQ(updated, 2);
+    // 修改被两个模板共同引用的 xray_LOG（loglevel warning -> error）
+    ComponentBundleDAO bdao(db);
+    std::optional<ComponentBundle> log = bdao.getById("xray_LOG");
+    ASSERT_TRUE(log.has_value());
+    ASSERT_EQ(1u, log->components.size());
+    ASSERT_EQ(1u, log->components[0].params.count("loglevel"));
+    log->components[0].params["loglevel"] = boost::json::value(std::string("error"));
+    ASSERT_TRUE(bdao.save(*log));
+
+    // 只同步引用了 xray_LOG 的模板
+    EXPECT_EQ(1, composer->syncConfigsFromChains("xray_LOG"));
 
     db::FullConfigTemplateDAO dao(db);
-    const std::optional<db::FullConfigTemplateItem> orphan =
-        dao.getById("orphan_ghost_001");
-    ASSERT_TRUE(orphan.has_value());
-    EXPECT_TRUE(orphan->bundleChain.empty());
-    EXPECT_NE(orphan->templateType, "bundleChain");
+    std::optional<db::FullConfigTemplateItem> base = dao.getById("xray_base_001");
+    ASSERT_TRUE(base.has_value());
+    const boost::json::value cfg = boost::json::parse(base->config);
+    ASSERT_TRUE(cfg.is_object());
+    ASSERT_EQ(1u, cfg.as_object().count("log"));
+    const boost::json::value& logObj = cfg.as_object().at("log");
+    ASSERT_TRUE(logObj.is_object());
+    EXPECT_EQ("error", std::string(logObj.as_object().at("loglevel").as_string().c_str()));
+}
+
+TEST_F(TemplateDecomposerTest, SyncConfigFromChain_NoChainLeavesConfigUntouched) {
+    // 无链模板不应被物化（Config 由人工维护）
+    insertTemplate("manual_001", 2, R"({"log":{"loglevel":"debug"}})");
+
+    EXPECT_EQ(0, composer->syncConfigsFromChains());
+
+    db::FullConfigTemplateDAO dao(db);
+    std::optional<db::FullConfigTemplateItem> item = dao.getById("manual_001");
+    ASSERT_TRUE(item.has_value());
+    EXPECT_EQ(R"({"log":{"loglevel":"debug"}})", item->config);
+}
+
+// 回归测试：物化不得把 ${...} 替换为 0。
+// Config 是待运行期填充的模板，实际取值由 ConfigBuilder::replacePlaceholders
+// 在生成时用真实 vars 注入。物化阶段若替换，占位符会被永久破坏。
+TEST_F(TemplateDecomposerTest, SyncConfigFromChain_PreservesPlaceholders) {
+    insertTemplate("ph_001", 2, makePlaceholderConfig());
+    composer->rebuildBundlesAndChains();
+
+    db::FullConfigTemplateDAO dao(db);
+    std::optional<db::FullConfigTemplateItem> item = dao.getById("ph_001");
+    ASSERT_TRUE(item.has_value());
+
+    const boost::json::value cfg = boost::json::parse(item->config);
+    ASSERT_TRUE(cfg.is_object());
+
+    // api.listen 应保留 ${apiPort}，而非被替换成 127.0.0.1:0
+    ASSERT_EQ(1u, cfg.as_object().count("api"));
+    const boost::json::value& api = cfg.as_object().at("api");
+    ASSERT_TRUE(api.is_object());
+    ASSERT_EQ(1u, api.as_object().count("listen"));
+    EXPECT_EQ("127.0.0.1:${apiPort}",
+              std::string(api.as_object().at("listen").as_string().c_str()));
+
+    // inbounds[].port 应保持字符串 "${socksPort}"。
+    // 旧实现用空 vars 替换后还会尝试 stoi，把字符串端口变成数字 0。
+    ASSERT_EQ(1u, cfg.as_object().count("inbounds"));
+    const boost::json::value& inbounds = cfg.as_object().at("inbounds");
+    ASSERT_TRUE(inbounds.is_array());
+    ASSERT_FALSE(inbounds.as_array().empty());
+    const boost::json::value& first = inbounds.as_array().at(0);
+    ASSERT_TRUE(first.is_object());
+    ASSERT_EQ(1u, first.as_object().count("port"));
+    EXPECT_EQ("${socksPort}",
+              std::string(first.as_object().at("port").as_string().c_str()));
+}
+
+// 回归测试：routing 合并只处理 rules/balancers 会静默丢弃 domainStrategy。
+TEST_F(TemplateDecomposerTest, SyncConfigFromChain_KeepsRoutingDomainStrategy) {
+    insertTemplate("xray_base_001", 2, makeXrayBaseConfig());
+    insertTemplate("xray_test_001", 2, makeXrayTestConfig());
+    ASSERT_EQ(7, composer->rebuildBundlesAndChains());
+
+    db::FullConfigTemplateDAO dao(db);
+    std::optional<db::FullConfigTemplateItem> test = dao.getById("xray_test_001");
+    ASSERT_TRUE(test.has_value());
+
+    const boost::json::value cfg = boost::json::parse(test->config);
+    ASSERT_TRUE(cfg.is_object());
+    ASSERT_EQ(1u, cfg.as_object().count("routing"));
+    const boost::json::value& routing = cfg.as_object().at("routing");
+    ASSERT_TRUE(routing.is_object());
+    ASSERT_EQ(1u, routing.as_object().count("domainStrategy"));
+    EXPECT_EQ("AsIs", std::string(routing.as_object().at("domainStrategy").as_string().c_str()));
+}
+
+// 回归测试：sing-box 的路由节段名是 route，Xray 是 routing。
+TEST_F(TemplateDecomposerTest, SyncConfigFromChain_UsesRouteForSingBox) {
+    insertTemplate("singbox_base_001", 24, makeXrayBaseConfig());
+    insertTemplate("singbox_test_001", 24, makeXrayTestConfig());
+    composer->rebuildBundlesAndChains();
+
+    db::FullConfigTemplateDAO dao(db);
+    std::optional<db::FullConfigTemplateItem> test = dao.getById("singbox_test_001");
+    ASSERT_TRUE(test.has_value());
+
+    const boost::json::value cfg = boost::json::parse(test->config);
+    ASSERT_TRUE(cfg.is_object());
+    // sing-box 必须产出 route，且不得残留 routing
+    EXPECT_EQ(1u, cfg.as_object().count("route"));
+    EXPECT_EQ(0u, cfg.as_object().count("routing"));
+}
+
+// 夹具 makePlaceholderConfig（api + inbounds）拆出的包名
+    static const char* kBundleA() { return "xray_API"; }
+    static const char* kBundleB() { return "xray_INBOUND"; }
+
+    // 回归（2026-10-10）：syncConfigsFromChains 早前用 bundleChain.find(id) 做子串匹配，
+    // 前缀相同的 ID 会互相误命中。改为解析 bundleIds 逐项精确相等比较。
+    // getByBundleId：组件包变更时定位依赖模板（供 UI 同步 + 改名/删除时提示）。
+TEST_F(TemplateDecomposerTest, GetByBundleId_FindsExactReferencingTemplates) {
+    insertTemplate("t_log", 2, makePlaceholderConfig());
+    insertTemplate("t_in", 2, makePlaceholderConfig());
+    insertTemplate("t_none", 2, makePlaceholderConfig());
+    ASSERT_EQ(2, composer->rebuildBundlesAndChains());
+
+    db::FullConfigTemplateDAO dao(db);
+    // 该夹具拆出 xray_API 与 xray_INBOUND
+    setTemplateChain("t_log", R"({"bundleIds":["xray_API"]})");
+    setTemplateChain("t_in", R"({"bundleIds":["xray_API","xray_INBOUND"]})");
+    setTemplateChain("t_none", R"({"bundleIds":["xray_LOG2"]})");
+
+    const std::vector<db::FullConfigTemplateItem> hits = dao.getByBundleId("xray_API");
+    EXPECT_EQ(2u, hits.size());
+
+    // 前缀不得误命中：xray_API 不应命中只含 xray_INBOUND 的 t_none
+    EXPECT_EQ(1u, dao.getByBundleId("xray_INBOUND").size());
+    EXPECT_TRUE(dao.getByBundleId("xray_INBOU").empty()) << "前缀不应误命中";
+    EXPECT_EQ(1u, dao.getByBundleId("xray_LOG2").size());
+    EXPECT_TRUE(dao.getByBundleId("no_such").empty());
+    EXPECT_TRUE(dao.getByBundleId("").empty());
+}
+
+TEST_F(TemplateDecomposerTest, SyncConfigsFromChains_MatchesBundleIdExactly) {
+        insertTemplate("ph_base", 2, makePlaceholderConfig());
+        ASSERT_EQ(2, composer->rebuildBundlesAndChains());
+
+        // ph_base 只引用 xray_INBOUND
+        setTemplateChain("ph_base", std::string("{\"bundleIds\":[\"") + kBundleB() + "\"]}");
+
+        // 精确匹配：应选中 ph_base 并成功物化
+        EXPECT_EQ(1, composer->syncConfigsFromChains(kBundleB()));
+
+        // 前缀 "xray_INBOU" 不等于 "xray_INBOUND"：不得选中任何模板
+        EXPECT_EQ(0, composer->syncConfigsFromChains("xray_INBOU"));
+    }
+
+// 链引用了不存在的组件包时，物化必须失败（不得静默产出空/错误 Config）
+TEST_F(TemplateDecomposerTest, SyncConfigFromChain_FailsWhenBundleMissing) {
+    insertTemplate("dangling", 2, makePlaceholderConfig());
+    ASSERT_EQ(2, composer->rebuildBundlesAndChains());
+
+    // 先记录重建后的 Config（此时链有效，物化成功）
+    db::FullConfigTemplateDAO dao(db);
+    std::optional<db::FullConfigTemplateItem> before = dao.getById("dangling");
+    ASSERT_TRUE(before.has_value());
+
+    // 改成引用不存在的包
+    setTemplateChain("dangling", R"({"bundleIds":["no_such_bundle"]})");
+
+    // 引用缺失 → resolve 失败 → 返回 false
+    EXPECT_FALSE(composer->syncConfigFromChain("dangling"));
+
+    // Config 必须与失败前一致（未被清空/覆盖）——按语义比对：
+    // 重建阶段已把原始多行文本规范化为压缩单行，故不能直接比字符串。
+    std::optional<db::FullConfigTemplateItem> after = dao.getById("dangling");
+    ASSERT_TRUE(after.has_value());
+    const boost::json::value lhs = boost::json::parse(before->config);
+    const boost::json::value rhs = boost::json::parse(after->config);
+    EXPECT_EQ(boost::json::serialize(lhs), boost::json::serialize(rhs));
+    // 占位符仍在（未被半途写坏）
+    EXPECT_NE(std::string::npos, after->config.find("${socksPort}"));
+}
+
+// 链 JSON 非法（缺 bundleIds / 非对象 / 非 JSON）时同样必须失败而非崩溃
+TEST_F(TemplateDecomposerTest, SyncConfigFromChain_FailsOnMalformedChain) {
+    insertTemplate("badchain", 2, makePlaceholderConfig());
+    ASSERT_EQ(2, composer->rebuildBundlesAndChains());
+
+    setTemplateChain("badchain", R"({"notBundleIds":[]})");
+    EXPECT_FALSE(composer->syncConfigFromChain("badchain"));
+
+    setTemplateChain("badchain", R"(not-json)");
+    EXPECT_FALSE(composer->syncConfigFromChain("badchain"));
+
+    setTemplateChain("badchain", R"([1,2,3])");
+    EXPECT_FALSE(composer->syncConfigFromChain("badchain"));
 }
 
 } // namespace

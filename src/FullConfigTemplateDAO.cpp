@@ -655,6 +655,45 @@ std::vector<FullConfigTemplateItem> FullConfigTemplateDAO::getAll() const {
     return items;
 }
 
+std::vector<FullConfigTemplateItem> FullConfigTemplateDAO::getByBundleId(
+    const std::string& bundleId) const {
+    std::vector<FullConfigTemplateItem> result;
+    if (bundleId.empty()) {
+        return result;
+    }
+    const std::vector<FullConfigTemplateItem> all = getAll();
+    for (std::vector<FullConfigTemplateItem>::const_iterator it = all.begin();
+         it != all.end(); ++it) {
+        if (it->bundleChain.empty()) {
+            continue;
+        }
+        // 解析 bundleChain 后按 bundleIds 逐项精确比较；
+        // 不能用 bundleChain.find(bundleId) 子串匹配——那会让
+        // 「只含 xray_LOG2 的链」被 xray_LOG 的查询误命中。
+        boost::system::error_code ec;
+        boost::json::value val = boost::json::parse(it->bundleChain, ec);
+        if (ec || !val.is_object()) {
+            continue;
+        }
+        const boost::json::object& obj = val.as_object();
+        if (!obj.contains("bundleIds") || !obj.at("bundleIds").is_array()) {
+            continue;
+        }
+        const boost::json::array& ids = obj.at("bundleIds").as_array();
+        bool matched = false;
+        for (boost::json::array::const_iterator ai = ids.begin(); ai != ids.end(); ++ai) {
+            if (ai->is_string() && std::string(ai->as_string().c_str()) == bundleId) {
+                matched = true;
+                break;
+            }
+        }
+        if (matched) {
+            result.push_back(*it);
+        }
+    }
+    return result;
+}
+
 bool FullConfigTemplateDAO::save(const FullConfigTemplateItem& item) const {
     const char* sql = 
         "INSERT OR REPLACE INTO FullConfigTemplateItem "

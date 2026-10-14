@@ -72,7 +72,6 @@ protected:
             bundle.id = "perf_bundle_" + std::to_string(i);
             bundle.name = bundle.id;
             bundle.coreType = CoreType::XRAY;
-            bundle.templateType = TemplateType::BASE;
             bundle.version = 1;
             bundle.enabled = true;
 
@@ -221,14 +220,13 @@ TEST_F(PerformanceTest, ComponentBundleValidationPerformance) {
         boost::json::object obj;
         obj["id"] = boost::json::value(std::string("bundle_" + std::to_string(i)));
         obj["coreType"] = boost::json::value(std::int64_t(2));
-        obj["templateType"] = boost::json::value(std::string("BASE"));
         obj["version"] = boost::json::value(std::int64_t(1));
         obj["enabled"] = boost::json::value(true);
 
         boost::json::array comps;
         for (int j = 0; j < 3; j++) {
             boost::json::object comp;
-            comp["type"] = boost::json::value(std::string("log"));
+            comp["type"] = boost::json::value(std::int64_t(1));  // ComponentType::LOG（整数枚举）
             comps.push_back(comp);
         }
         obj["components"] = comps;
@@ -289,7 +287,6 @@ TEST_F(PerformanceTest, PlaceholderExtractionPerformance) {
         ComponentBundle bundle;
         bundle.id = "placeholder_bundle_" + std::to_string(i);
         bundle.coreType = CoreType::XRAY;
-        bundle.templateType = TemplateType::BASE;
         bundle.version = 1;
         bundle.enabled = true;
 

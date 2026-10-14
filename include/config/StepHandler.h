@@ -16,6 +16,11 @@ struct PipelineContext {
     ConfigVariables vars;
     sqlite3* db = nullptr;
     std::string clientName;
+    /// 是否把 ${apiPort} 等占位符替换为 vars 里的实际值。
+    /// 默认 true = 真实生成配置，替换后 Xray 才能启动。
+    /// false = 保留占位符原文，供 UI 预览用——让人一眼看出运行期还需要
+    /// 哪些参数（模板不存具体值，值由运行期上下文提供）。
+    bool substitutePlaceholders = true;
 };
 
 /// 步骤处理接口

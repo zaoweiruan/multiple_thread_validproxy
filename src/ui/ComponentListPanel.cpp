@@ -14,15 +14,20 @@ ComponentListPanel::ComponentListPanel(wxWindow* parent, sqlite3* db)
       list_(nullptr) {
     (void)db;
 
-    list_ = new wxListCtrl(this, wxID_ANY, wxDefaultPosition, wxDefaultSize,
+    // 初始高度从 wxDefaultSize 改为固定 160px，且列宽从 650px 合计收窄到 470px。
+    // 原因（bug 2026-10-08）：wxListCtrl 在 wxEXPAND 下的最小尺寸由列宽之和
+    // 决定，六列合计 650px 让本面板无法收缩，于是编辑区 min size 逼近对话框
+    // 高度，把「配置 JSON 预览」框挤到几乎不可见；650px 也让组件表右侧出现
+    // 多余的横向滚动条。高度由外部编辑区（340px）统一约束，这里只给初值。
+    list_ = new wxListCtrl(this, wxID_ANY, wxDefaultPosition, wxSize(470, 160),
                            wxLC_REPORT | wxLC_SINGLE_SEL);
 
-    list_->InsertColumn(0, "#", wxLIST_FORMAT_LEFT, 40);
-    list_->InsertColumn(1, "组件类型", wxLIST_FORMAT_LEFT, 130);
-    list_->InsertColumn(2, "配置节", wxLIST_FORMAT_LEFT, 110);
-    list_->InsertColumn(3, "组合策略", wxLIST_FORMAT_LEFT, 90);
-    list_->InsertColumn(4, "来源 Bundle", wxLIST_FORMAT_LEFT, 210);
-    list_->InsertColumn(5, "状态", wxLIST_FORMAT_LEFT, 70);
+    list_->InsertColumn(0, "#", wxLIST_FORMAT_LEFT, 30);
+    list_->InsertColumn(1, "组件类型", wxLIST_FORMAT_LEFT, 95);
+    list_->InsertColumn(2, "配置节", wxLIST_FORMAT_LEFT, 75);
+    list_->InsertColumn(3, "组合策略", wxLIST_FORMAT_LEFT, 80);
+    list_->InsertColumn(4, "来源 Bundle", wxLIST_FORMAT_LEFT, 130);
+    list_->InsertColumn(5, "状态", wxLIST_FORMAT_LEFT, 60);
 
     wxSizer* sizer = new wxBoxSizer(wxVERTICAL);
     sizer->Add(list_, 1, wxEXPAND | wxALL, 4);

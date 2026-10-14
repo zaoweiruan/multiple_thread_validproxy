@@ -35,7 +35,6 @@ ComponentBundle makeBundle(const std::string& id, int version) {
     bundle.name = id;
     bundle.description = "test bundle for " + id;
     bundle.coreType = CoreType::XRAY;
-    bundle.templateType = TemplateType::BASE;
     bundle.version = version;
     bundle.enabled = true;
     return bundle;

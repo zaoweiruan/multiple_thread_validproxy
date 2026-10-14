@@ -17,6 +17,30 @@ bool SchemaValidator::validate(const boost::json::value& value,
     return false;
 }
 
+bool SchemaValidator::parseAndValidateComponentBundle(const std::string& json,
+                                                      boost::json::value& out,
+                                                      std::string& error) {
+    // error_code 重载：语法错误返回 ec 而不抛异常（单参重载会抛，
+    // 在 wx 事件处理器里会逃逸并终止进程）。
+    boost::system::error_code ec;
+    boost::json::value parsed = boost::json::parse(json, ec);
+    if (ec) {
+        error = "JSON 语法错误: " + ec.message();
+        return false;
+    }
+    // 合法 JSON 也未必是对象（数组/字符串/数字都能解析成功），
+    // 必须在 as_object() 之前判型，否则同样抛异常。
+    if (!parsed.is_object()) {
+        error = "根节点必须是 JSON 对象 { ... }";
+        return false;
+    }
+    if (!validateComponentBundle(parsed, error)) {
+        return false;
+    }
+    out = std::move(parsed);
+    return true;
+}
+
 bool SchemaValidator::validateBundleChain(const boost::json::value& value,
                                           std::string& error) {
     if (!value.is_object()) {
@@ -86,17 +110,6 @@ bool SchemaValidator::validateComponentBundle(const boost::json::value& value,
         return false;
     }
 
-    if (!obj.contains("templateType") || !obj.at("templateType").is_string()) {
-        error = "ComponentBundle missing required 'templateType' string";
-        return false;
-    }
-    const std::string templateType = std::string(obj.at("templateType").get_string().c_str());
-    if (templateType != "BASE" && templateType != "TEST" &&
-        templateType != "STANDALONE" && templateType != "POOL") {
-        error = "ComponentBundle 'templateType' must be BASE/TEST/STANDALONE/POOL";
-        return false;
-    }
-
     if (obj.contains("version")) {
         if (!obj.at("version").is_int64() || obj.at("version").as_int64() < 1) {
             error = "ComponentBundle 'version' must be an integer >= 1";
@@ -121,12 +134,19 @@ bool SchemaValidator::validateComponentBundle(const boost::json::value& value,
             return false;
         }
         const boost::json::object& compObj = compVal.as_object();
-        if (!compObj.contains("type") || !compObj.at("type").is_string()) {
-            error = "ComponentBundle 'components[" + std::to_string(idx) + "]' missing required 'type' string";
+        if (!compObj.contains("type") || !compObj.at("type").is_int64()) {
+            error = "ComponentBundle 'components[" + std::to_string(idx) +
+                    "]' missing required integer 'type' (ComponentType enum value)";
             return false;
         }
-        if (std::string(compObj.at("type").get_string().c_str()).empty()) {
-            error = "ComponentBundle 'components[" + std::to_string(idx) + "]' type must not be empty";
+        const std::int64_t compType = compObj.at("type").as_int64();
+        if (compType < 0 || compType > 14) {
+            error = "ComponentBundle 'components[" + std::to_string(idx) +
+                    "]' type out of range 0..14: " + std::to_string(compType);
+            return false;
+        }
+        if (compObj.contains("id") && !compObj.at("id").is_string()) {
+            error = "ComponentBundle 'components[" + std::to_string(idx) + "]' id must be a string";
             return false;
         }
         if (compObj.contains("params") && !compObj.at("params").is_object()) {

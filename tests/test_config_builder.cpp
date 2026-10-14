@@ -395,8 +395,8 @@ TEST_F(InMemoryDB, FullConfigTemplateDAONewColumnsRoundTrip) {
     item.coreType = 2;
     item.config = R"({"log": {"loglevel": "warning"}})";
     item.bundleChain = R"({"bundleIds":["base_xray_001","test_xray_001"],"params":{"socksPort":"10809"}})";
-    item.templateType = "bundleChain";
     item.bundleVersion = R"([{"bundleId":"base_xray_001","version":1},{"bundleId":"test_xray_001","version":2}])";
+    item.templateType = "bundleChain";
 
     ASSERT_TRUE(dao.save(item));
     std::optional<db::FullConfigTemplateItem> loaded = dao.getById("chain_template_001");
@@ -427,7 +427,6 @@ TEST_F(InMemoryDB, FullConfigTemplateDAOIsTemplateInSyncFreshChain) {
     bundle.name = "Chain bundle";
     bundle.description = "test";
     bundle.coreType = config::CoreType::XRAY;
-    bundle.templateType = config::TemplateType::BASE;
     bundle.version = 1;
     bundle.enabled = true;
     config::ComponentConfig logComp;
@@ -457,7 +456,6 @@ TEST_F(InMemoryDB, FullConfigTemplateDAOIsTemplateInSyncAfterBundleUpdate) {
     bundle.id = "chain_bundle_001";
     bundle.name = "Chain bundle";
     bundle.coreType = config::CoreType::XRAY;
-    bundle.templateType = config::TemplateType::BASE;
     bundle.version = 1;
     bundle.enabled = true;
     config::ComponentConfig logComp;

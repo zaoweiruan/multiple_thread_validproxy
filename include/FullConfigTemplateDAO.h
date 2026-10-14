@@ -52,6 +52,15 @@ public:
     /// Get all templates
     /// @return Vector of all template items
     std::vector<FullConfigTemplateItem> getAll() const;
+
+    /// 查出组件链中引用了指定组件包的模板。
+    /// 用于「组件包变更 → 同步依赖模板」时定位受影响者，并在
+    /// 组件包改名时提示哪些模板会因引用悬空而失效。
+    /// 判定按 bundleChain 的 bundleIds 逐项**精确比较**（不是子串匹配，
+    /// 否则 xray_LOG 会误命中只含 xray_LOG2 的链）。
+    /// @param bundleId 组件包 ID
+    /// @return 引用了该组件包的模板列表（按 Id 升序）
+    std::vector<FullConfigTemplateItem> getByBundleId(const std::string& bundleId) const;
     
     /// Insert or update template
     /// @param item Template item to save

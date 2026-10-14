@@ -11,6 +11,8 @@
 #include <wx/stdpaths.h>
 #include <wx/notebook.h>
 #include <wx/listctrl.h>
+#include <wx/textdlg.h>
+#include <wx/choicdlg.h>
 
 #include <filesystem>
 #include <fstream>
@@ -23,6 +25,8 @@
 
 #include "BundleChainEditor.h"
 #include "ComponentListPanel.h"
+#include "config/TemplateDecomposer.h"
+#include "config/SchemaValidator.h"
 #include "config/BundleChainResolver.h"
 
 namespace {
@@ -71,6 +75,42 @@ std::string prettyJson(const boost::json::value& value, int indent) {
     return boost::json::serialize(value);
 }
 
+/// 组件类型的枚举名。与「组件包配置」页速查表同源，避免两处枚举名不一致。
+const wchar_t* componentTypeName(config::ComponentType type) {
+    switch (type) {
+        case config::ComponentType::ENV:               return L"ENV";
+        case config::ComponentType::LOG:               return L"LOG";
+        case config::ComponentType::API:               return L"API";
+        case config::ComponentType::DNS:               return L"DNS";
+        case config::ComponentType::ROUTING:           return L"ROUTING";
+        case config::ComponentType::POLICY:            return L"POLICY";
+        case config::ComponentType::INBOUND:           return L"INBOUND";
+        case config::ComponentType::OUTBOUND:          return L"OUTBOUND";
+        case config::ComponentType::STATS:             return L"STATS";
+        case config::ComponentType::FAKEDNS:           return L"FAKEDNS";
+        case config::ComponentType::METRICS:           return L"METRICS";
+        case config::ComponentType::OBSERVATORY:       return L"OBSERVATORY";
+        case config::ComponentType::BURST_OBSERVATORY: return L"BURST_OBSERVATORY";
+        case config::ComponentType::GEODATA:           return L"GEODATA";
+        case config::ComponentType::VERSION:           return L"VERSION";
+        default:                                        return L"?";
+    }
+}
+
+/// 解析失败或空串时原样返回，保证只读预览框恒有可见内容，
+/// 不会因美化失败而显示空白。
+std::string prettyJsonOrRaw(const std::string& json) {
+    if (json.empty()) {
+        return json;
+    }
+    boost::system::error_code ec;
+    const boost::json::value parsed = boost::json::parse(json, ec);
+    if (ec) {
+        return json;
+    }
+    return prettyJson(parsed, 0);
+}
+
 } // namespace
 
 // -------------------------------------------------------------------
@@ -78,7 +118,12 @@ wxBEGIN_EVENT_TABLE(ConfigDialog, wxDialog)
     EVT_BUTTON(wxID_OK, ConfigDialog::onOk)
     EVT_BUTTON(wxID_CANCEL, ConfigDialog::onCancel)
     EVT_PG_CHANGED(wxID_ANY, ConfigDialog::onPropertyChanged)
-    EVT_LIST_ITEM_SELECTED(wxID_ANY, ConfigDialog::onTemplateSelection)
+    // 注意：不要用 EVT_LIST_ITEM_SELECTED(wxID_ANY, onTemplateSelection)。
+    // wxID_ANY 会捕获对话框内**所有** wxListCtrl 的选中事件，经事件冒泡上溯到
+    // ConfigDialog，于是单击「组件包列表」/「组件类型列表」也会走进
+    // onTemplateSelection → syncChainEditorFromSelection() → componentListPanel_->clear()，
+    // 把刚解析出来的组件列表清空（用户报「解析后单击组件类型显示框会清空」）。
+    // 改为在 createTemplateTab() 里对 templateList_ 单独 Bind。
 wxEND_EVENT_TABLE()
 
 // -------------------------------------------------------------------
@@ -385,7 +430,6 @@ ConfigDialog::ConfigDialog(wxWindow* parent, const config::AppConfig& cfg, sqlit
 
     // Load templates after layout
     loadTemplates();
-    loadPipelineConfig();
 
     loadConfig(cfg);
 }
@@ -846,58 +890,72 @@ void ConfigDialog::createTemplateTab() {
     wxPanel* templateTab = new wxPanel(notebook_);
     wxBoxSizer* mainSizer = new wxBoxSizer(wxVERTICAL);
 
-    // 子 Notebook：模板配置 + 配置管线
+// 子 Notebook：模板配置 + 组件包配置 + 组件链编辑
     templateSubNotebook_ = new wxNotebook(templateTab, wxID_ANY);
 
     // === 子 Tab 1: 模板配置（原有功能）===
     wxPanel* templateConfigPanel = new wxPanel(templateSubNotebook_);
-    wxBoxSizer* templateConfigSizer = new wxBoxSizer(wxVERTICAL);
+    // 水平并列：左=模板列表（含标题+按钮头部栏），右=生成的配置预览
+    wxBoxSizer* templateConfigSizer = new wxBoxSizer(wxHORIZONTAL);
 
-    // 工具栏
+    // --- 左列：顶部标题+按钮栏，模板列表在其下方 ---
+    wxBoxSizer* leftColSizer = new wxBoxSizer(wxVERTICAL);
+
     wxBoxSizer* toolSizer = new wxBoxSizer(wxHORIZONTAL);
     toolSizer->Add(new wxStaticText(templateConfigPanel, wxID_ANY, L"模板列表:"), 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 4);
-    
-    templateList_ = new wxListCtrl(templateConfigPanel, wxID_ANY,
-                                    wxDefaultPosition, wxDefaultSize,
-                                    wxLC_REPORT);
-    templateList_->InsertColumn(0, L"ID", wxLIST_FORMAT_LEFT, 140);
-    templateList_->InsertColumn(1, L"类型", wxLIST_FORMAT_CENTER, 80);
-    templateList_->InsertColumn(2, L"父模板", wxLIST_FORMAT_LEFT, 120);
-    templateList_->InsertColumn(3, L"备注", wxLIST_FORMAT_LEFT, 250);
-    templateList_->InsertColumn(4, L"启用", wxLIST_FORMAT_CENTER, 50);
-    templateList_->InsertColumn(5, L"状态", wxLIST_FORMAT_CENTER, 60);
-    toolSizer->Add(templateList_, 1, wxEXPAND | wxRIGHT, 8);
 
-    wxBoxSizer* btnSizer = new wxBoxSizer(wxVERTICAL);
-    wxButton* btnSave = new wxButton(templateConfigPanel, wxID_ANY, L"保存选中");
+    wxButton* btnSave = new wxButton(templateConfigPanel, wxID_ANY, L"重新生成");
     btnSave->Bind(wxEVT_BUTTON, &ConfigDialog::onTemplateSave, this);
     wxButton* btnRefresh = new wxButton(templateConfigPanel, wxID_ANY, L"刷新");
     btnRefresh->Bind(wxEVT_BUTTON, &ConfigDialog::onTemplateRefresh, this);
-    btnSizer->Add(btnSave, 0, wxEXPAND | wxBOTTOM, 4);
-    btnSizer->Add(btnRefresh, 0, wxEXPAND);
-    toolSizer->Add(btnSizer, 0, wxEXPAND);
+    // 标题在左、按钮靠右
+    toolSizer->AddStretchSpacer(1);
+    toolSizer->Add(btnSave, 0, wxALIGN_CENTER_VERTICAL | wxLEFT, 8);
+    toolSizer->Add(btnRefresh, 0, wxALIGN_CENTER_VERTICAL | wxLEFT, 4);
 
-    templateConfigSizer->Add(toolSizer, 0, wxEXPAND | wxALL, 8);
+    leftColSizer->Add(toolSizer, 0, wxEXPAND | wxALL, 8);
 
-    // 编辑器
-    templateConfigSizer->Add(new wxStaticText(templateConfigPanel, wxID_ANY, L"JSON 配置:"), 0, wxLEFT | wxBOTTOM, 8);
+    templateList_ = new wxListCtrl(templateConfigPanel, wxID_ANY,
+                                    wxDefaultPosition, wxDefaultSize,
+                                    wxLC_REPORT);
+    templateList_->InsertColumn(0, L"ID", wxLIST_FORMAT_LEFT, 120);
+    templateList_->InsertColumn(1, L"类型", wxLIST_FORMAT_CENTER, 60);
+    templateList_->InsertColumn(2, L"父模板", wxLIST_FORMAT_LEFT, 100);
+    templateList_->InsertColumn(3, L"备注", wxLIST_FORMAT_LEFT, 220);
+    templateList_->InsertColumn(4, L"启用", wxLIST_FORMAT_CENTER, 45);
+    templateList_->InsertColumn(5, L"状态", wxLIST_FORMAT_CENTER, 50);
+    // 选中事件只绑定到本控件（不能走事件表的 wxID_ANY，否则会捕获其它列表的选中事件）
+    templateList_->Bind(wxEVT_LIST_ITEM_SELECTED, [this](wxListEvent& e) { onTemplateSelection(e); });
+    leftColSizer->Add(templateList_, 1, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, 8);
+
+    templateConfigSizer->Add(leftColSizer, 1, wxEXPAND);
+
+    // --- 右列：生成的配置预览（只读）---
+    // Config 是配置生成的唯一来源，但它本身不可独立手改：
+    // 只能通过「组件包配置」改包 + 「组件链编辑」改链，再解析生成。
+    wxBoxSizer* rightColSizer = new wxBoxSizer(wxVERTICAL);
+    rightColSizer->Add(
+        new wxStaticText(templateConfigPanel, wxID_ANY,
+                         L"生成的配置（只读，由组件链解析产生；"
+                         L"请到「组件包配置」/「组件链编辑」修改后重新解析）:"),
+        0, wxLEFT | wxBOTTOM, 8);
     templateEditor_ = new wxTextCtrl(templateConfigPanel, wxID_ANY, L"",
                                       wxDefaultPosition, wxDefaultSize,
-                                      wxTE_MULTILINE | wxTE_WORDWRAP | wxTE_DONTWRAP);
+                                      wxTE_MULTILINE | wxTE_READONLY | wxTE_DONTWRAP);
     templateEditor_->SetFont(wxFont(10, wxFONTFAMILY_MODERN, wxFONTSTYLE_NORMAL, wxFONTWEIGHT_NORMAL));
-    templateConfigSizer->Add(templateEditor_, 1, wxEXPAND | wxALL, 8);
+    rightColSizer->Add(templateEditor_, 1, wxEXPAND | wxALL, 8);
+    templateConfigSizer->Add(rightColSizer, 1, wxEXPAND);
 
     templateConfigPanel->SetSizer(templateConfigSizer);
     templateSubNotebook_->AddPage(templateConfigPanel, L"模板配置");
 
-    // === 子 Tab 2: 配置管线（新增）===
-    createPipelineTab();
-
-    // === 子 Tab 3: 组件包配置（新增）===
-    createBundleTab();
-
-    // === 子 Tab 4: 组件链编辑（阶段 8）===
+    // === 子 Tab 2: 组件链编辑（阶段 8）===
+    // 置于「组件包配置」之前：链编辑是「改包→串链→看结果」的上游操作，
+    // 放在前面更符合使用顺序。页面顺序即 create 调用顺序（wxNotebook 按添加序排列）。
     createChainEditTab();
+
+    // === 子 Tab 3: 组件包配置 ===
+    createBundleTab();
 
     mainSizer->Add(templateSubNotebook_, 1, wxEXPAND | wxALL, 8);
 
@@ -929,7 +987,8 @@ void ConfigDialog::loadTemplates() {
     // Select first item
     if (!templates_.empty()) {
         templateList_->SetItemState(0, wxLIST_STATE_SELECTED | wxLIST_STATE_FOCUSED, wxLIST_STATE_SELECTED | wxLIST_STATE_FOCUSED);
-        templateEditor_->ChangeValue(wxString(templates_[0].config));
+        templateEditor_->ChangeValue(
+            wxString::FromUTF8(prettyJsonOrRaw(templates_[0].config).c_str()));
     }
 
     // 同时加载组件包
@@ -941,28 +1000,34 @@ void ConfigDialog::onTemplateSelection(wxListEvent& event) {
     if (sel < 0 || sel >= static_cast<long>(templates_.size())) return;
 
     const auto& item = templates_[sel];
-    templateEditor_->ChangeValue(wxString(item.config));
+    templateEditor_->ChangeValue(
+        wxString::FromUTF8(prettyJsonOrRaw(item.config).c_str()));
     syncChainEditorFromSelection();
 }
 
 void ConfigDialog::onTemplateSave(wxCommandEvent& event) {
-    if (!templateList_ || !templateEditor_ || !db_) return;
+    (void)event;
+    // Config 不可独立手改：这里不再把编辑器内容写回 Config，
+    // 而是按当前组件链重新解析并物化（组件包在别处被改动后用它刷新）。
+    if (templateList_ == nullptr || db_ == nullptr) return;
 
     long sel = templateList_->GetNextItem(-1, wxLIST_NEXT_ALL, wxLIST_STATE_SELECTED);
     if (sel < 0 || sel >= static_cast<long>(templates_.size())) {
-        wxMessageBox(L"请先选择要保存的模板", L"提示", wxOK | wxICON_INFORMATION);
+        wxMessageBox(L"请先选择要重新生成的模板", L"提示", wxOK | wxICON_INFORMATION);
         return;
     }
 
-    db::FullConfigTemplateDAO dao(db_);
-    templates_[sel].config = templateEditor_->GetValue().ToStdString();
-    
-    if (dao.save(templates_[sel])) {
-        wxMessageBox(L"模板已保存", L"成功", wxOK | wxICON_INFORMATION);
-        loadTemplates();
+    const std::string templateId = templates_[sel].id;
+    config::TemplateDecomposer decomposer(db_);
+    if (decomposer.syncConfigFromChain(templateId)) {
+        wxMessageBox(L"已按组件链重新生成 " + wxString(templateId) + L" 的配置",
+                     L"成功", wxOK | wxICON_INFORMATION);
     } else {
-        wxMessageBox(L"保存失败，请查看日志", L"错误", wxOK | wxICON_ERROR);
+        wxMessageBox(L"该模板没有可用的组件链，无法生成配置。"
+                     L"请先到「组件链编辑」为其添加 Bundle。",
+                     L"提示", wxOK | wxICON_INFORMATION);
     }
+    loadTemplates();
 }
 
 void ConfigDialog::onTemplateRefresh(wxCommandEvent& event) {
@@ -970,627 +1035,13 @@ void ConfigDialog::onTemplateRefresh(wxCommandEvent& event) {
 }
 
 // ================================================================
-// 配置管线 Tab 实现
+// 「配置管线」Tab 已于 2026-10-10 移除
+// 原因：ConfigBuilder::setPipeline() 全仓库无调用点 → pipeline_ 恒 nullptr →
+//       build() 永远走 legacy 分支（loadTemplate 读 Config 列），管线永不执行；
+//       config.json 亦无 config_pipeline 段。属未启用的遗留半成品，
+//       其「可编排」能力已由组件链（组件包配置 / 组件链编辑）覆盖且正在使用。
+// 底层 ConfigPipeline / StepRegistry / StepHandler 类及其单测全部保留未动。
 // ================================================================
-
-void ConfigDialog::createPipelineTab() {
-    wxPanel* pipelineTab = new wxPanel(templateSubNotebook_);
-    wxBoxSizer* mainSizer = new wxBoxSizer(wxHORIZONTAL);
-
-    // === 左侧：管线列表 ===
-    wxBoxSizer* leftSizer = new wxBoxSizer(wxVERTICAL);
-    leftSizer->Add(new wxStaticText(pipelineTab, wxID_ANY, L"管线列表:"), 0, wxLEFT | wxBOTTOM, 8);
-    
-    pipelineList_ = new wxListCtrl(pipelineTab, wxID_ANY,
-                                    wxDefaultPosition, wxSize(200, -1),
-                                    wxLC_REPORT);
-    pipelineList_->InsertColumn(0, L"管线名", wxLIST_FORMAT_LEFT, 120);
-    pipelineList_->InsertColumn(1, L"模板", wxLIST_FORMAT_LEFT, 120);
-    pipelineList_->InsertColumn(2, L"步骤数", wxLIST_FORMAT_CENTER, 60);
-    pipelineList_->Bind(wxEVT_LIST_ITEM_SELECTED, [this](wxListEvent& e) { onPipelineSelection(e); });
-    leftSizer->Add(pipelineList_, 1, wxEXPAND | wxALL, 8);
-
-    wxBoxSizer* leftBtnSizer = new wxBoxSizer(wxHORIZONTAL);
-    wxButton* btnDeletePipeline = new wxButton(pipelineTab, wxID_ANY, L"删除");
-    btnDeletePipeline->Bind(wxEVT_BUTTON, [this](wxCommandEvent& e) { onPipelineDelete(e); });
-    leftBtnSizer->Add(btnDeletePipeline, 0, wxRIGHT, 4);
-    wxButton* btnRefreshPipeline = new wxButton(pipelineTab, wxID_ANY, L"刷新");
-    btnRefreshPipeline->Bind(wxEVT_BUTTON, [this](wxCommandEvent& e) { loadPipelineConfig(); });
-    leftBtnSizer->Add(btnRefreshPipeline, 0);
-    leftSizer->Add(leftBtnSizer, 0, wxEXPAND | wxALL, 8);
-
-    mainSizer->Add(leftSizer, 0, wxEXPAND);
-
-    // === 中间：步骤编辑器 ===
-    wxBoxSizer* centerSizer = new wxBoxSizer(wxVERTICAL);
-    
-    // 模板选择器
-    wxBoxSizer* templateSizer = new wxBoxSizer(wxHORIZONTAL);
-    templateSizer->Add(new wxStaticText(pipelineTab, wxID_ANY, L"模板:"), 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 4);
-    templateChoice_ = new wxChoice(pipelineTab, wxID_ANY, wxDefaultPosition, wxDefaultSize, 0, nullptr);
-    templateChoice_->Bind(wxEVT_CHOICE, [this](wxCommandEvent& e) { onTemplateChoice(e); });
-    templateSizer->Add(templateChoice_, 1, wxEXPAND);
-    centerSizer->Add(templateSizer, 0, wxEXPAND | wxALL, 8);
-
-    // 步骤列表
-    centerSizer->Add(new wxStaticText(pipelineTab, wxID_ANY, L"步骤列表:"), 0, wxLEFT | wxBOTTOM, 8);
-    stepList_ = new wxListCtrl(pipelineTab, wxID_ANY,
-                                wxDefaultPosition, wxSize(300, 150),
-                                wxLC_REPORT);
-    stepList_->InsertColumn(0, L"#", wxLIST_FORMAT_CENTER, 40);
-    stepList_->InsertColumn(1, L"步骤类型", wxLIST_FORMAT_LEFT, 140);
-    stepList_->InsertColumn(2, L"错误策略", wxLIST_FORMAT_CENTER, 80);
-    stepList_->InsertColumn(3, L"参数摘要", wxLIST_FORMAT_LEFT, 200);
-    stepList_->Bind(wxEVT_LIST_ITEM_SELECTED, [this](wxListEvent& e) { onStepSelection(e); });
-    centerSizer->Add(stepList_, 0, wxEXPAND | wxALL, 8);
-
-    // 参数 JSON 编辑器
-    centerSizer->Add(new wxStaticText(pipelineTab, wxID_ANY, L"参数 JSON:"), 0, wxLEFT | wxBOTTOM, 8);
-    stepParamEditor_ = new wxTextCtrl(pipelineTab, wxID_ANY, L"",
-                                       wxDefaultPosition, wxDefaultSize,
-                                       wxTE_MULTILINE | wxTE_DONTWRAP);
-    stepParamEditor_->SetFont(wxFont(10, wxFONTFAMILY_MODERN, wxFONTSTYLE_NORMAL, wxFONTWEIGHT_NORMAL));
-    centerSizer->Add(stepParamEditor_, 1, wxEXPAND | wxALL, 8);
-
-    // 步骤按钮
-    wxBoxSizer* stepBtnSizer = new wxBoxSizer(wxHORIZONTAL);
-    wxButton* btnMoveUp = new wxButton(pipelineTab, wxID_ANY, L"上移");
-    btnMoveUp->Bind(wxEVT_BUTTON, [this](wxCommandEvent& e) { onStepMoveUp(e); });
-    stepBtnSizer->Add(btnMoveUp, 0, wxRIGHT, 4);
-    wxButton* btnMoveDown = new wxButton(pipelineTab, wxID_ANY, L"下移");
-    btnMoveDown->Bind(wxEVT_BUTTON, [this](wxCommandEvent& e) { onStepMoveDown(e); });
-    stepBtnSizer->Add(btnMoveDown, 0, wxRIGHT, 4);
-    wxButton* btnAddStep = new wxButton(pipelineTab, wxID_ANY, L"添加");
-    btnAddStep->Bind(wxEVT_BUTTON, [this](wxCommandEvent& e) { onStepAdd(e); });
-    stepBtnSizer->Add(btnAddStep, 0, wxRIGHT, 4);
-    wxButton* btnDeleteStep = new wxButton(pipelineTab, wxID_ANY, L"删除");
-    btnDeleteStep->Bind(wxEVT_BUTTON, [this](wxCommandEvent& e) { onStepDelete(e); });
-    stepBtnSizer->Add(btnDeleteStep, 0, wxRIGHT, 4);
-    wxButton* btnSavePipeline = new wxButton(pipelineTab, wxID_ANY, L"保存管线");
-    btnSavePipeline->Bind(wxEVT_BUTTON, [this](wxCommandEvent& e) { onPipelineSave(e); });
-    stepBtnSizer->Add(btnSavePipeline, 0);
-    centerSizer->Add(stepBtnSizer, 0, wxEXPAND | wxALL, 8);
-
-    mainSizer->Add(centerSizer, 1, wxEXPAND);
-
-    // === 右侧：模板预览 ===
-    wxBoxSizer* rightSizer = new wxBoxSizer(wxVERTICAL);
-    rightSizer->Add(new wxStaticText(pipelineTab, wxID_ANY, L"模板预览:"), 0, wxLEFT | wxBOTTOM, 8);
-
-    wxBoxSizer* previewBtnSizer = new wxBoxSizer(wxHORIZONTAL);
-    wxButton* btnGenerate = new wxButton(pipelineTab, wxID_ANY, L"生成预览");
-    btnGenerate->Bind(wxEVT_BUTTON, [this](wxCommandEvent& e) { onGeneratePreview(e); });
-    previewBtnSizer->Add(btnGenerate, 0, wxRIGHT, 4);
-    wxButton* btnClear = new wxButton(pipelineTab, wxID_ANY, L"清空");
-    btnClear->Bind(wxEVT_BUTTON, [this](wxCommandEvent& e) { onClearPreview(e); });
-    previewBtnSizer->Add(btnClear, 0);
-    rightSizer->Add(previewBtnSizer, 0, wxEXPAND | wxBOTTOM, 8);
-
-    previewEditor_ = new wxTextCtrl(pipelineTab, wxID_ANY, L"",
-                                     wxDefaultPosition, wxDefaultSize,
-                                     wxTE_MULTILINE | wxTE_READONLY | wxTE_DONTWRAP);
-    previewEditor_->SetFont(wxFont(10, wxFONTFAMILY_MODERN, wxFONTSTYLE_NORMAL, wxFONTWEIGHT_NORMAL));
-    rightSizer->Add(previewEditor_, 1, wxEXPAND | wxBOTTOM, 8);
-
-    previewStatus_ = new wxStaticText(pipelineTab, wxID_ANY, L"");
-    rightSizer->Add(previewStatus_, 0, wxEXPAND | wxALL, 8);
-
-    mainSizer->Add(rightSizer, 0, wxEXPAND);
-
-    pipelineTab->SetSizer(mainSizer);
-    templateSubNotebook_->AddPage(pipelineTab, L"配置管线");
-}
-
-void ConfigDialog::loadPipelineConfig() {
-    if (!pipelineList_ || !templateChoice_) return;
-
-    // 读取 config.json
-    boost::json::value root;
-    if (!readConfigJson(root)) {
-        wxLogWarning("加载 config.json 失败，使用默认空管线");
-        // 初始化默认空管线
-        initializeDefaultPipelines();
-        refreshPipelineList();
-        fillTemplateChoice();
-        return;
-    }
-
-    // 解析 config_pipeline 段
-    pipelines_.clear();
-    bool hasPipelineConfig = false;
-    if (root.is_object() && root.as_object().contains("config_pipeline")) {
-        const auto& pipelineObj = root.as_object().at("config_pipeline");
-        if (pipelineObj.is_object() && !pipelineObj.as_object().empty()) {
-            hasPipelineConfig = true;
-            for (const auto& [key, val] : pipelineObj.as_object()) {
-                if (!val.is_object()) continue;
-                config::PipelineDefinition def;
-                const auto& obj = val.as_object();
-                if (obj.contains("templateId") && obj.at("templateId").is_string()) {
-                    def.templateId = obj.at("templateId").as_string();
-                }
-                if (obj.contains("steps") && obj.at("steps").is_array()) {
-                    for (const auto& stepVal : obj.at("steps").as_array()) {
-                        if (!stepVal.is_object()) continue;
-                        config::StepConfig step;
-                        const auto& stepObj = stepVal.as_object();
-                        if (stepObj.contains("type") && stepObj.at("type").is_string()) {
-                            step.type = stepObj.at("type").as_string();
-                        }
-                        if (stepObj.contains("params") && stepObj.at("params").is_object()) {
-                            step.params = stepObj.at("params").as_object();
-                        }
-                        if (stepObj.contains("onError") && stepObj.at("onError").is_string()) {
-                            step.onError = stepObj.at("onError").as_string();
-                        }
-                        def.steps.push_back(step);
-                    }
-                }
-                pipelines_[key] = def;
-            }
-        }
-    }
-
-    // 如果没有管线配置，初始化默认空管线
-    if (!hasPipelineConfig) {
-        initializeDefaultPipelines();
-    }
-
-    // 填充管线列表
-    refreshPipelineList();
-
-    // 填充模板下拉框
-    fillTemplateChoice();
-}
-
-void ConfigDialog::initializeDefaultPipelines() {
-    // 6 个固定管线名
-    static const std::vector<std::string> defaultNames = {
-        "test", "test_singbox",
-        "standalone", "standalone_singbox",
-        "pool", "pool_singbox"
-    };
-    for (const auto& name : defaultNames) {
-        if (pipelines_.find(name) == pipelines_.end()) {
-            config::PipelineDefinition def;
-            def.templateId = "";
-            def.steps.clear();
-            pipelines_[name] = def;
-        }
-    }
-}
-
-void ConfigDialog::fillTemplateChoice() {
-    templateChoice_->Clear();
-    std::vector<std::string> templateIds = getAvailableTemplateIds();
-    for (const auto& id : templateIds) {
-        templateChoice_->Append(wxString(id.c_str(), wxConvUTF8));
-    }
-}
-
-void ConfigDialog::savePipelineConfig() {
-    boost::json::value root;
-    if (!readConfigJson(root)) {
-        wxMessageBox(L"无法读取 config.json", L"错误", wxOK | wxICON_ERROR);
-        return;
-    }
-
-    // 更新 config_pipeline 段
-    boost::json::object pipelineObj;
-    for (const auto& [name, def] : pipelines_) {
-        boost::json::object defObj;
-        defObj["templateId"] = def.templateId;
-        
-        boost::json::array stepsArr;
-        for (const auto& step : def.steps) {
-            boost::json::object stepObj;
-            stepObj["type"] = step.type;
-            stepObj["params"] = step.params;
-            stepObj["onError"] = step.onError;
-            stepsArr.push_back(stepObj);
-        }
-        defObj["steps"] = stepsArr;
-        pipelineObj[name] = defObj;
-    }
-
-    root.as_object()["config_pipeline"] = pipelineObj;
-
-    if (!writeConfigJson(root)) {
-        wxMessageBox(L"保存 config.json 失败", L"错误", wxOK | wxICON_ERROR);
-        return;
-    }
-
-    wxMessageBox(L"管线保存成功，重启应用后生效", L"成功", wxOK | wxICON_INFORMATION);
-}
-
-bool ConfigDialog::readConfigJson(boost::json::value& root) const {
-    try {
-        std::ifstream file(configPath_);
-        if (!file.is_open()) return false;
-        root = boost::json::parse(file);
-        return true;
-    } catch (const std::exception& e) {
-        wxLogError("config.json 解析失败: %s", e.what());
-        return false;
-    }
-}
-
-bool ConfigDialog::writeConfigJson(const boost::json::value& root) const {
-    try {
-        // 事务性写入：先写临时文件再 rename
-        std::string tempPath = configPath_ + ".tmp";
-        std::ofstream file(tempPath);
-        if (!file.is_open()) return false;
-        
-        std::string json = boost::json::serialize(root);
-        file << json;
-        file.close();
-
-        // 备份原文件
-        std::string backupPath = configPath_ + ".bak";
-        std::filesystem::copy_file(configPath_, backupPath, 
-                                     std::filesystem::copy_options::overwrite_existing);
-        
-        // 替换原文件
-        std::filesystem::rename(tempPath, configPath_);
-        return true;
-    } catch (const std::exception& e) {
-        wxLogError("写入 config.json 失败: %s", e.what());
-        return false;
-    }
-}
-
-void ConfigDialog::onPipelineSelection(wxListEvent& event) {
-    long sel = pipelineList_->GetNextItem(-1, wxLIST_NEXT_ALL, wxLIST_STATE_SELECTED);
-    if (sel < 0) return;
-
-    // 获取管线名（从 list item 文本）
-    wxString nameStr = pipelineList_->GetItemText(sel, 0);
-    currentPipelineName_ = nameStr.ToStdString();
-    currentStepIndex_ = -1;
-
-    // 填充模板选择器
-    auto it = pipelines_.find(currentPipelineName_);
-    if (it != pipelines_.end() && !it->second.templateId.empty()) {
-        for (int i = 0; i < templateChoice_->GetCount(); i++) {
-            if (templateChoice_->GetString(i) == wxString(it->second.templateId.c_str(), wxConvUTF8)) {
-                templateChoice_->SetSelection(i);
-                break;
-            }
-        }
-    }
-
-    refreshStepList();
-}
-
-void ConfigDialog::onPipelineDelete(wxCommandEvent& event) {
-    long sel = pipelineList_->GetNextItem(-1, wxLIST_NEXT_ALL, wxLIST_STATE_SELECTED);
-    if (sel < 0) {
-        wxMessageBox(L"请先选择要删除的管线", L"提示", wxOK | wxICON_INFORMATION);
-        return;
-    }
-
-    wxString nameStr = pipelineList_->GetItemText(sel, 0);
-    std::string name = nameStr.ToStdString();
-
-    if (wxMessageBox(L"确定删除管线「" + nameStr + L"」？", L"确认删除", 
-                      wxYES_NO | wxICON_QUESTION) == wxYES) {
-        pipelines_.erase(name);
-        refreshPipelineList();
-    }
-}
-
-void ConfigDialog::onPipelineSave(wxCommandEvent& event) {
-    // 验证管线名
-    static const std::set<std::string> validNames = {
-        "test", "test_singbox",
-        "standalone", "standalone_singbox",
-        "pool", "pool_singbox"
-    };
-    if (validNames.find(currentPipelineName_) == validNames.end()) {
-        wxMessageBox(L"管线名无效：仅支持 test/standalone/pool × xray/singbox", 
-                      L"验证错误", wxOK | wxICON_ERROR);
-        return;
-    }
-
-    // 收集当前编辑的管线定义
-    config::PipelineDefinition def;
-    if (templateChoice_->GetSelection() >= 0) {
-        def.templateId = templateChoice_->GetStringSelection().ToStdString();
-    }
-
-    // 从步骤列表收集步骤
-    for (int i = 0; i < stepList_->GetItemCount(); i++) {
-        config::StepConfig step;
-        step.type = stepList_->GetItemText(i, 1).ToStdString();
-        step.onError = stepList_->GetItemText(i, 2).ToStdString();
-
-        // 解析参数摘要（从 stepParamEditor_ 获取当前编辑的参数）
-        if (i == currentStepIndex_) {
-            std::string paramStr = stepParamEditor_->GetValue().ToStdString();
-            if (!paramStr.empty()) {
-                try {
-                    boost::json::value paramVal = boost::json::parse(paramStr);
-                    if (paramVal.is_object()) {
-                        step.params = paramVal.as_object();
-                    }
-                } catch (...) {
-                    // 忽略解析错误
-                }
-            }
-        }
-        def.steps.push_back(step);
-    }
-
-    pipelines_[currentPipelineName_] = def;
-    savePipelineConfig();
-}
-
-void ConfigDialog::onStepSelection(wxListEvent& event) {
-    long sel = stepList_->GetNextItem(-1, wxLIST_NEXT_ALL, wxLIST_STATE_SELECTED);
-    if (sel < 0) return;
-
-    currentStepIndex_ = static_cast<int>(sel);
-    refreshStepParamEditor();
-}
-
-void ConfigDialog::onStepAdd(wxCommandEvent& event) {
-    std::vector<std::string> stepTypes = getAvailableStepTypes();
-    wxArrayString names;
-    for (const auto& t : stepTypes) {
-        names.Add(wxString(getStepDisplayName(t).c_str(), wxConvUTF8));
-    }
-
-    wxSingleChoiceDialog dlg(this, L"选择步骤类型:", L"添加步骤", names);
-    if (dlg.ShowModal() == wxID_OK) {
-        int sel = dlg.GetSelection();
-        if (sel >= 0 && sel < static_cast<int>(stepTypes.size())) {
-            config::PipelineDefinition& def = pipelines_[currentPipelineName_];
-            config::StepConfig step;
-            step.type = stepTypes[sel];
-            step.onError = "continue";
-            def.steps.push_back(step);
-            refreshStepList();
-        }
-    }
-}
-
-void ConfigDialog::onStepDelete(wxCommandEvent& event) {
-    if (currentStepIndex_ < 0) {
-        wxMessageBox(L"请先选择要删除的步骤", L"提示", wxOK | wxICON_INFORMATION);
-        return;
-    }
-
-    if (wxMessageBox(L"确定删除当前步骤？", L"确认删除", 
-                      wxYES_NO | wxICON_QUESTION) == wxYES) {
-        long sel = currentStepIndex_;
-        stepList_->DeleteItem(sel);
-        currentStepIndex_ = -1;
-        refreshStepList();
-    }
-}
-
-void ConfigDialog::onStepMoveUp(wxCommandEvent& event) {
-    if (currentStepIndex_ <= 0) return;
-
-    // 交换步骤位置
-    config::PipelineDefinition& def = pipelines_[currentPipelineName_];
-    if (currentStepIndex_ >= static_cast<int>(def.steps.size())) return;
-
-    std::swap(def.steps[currentStepIndex_ - 1], def.steps[currentStepIndex_]);
-    currentStepIndex_--;
-    refreshStepList();
-}
-
-void ConfigDialog::onStepMoveDown(wxCommandEvent& event) {
-    if (currentStepIndex_ < 0) return;
-
-    config::PipelineDefinition& def = pipelines_[currentPipelineName_];
-    if (currentStepIndex_ >= static_cast<int>(def.steps.size()) - 1) return;
-
-    std::swap(def.steps[currentStepIndex_], def.steps[currentStepIndex_ + 1]);
-    currentStepIndex_++;
-    refreshStepList();
-}
-
-void ConfigDialog::onTemplateChoice(wxCommandEvent& event) {
-    if (currentPipelineName_.empty()) return;
-
-    auto it = pipelines_.find(currentPipelineName_);
-    if (it != pipelines_.end()) {
-        it->second.templateId = templateChoice_->GetStringSelection().ToStdString();
-        refreshPipelineList();
-    }
-}
-
-void ConfigDialog::onGeneratePreview(wxCommandEvent& event) {
-    boost::json::value preview;
-    if (generatePreviewConfig(preview)) {
-        std::string formatted = formatJson(preview);
-        previewEditor_->ChangeValue(wxString(formatted.c_str(), wxConvUTF8));
-        previewStatus_->SetLabel(L"✅ 生成成功");
-    }
-}
-
-void ConfigDialog::onClearPreview(wxCommandEvent& event) {
-    previewEditor_->ChangeValue(L"");
-    previewStatus_->SetLabel(L"");
-}
-
-bool ConfigDialog::generatePreviewConfig(boost::json::value& config) const {
-    if (currentPipelineName_.empty()) {
-        previewStatus_->SetLabel(L"错误: 未选择管线");
-        return false;
-    }
-
-    auto it = pipelines_.find(currentPipelineName_);
-    if (it == pipelines_.end()) {
-        previewStatus_->SetLabel(L"错误: 管线不存在");
-        return false;
-    }
-
-    const auto& pipeline = it->second;
-
-    // 1. 从 DB 加载模板配置
-    if (pipeline.templateId.empty()) {
-        previewStatus_->SetLabel(L"错误: 未选择模板");
-        return false;
-    }
-
-    db::FullConfigTemplateDAO dao(db_);
-    auto templateOpt = dao.getById(pipeline.templateId);
-    if (!templateOpt.has_value()) {
-        previewStatus_->SetLabel(L"错误: 模板加载失败");
-        return false;
-    }
-
-    // 2. 解析模板 JSON
-    boost::json::value configVal;
-    try {
-        configVal = boost::json::parse(templateOpt->config);
-    } catch (const std::exception& e) {
-        previewStatus_->SetLabel(L"错误: 模板 JSON 解析失败");
-        return false;
-    }
-
-    // 3. 构建 PipelineContext
-    config::PipelineContext ctx;
-    ctx.db = db_;
-    // 判断是否为 SingBox 管线
-    if (currentPipelineName_.find("singbox") != std::string::npos) {
-        ctx.proxyType = config::ProxyType::SingBox;
-    } else {
-        ctx.proxyType = config::ProxyType::Xray;
-    }
-
-    // 4. 执行各步骤
-    const auto& registry = config::StepRegistry::instance();
-    for (const auto& step : pipeline.steps) {
-        auto handler = registry.getHandler(step.type);
-        if (!handler) continue;
-
-        try {
-            handler->execute(configVal.as_object(), step.params, ctx);
-        } catch (const std::exception& e) {
-            previewStatus_->SetLabel(
-                wxString::Format(L"步骤执行错误 [%s]: %s", 
-                                 wxString(step.type.c_str(), wxConvUTF8),
-                                 wxString(e.what(), wxConvUTF8)));
-            return false;
-        }
-    }
-
-    config = configVal;
-    return true;
-}
-
-bool ConfigDialog::validateStepParams(
-    const std::string& type, 
-    const boost::json::object& params) const {
-    
-    if (type == "add_outbound") {
-        if (!params.contains("tag")) return false;
-    } else if (type == "merge_routing") {
-        if (!params.contains("inboundTag")) return false;
-    } else if (type == "add_inbound") {
-        if (!params.contains("tag")) return false;
-    } else if (type == "add_observatory") {
-        if (!params.contains("subjectSelector")) return false;
-    } else if (type == "add_balancer") {
-        if (!params.contains("tag")) return false;
-    } else if (type == "add_api") {
-        if (!params.contains("tag")) return false;
-    } else if (type == "modify_field") {
-        if (!params.contains("path") || !params.contains("value")) return false;
-    }
-    return true;
-}
-
-void ConfigDialog::refreshStepList() {
-    if (!stepList_) return;
-
-    stepList_->DeleteAllItems();
-    if (currentPipelineName_.empty()) return;
-
-    auto it = pipelines_.find(currentPipelineName_);
-    if (it == pipelines_.end()) return;
-
-    const auto& steps = it->second.steps;
-    for (size_t i = 0; i < steps.size(); i++) {
-        int row = stepList_->InsertItem(i, wxString::Format(L"%d", static_cast<int>(i + 1)));
-        stepList_->SetItem(row, 1, wxString(steps[i].type.c_str(), wxConvUTF8));
-        stepList_->SetItem(row, 2, wxString(steps[i].onError.c_str(), wxConvUTF8));
-        
-        // 参数摘要（前 50 字符）
-        std::string paramStr = formatJson(boost::json::value(steps[i].params));
-        if (paramStr.length() > 50) paramStr = paramStr.substr(0, 50) + "...";
-        stepList_->SetItem(row, 3, wxString(paramStr.c_str(), wxConvUTF8));
-    }
-
-    // 重新选中之前选中的步骤
-    if (currentStepIndex_ >= 0 && currentStepIndex_ < static_cast<int>(steps.size())) {
-        stepList_->SetItemState(currentStepIndex_, wxLIST_STATE_SELECTED | wxLIST_STATE_FOCUSED,
-                                wxLIST_STATE_SELECTED | wxLIST_STATE_FOCUSED);
-    }
-}
-
-void ConfigDialog::refreshStepParamEditor() {
-    if (!stepParamEditor_ || currentStepIndex_ < 0) return;
-
-    auto it = pipelines_.find(currentPipelineName_);
-    if (it == pipelines_.end() || currentStepIndex_ >= static_cast<int>(it->second.steps.size())) {
-        stepParamEditor_->ChangeValue(L"{}");
-        return;
-    }
-
-    std::string paramStr = formatJson(boost::json::value(it->second.steps[currentStepIndex_].params));
-    stepParamEditor_->ChangeValue(wxString(paramStr.c_str(), wxConvUTF8));
-}
-
-void ConfigDialog::refreshPipelineList() {
-    if (!pipelineList_) return;
-
-    pipelineList_->DeleteAllItems();
-    int row = 0;
-    for (const auto& [name, def] : pipelines_) {
-        pipelineList_->InsertItem(row, wxString(name.c_str(), wxConvUTF8));
-        pipelineList_->SetItem(row, 1, wxString(def.templateId.c_str(), wxConvUTF8));
-        pipelineList_->SetItem(row, 2, wxString::Format(L"%d", static_cast<int>(def.steps.size())));
-        row++;
-    }
-}
-
-std::vector<std::string> ConfigDialog::getAvailableTemplateIds() const {
-    std::vector<std::string> ids;
-    db::FullConfigTemplateDAO dao(db_);
-    auto allTemplates = dao.getAll();
-    for (const auto& t : allTemplates) {
-        ids.push_back(t.id);
-    }
-    return ids;
-}
-
-std::vector<std::string> ConfigDialog::getAvailableStepTypes() const {
-    const auto& registry = config::StepRegistry::instance();
-    return registry.getRegisteredTypes();
-}
-
-std::string ConfigDialog::getStepDisplayName(const std::string& type) const {
-    static const std::map<std::string, std::string> displayNames = {
-        {"replace_variables", "变量替换"},
-        {"add_outbound", "添加出站"},
-        {"merge_routing", "合并路由"},
-        {"add_inbound", "添加入站"},
-        {"add_observatory", "添加观测器"},
-        {"add_balancer", "添加负载均衡"},
-        {"add_stats", "启用统计"},
-        {"add_policy", "添加策略"},
-        {"add_api", "添加 API"},
-        {"modify_field", "修改字段"}
-    };
-    auto it = displayNames.find(type);
-    return (it != displayNames.end()) ? it->second : type;
-}
 
 std::string ConfigDialog::formatJson(const boost::json::value& value) const {
     return boost::json::serialize(value);
@@ -1622,6 +1073,9 @@ void ConfigDialog::createBundleTab() {
 
     // 按钮栏
     wxBoxSizer* btnSizer = new wxBoxSizer(wxHORIZONTAL);
+    wxButton* btnNew = new wxButton(bundleTab, wxID_ANY, L"新增");
+    btnNew->Bind(wxEVT_BUTTON, [this](wxCommandEvent& e) { onBundleNew(e); });
+    btnSizer->Add(btnNew, 0, wxRIGHT, 4);
     wxButton* btnRefresh = new wxButton(bundleTab, wxID_ANY, L"刷新");
     btnRefresh->Bind(wxEVT_BUTTON, [this](wxCommandEvent& e) { onBundleRefresh(e); });
     btnSizer->Add(btnRefresh, 0, wxRIGHT, 4);
@@ -1635,7 +1089,9 @@ void ConfigDialog::createBundleTab() {
 
     mainSizer->Add(leftSizer, 0, wxEXPAND);
 
-    // === 右侧：JSON 编辑器 ===
+    // === 右侧：JSON 编辑器 + 速查表（水平并排，两表上下排列）===
+    wxBoxSizer* editorRowSizer = new wxBoxSizer(wxHORIZONTAL);
+
     wxBoxSizer* rightSizer = new wxBoxSizer(wxVERTICAL);
     rightSizer->Add(new wxStaticText(bundleTab, wxID_ANY, L"JSON 配置:"), 0, wxLEFT | wxBOTTOM, 8);
     bundleEditor_ = new wxTextCtrl(bundleTab, wxID_ANY, L"",
@@ -1643,11 +1099,111 @@ void ConfigDialog::createBundleTab() {
                                     wxTE_MULTILINE | wxTE_WORDWRAP | wxTE_DONTWRAP);
     bundleEditor_->SetFont(wxFont(10, wxFONTFAMILY_MODERN, wxFONTSTYLE_NORMAL, wxFONTWEIGHT_NORMAL));
     rightSizer->Add(bundleEditor_, 1, wxEXPAND | wxALL, 8);
+    editorRowSizer->Add(rightSizer, 1, wxEXPAND);
 
-    mainSizer->Add(rightSizer, 1, wxEXPAND);
+    // --- 速查表组：组件类型 + 占位符，上下排列 ---
+    wxBoxSizer* tableSizer = new wxBoxSizer(wxVERTICAL);
+
+    // 组件类型表：内容由 ComponentRegistry 运行时生成，避免与代码漂移
+    wxStaticText* typeLabel = new wxStaticText(bundleTab, wxID_ANY,
+                                               L"组件类型（ComponentType）:");
+    typeLabel->SetFont(wxFont(9, wxFONTFAMILY_DEFAULT, wxFONTSTYLE_NORMAL, wxFONTWEIGHT_BOLD));
+    tableSizer->Add(typeLabel, 0, wxLEFT | wxTOP, 8);
+
+    // 初始高度用 wxSize(360, -1) 让 sizer 按 proportion 均分纵向空间；
+    // 若给死高度（如 380/220），wxListCtrl 的 best-size 会让组件类型表
+    // 抢占大部分纵向空间，占位符表被挤到只剩两三行。
+    bundleTypeTable_ = new wxListCtrl(bundleTab, wxID_ANY, wxDefaultPosition, wxSize(360, -1),
+                                      wxLC_REPORT | wxLC_SINGLE_SEL | wxLC_NO_HEADER);
+    bundleTypeTable_->InsertColumn(0, L"枚举", wxLIST_FORMAT_LEFT, 150);
+    bundleTypeTable_->InsertColumn(1, L"值", wxLIST_FORMAT_CENTER, 40);
+    bundleTypeTable_->InsertColumn(2, L"Xray 节", wxLIST_FORMAT_LEFT, 110);
+    bundleTypeTable_->InsertColumn(3, L"SingBox 节", wxLIST_FORMAT_LEFT, 110);
+    bundleTypeTable_->InsertColumn(4, L"策略", wxLIST_FORMAT_CENTER, 70);
+    tableSizer->Add(bundleTypeTable_, 1, wxEXPAND | wxALL, 8);
+
+    // 占位符表：与 ConfigBuilder::variablesToMap() 一一对应
+    wxStaticText* varLabel = new wxStaticText(bundleTab, wxID_ANY,
+                                              L"占位符（运行时由 ConfigBuilder 替换）:");
+    varLabel->SetFont(wxFont(9, wxFONTFAMILY_DEFAULT, wxFONTSTYLE_NORMAL, wxFONTWEIGHT_BOLD));
+    tableSizer->Add(varLabel, 0, wxLEFT | wxTOP, 8);
+
+    // 同样用 wxSize(360, -1)，与组件类型表等分纵向空间
+    bundleVarTable_ = new wxListCtrl(bundleTab, wxID_ANY, wxDefaultPosition, wxSize(360, -1),
+                                     wxLC_REPORT | wxLC_SINGLE_SEL | wxLC_NO_HEADER);
+    bundleVarTable_->InsertColumn(0, L"占位符", wxLIST_FORMAT_LEFT, 200);
+    bundleVarTable_->InsertColumn(1, L"说明", wxLIST_FORMAT_LEFT, 300);
+    tableSizer->Add(bundleVarTable_, 1, wxEXPAND | wxALL, 8);
+
+    editorRowSizer->Add(tableSizer, 0, wxEXPAND);
+
+    mainSizer->Add(editorRowSizer, 1, wxEXPAND);
+
+    populateBundleTypeTable();
+    populateBundleVarTable();
 
     bundleTab->SetSizer(mainSizer);
     templateSubNotebook_->AddPage(bundleTab, L"组件包配置");
+}
+
+void ConfigDialog::populateBundleTypeTable() {
+    if (bundleTypeTable_ == nullptr) return;
+
+    config::ComponentRegistry& registry = config::ComponentRegistry::instance();
+    const std::vector<config::ComponentType>& types = registry.getAllTypes();
+
+    long row = 0;
+    for (std::vector<config::ComponentType>::const_iterator it = types.begin();
+         it != types.end(); ++it, ++row) {
+        const config::ComponentMetadata* meta = registry.getMetadata(*it);
+        if (meta == nullptr) continue;
+
+        const wxString enumName = componentTypeName(*it);
+
+        const wxString xraySection = meta->configSection.empty()
+                                         ? wxString(L"（无）")
+                                         : wxString::FromUTF8(meta->configSection.c_str());
+        const wxString sbSection = meta->singboxSection.empty()
+                                       ? wxString(L"（无）")
+                                       : wxString::FromUTF8(meta->singboxSection.c_str());
+
+        wxString strategy;
+        switch (meta->strategy) {
+            case config::CombinationStrategy::OVERRIDE: strategy = L"OVERRIDE"; break;
+            case config::CombinationStrategy::APPEND:  strategy = L"APPEND"; break;
+            case config::CombinationStrategy::MERGE:   strategy = L"MERGE"; break;
+            default:                                   strategy = L"?"; break;
+        }
+
+        bundleTypeTable_->InsertItem(row, enumName);
+        bundleTypeTable_->SetItem(row, 1, wxString::Format(L"%d", static_cast<int>(*it)));
+        bundleTypeTable_->SetItem(row, 2, xraySection);
+        bundleTypeTable_->SetItem(row, 3, sbSection);
+        bundleTypeTable_->SetItem(row, 4, strategy);
+    }
+}
+
+void ConfigDialog::populateBundleVarTable() {
+    if (bundleVarTable_ == nullptr) return;
+
+    // 顺序与说明对齐 ConfigBuilder::variablesToMap()（src/config/ConfigBuilder.cpp:35-46）
+    struct VarRow { const wchar_t* name; const wchar_t* desc; };
+    static const VarRow kVars[] = {
+        { L"${socksPort}",          L"SOCKS 入站端口（int）" },
+        { L"${apiPort}",             L"API 端口（int，仅 Xray）" },
+        { L"${probeUrl}",            L"探测 URL（string）" },
+        { L"${observatoryInterval}", L"Observatory 间隔（int，毫秒）" },
+        { L"${balancerStrategy}",    L"负载均衡策略（string）" },
+        { L"${enableObservatory}",   L"启用 observatory（\"true\"/\"false\"）" },
+        { L"${enableCnDirect}",      L"启用 CN 直连分流（\"true\"/\"false\"）" },
+        { L"${blockQuic}",           L"阻断 QUIC（\"true\"/\"false\"）" }
+    };
+    const int count = static_cast<int>(sizeof(kVars) / sizeof(kVars[0]));
+
+    for (int i = 0; i < count; ++i) {
+        bundleVarTable_->InsertItem(i, kVars[i].name);
+        bundleVarTable_->SetItem(i, 1, kVars[i].desc);
+    }
 }
 
 void ConfigDialog::loadBundles() {
@@ -1677,8 +1233,14 @@ void ConfigDialog::loadBundles() {
         bundleList_->SetItem(row, 5, bundle.enabled ? L"✓" : L"✗");
     }
 
-    // 选中第一项
+    // 选中第一项。
+    // DeleteAllItems 后行状态本应被清空，但为稳妥仍显式清除所有行的选中位：
+    // SetItemState 只按掩码设置**本行**状态，不会清除其它行；
+    // 一旦出现多行同时选中，onBundleSave 的 GetNextItem 会取到错误的行。
     if (!bundles_.empty()) {
+        for (long r = 0; r < bundleList_->GetItemCount(); ++r) {
+            bundleList_->SetItemState(r, 0, wxLIST_STATE_SELECTED | wxLIST_STATE_FOCUSED);
+        }
         bundleList_->SetItemState(0, wxLIST_STATE_SELECTED | wxLIST_STATE_FOCUSED,
                                   wxLIST_STATE_SELECTED | wxLIST_STATE_FOCUSED);
         wxListEvent selEvent;
@@ -1723,7 +1285,153 @@ void ConfigDialog::onBundleSelection(wxListEvent& event) {
     }
     root["components"] = std::move(comps);
 
-    bundleEditor_->ChangeValue(wxString(boost::json::serialize(root)));
+    // 多行美化：boost::json::serialize 产出单行压缩 JSON，编辑器是
+    // DONTWRAP 的，只能横向滚动才看得到结构。改用 prettyJsonOrRaw
+    // （解析失败/空串时原样返回，保证恒有可见内容）。
+    bundleEditor_->ChangeValue(
+        wxString::FromUTF8(prettyJsonOrRaw(boost::json::serialize(root)).c_str()));
+}
+
+void ConfigDialog::onBundleNew(wxCommandEvent& event) {
+    (void)event;
+    if (!bundleEditor_ || !db_) return;
+
+    // 1. 输入 ID
+    wxTextEntryDialog idDlg(this, L"请输入新组件包的 ID：", L"新增组件包", L"xray_CUSTOM");
+    if (idDlg.ShowModal() != wxID_OK) return;
+    const std::string newId = idDlg.GetValue().Trim(true).Trim(false).ToStdString();
+    if (newId.empty()) {
+        wxMessageBox(L"组件包 ID 不能为空", L"提示", wxOK | wxICON_INFORMATION);
+        return;
+    }
+
+    config::ComponentBundleDAO dao(db_);
+
+    // 2. 唯一性校验
+    if (dao.getById(newId).has_value()) {
+        wxMessageBox(L"组件包 '" + wxString(newId) + L"' 已存在，请换一个 ID",
+                     L"提示", wxOK | wxICON_INFORMATION);
+        return;
+    }
+
+    // 3. 选择核心类型
+    wxArrayString coreChoices;
+    coreChoices.Add(L"Xray");
+    coreChoices.Add(L"SingBox");
+    wxSingleChoiceDialog coreDlg(this, L"请选择该组件包适用的核心：", L"核心类型", coreChoices);
+    coreDlg.SetSelection(0);
+    if (coreDlg.ShowModal() != wxID_OK) return;
+    const bool isSingBox = (coreDlg.GetSelection() == 1);
+    const wxString coreName = coreChoices[coreDlg.GetSelection()];
+
+    // 3.5 选择初始组件类型。
+    // 组件的 `type`（ComponentType 枚举值）是**必填**字段——保存前 SchemaValidator
+    // 会校验 `components[i].type` 必须是 0..14 的整数，缺失即报
+    // 「ComponentBundle 'components[0]' missing integer 'type'」并拒绝保存。
+    // 手工往骨架里补组件极易漏写该字段，故这里让用户选一个类型，
+    // 新建时直接把 {"type": N, "params": {}} 预置进 components。
+    const std::vector<config::ComponentType>& allTypes =
+        config::ComponentRegistry::instance().getAllTypes();
+    wxArrayString typeChoices;
+    typeChoices.Add(L"暂不添加组件（components 为空数组）");
+    for (std::vector<config::ComponentType>::const_iterator it = allTypes.begin();
+         it != allTypes.end(); ++it) {
+        const config::ComponentMetadata* meta =
+            config::ComponentRegistry::instance().getMetadata(*it);
+        const wxString section = (meta != nullptr && !meta->configSection.empty())
+                                     ? wxString::FromUTF8(meta->configSection.c_str())
+                                     : wxString(L"（无配置节）");
+        typeChoices.Add(wxString::Format(L"%s  —  %s", componentTypeName(*it), section));
+    }
+    wxSingleChoiceDialog typeDlg(this,
+                                 L"请选择要预置的组件类型（会自动填好 type 字段）：",
+                                 L"初始组件类型", typeChoices);
+    typeDlg.SetSelection(0);
+    if (typeDlg.ShowModal() != wxID_OK) return;
+    const bool addInitialComponent = (typeDlg.GetSelection() > 0);
+    const config::ComponentType initialType =
+        addInitialComponent
+            ? allTypes[static_cast<std::size_t>(typeDlg.GetSelection() - 1)]
+            : config::ComponentType::ENV;
+
+    // 4. 以骨架落库。
+    //    立即落库而非「草稿态」，是因为 onBundleSave 要求先选中列表行，
+    //    只填编辑器不落库会让后续保存被前置条件挡住。
+    //    components 视用户选择：预置一个带 type 的组件，或保持空数组。
+    config::ComponentBundle bundle;
+    bundle.id = newId;
+    bundle.name = newId;
+    bundle.description = "Manually created bundle (" + coreName.ToStdString() + ")";
+    bundle.coreType = isSingBox ? config::CoreType::SINGBOX : config::CoreType::XRAY;
+    bundle.version = 1;
+    bundle.enabled = true;
+    bundle.components.clear();
+    if (addInitialComponent) {
+        config::ComponentConfig comp;
+        comp.type = initialType;
+        comp.params.clear();
+        comp.id.clear();
+        bundle.components.push_back(comp);
+    }
+
+    if (!dao.save(bundle)) {
+        wxMessageBox(L"创建失败，请查看日志", L"错误", wxOK | wxICON_ERROR);
+        return;
+    }
+
+    // 5. 刷新并选中新建行。
+    //    必须先清空所有行的选中位再选中目标行：wxListCtrl::SetItemState 是
+    //    「按掩码设置本行状态」，**不会**清除其它行（msw/listctrl.cpp 走
+    //    LVM_SETITEMSTATE 逐行下发）。若不先清空，新增前已选中的行（如 xray_LOG）
+    //    会与新行**同时**处于选中态；onBundleSave 用 GetNextItem 取的是
+    //    **第一个**选中行，会拿到旧行而非新行 → 与编辑器内容不匹配 →
+    //    误报「组件包 ID 已存在」（截图 bin/log/18487d7e-*.png）。
+    loadBundles();
+    if (bundleList_) {
+        for (long r = 0; r < bundleList_->GetItemCount(); ++r) {
+            bundleList_->SetItemState(r, 0, wxLIST_STATE_SELECTED | wxLIST_STATE_FOCUSED);
+        }
+        for (std::size_t i = 0; i < bundles_.size(); ++i) {
+            if (bundles_[i].id == newId) {
+                bundleList_->SetItemState(static_cast<long>(i),
+                                          wxLIST_STATE_SELECTED | wxLIST_STATE_FOCUSED,
+                                          wxLIST_STATE_SELECTED | wxLIST_STATE_FOCUSED);
+                bundleList_->EnsureVisible(static_cast<long>(i));
+                break;
+            }
+        }
+    }
+
+    // 6. 编辑器展示骨架供继续编辑（不伪造 wxListEvent 去调 onBundleSelection，
+    //    它只从列表读选中行，直接构造编辑内容更安全）
+    {
+        boost::json::object root;
+        root["id"] = bundle.id;
+        root["name"] = bundle.name;
+        root["description"] = bundle.description;
+        root["coreType"] = static_cast<int>(bundle.coreType);
+        root["version"] = bundle.version;
+        root["enabled"] = bundle.enabled;
+        // 与落库内容保持一致：预置组件时把 {"type": N, "params": {}} 展示出来，
+        // 用户只需在 params 里填内容，不必自己补 type 字段。
+        boost::json::array compsJson;
+        for (std::size_t i = 0; i < bundle.components.size(); ++i) {
+            boost::json::object compObj;
+            compObj["type"] = static_cast<int>(bundle.components[i].type);
+            compObj["params"] = boost::json::object();
+            compsJson.push_back(compObj);
+        }
+        root["components"] = compsJson;
+        bundleEditor_->ChangeValue(
+            wxString::FromUTF8(prettyJsonOrRaw(boost::json::serialize(root)).c_str()));
+    }
+
+    // 7. 新建包尚未被任何链引用，同步预期为 0（与保存/删除路径保持一致）
+    config::TemplateDecomposer decomposer(db_);
+    decomposer.syncConfigsFromChains(newId);
+
+    wxMessageBox(L"已创建组件包 '" + wxString(newId) + L"'，请在右侧编辑 JSON 后点「保存」",
+                 L"成功", wxOK | wxICON_INFORMATION);
 }
 
 void ConfigDialog::onBundleSave(wxCommandEvent& event) {
@@ -1735,19 +1443,56 @@ void ConfigDialog::onBundleSave(wxCommandEvent& event) {
         return;
     }
 
-    // 解析 JSON
-    auto parseResult = boost::json::parse(bundleEditor_->GetValue().ToStdString());
-    if (parseResult.is_null()) {
-        wxMessageBox(L"JSON 解析失败", L"错误", wxOK | wxICON_ERROR);
+// 解析 + 校验组件包 JSON。
+    // 统一走 SchemaValidator::parseAndValidateComponentBundle：它用 error_code 重载，
+    // 任何输入都不抛异常（单参 boost::json::parse 会抛，异常逃逸出 wx 事件处理器
+    // 会终止进程 → 用户所见闪崩；且落库在解析之后，故配置也一并丢失）。
+    // 该函数同时完成「语法 → 对象判型 → 结构校验」，非法即弹窗且不落库。
+    boost::json::value parseResult;
+    std::string schemaError;
+    if (!config::SchemaValidator::parseAndValidateComponentBundle(
+            bundleEditor_->GetValue().ToStdString(), parseResult, schemaError)) {
+        wxMessageBox(wxString::FromUTF8(schemaError.c_str())
+                         + L"\n\n未保存，请修正后重试。",
+                     L"校验失败", wxOK | wxICON_ERROR);
         return;
     }
 
-    auto& root = parseResult.as_object();
+    // 防御：wxListCtrl 默认允许多选（Ctrl+点击），而下面按 sel 取 bundles_[sel]
+    // 与编辑器内容比对。若多行同时选中，GetNextItem 只返回**第一个**选中行，
+    // 会与编辑器里显示的包不一致，导致误报「ID 已存在」或保存错对象。
+    int selectedCount = 0;
+    for (long r = bundleList_->GetNextItem(-1, wxLIST_NEXT_ALL, wxLIST_STATE_SELECTED);
+         r != -1;
+         r = bundleList_->GetNextItem(r, wxLIST_NEXT_ALL, wxLIST_STATE_SELECTED)) {
+        ++selectedCount;
+    }
+    if (selectedCount != 1) {
+        wxMessageBox(wxString::Format(
+            L"当前有 %d 个组件包处于选中状态，请只选中一个再保存。\n"
+            L"（列表支持 Ctrl/Shift 多选，会造成保存对象与编辑器内容不一致）",
+            selectedCount),
+            L"提示", wxOK | wxICON_INFORMATION);
+        return;
+    }
+
+    const boost::json::object& root = parseResult.as_object();
 
     config::ComponentBundle bundle = bundles_[sel];
 
     if (auto it = root.find("id"); it != root.end() && it->value().is_string()) {
         bundle.id = std::string(it->value().as_string());
+        // 改名会静默覆盖另一个组件包（DAO 以 id 为主键 upsert），必须拦下
+        if (bundle.id != bundles_[sel].id) {
+            for (std::size_t i = 0; i < bundles_.size(); ++i) {
+                if (bundles_[i].id == bundle.id) {
+                    wxMessageBox(L"组件包 ID 已存在：" + wxString::FromUTF8(bundle.id.c_str())
+                                     + L"\n请换一个未被占用的 ID。\n\n未保存。",
+                                 L"校验失败", wxOK | wxICON_ERROR);
+                    return;
+                }
+            }
+        }
     }
     if (auto it = root.find("name"); it != root.end() && it->value().is_string()) {
         bundle.name = std::string(it->value().as_string());
@@ -1794,8 +1539,43 @@ void ConfigDialog::onBundleSave(wxCommandEvent& event) {
 
     config::ComponentBundleDAO dao(db_);
     if (dao.save(bundle)) {
-        wxMessageBox(L"组件包已保存", L"成功", wxOK | wxICON_INFORMATION);
+        // 组件包变更 → 重新物化所有引用它的模板的 Config（配置生成的唯一来源）。
+        const std::string oldId = bundles_[sel].id;
+        const bool renamed = !oldId.empty() && oldId != bundle.id;
+
+        config::TemplateDecomposer decomposer(db_);
+        int synced = decomposer.syncConfigsFromChains(bundle.id);
+
+        wxString msg;
+        if (renamed) {
+            // 改名：依赖「旧 ID」的模板引用已悬空，按新 ID 同步找不到它们。
+            // 必须显式提示——它们的链解析会以「Bundle 不存在」失败，
+            // Config 停在旧值，需要用户到「组件链编辑」里改引用。
+            const std::vector<db::FullConfigTemplateItem> dependents =
+                db::FullConfigTemplateDAO(db_).getByBundleId(oldId);
+            msg = wxString::Format(L"组件包 ID 已由 '%s' 改为 '%s'。\n\n",
+                                   wxString::FromUTF8(oldId.c_str()),
+                                   wxString::FromUTF8(bundle.id.c_str()));
+            if (dependents.empty()) {
+                msg += L"没有模板引用旧 ID，已同步 "
+                     + wxString::Format(L"%d", synced) + L" 个模板。";
+            } else {
+                msg += wxString::Format(
+                    L"⚠ 以下 %d 个模板仍引用旧 ID，其组件链已无法解析，需到「组件链编辑」更新引用：\n",
+                    static_cast<int>(dependents.size()));
+                for (std::size_t i = 0; i < dependents.size(); ++i) {
+                    msg += L"  · " + wxString::FromUTF8(dependents[i].id.c_str()) + L"\n";
+                }
+            }
+        } else {
+            msg = wxString::Format(L"组件包已保存，已同步 %d 个模板的 Config。", synced);
+        }
+
         loadBundles();
+        // 模板列表的 ✅/⚠️ 状态列由 loadTemplates() 计算（isTemplateInSync），
+        // 组件包版本变化后必须刷新，否则状态指示停留在旧值。
+        loadTemplates();
+        wxMessageBox(msg, L"成功", wxOK | (renamed ? wxICON_WARNING : wxICON_INFORMATION));
     } else {
         wxMessageBox(L"保存失败", L"错误", wxOK | wxICON_ERROR);
     }
@@ -1816,9 +1596,31 @@ void ConfigDialog::onBundleDelete(wxCommandEvent& event) {
     }
 
     config::ComponentBundleDAO dao(db_);
-    if (dao.deleteById(bundles_[sel].id)) {
-        wxMessageBox(L"已删除", L"成功", wxOK | wxICON_INFORMATION);
+    const std::string deletedId = bundles_[sel].id;
+    if (dao.deleteById(deletedId)) {
+        // 删除组件包 → 引用它的模板将无法解析，需同步重物化 Config。
+        // 先在删除前定位依赖者：这些模板的链已悬空，物化会失败，
+        // 必须如实告知而不是让「已同步 N 个」掩盖问题。
+        const std::vector<db::FullConfigTemplateItem> dependents =
+            db::FullConfigTemplateDAO(db_).getByBundleId(deletedId);
+        config::TemplateDecomposer decomposer(db_);
+        const int synced = decomposer.syncConfigsFromChains(deletedId);
         loadBundles();
+        loadTemplates();
+
+        wxString msg = wxString::Format(L"已删除，已同步 %d 个模板的 Config。", synced);
+        if (!dependents.empty()) {
+            msg += wxString::Format(
+                L"\n\n⚠ 以下 %d 个模板的组件链仍引用已删除的 '%s'，其链已无法解析，"
+                L"需到「组件链编辑」移除该 Bundle：\n",
+                static_cast<int>(dependents.size()),
+                wxString::FromUTF8(deletedId.c_str()));
+            for (std::size_t i = 0; i < dependents.size(); ++i) {
+                msg += L"  · " + wxString::FromUTF8(dependents[i].id.c_str()) + L"\n";
+            }
+        }
+        wxMessageBox(msg, L"成功",
+                     wxOK | (dependents.empty() ? wxICON_INFORMATION : wxICON_WARNING));
     } else {
         wxMessageBox(L"删除失败", L"错误", wxOK | wxICON_ERROR);
     }
@@ -1836,43 +1638,27 @@ void ConfigDialog::onBundleRefresh(wxCommandEvent& event) {
 void ConfigDialog::createChainEditTab() {
     wxPanel* chainTab = new wxPanel(templateSubNotebook_);
 
-    // 配置 JSON 预览（resolveToConfig 的输出，占位符已替换）。
-    // 上下两个独立 panel（编辑区 / 预览区），预览框有 220px 初始高度与
-    // 160px 最小高度——对话框高度不足时 sizer 曾把预览框压成 0 高
-    // （只剩上方标签可见）。
-    //
-    // 父子关系约束：wxSizer::SetContainingWindow 会在 Debug 下断言
-    // 「sizer 管理的所有控件的 parent 必须是该 sizer 所属窗口」。因此
-    // editPanel 的 sizer 里不能放 parent 为 chainTab 的控件——必须先建
-    // editPanel、再以它为 parent 建控件。同理 previewPanel。
-    wxPanel* previewPanel = new wxPanel(chainTab);
-    wxStaticText* previewLabel = new wxStaticText(previewPanel, wxID_ANY,
-        L"配置 JSON 预览（resolveToConfig 输出）:");
-    wxTextCtrl* previewBox = new wxTextCtrl(previewPanel, wxID_ANY, wxEmptyString,
-                                           wxDefaultPosition, wxSize(-1, 220),
-                                           wxTE_MULTILINE | wxTE_READONLY | wxTE_DONTWRAP);
-    previewBox->SetFont(wxFont(9, wxFONTFAMILY_MODERN, wxFONTSTYLE_NORMAL,
-                               wxFONTWEIGHT_NORMAL));
-    // 硬下限：对话框高度不足时 sizer 会把可扩展控件压到 min size，
-    // 不设 min size 时 wxTextCtrl 可被压成 0 高（只剩上方标签可见）。
-    previewBox->SetMinSize(wxSize(200, 160));
-    wxBoxSizer* previewSizer = new wxBoxSizer(wxVERTICAL);
-    previewSizer->Add(previewLabel, 0, wxEXPAND | wxALL, 4);
-    previewSizer->Add(previewBox, 1, wxEXPAND | wxALL, 4);
-    previewPanel->SetSizer(previewSizer);
-
     // 编辑区：控件一律以 editPanel 为 parent（不可用 chainTab）。
+    // 父子关系约束：wxSizer::SetContainingWindow 在 Debug 下断言「sizer 管理的
+    // 所有控件的 parent 必须是该 sizer 所属窗口」，且会**递归**改写嵌套 sizer 的
+    // containing window（wxWidgets/src/common/sizer.cpp:988-995），
+    // 详见 docs/bugfix/2026-10-08-Bugfix-ChainTab-ParentAssert-v1.0.md §6。
+    // 因此本函数不套任何「带自有 sizer 的中间 panel」，所有控件直接挂 editPanel，
+    // 只用**不挂窗口的**纯布局 sizer 分栏。
     wxPanel* editPanel = new wxPanel(chainTab);
-    wxStaticText* editHint = new wxStaticText(editPanel, wxID_ANY,
-        L"左侧编辑组件链（顺序添加 Bundle + 参数 JSON），「解析」后右侧显示合并组件并生成下方配置预览；"
-        L"「保存」会把链写入当前模板（templateType=bundleChain）。");
-    wxButton* editSaveBtn = new wxButton(editPanel, wxID_ANY, L"保存链到当前模板");
-    editSaveBtn->Bind(wxEVT_BUTTON, &ConfigDialog::onChainSave, this);
-    wxStaticText* editStatus = new wxStaticText(editPanel, wxID_ANY, L"");
-    chainStatus_ = editStatus;
 
-    BundleChainEditor* chainEditor = new BundleChainEditor(editPanel, db_);
+    // ---------- 三个显示框的内容（parent 均为 editPanel）----------
+    // 第 1 栏：Bundle 列表（不要内置按钮条，按钮移到共享表头行，见下）
+    BundleChainEditor* chainEditor = new BundleChainEditor(editPanel, db_, /*showButtons=*/false);
     chainEditor_ = chainEditor;
+
+    // 第 2 栏：组件列表
+    ComponentListPanel* componentPanel = new ComponentListPanel(editPanel, db_);
+    componentListPanel_ = componentPanel;
+
+    // 注：解析状态文字（chainStatus_）在下方第 2 栏表头面板内创建——
+    //     它必须与组件列表同栏才能左对齐，且 parent 须是该面板本身。
+    // 解析回调：填充组件列表 + 状态文字 + 配置预览
     chainEditor_->onResolved = [this](const config::BundleChainResolveResult& result) {
         componentListPanel_->setComponents(result.components, result.sources);
         componentListPanel_->setConflictStatus(result.conflicts);
@@ -1896,34 +1682,107 @@ void ConfigDialog::createChainEditTab() {
         }
     };
 
-    ComponentListPanel* componentPanel = new ComponentListPanel(editPanel, db_);
-    componentListPanel_ = componentPanel;
+    // 第 3 栏：配置预览框（只读）
+    wxTextCtrl* previewBox = new wxTextCtrl(editPanel, wxID_ANY, wxEmptyString,
+                                           wxDefaultPosition, wxSize(-1, -1),
+                                           wxTE_MULTILINE | wxTE_READONLY | wxTE_DONTWRAP);
+    previewBox->SetFont(wxFont(9, wxFONTFAMILY_MODERN, wxFONTSTYLE_NORMAL,
+                               wxFONTWEIGHT_NORMAL));
+    previewBox->SetMinSize(wxSize(200, 160));
+    chainPreview_ = previewBox;
 
-    wxBoxSizer* editTitleSizer = new wxBoxSizer(wxHORIZONTAL);
-    editTitleSizer->Add(editHint, 1, wxEXPAND | wxRIGHT, 8);
-    editTitleSizer->Add(editSaveBtn, 0, 0, 0);
+    // ---------- 三栏：每栏 = [固定高度表头面板, 显示框] ----------
+    // 两个诉求原本互相矛盾：
+    //   · 左对齐要求「标签」与「框」在**同一栏**（否则是两条独立 sizer 行，
+    //     只能靠 wxLEFT 手调像素——实测连续五轮 0→50→100→120 仍未对齐，
+    //     因为 wxStaticText 与 wxTextCtrl 各有客户区边距，不体现在 sizer 计算里）；
+    //   · 顶对齐要求三栏表头**等高**。
+    // 两者可同时满足：每栏用**同栏内的**表头面板（min height 相同），
+    // 面板左边缘与该栏框的左边缘天然相同（同一纵向 sizer、均无左边距）。
+    //
+    // ⚠ 表头面板内的控件**必须以该面板为 parent**（先建面板、再以它建控件）。
+    //   若控件 parent 是 editPanel 却被塞进面板的 sizer，会触发
+    //   wxSizer::SetContainingWindow 的 parent 断言
+    //   （见 docs/bugfix/2026-10-08-Bugfix-ChainTab-ParentAssert-v1.0.md §6）。
+    const int kHeaderHeight = 30;
+
+    // 第 1 栏表头：添加 / 移除 / 解析
+    wxPanel* headerPanel1 = new wxPanel(editPanel);
+    headerPanel1->SetMinSize(wxSize(-1, kHeaderHeight));
+    {
+        wxButton* btnAddBundle = new wxButton(headerPanel1, wxID_ANY, L"添加 Bundle");
+        btnAddBundle->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { chainEditor_->triggerAddBundle(); });
+        wxButton* btnRemoveBundle = new wxButton(headerPanel1, wxID_ANY, L"移除");
+        btnRemoveBundle->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { chainEditor_->triggerRemoveBundle(); });
+        wxButton* btnResolve = new wxButton(headerPanel1, wxID_ANY, L"解析");
+        btnResolve->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { chainEditor_->triggerResolve(); });
+        wxBoxSizer* hs = new wxBoxSizer(wxHORIZONTAL);
+        hs->Add(btnAddBundle, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 6);
+        hs->Add(btnRemoveBundle, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 6);
+        hs->Add(btnResolve, 0, wxALIGN_CENTER_VERTICAL, 0);
+        headerPanel1->SetSizer(hs);
+    }
+
+    // 第 2 栏表头：解析状态（需求 2：置于组件类型显示框上方）
+    wxPanel* headerPanel2 = new wxPanel(editPanel);
+    headerPanel2->SetMinSize(wxSize(-1, kHeaderHeight));
+    {
+        wxStaticText* statusText = new wxStaticText(headerPanel2, wxID_ANY, L"");
+        chainStatus_ = statusText;
+        wxBoxSizer* hs = new wxBoxSizer(wxHORIZONTAL);
+        hs->Add(statusText, 1, wxALIGN_CENTER_VERTICAL, 0);
+        headerPanel2->SetSizer(hs);
+    }
+
+    // 第 3 栏表头：「配置预览:」+「保存链」并列（需求 3 + 4）
+    wxPanel* headerPanel3 = new wxPanel(editPanel);
+    headerPanel3->SetMinSize(wxSize(-1, kHeaderHeight));
+    {
+        wxStaticText* previewLabel = new wxStaticText(headerPanel3, wxID_ANY, L"配置预览:");
+        wxButton* editSaveBtn = new wxButton(headerPanel3, wxID_ANY, L"保存链");
+        editSaveBtn->Bind(wxEVT_BUTTON, &ConfigDialog::onChainSave, this);
+        wxBoxSizer* hs = new wxBoxSizer(wxHORIZONTAL);
+        hs->Add(previewLabel, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 8);
+        hs->AddStretchSpacer(1);
+        hs->Add(editSaveBtn, 0, wxALIGN_CENTER_VERTICAL, 0);
+        headerPanel3->SetSizer(hs);
+    }
+
+    // 宽度比例 2 : 3 : 4（Bundle : 组件 : 预览），三栏间距与表头一致
+    wxBoxSizer* col1 = new wxBoxSizer(wxVERTICAL);
+    col1->Add(headerPanel1, 0, wxEXPAND | wxBOTTOM, 6);
+    col1->Add(chainEditor, 1, wxEXPAND, 0);
+
+    wxBoxSizer* col2 = new wxBoxSizer(wxVERTICAL);
+    col2->Add(headerPanel2, 0, wxEXPAND | wxBOTTOM, 6);
+    col2->Add(componentPanel, 1, wxEXPAND, 0);
+
+    wxBoxSizer* col3 = new wxBoxSizer(wxVERTICAL);
+    col3->Add(headerPanel3, 0, wxEXPAND | wxBOTTOM, 6);
+    col3->Add(previewBox, 1, wxEXPAND, 0);
 
     wxBoxSizer* editBodySizer = new wxBoxSizer(wxHORIZONTAL);
-    editBodySizer->Add(chainEditor, 1, wxEXPAND | wxRIGHT, 8);
-    editBodySizer->Add(componentPanel, 1, wxEXPAND, 0);
+    editBodySizer->Add(col1, 2, wxEXPAND | wxRIGHT, 6);
+    editBodySizer->Add(col2, 3, wxEXPAND | wxRIGHT, 6);
+    editBodySizer->Add(col3, 4, wxEXPAND, 0);
+
+    // ---------- 「当前模板」行（需求 3：置于三个表头之上）----------
+    wxStaticText* templateLabel = new wxStaticText(editPanel, wxID_ANY,
+        L"当前模板：（未选择）");
+    templateLabel->SetFont(wxFont(9, wxFONTFAMILY_DEFAULT, wxFONTSTYLE_NORMAL,
+                                  wxFONTWEIGHT_BOLD));
+    chainTemplateLabel_ = templateLabel;
 
     wxBoxSizer* editSizer = new wxBoxSizer(wxVERTICAL);
-    editSizer->Add(editTitleSizer, 0, wxEXPAND | wxALL, 6);
-    editSizer->Add(editBodySizer, 1, wxEXPAND | wxLEFT | wxRIGHT, 6);
-    editSizer->Add(editStatus, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, 6);
+    editSizer->Add(templateLabel, 0, wxLEFT | wxRIGHT | wxTOP, 10);
+    editSizer->Add(editBodySizer, 1, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, 6);
     editPanel->SetSizer(editSizer);
 
-    // editPanel 与 previewPanel 都直接挂在 chainTab 上，因此直接进入
-    // chainTab 的 mainSizer。不可再套一层 topPanel：那样 editPanel 会变成
-    // topSizer（属 topPanel）的子项，而它的 parent 是 chainTab，违反
-    // 「sizer 管理的控件其 parent 必须是该 sizer 所属窗口」断言。
+    // editPanel 直接挂在 chainTab 上（不可再套 topPanel：那会使 editPanel 成为
+    // topSizer 的子项而其 parent 是 chainTab，违反 sizer 的 parent 断言）。
     wxBoxSizer* mainSizer = new wxBoxSizer(wxVERTICAL);
-    mainSizer->Add(editPanel, 3, wxEXPAND | wxALL, 4);
-    mainSizer->Add(previewPanel, 2, wxEXPAND | wxALL, 4);
+    mainSizer->Add(editPanel, 1, wxEXPAND | wxALL, 4);
     chainTab->SetSizer(mainSizer);
-
-    // 预览框成员指针（供 showChainPreview 写入）
-    chainPreview_ = previewBox;
 
     templateSubNotebook_->AddPage(chainTab, L"组件链编辑");
 }
@@ -1943,6 +1802,16 @@ void ConfigDialog::syncChainEditorFromSelection() {
     config::BundleChain chain;
     if (sel >= 0 && sel < static_cast<long>(templates_.size())) {
         const db::FullConfigTemplateItem& item = templates_[sel];
+        // 「当前模板」标签随选中项刷新：id + 备注（备注为空时只显示 id）
+        if (chainTemplateLabel_ != nullptr) {
+            wxString label = wxString::Format(L"当前模板：%s",
+                                              wxString::FromUTF8(item.id.c_str()));
+            if (!item.remarks.empty()) {
+                label += wxString::Format(L"（%s）",
+                                          wxString::FromUTF8(item.remarks.c_str()));
+            }
+            chainTemplateLabel_->SetLabel(label);
+        }
         chainEditor_->setCoreType(item.coreType == 2
                                       ? config::CoreType::XRAY
                                       : config::CoreType::SINGBOX);
@@ -1968,6 +1837,9 @@ void ConfigDialog::syncChainEditorFromSelection() {
         chainEditor_->setChain(chain);
     } else {
         chainEditor_->clear();
+        if (chainTemplateLabel_ != nullptr) {
+            chainTemplateLabel_->SetLabel(L"当前模板：（未选择）");
+        }
     }
     componentListPanel_->clear();
     if (chainStatus_ != nullptr) {
@@ -1997,6 +1869,15 @@ void ConfigDialog::onChainSave(wxCommandEvent& event) {
     // 重解析校验（ERROR 级冲突阻止保存，WARN 允许但提示）
     config::BundleChainResolver resolver(db_);
     const config::BundleChainResolveResult result = resolver.resolveBundleChain(chain);
+    // 必须先判 success 再判 conflicts：resolveBundleChain 遇到不存在的 Bundle 会
+    // 直接 return，此时 conflicts 仍是空 vector。只看 hasErrors() 会把「引用了已删除
+    // 组件包」的坏链当成无冲突放行，随后物化拿不到任何组件却报成功。
+    if (!result.success) {
+        wxMessageBox(wxString::FromUTF8(result.errorMessage.c_str())
+                         + L"\n\n请在「组件链编辑」中移除该 Bundle 后再保存。",
+                     L"校验失败", wxOK | wxICON_ERROR);
+        return;
+    }
     if (ComponentListPanel::hasErrors(result.conflicts)) {
         wxMessageBox(L"组件链存在 ERROR 级冲突，请先修复后再保存", L"错误",
                      wxOK | wxICON_ERROR);
@@ -2033,9 +1914,24 @@ void ConfigDialog::onChainSave(wxCommandEvent& event) {
 
     db::FullConfigTemplateDAO dao(db_);
     if (dao.save(templates_[sel])) {
-        wxMessageBox(L"组件链已保存到模板 " + wxString(templates_[sel].id),
-                     L"成功", wxOK | wxICON_INFORMATION);
+        // 链变了 → 重新物化本模板的 Config（配置生成的唯一来源）。
+        // 只同步当前模板，避免覆盖其它模板可能存在的手工编辑。
+        config::TemplateDecomposer decomposer(db_);
+        const bool synced = decomposer.syncConfigFromChain(templates_[sel].id);
+
         loadTemplates();
+        // 物化失败时必须如实告知：链已落库但 Config 未更新，
+        // 此时「模板与链解析结果不同」的状态会持续存在，不能报「成功」误导用户。
+        if (synced) {
+            wxMessageBox(L"组件链已保存到模板 " + wxString(templates_[sel].id)
+                         + L"，并已同步该模板的 Config",
+                         L"成功", wxOK | wxICON_INFORMATION);
+        } else {
+            wxMessageBox(L"组件链已保存到模板 " + wxString(templates_[sel].id)
+                         + L"，但该模板的 Config 未能重新生成（请查看日志）。",
+                         L"部分成功", wxOK | wxICON_WARNING);
+        }
+        syncChainEditorFromSelection();
     } else {
         wxMessageBox(L"保存失败，请查看日志", L"错误", wxOK | wxICON_ERROR);
     }

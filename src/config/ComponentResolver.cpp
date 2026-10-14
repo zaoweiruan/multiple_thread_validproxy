@@ -53,9 +53,10 @@ ResolveResult ComponentResolver::resolve(
             return result;
         }
         
-        // Replace placeholders
-        std::map<std::string, boost::json::value> resolvedParams = 
-            replacePlaceholders(comp.params, ctx.vars);
+        // Replace placeholders（UI 预览可关闭：保留 ${...} 原文）
+        std::map<std::string, boost::json::value> resolvedParams =
+            ctx.substitutePlaceholders ? replacePlaceholders(comp.params, ctx.vars)
+                                       : comp.params;
         
         // Create component copy with resolved params
         ComponentConfig resolvedComp = comp;
@@ -65,7 +66,18 @@ ResolveResult ComponentResolver::resolve(
         applyComponent(config, resolvedComp, *metadata);
     }
     
-    // 4. Set result
+    // 4. sing-box 的路由节段名是 route，Xray 是 routing。
+    // ComponentRegistry 把 "route" 登记为 ROUTING 的别名，但合并逻辑固定写 "routing"，
+    // 这里按核心类型归一一次，否则 sing-box 模板会产出错误的节段名。
+    if (ctx.proxyType == ProxyType::SingBox && config.contains("routing")) {
+        boost::json::value routingVal = config.at("routing");
+        config.erase("routing");
+        if (!config.contains("route")) {
+            config["route"] = routingVal;
+        }
+    }
+
+    // 5. Set result
     result.config = boost::json::value(config);
     result.success = true;
     
@@ -325,6 +337,16 @@ void ComponentResolver::applyRoutingComponent(
         for (const auto& balancer : balancersIt->value().as_array()) {
             existingBalancers.push_back(balancer);
         }
+    }
+
+    // 其余标量键（domainStrategy、domainMatcher 等）直接覆盖。
+    // 早期实现只处理 rules/balancers，导致 domainStrategy 之类被静默丢弃。
+    for (boost::json::object::const_iterator kv = compParams.begin();
+         kv != compParams.end(); ++kv) {
+        if (kv->key() == "rules" || kv->key() == "balancers") {
+            continue;
+        }
+        routing[kv->key()] = kv->value();
     }
 }
 

@@ -258,7 +258,8 @@ TEST_CASE("ConfigDialog chain-edit tab resolves without wx assert", "[chainprevi
             ::GetWindowTextW(w, buf.data(), static_cast<int>(buf.size()));
             const std::wstring text(buf.data());
             // 预览框标签只在「组件链编辑」页存在
-            if (text.find(L"配置 JSON 预览") != std::wstring::npos) {
+            // （2026-10-10 由「配置 JSON 预览（resolveToConfig 输出）」改名为「配置预览:」）
+            if (text.find(L"配置预览") != std::wstring::npos) {
                 f->h = w;
                 return FALSE;
             }
