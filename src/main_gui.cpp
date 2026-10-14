@@ -12,6 +12,8 @@
 #include "config/ConfigFileStore.h"
 #include "config/ConfigJsonParser.h"
 #include "config/sections/LogConfigParser.h"
+#include "FullConfigTemplateDAO.h"
+#include "config/StepRegistry.h"
 
 #include <sqlite3.h>
 #include <windows.h>
@@ -91,7 +93,7 @@ int main(int argc, char* argv[]) {
     // Load configuration
     std::optional<config::AppConfig> appConfig = config::ConfigReader::load(configPath);
     if (!appConfig) {
-        Logger::write("Failed to load configuration file: " + configPath, LogLevel::ERR);
+        Logger::write("Failed to load configuration file: " + utils::toWindowsPath(configPath), LogLevel::ERR);
         Logger::close();
         return 1;
     }
@@ -119,11 +121,21 @@ int main(int argc, char* argv[]) {
     db = dbService.open(appConfig->database_path);
     if (!db) {
         std::string errMsg = "Failed to open database.\n\n";
-        errMsg += "Database path from config:\n" + appConfig->database_path;
+        errMsg += "Database path from config:\n" + utils::toWindowsPath(appConfig->database_path);
         MessageBoxA(NULL, errMsg.c_str(), "Database Error", MB_ICONERROR | MB_OK);
         Logger::close();
         return 1;
     }
+    
+    // Seed default config templates if table is empty
+    {
+        db::FullConfigTemplateDAO configTemplateDao(db);
+        configTemplateDao.createTableIfNotExists();
+        configTemplateDao.seedDefaultTemplates();
+    }
+
+    // Register all ConfigPipeline step handlers
+    config::registerAllStepHandlers();
 
     // Strip non-wxWidgets flags from argv before passing to wxEntry
     // (-ui, --ui, --gui are CLI-legacy flags from the old hybrid binary)

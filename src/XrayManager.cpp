@@ -4,11 +4,16 @@
 #include "XrayManager.h"
 #include "PortManager.h"
 #include "Logger.h"
+#include "Utils.h"
 #include <thread>
 #include <chrono>
 
 XrayManager* XrayManager::instance_ = nullptr;
 std::mutex XrayManager::instanceMutex_;
+
+// P2-1: per-apiPort single-flight registry for evaluateInstanceHealthThrottled.
+std::mutex XrayManager::g_portLockMapMutex;
+std::map<int, std::shared_ptr<std::mutex>> XrayManager::g_portLocks;
 
 /**
  * Bounded, crash-aware readiness check for a newly-started Xray instance.
@@ -63,10 +68,10 @@ XrayManager* XrayManager::getInstance() {
     return instance_;
 }
 
-XrayManager* XrayManager::getInstance(const std::string& xrayPath, const std::string& configDir, int workers) {
+XrayManager* XrayManager::getInstance(const std::string& xrayPath, const std::string& configDir, int workers, sqlite3* db) {
     std::lock_guard<std::mutex> lock(instanceMutex_);
     if (!instance_) {
-        instance_ = new XrayManager(xrayPath, configDir, workers);
+        instance_ = new XrayManager(xrayPath, configDir, workers, db);
     }
     return instance_;
 }
@@ -86,8 +91,8 @@ void XrayManager::release() {
     }
 }
 
-XrayManager::XrayManager(const std::string& xrayPath, const std::string& configDir, int workers)
-    : xrayPath_(xrayPath), configDir_(configDir), workers_(workers) {}
+XrayManager::XrayManager(const std::string& xrayPath, const std::string& configDir, int workers, sqlite3* db)
+    : xrayPath_(xrayPath), configDir_(configDir), workers_(workers), db_(db) {}
 
 XrayManager::~XrayManager() {
     if (!stopped_) {
@@ -104,7 +109,7 @@ int XrayManager::start(int count, int startPort, int apiPort) {
         count = workers_;
     }
     
-    Logger::write("XrayManager::start: count=" + std::to_string(count) + ", startPort=" + std::to_string(startPort) + ", apiPort=" + std::to_string(apiPort) + ", configDir=" + configDir_, LogLevel::REPORT);
+    Logger::write("XrayManager::start: count=" + std::to_string(count) + ", startPort=" + std::to_string(startPort) + ", apiPort=" + std::to_string(apiPort) + ", configDir=" + utils::toWindowsPath(configDir_), LogLevel::REPORT);
     
     std::vector<std::unique_ptr<XrayInstance>> startedInstances;
     int actualCount = 0;
@@ -136,7 +141,7 @@ int XrayManager::start(int count, int startPort, int apiPort) {
             break;
         }
 
-        std::unique_ptr<XrayInstance> instance = std::make_unique<XrayInstance>(xrayPath_, socksPort, apiPortAddr, configDir_);
+        std::unique_ptr<XrayInstance> instance = std::make_unique<XrayInstance>(xrayPath_, socksPort, apiPortAddr, configDir_, db_);
         if (instance->start()) {
             if (!waitInstanceReady(instance.get(), apiPortAddr)) {
                 Logger::write("XrayManager: API port " + std::to_string(apiPortAddr)
@@ -186,7 +191,17 @@ bool XrayManager::evaluateInstanceHealth(int apiPort) {
     // (stop the process, free both ports) and remove it from the pool.
     // The heavy stop() call runs OUTSIDE instancesMutex_ to keep the critical
     // section short (stop() waits up to ~1s for process exit).
+    // Phase 1 — locate the instance bound to apiPort, stop its process and
+    // remove it from the pool. Both port reservations are deliberately KEPT
+    // (see the comment at the erase below).
+    // The heavy stop() call runs OUTSIDE instancesMutex_ to keep the critical
+    // section short (stop() waits up to ~1s for process exit, and the
+    // ~XrayInstance destructor may block on handle cleanup as well).
     int socksPort = -1;
+    // P2-2: `stale` MUST be declared before the lock_guard. Declared inside,
+    // its destructor would run while instancesMutex_ is still held, defeating
+    // the whole point of moving stop() out of the critical section.
+    std::unique_ptr<XrayInstance> stale;
     {
         std::lock_guard<std::mutex> lock(instancesMutex_);
         for (std::vector<std::unique_ptr<XrayInstance>>::iterator it = instances_.begin();
@@ -205,13 +220,28 @@ bool XrayManager::evaluateInstanceHealth(int apiPort) {
                               ") process alive but API port unresponsive (possible hang) — releasing resources and relaunching with original config", LogLevel::WARN);
             }
 
-            std::unique_ptr<XrayInstance> stale = std::move(*it);
+            // P2-2 change 1: detach the instance here, still under the lock, so
+            // the container stays consistent — but do NOT stop it here.
+            stale = std::move(*it);
             instances_.erase(it);
-            stale->stop();
-            PortManager::freePort(socksPort);
-            PortManager::freePort(apiPort);
+            // P2-2 change 2: the two PortManager::freePort() calls that used to
+            // sit here are gone. XrayManager::start() already registered both
+            // ports in PortManager (src/PortManager.cpp:36 usedPorts_.insert),
+            // and the replacement below binds the very same pair. Freeing them
+            // would open a window in which another thread's findAvailable()
+            // hands those ports to a different consumer — exactly the race R7
+            // describes. Keeping the reservation is the fix; no reservePort()
+            // is needed because the entries were never removed.
             break;
         }
+    }
+    if (stale) {
+        // P2-2: heavy work with instancesMutex_ released, so other workers can
+        // keep querying the instance list while the old process exits.
+        // ~XrayInstance (via reset) also runs outside the lock, for the same
+        // reason `stale` was declared before the lock_guard above.
+        stale->stop();
+        stale.reset();
     }
 
     if (socksPort < 0) {
@@ -239,6 +269,30 @@ bool XrayManager::evaluateInstanceHealth(int apiPort) {
     PortManager::freePort(socksPort);
     PortManager::freePort(apiPort);
     return false;  // relaunch failed — ports freed; re-created on next start()
+}
+
+bool XrayManager::evaluateInstanceHealthThrottled(int apiPort) {
+    std::shared_ptr<std::mutex> portLock;
+    {
+        std::lock_guard<std::mutex> mapLock(g_portLockMapMutex);
+        std::map<int, std::shared_ptr<std::mutex>>::iterator it = g_portLocks.find(apiPort);
+        if (it == g_portLocks.end()) {
+            portLock = std::make_shared<std::mutex>();
+            g_portLocks[apiPort] = portLock;
+        } else {
+            portLock = it->second;
+        }
+    }  // g_portLockMapMutex released here — before the per-port mutex is taken
+
+    std::lock_guard<std::mutex> lock(*portLock);
+    const ULONGLONG now = GetTickCount64();
+    std::map<int, ULONGLONG>::iterator stamp = lastHealthRestart_.find(apiPort);
+    if (stamp != lastHealthRestart_.end() && stamp->second != 0 &&
+        (now - stamp->second) < kHealthRestartCooldownMs) {
+        return false;  // within the 30s cooldown — another reporter already ran
+    }
+    lastHealthRestart_[apiPort] = now;  // arm the cooldown even if the relaunch fails
+    return evaluateInstanceHealth(apiPort);
 }
 
 XrayInstance* XrayManager::getInstance(int index) {

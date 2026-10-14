@@ -5,10 +5,11 @@
 #include <mutex>
 #include <atomic>
 #include <windows.h>
+#include <sqlite3.h>
 
 class XrayInstance {
 public:
-    XrayInstance(const std::string& xrayPath, int socksPort, int apiPort, const std::string& configDir);
+    XrayInstance(const std::string& xrayPath, int socksPort, int apiPort, const std::string& configDir, sqlite3* db = nullptr);
     ~XrayInstance();
     
     bool start();
@@ -32,6 +33,7 @@ private:
     std::string explicitConfig_;
     std::string stdoutLogPath_;
     std::string stderrLogPath_;
+    sqlite3* db_;  // Optional: for ConfigBuilder template loading
     HANDLE processHandle_;
     HANDLE jobObject_;
     HANDLE stdoutFile_;

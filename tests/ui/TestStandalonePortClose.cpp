@@ -622,3 +622,82 @@ TEST_CASE("Standalone SOCKS port reuse over TIME_WAIT (xray SO_REUSEADDR probe)"
     }
     ::WSACleanup();
 }
+
+
+// ---------------------------------------------------------------------------
+// T6 (Spec §3.2 / Task 2): after a standalone proxy is stopped, the same port must be
+// immediately rebindable with NO SO_REUSEADDR. This is the observable contract behind
+// "关闭独立代理后能立刻绑定释放端口".
+// NOTE: no xray here — the TIME_WAIT-on-the-listen-port state is produced by our own
+// sockets (server side closes first), which is the same kernel state a killed xray
+// SOCKS5 listener leaves behind.
+// ---------------------------------------------------------------------------
+TEST_CASE("StopThenImmediateRebind_SamePort", "[portclose]") {
+    const int port = pickTestPort();
+    REQUIRE(port > 0);
+
+    WSADATA wsa{};
+    REQUIRE(::WSAStartup(MAKEWORD(2, 2), &wsa) == 0);
+
+    // 1. stand up a "listener" on the free port (what the standalone xray would do)
+    SOCKET listener = ::socket(AF_INET, SOCK_STREAM, 0);
+    REQUIRE(listener != INVALID_SOCKET);
+    sockaddr_in a{};
+    a.sin_family = AF_INET;
+    a.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    a.sin_port = htons(static_cast<u_short>(port));
+    REQUIRE(::bind(listener, reinterpret_cast<sockaddr*>(&a), sizeof(a)) == 0);
+    REQUIRE(::listen(listener, 1) == 0);
+    REQUIRE(predicateSaysOccupied(port));
+
+    // 2. open and accept one connection, then close the ACCEPTED socket first so the
+    //    TIME_WAIT row lands on `port` itself (server = active closer), exactly like
+    //    the port left behind by a killed xray.
+    SOCKET client = ::socket(AF_INET, SOCK_STREAM, 0);
+    REQUIRE(client != INVALID_SOCKET);
+    REQUIRE(::connect(client, reinterpret_cast<sockaddr*>(&a), sizeof(a)) == 0);
+    SOCKET accepted = ::accept(listener, nullptr, nullptr);
+    REQUIRE(accepted != INVALID_SOCKET);
+    ::closesocket(accepted);
+
+    // 3. destroy the listener (its LISTEN row disappears) and the client
+    ::closesocket(listener);
+    ::closesocket(client);
+
+    // 4. wait for the LISTEN row to be gone while confirming a TIME_WAIT row really
+    //    appeared (so the assertions below cannot pass vacuously)
+    bool readsFree = false;
+    bool sawTimeWait = false;
+    for (int i = 0; i < 100 && !(readsFree && sawTimeWait); ++i) {
+        const std::vector<TcpRow> rows = tcpRowsForPort(port);
+        readsFree = true;
+        sawTimeWait = false;
+        for (std::size_t k = 0; k < rows.size(); ++k) {
+            if (rows[k].state == MIB_TCP_STATE_LISTEN) readsFree = false;
+            if (rows[k].state == MIB_TCP_STATE_TIME_WAIT) sawTimeWait = true;
+        }
+        if (!(readsFree && sawTimeWait)) ::Sleep(20);
+    }
+    std::printf("[portclose] T6: LISTEN gone=%s, TIME_WAIT present=%s`n",
+                readsFree ? "yes" : "no", sawTimeWait ? "yes" : "no");
+    CHECK(readsFree);
+    CHECK(sawTimeWait);
+
+    // 5. the decisive assertion: rebind the SAME port with no SO_REUSEADDR at all
+    SOCKET rebound = ::socket(AF_INET, SOCK_STREAM, 0);
+    REQUIRE(rebound != INVALID_SOCKET);
+    const int rb = ::bind(rebound, reinterpret_cast<sockaddr*>(&a), sizeof(a));
+    const int berr = (rb == SOCKET_ERROR) ? ::WSAGetLastError() : 0;
+    std::printf("[portclose] T6: immediate rebind of same port -> %s (no port shift needed)`n",
+                (rb == 0) ? "OK" : "FAILED");
+    CHECK(rb == 0);
+    if (rb == 0) {
+        CHECK(::listen(rebound, 1) == 0);
+    }
+    else {
+        std::printf("[portclose] T6: rebind failed, WSA=%d`n", berr);
+        (void)berr;
+    }
+    if (rebound != INVALID_SOCKET) ::closesocket(rebound);
+    ::WSACleanup();
+}

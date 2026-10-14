@@ -81,6 +81,47 @@ TEST(UrlValidationTest, InvalidLocalhostNoDot) {
     EXPECT_FALSE(utils::isValidUrlFormat("http://localhost"));
 }
 
+#include <iphlpapi.h>
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <iphlpapi.h>
+#include <vector>
+#include <vector>
+
+// Test-local oracle: does the kernel table still show a TIME_WAIT row for `port`?
+// Used to prove the T1 precondition actually materialised (avoid a vacuous pass).
+namespace tcpwait_oracle {
+    bool hasTimeWaitRow(int port) {
+        DWORD size = 0;
+        GetExtendedTcpTable(nullptr, &size, FALSE, AF_INET, TCP_TABLE_OWNER_PID_ALL, 0);
+        if (size == 0) return false;
+        std::vector<unsigned char> buf(size);
+        PMIB_TCPTABLE_OWNER_PID table =
+            reinterpret_cast<PMIB_TCPTABLE_OWNER_PID>(buf.data());
+        if (GetExtendedTcpTable(table, &size, FALSE, AF_INET,
+                                TCP_TABLE_OWNER_PID_ALL, 0) != NO_ERROR) return false;
+        for (DWORD i = 0; i < table->dwNumEntries; ++i) {
+            if (ntohs(static_cast<u_short>(table->table[i].dwLocalPort))
+                    != static_cast<u_short>(port)) continue;
+            if (table->table[i].dwState == MIB_TCP_STATE_TIME_WAIT) return true;
+        }
+        DWORD size6 = 0;
+        GetExtendedTcpTable(nullptr, &size6, FALSE, AF_INET6, TCP_TABLE_OWNER_PID_ALL, 0);
+        if (size6 == 0) return false;
+        std::vector<unsigned char> buf6(size6);
+        PMIB_TCP6TABLE_OWNER_PID table6 =
+            reinterpret_cast<PMIB_TCP6TABLE_OWNER_PID>(buf6.data());
+        if (GetExtendedTcpTable(table6, &size6, FALSE, AF_INET6,
+                                TCP_TABLE_OWNER_PID_ALL, 0) != NO_ERROR) return false;
+        for (DWORD i = 0; i < table6->dwNumEntries; ++i) {
+            if (ntohs(static_cast<u_short>(table6->table[i].dwLocalPort))
+                    != static_cast<u_short>(port)) continue;
+            if (table6->table[i].dwState == MIB_TCP_STATE_TIME_WAIT) return true;
+        }
+        return false;
+    }
+}  // namespace tcpwait_oracle
+
 // Port availability tests — requires Winsock
 #include <winsock2.h>
 #include <ws2tcpip.h>
@@ -116,7 +157,177 @@ TEST(PortCheckTest, IsPortAvailableReturnsTrueWhenPortFree) {
     EXPECT_TRUE(utils::isPortAvailable(19976));
 }
 
+TEST(PortCheckTest, TimeWaitOnlyRow_IsNotBlocking) {
+    WSADATA wsaData;
+    ASSERT_EQ(WSAStartup(MAKEWORD(2, 2), &wsaData), 0);
+
+    const int testPort = 19881;
+
+    // Manufacture a real TIME_WAIT row on testPort. The side that closes FIRST
+    // is the active closer and lands in TIME_WAIT, so close the accepted
+    // connection before destroying the LISTEN socket — that leaves a TIME_WAIT
+    // row on the listening port and no LISTEN row at all.
+    SOCKET listener = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    ASSERT_NE(listener, INVALID_SOCKET);
+    sockaddr_in addr = {};
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    addr.sin_port = htons(static_cast<u_short>(testPort));
+    ASSERT_EQ(bind(listener, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)), 0)
+        << "Cannot bind test port " << testPort;
+    ASSERT_EQ(listen(listener, 1), 0);
+
+    SOCKET client = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    ASSERT_NE(client, INVALID_SOCKET);
+    ASSERT_EQ(connect(client, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)), 0)
+        << "Cannot connect to test port " << testPort;
+    SOCKET server = accept(listener, nullptr, nullptr);
+    ASSERT_NE(server, INVALID_SOCKET);
+
+    closesocket(server);    // active close -> TIME_WAIT on (testPort, ephemeral)
+    closesocket(client);
+    closesocket(listener);  // drop LISTEN so only the TIME_WAIT row remains
+
+    // Timing guard: wait (max 2s) for the TIME_WAIT row to actually appear.
+    // Skipping rather than failing keeps the suite green on hosts where the
+    // kernel reclaims the endpoint before we can observe it.
+    bool sawTimeWait = false;
+    for (int i = 0; i < 100 && !sawTimeWait; ++i) {
+        if (tcpwait_oracle::hasTimeWaitRow(testPort)) {
+            sawTimeWait = true;
+        } else {
+            Sleep(20);
+        }
+    }
+    if (!sawTimeWait) {
+        WSACleanup();
+        GTEST_SKIP() << "TIME_WAIT row on port " << testPort
+                     << " never appeared within 2s; cannot verify the precondition";
+    }
+
+    // The TIME_WAIT row appeared in the kernel *after* the cache may have been
+    // populated by an earlier case, so drop the snapshot first — otherwise the
+    // probe below would answer from a stale snapshot and pass vacuously.
+    utils::invalidatePortSnapshot();
+    EXPECT_FALSE(utils::isPortBlocking(testPort))
+        << "A TIME_WAIT-only port must not be reported as blocking "
+           "(Windows: TIME_WAIT does not block rebind)";
+    EXPECT_FALSE(utils::isPortListening(testPort))
+        << "isPortListening must look at LISTEN only";
+
+    WSACleanup();
+}
+
+// T2 (Spec §3.1): the rollback switch restores the old "TIME_WAIT blocks"
+// behaviour, so the semantics change is reversible without a code revert.
+TEST(PortCheckTest, TimeWaitBlocking_ConfigToggleRestoresOldBehavior) {
+    utils::setTimeWaitBlocking(true);
+    EXPECT_TRUE(utils::configTimeWaitBlocking())
+        << "setTimeWaitBlocking(true) must be observable";
+    utils::setTimeWaitBlocking(false);
+    EXPECT_FALSE(utils::configTimeWaitBlocking())
+        << "default (false) must not block on TIME_WAIT";
+}
+
+// T3 (Spec §3.1): with nothing listening, waitPortReleased must return on the
+// first poll — the 1000ms budget is a ceiling, not a sleep.
+TEST(PortCheckTest, WaitPortReleased_ReturnsTrueWhenNoListener) {
+    WSADATA wsaData;
+    ASSERT_EQ(WSAStartup(MAKEWORD(2, 2), &wsaData), 0);
+
+    const int testPort = 19882;
+    const ULONGLONG startedAt = GetTickCount64();
+    EXPECT_TRUE(utils::waitPortReleased(testPort, 1000))
+        << "An unoccupied port must be reported released immediately";
+    const ULONGLONG elapsedMs = GetTickCount64() - startedAt;
+    EXPECT_LT(elapsedMs, 200u)
+        << "waitPortReleased must return on the first poll, not exhaust its budget";
+
+    WSACleanup();
+}
+
+// T4 (Spec §3.1): while a real LISTEN socket is held, waitPortReleased must
+// exhaust its budget and report false — it may not declare the port free.
+TEST(PortCheckTest, WaitPortReleased_TimesOutWhenListenerHeld) {
+    WSADATA wsaData;
+    ASSERT_EQ(WSAStartup(MAKEWORD(2, 2), &wsaData), 0);
+
+    const int testPort = 19883;
+    SOCKET sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    ASSERT_NE(sock, INVALID_SOCKET);
+    sockaddr_in addr = {};
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    addr.sin_port = htons(static_cast<u_short>(testPort));
+    ASSERT_EQ(bind(sock, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)), 0)
+        << "Cannot bind test port " << testPort;
+    ASSERT_EQ(listen(sock, 1), 0);
+
+    EXPECT_FALSE(utils::waitPortReleased(testPort, 300))
+        << "A held LISTEN socket must keep the port 'not released' until the budget expires";
+
+    closesocket(sock);
+    WSACleanup();
+}
+
+// T7 (Spec §3.2 / Task 2 P0-2): the convergence check AppController::stopStandaloneProxy
+// relies on. A socket we created and then closed must be reported released within the
+// budget — this is the contract that lets a just-stopped proxy rebind the same port.
+// Pure `utils` contract only: no PortManager (test_utils does not link it), no xray.
+TEST(PortCheckTest, WaitPortReleased_TrueAfterSyntheticClose) {
+    WSADATA wsaData;
+    ASSERT_EQ(WSAStartup(MAKEWORD(2, 2), &wsaData), 0);
+    const int testPort = 19884;   // 避开已用的 19881/19882/19883
+    SOCKET sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    ASSERT_NE(sock, INVALID_SOCKET);
+    sockaddr_in addr = {};
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    addr.sin_port = htons(static_cast<u_short>(testPort));
+    ASSERT_EQ(bind(sock, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)), 0) << "Cannot bind test port " << testPort;
+    ASSERT_EQ(listen(sock, 1), 0);
+    // Closing the listening socket is what stopStandaloneProxy does after the process
+    // is gone; the kernel may hold the LISTEN row for a short window afterwards.
+    closesocket(sock);
+    EXPECT_TRUE(utils::waitPortReleased(testPort, 1000))
+        << "A locally closed LISTEN socket must be reported released within the budget";
+    WSACleanup();
+}
+// T5 (P1-3): within the snapshot TTL, three consecutive probes must not each pay a
+// full two-family table enumeration. A refresh costs +2 on the counter (one per
+// address family), so 3 probes inside the TTL are expected to add <= 4.
+TEST(PortCheckTest, SnapshotCache_EnumeratesOnceWithinTtl) {
+    WSADATA wsaData;
+    ASSERT_EQ(WSAStartup(MAKEWORD(2, 2), &wsaData), 0);
+    const int testPort = 19885;
+    SOCKET sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    ASSERT_NE(sock, INVALID_SOCKET);
+    sockaddr_in addr = {};
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    addr.sin_port = htons(static_cast<u_short>(testPort));
+    ASSERT_EQ(bind(sock, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)), 0);
+    ASSERT_EQ(listen(sock, 1), 0);
+    // The kernel state just changed outside the cache's knowledge.
+    utils::invalidatePortSnapshot();
+
+    const long before = utils::testing::g_tcpTableEnumerationCount.load(
+                             std::memory_order_relaxed);
+    EXPECT_TRUE(utils::isPortBlocking(testPort));
+    EXPECT_TRUE(utils::isPortBlocking(testPort));
+    EXPECT_TRUE(utils::isPortBlocking(testPort));
+    const long delta = utils::testing::g_tcpTableEnumerationCount.load(
+                            std::memory_order_relaxed) - before;
+
+    EXPECT_GT(delta, 0L) << "the cache must have been populated at least once";
+    EXPECT_LE(delta, 4L) << "3 probes inside the TTL must not cost 3 full enumerations";
+
+    closesocket(sock);
+    utils::invalidatePortSnapshot();
+    WSACleanup();
+}
 TEST(PortCheckTest, FindAvailablePortReturnsNextFreePort) {
+
     // Create a listening socket to block a specific port
     WSADATA wsaData;
     ASSERT_EQ(WSAStartup(MAKEWORD(2, 2), &wsaData), 0);
@@ -131,6 +342,7 @@ TEST(PortCheckTest, FindAvailablePortReturnsNextFreePort) {
 
     ASSERT_EQ(bind(testSock, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)), 0);
     ASSERT_EQ(listen(testSock, 1), 0);
+    utils::invalidatePortSnapshot();
 
     // findAvailablePort should skip port 19877 and return 19878 (or higher)
     int found = utils::findAvailablePort(19877, 10);
@@ -160,6 +372,7 @@ TEST(PortCheckTest, OccupiedOnWildcardReportedUnavailable) {
     ASSERT_EQ(bind(sock, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)), 0)
         << "Cannot bind wildcard test port 19878";
     ASSERT_EQ(listen(sock, 1), 0);
+    utils::invalidatePortSnapshot();
 
     EXPECT_FALSE(utils::isPortAvailable(19878))
         << "Wildcard (0.0.0.0) listener must make the port unavailable";
@@ -194,6 +407,7 @@ TEST(PortCheckTest, OccupiedOnIpv6ReportedUnavailable) {
         WSACleanup();
         GTEST_SKIP() << "Cannot bind IPv6 test port 19879";
     }
+    utils::invalidatePortSnapshot();
 
     EXPECT_FALSE(utils::isPortAvailable(19879))
         << "IPv6 ([::]) listener must make the port unavailable";
@@ -217,6 +431,7 @@ TEST(PortCheckTest, FindAvailablePortSkipsWildcardOccupied) {
 
     ASSERT_EQ(bind(sock, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)), 0);
     ASSERT_EQ(listen(sock, 1), 0);
+    utils::invalidatePortSnapshot();
 
     int found = utils::findAvailablePort(19880, 10);
     EXPECT_NE(found, 19880)

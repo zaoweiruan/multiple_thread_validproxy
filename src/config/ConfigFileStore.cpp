@@ -6,6 +6,7 @@
 
 #include "Logger.h"
 #include "config/ConfigFileStore.h"
+#include "Utils.h"
 
 namespace config {
 
@@ -13,7 +14,7 @@ std::string ConfigFileStore::read(const std::string& path) {
     std::ifstream file(path);
     if (!file.is_open()) {
         std::string errMsg = "Failed to open configuration file.\n\n";
-        errMsg += "Path:\n" + path + "\n\n";
+        errMsg += "Path:\n" + utils::toWindowsPath(path) + "\n\n";
         errMsg += "Check that the file exists and is accessible.";
         throw std::runtime_error(errMsg);
     }
@@ -32,14 +33,14 @@ void ConfigFileStore::write(const std::string& path, const std::string& content)
 
     std::ofstream file(path);
     if (!file.is_open()) {
-        Logger::write("Failed to write config to: " + path, LogLevel::ERR);
-        throw std::runtime_error("Failed to write configuration file.\n\nPath:\n" + path + "\n\nCheck that the path is writable.");
+        Logger::write("Failed to write config to: " + utils::toWindowsPath(path), LogLevel::ERR);
+        throw std::runtime_error("Failed to write configuration file.\n\nPath:\n" + utils::toWindowsPath(path) + "\n\nCheck that the path is writable.");
     }
 
     file << content;
     file.close();
 
-    Logger::write("Config saved to: " + path, LogLevel::INFO);
+    Logger::write("Config saved to: " + utils::toWindowsPath(path), LogLevel::INFO);
 }
 
 } // namespace config

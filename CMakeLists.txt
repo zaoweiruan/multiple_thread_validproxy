@@ -134,6 +134,7 @@ set(CORE_SOURCES
     src/ProfileitemDAO.cpp
     src/SubitemDAO.cpp
     src/ProfileExItemDAO.cpp
+    src/FullConfigTemplateDAO.cpp
     src/ProxyBatchTester.cpp
     src/ProxyFinder.cpp
     src/ProxyTester.cpp
@@ -160,6 +161,10 @@ set(CORE_SOURCES
     src/config/ConfigJsonParser.cpp
     src/config/ConfigJsonSerializer.cpp
     src/config/ConfigValidator.cpp
+    src/config/ConfigBuilder.cpp
+    src/config/StepRegistry.cpp
+    src/config/ConfigPipeline.cpp
+    src/config/StepHandlers.cpp
     src/share/UriCodec.cpp
     src/share/Ipv6Formatter.cpp
     src/share/VLESSUriBuilder.cpp
@@ -190,6 +195,15 @@ set(CORE_SOURCES
     src/config/outbound/SingBoxTrojanOutboundBuilder.cpp
     src/config/outbound/SingBoxHysteria2OutboundBuilder.cpp
     src/config/outbound/SingBoxTUICOutboundBuilder.cpp
+    src/config/ComponentBundleDAO.cpp
+    src/config/ComponentRegistry.cpp
+    src/config/ComponentResolver.cpp
+    src/config/ConflictDetector.cpp
+    src/config/BundleChainResolver.cpp
+    src/config/StepToComponentMapper.cpp
+    src/config/ConfigGenerator.cpp
+    src/config/SchemaValidator.cpp
+    src/config/TemplateDecomposer.cpp
     src/test/ProxyBatchQuery.cpp
     src/test/XrayWorkerPool.cpp
     src/test/ProxyTestCounters.cpp
@@ -283,6 +297,12 @@ if(wxWidgets_FOUND)
         src/ui/LogPanel.cpp
         src/ui/ConfigDialog.h
         src/ui/ConfigDialog.cpp
+        src/ui/ComponentListPanel.h
+        src/ui/ComponentListPanel.cpp
+        src/ui/BundleChainEditor.h
+        src/ui/BundleChainEditor.cpp
+        src/ui/BundleSelectorDialog.h
+        src/ui/BundleSelectorDialog.cpp
         src/ui/StandaloneFloatingWidget.h
         src/ui/StandaloneFloatingWidget.cpp
         src/ui/AddPoolMemberDialog.h
@@ -293,6 +313,7 @@ if(wxWidgets_FOUND)
         src/ui/TrayIcon.cpp
         src/ui/UIApp.h
         src/ui/UIApp.cpp
+        src/ui/RefreshCommands.cpp
         src/ui/icons.rc
     )
 
@@ -400,7 +421,12 @@ add_dependencies(validproxy update_version_h)
         endforeach()
     endfunction()
 
-    copy_wx_dlls(validproxy)
+    # Scheme A (PATH-based): wx DLLs are resolved via the PATH env var
+    # pointing to ${VCPKG_ROOT}/installed/x64-mingw-dynamic/{,debug/}bin.
+    # The copy_wx_dlls() function is kept above for rollback; re-enable by
+    # uncommenting the three call sites (validproxy, test_log_statistics_event,
+    # test_unified_monitor_rows). No DLLs are copied to ${CMAKE_SOURCE_DIR}/bin.
+    # copy_wx_dlls(validproxy)
 
     # WIN32_EXECUTABLE creates GUI subsystem executable (no console window)
     set_target_properties(validproxy PROPERTIES
@@ -520,12 +546,13 @@ set_target_properties(test_standalone_config_port PROPERTIES
 )
 add_test(NAME StandaloneConfigPortTest COMMAND test_standalone_config_port)
 
-add_executable(test_dedup tests/test_dedup.cpp)
+add_executable(test_dedup tests/test_dedup.cpp src/update/Deduplicator.cpp src/ProfileitemDAO.cpp src/Utils.cpp src/Logger.cpp src/LoggerInstance.cpp)
 target_include_directories(test_dedup PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(test_dedup PRIVATE
     gtest_main
     gtest
     ${VCPKG_ROOT}/installed/x64-mingw-static/lib/libsqlite3.a
+    -lws2_32
 )
 set_target_properties(test_dedup PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
@@ -629,6 +656,9 @@ add_test(NAME AutoTaskTest COMMAND test_autotask)
 # -- Utils unit tests (pure functions, no external deps beyond gtest) --
 add_executable(test_utils tests/test_utils.cpp src/Utils.cpp src/Logger.cpp src/LoggerInstance.cpp)
 target_include_directories(test_utils PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+# P1-3 (Spec §6 Task 6 Step 2): exposes utils::testing::g_tcpTableEnumerationCount so
+# T5 SnapshotCache_EnumeratesOnceWithinTtl can observe snapshot refreshes.
+target_compile_definitions(test_utils PRIVATE TEST_BUILD=1)
 target_link_libraries(test_utils PRIVATE gtest_main gtest -lws2_32)
 set_target_properties(test_utils PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
@@ -663,6 +693,17 @@ set_target_properties(test_config_reader PROPERTIES
 )
 add_test(NAME ConfigReaderTest COMMAND test_config_reader)
 
+# -- RefreshCommands unit tests (command constants + status text mapping, pure functions) --
+add_executable(test_refresh_commands tests/test_refresh_commands.cpp src/ui/RefreshCommands.cpp)
+target_include_directories(test_refresh_commands PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(test_refresh_commands PRIVATE gtest_main gtest)
+set_target_properties(test_refresh_commands PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+)
+add_test(NAME RefreshCommandsTest COMMAND test_refresh_commands)
+
 # -- FloatingWidget pure-policy unit tests (no wx, no external deps beyond gtest) --
 add_executable(test_floating_widget_state tests/test_floating_widget_state.cpp)
 target_include_directories(test_floating_widget_state PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
@@ -677,10 +718,41 @@ add_test(NAME FloatingWidgetStateTest COMMAND test_floating_widget_state)
 # -- ConfigGenerator unit tests (SQLite + boost_json, now delegates to extracted components) --
 add_executable(test_config_generator
     tests/test_config_generator.cpp
+    tests/test_config_builder.cpp
+    tests/test_component_bundle.cpp
+    tests/test_component_registry.cpp
+    tests/test_component_resolver.cpp
+    tests/test_conflict_detector.cpp
+    tests/test_bundle_chain_resolver.cpp
+    tests/test_step_to_component_mapper.cpp
+    tests/test_config_generator_phase9.cpp
+    tests/test_schema_validator.cpp
+    tests/test_ech_switch.cpp
+    tests/test_template_decomposer.cpp
+    tests/test_phase11_integration.cpp
+    tests/test_phase11_cross_bundle.cpp
+    tests/test_phase11_performance.cpp
     src/ConfigGenerator.cpp
+    src/config/ConfigBuilder.cpp
+    src/config/StepRegistry.cpp
+    src/config/ConfigPipeline.cpp
+    src/config/StepHandlers.cpp
+    src/config/ComponentBundleDAO.cpp
+    src/config/ComponentRegistry.cpp
+    src/config/ComponentResolver.cpp
+    src/config/ConflictDetector.cpp
+    src/config/BundleChainResolver.cpp
+    src/config/StepToComponentMapper.cpp
+    src/config/ConfigGenerator.cpp
+    src/config/SchemaValidator.cpp
+    src/config/TemplateDecomposer.cpp
+    src/config/StreamSettingsBuilder.cpp
+    src/ConfigReader.cpp
+    src/FullConfigTemplateDAO.cpp
     src/ProfileitemDAO.cpp
 
     src/utils/DnsCache.cpp
+    src/utils/Base64Utils.cpp
     src/ProfileExItemDAO.cpp
     src/Logger.cpp
     src/LoggerInstance.cpp
@@ -689,7 +761,13 @@ add_executable(test_config_generator
     src/config/ProfileNormalizer.cpp
     src/config/StreamSettingsBuilder.cpp
     src/config/OutboundBuilderFactory.cpp
+    src/config/SingBoxOutboundBuilderFactory.cpp
     src/config/XrayConfigAssembler.cpp
+    src/config/ConfigPathResolver.cpp
+    src/config/ConfigFileStore.cpp
+    src/config/ConfigJsonParser.cpp
+    src/config/ConfigValidator.cpp
+    src/config/ConfigJsonSerializer.cpp
     src/config/outbound/VLESSOutboundBuilder.cpp
     src/config/outbound/VMessOutboundBuilder.cpp
     src/config/outbound/SSOutboundBuilder.cpp
@@ -699,6 +777,12 @@ add_executable(test_config_generator
     src/config/outbound/Hysteria2OutboundBuilder.cpp
     src/config/outbound/TUICOutboundBuilder.cpp
     src/config/outbound/WireGuardOutboundBuilder.cpp
+    src/config/outbound/SingBoxVLESSOutboundBuilder.cpp
+    src/config/outbound/SingBoxVMessOutboundBuilder.cpp
+    src/config/outbound/SingBoxSSOutboundBuilder.cpp
+    src/config/outbound/SingBoxTrojanOutboundBuilder.cpp
+    src/config/outbound/SingBoxHysteria2OutboundBuilder.cpp
+    src/config/outbound/SingBoxTUICOutboundBuilder.cpp
 )
 target_include_directories(test_config_generator PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(test_config_generator PRIVATE gtest_main gtest
@@ -717,6 +801,7 @@ add_test(NAME ConfigGeneratorTest COMMAND test_config_generator)
 add_executable(test_standalone_proxy_pool
     tests/TestStandaloneProxyPool.cpp
     src/ConfigGenerator.cpp
+    src/ConfigReader.cpp
     src/StandaloneProxyPool.cpp
     src/PortManager.cpp
     src/ProxyHealthEvaluator.cpp
@@ -725,14 +810,32 @@ add_executable(test_standalone_proxy_pool
     src/XrayApi.cpp
     src/ProfileitemDAO.cpp
     src/ProfileExItemDAO.cpp
+    src/FullConfigTemplateDAO.cpp
+    src/config/ConfigBuilder.cpp
+    src/config/StepRegistry.cpp
+    src/config/ConfigPipeline.cpp
+    src/config/StepHandlers.cpp
+    src/config/ConfigFileStore.cpp
+    src/config/ConfigPathResolver.cpp
+    src/config/ConfigJsonParser.cpp
+    src/config/ConfigJsonSerializer.cpp
+    src/config/ConfigValidator.cpp
+    src/config/OutboundBuilderFactory.cpp
+    src/config/SingBoxOutboundBuilderFactory.cpp
+    src/config/outbound/SingBoxVLESSOutboundBuilder.cpp
+    src/config/outbound/SingBoxVMessOutboundBuilder.cpp
+    src/config/outbound/SingBoxSSOutboundBuilder.cpp
+    src/config/outbound/SingBoxTrojanOutboundBuilder.cpp
+    src/config/outbound/SingBoxHysteria2OutboundBuilder.cpp
+    src/config/outbound/SingBoxTUICOutboundBuilder.cpp
     src/utils/DnsCache.cpp
+    src/utils/Base64Utils.cpp
     src/Logger.cpp
     src/LoggerInstance.cpp
     src/Utils.cpp
     src/config/ProfileConfigRepository.cpp
     src/config/ProfileNormalizer.cpp
     src/config/StreamSettingsBuilder.cpp
-    src/config/OutboundBuilderFactory.cpp
     src/config/XrayConfigAssembler.cpp
     src/config/outbound/VLESSOutboundBuilder.cpp
     src/config/outbound/VMessOutboundBuilder.cpp
@@ -743,6 +846,15 @@ add_executable(test_standalone_proxy_pool
     src/config/outbound/Hysteria2OutboundBuilder.cpp
     src/config/outbound/TUICOutboundBuilder.cpp
     src/config/outbound/WireGuardOutboundBuilder.cpp
+    src/config/ComponentBundleDAO.cpp
+    src/config/ComponentResolver.cpp
+    src/config/ConflictDetector.cpp
+    src/config/BundleChainResolver.cpp
+    src/config/StepToComponentMapper.cpp
+    src/config/ConfigGenerator.cpp
+    src/config/SchemaValidator.cpp
+    src/config/TemplateDecomposer.cpp
+    src/config/ComponentRegistry.cpp
 )
 target_include_directories(test_standalone_proxy_pool PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_compile_definitions(test_standalone_proxy_pool PRIVATE USE_GRPC_API=1)
@@ -767,13 +879,31 @@ add_executable(test_proxy_probe_pool
     src/XrayInstance.cpp
     src/XrayApi.cpp
     src/PortManager.cpp
+    src/ConfigReader.cpp
+    src/FullConfigTemplateDAO.cpp
+    src/config/ConfigBuilder.cpp
+    src/config/StepRegistry.cpp
+    src/config/ConfigPipeline.cpp
+    src/config/StepHandlers.cpp
+    src/config/ConfigFileStore.cpp
+    src/config/ConfigPathResolver.cpp
+    src/config/ConfigJsonParser.cpp
+    src/config/ConfigJsonSerializer.cpp
+    src/config/ConfigValidator.cpp
+    src/config/OutboundBuilderFactory.cpp
+    src/config/SingBoxOutboundBuilderFactory.cpp
+    src/config/outbound/SingBoxVLESSOutboundBuilder.cpp
+    src/config/outbound/SingBoxVMessOutboundBuilder.cpp
+    src/config/outbound/SingBoxSSOutboundBuilder.cpp
+    src/config/outbound/SingBoxTrojanOutboundBuilder.cpp
+    src/config/outbound/SingBoxHysteria2OutboundBuilder.cpp
+    src/config/outbound/SingBoxTUICOutboundBuilder.cpp
     src/Utils.cpp
     src/Logger.cpp
     src/LoggerInstance.cpp
     src/config/ProfileConfigRepository.cpp
     src/config/ProfileNormalizer.cpp
     src/config/StreamSettingsBuilder.cpp
-    src/config/OutboundBuilderFactory.cpp
     src/config/XrayConfigAssembler.cpp
     src/config/outbound/VLESSOutboundBuilder.cpp
     src/config/outbound/VMessOutboundBuilder.cpp
@@ -784,9 +914,19 @@ add_executable(test_proxy_probe_pool
     src/config/outbound/Hysteria2OutboundBuilder.cpp
     src/config/outbound/TUICOutboundBuilder.cpp
     src/config/outbound/WireGuardOutboundBuilder.cpp
+    src/utils/Base64Utils.cpp
     src/ProfileitemDAO.cpp
     src/ProfileExItemDAO.cpp
     src/utils/DnsCache.cpp
+    src/config/ComponentBundleDAO.cpp
+    src/config/ComponentResolver.cpp
+    src/config/ConflictDetector.cpp
+    src/config/BundleChainResolver.cpp
+    src/config/StepToComponentMapper.cpp
+    src/config/ConfigGenerator.cpp
+    src/config/SchemaValidator.cpp
+    src/config/TemplateDecomposer.cpp
+    src/config/ComponentRegistry.cpp
 )
 target_include_directories(test_proxy_probe_pool PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_compile_definitions(test_proxy_probe_pool PRIVATE USE_GRPC_API=1)
@@ -845,9 +985,21 @@ add_test(NAME ProxyBatchComponentsTest COMMAND test_proxy_batch_components)
 # -- ProxyBatchQuery integration tests (uses test DB) --
 add_executable(test_proxy_batch_query tests/test_proxy_batch_query.cpp src/test/ProxyBatchQuery.cpp
     src/ConfigGenerator.cpp src/ProfileitemDAO.cpp src/utils/DnsCache.cpp src/ProfileExItemDAO.cpp
+    src/ConfigReader.cpp src/FullConfigTemplateDAO.cpp src/config/ConfigBuilder.cpp
+    src/config/StepRegistry.cpp src/config/ConfigPipeline.cpp src/config/StepHandlers.cpp
+    src/config/ConfigFileStore.cpp src/config/ConfigPathResolver.cpp
+    src/config/ConfigJsonParser.cpp src/config/ConfigJsonSerializer.cpp src/config/ConfigValidator.cpp
     src/Logger.cpp src/LoggerInstance.cpp src/Utils.cpp
     src/config/ProfileConfigRepository.cpp src/config/ProfileNormalizer.cpp
     src/config/StreamSettingsBuilder.cpp src/config/OutboundBuilderFactory.cpp
+    src/config/SingBoxOutboundBuilderFactory.cpp
+    src/config/outbound/SingBoxVLESSOutboundBuilder.cpp
+    src/config/outbound/SingBoxVMessOutboundBuilder.cpp
+    src/config/outbound/SingBoxSSOutboundBuilder.cpp
+    src/config/outbound/SingBoxTrojanOutboundBuilder.cpp
+    src/config/outbound/SingBoxHysteria2OutboundBuilder.cpp
+    src/config/outbound/SingBoxTUICOutboundBuilder.cpp
+    src/utils/Base64Utils.cpp
     src/config/XrayConfigAssembler.cpp
     src/config/outbound/VLESSOutboundBuilder.cpp
     src/config/outbound/VMessOutboundBuilder.cpp
@@ -857,7 +1009,17 @@ add_executable(test_proxy_batch_query tests/test_proxy_batch_query.cpp src/test/
     src/config/outbound/HTTPOutboundBuilder.cpp
     src/config/outbound/Hysteria2OutboundBuilder.cpp
     src/config/outbound/TUICOutboundBuilder.cpp
-    src/config/outbound/WireGuardOutboundBuilder.cpp)
+    src/config/outbound/WireGuardOutboundBuilder.cpp
+    src/config/ComponentBundleDAO.cpp
+    src/config/ComponentResolver.cpp
+    src/config/ConflictDetector.cpp
+    src/config/BundleChainResolver.cpp
+    src/config/StepToComponentMapper.cpp
+    src/config/ConfigGenerator.cpp
+    src/config/SchemaValidator.cpp
+    src/config/TemplateDecomposer.cpp
+    src/config/ComponentRegistry.cpp
+)
 target_include_directories(test_proxy_batch_query PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(test_proxy_batch_query PRIVATE gtest_main gtest
     ${VCPKG_ROOT}/installed/x64-mingw-static/lib/libboost_json-gcc14-mt-x64-1_91.a
@@ -925,7 +1087,8 @@ if(wxWidgets_FOUND)
         RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
         RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
     )
-    copy_wx_dlls(test_log_statistics_event)
+    # Scheme A (PATH-based): rely on PATH env var; do not copy wx DLLs to tests/.
+    # copy_wx_dlls(test_log_statistics_event)
     add_test(NAME LogStatisticsEventTest COMMAND test_log_statistics_event)
 endif()
 
@@ -949,7 +1112,8 @@ if(wxWidgets_FOUND)
         RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
         RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
     )
-    copy_wx_dlls(test_unified_monitor_rows)
+    # Scheme A (PATH-based): rely on PATH env var; do not copy wx DLLs to tests/.
+    # copy_wx_dlls(test_unified_monitor_rows)
     add_test(NAME UnifiedMonitorRowsTest COMMAND test_unified_monitor_rows)
 endif()
 
@@ -1042,11 +1206,59 @@ endif()
 add_executable(test_xray_instance_stderr
     tests/test_xray_instance_stderr.cpp
     src/XrayInstance.cpp
+    src/ConfigReader.cpp
+    src/FullConfigTemplateDAO.cpp
+    src/config/ConfigBuilder.cpp
+    src/config/StepRegistry.cpp
+    src/config/ConfigPipeline.cpp
+    src/config/StepHandlers.cpp
+    src/config/ConfigFileStore.cpp
+    src/config/ConfigPathResolver.cpp
+    src/config/ConfigJsonParser.cpp
+    src/config/ConfigJsonSerializer.cpp
+    src/config/ConfigValidator.cpp
+    src/config/OutboundBuilderFactory.cpp
+    src/config/SingBoxOutboundBuilderFactory.cpp
+    src/config/outbound/SingBoxVLESSOutboundBuilder.cpp
+    src/config/outbound/SingBoxVMessOutboundBuilder.cpp
+    src/config/outbound/SingBoxSSOutboundBuilder.cpp
+    src/config/outbound/SingBoxTrojanOutboundBuilder.cpp
+    src/config/outbound/SingBoxHysteria2OutboundBuilder.cpp
+    src/config/outbound/SingBoxTUICOutboundBuilder.cpp
+    src/config/outbound/VLESSOutboundBuilder.cpp
+    src/config/outbound/VMessOutboundBuilder.cpp
+    src/config/outbound/SSOutboundBuilder.cpp
+    src/config/outbound/TrojanOutboundBuilder.cpp
+    src/config/outbound/SOCKSOutboundBuilder.cpp
+    src/config/outbound/HTTPOutboundBuilder.cpp
+    src/config/outbound/Hysteria2OutboundBuilder.cpp
+    src/config/outbound/TUICOutboundBuilder.cpp
+    src/config/outbound/WireGuardOutboundBuilder.cpp
+    src/utils/Base64Utils.cpp
+    src/Utils.cpp
+    src/ProfileitemDAO.cpp
+    src/ProfileExItemDAO.cpp
+    src/config/ProfileConfigRepository.cpp
+    src/config/ProfileNormalizer.cpp
+    src/config/StreamSettingsBuilder.cpp
+    src/config/XrayConfigAssembler.cpp
     src/Logger.cpp
     src/LoggerInstance.cpp
+    src/config/ComponentBundleDAO.cpp
+    src/config/ComponentResolver.cpp
+    src/config/ConflictDetector.cpp
+    src/config/BundleChainResolver.cpp
+    src/config/StepToComponentMapper.cpp
+    src/config/ConfigGenerator.cpp
+    src/config/SchemaValidator.cpp
+    src/config/TemplateDecomposer.cpp
+    src/config/ComponentRegistry.cpp
 )
 target_include_directories(test_xray_instance_stderr PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_link_libraries(test_xray_instance_stderr PRIVATE gtest_main gtest)
+target_link_libraries(test_xray_instance_stderr PRIVATE gtest_main gtest
+    ${VCPKG_ROOT}/installed/x64-mingw-static/lib/libsqlite3.a
+    ${VCPKG_ROOT}/installed/x64-mingw-static/lib/libboost_json-gcc14-mt-x64-1_91.a
+    -lws2_32)
 set_target_properties(test_xray_instance_stderr PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
     RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
@@ -1075,12 +1287,59 @@ add_executable(test_xray_manager_startup
     src/XrayManager.cpp
     src/XrayInstance.cpp
     src/PortManager.cpp
+    src/ConfigReader.cpp
+    src/FullConfigTemplateDAO.cpp
+    src/config/ConfigBuilder.cpp
+    src/config/StepRegistry.cpp
+    src/config/ConfigPipeline.cpp
+    src/config/StepHandlers.cpp
+    src/config/ConfigFileStore.cpp
+    src/config/ConfigPathResolver.cpp
+    src/config/ConfigJsonParser.cpp
+    src/config/ConfigJsonSerializer.cpp
+    src/config/ConfigValidator.cpp
+    src/config/OutboundBuilderFactory.cpp
+    src/config/SingBoxOutboundBuilderFactory.cpp
+    src/config/outbound/SingBoxVLESSOutboundBuilder.cpp
+    src/config/outbound/SingBoxVMessOutboundBuilder.cpp
+    src/config/outbound/SingBoxSSOutboundBuilder.cpp
+    src/config/outbound/SingBoxTrojanOutboundBuilder.cpp
+    src/config/outbound/SingBoxHysteria2OutboundBuilder.cpp
+    src/config/outbound/SingBoxTUICOutboundBuilder.cpp
+    src/config/outbound/VLESSOutboundBuilder.cpp
+    src/config/outbound/VMessOutboundBuilder.cpp
+    src/config/outbound/SSOutboundBuilder.cpp
+    src/config/outbound/TrojanOutboundBuilder.cpp
+    src/config/outbound/SOCKSOutboundBuilder.cpp
+    src/config/outbound/HTTPOutboundBuilder.cpp
+    src/config/outbound/Hysteria2OutboundBuilder.cpp
+    src/config/outbound/TUICOutboundBuilder.cpp
+    src/config/outbound/WireGuardOutboundBuilder.cpp
+    src/utils/Base64Utils.cpp
+    src/ProfileitemDAO.cpp
+    src/ProfileExItemDAO.cpp
+    src/config/ProfileConfigRepository.cpp
+    src/config/ProfileNormalizer.cpp
+    src/config/StreamSettingsBuilder.cpp
+    src/config/XrayConfigAssembler.cpp
     src/Utils.cpp
     src/Logger.cpp
     src/LoggerInstance.cpp
+    src/config/ComponentBundleDAO.cpp
+    src/config/ComponentResolver.cpp
+    src/config/ConflictDetector.cpp
+    src/config/BundleChainResolver.cpp
+    src/config/StepToComponentMapper.cpp
+    src/config/ConfigGenerator.cpp
+    src/config/SchemaValidator.cpp
+    src/config/TemplateDecomposer.cpp
+    src/config/ComponentRegistry.cpp
 )
 target_include_directories(test_xray_manager_startup PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_link_libraries(test_xray_manager_startup PRIVATE gtest_main gtest -lws2_32)
+target_link_libraries(test_xray_manager_startup PRIVATE gtest_main gtest
+    ${VCPKG_ROOT}/installed/x64-mingw-static/lib/libsqlite3.a
+    ${VCPKG_ROOT}/installed/x64-mingw-static/lib/libboost_json-gcc14-mt-x64-1_91.a
+    -lws2_32)
 set_target_properties(test_xray_manager_startup PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
     RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
@@ -1178,8 +1437,20 @@ add_test(NAME ProcessInspectorTest COMMAND test_process_inspector)
 # -- RegionBatchResolver unit tests (ip-api.com region resolution) --------------------
 add_executable(test_region_batch_resolver tests/test_region_batch_resolver.cpp
     src/RegionBatchResolver.cpp src/ConfigGenerator.cpp src/ProfileitemDAO.cpp
+    src/ConfigReader.cpp src/FullConfigTemplateDAO.cpp src/config/ConfigBuilder.cpp
+    src/config/StepRegistry.cpp src/config/ConfigPipeline.cpp src/config/StepHandlers.cpp
+    src/config/ConfigFileStore.cpp src/config/ConfigPathResolver.cpp
+    src/config/ConfigJsonParser.cpp src/config/ConfigJsonSerializer.cpp src/config/ConfigValidator.cpp
     src/config/ProfileConfigRepository.cpp src/config/ProfileNormalizer.cpp
     src/config/StreamSettingsBuilder.cpp src/config/OutboundBuilderFactory.cpp
+    src/config/SingBoxOutboundBuilderFactory.cpp
+    src/config/outbound/SingBoxVLESSOutboundBuilder.cpp
+    src/config/outbound/SingBoxVMessOutboundBuilder.cpp
+    src/config/outbound/SingBoxSSOutboundBuilder.cpp
+    src/config/outbound/SingBoxTrojanOutboundBuilder.cpp
+    src/config/outbound/SingBoxHysteria2OutboundBuilder.cpp
+    src/config/outbound/SingBoxTUICOutboundBuilder.cpp
+    src/utils/Base64Utils.cpp
     src/config/XrayConfigAssembler.cpp
     src/config/outbound/VLESSOutboundBuilder.cpp
     src/config/outbound/VMessOutboundBuilder.cpp
@@ -1238,6 +1509,7 @@ if(wxWidgets_FOUND AND BUILD_UI_TESTS)
             tests/ui/TestStandaloneProxyPool.cpp
             tests/ui/TestStandalonePortClose.cpp
             tests/ui/TestExitAssert.cpp
+            tests/ui/TestChainPreview.cpp
         )
         add_executable(UITests ${UI_FRAMEWORK_SOURCES} ${UI_TEST_SOURCES})
         target_include_directories(UITests PRIVATE
@@ -1261,7 +1533,8 @@ if(wxWidgets_FOUND AND BUILD_UI_TESTS)
         add_test(NAME UI_POOL COMMAND UITests "[pooldialog]")
         add_test(NAME UI_PORTCLOSE COMMAND UITests "[portclose]")
         add_test(NAME UI_EXITASSERT COMMAND UITests "[exitassert]")
-        set_tests_properties(UI_MAINWINDOW UI_SEARCH UI_CLEAR PROPERTIES
+        add_test(NAME UI_CHAINPREVIEW COMMAND UITests "[chainpreview]")
+        set_tests_properties(UI_MAINWINDOW UI_SEARCH UI_CLEAR UI_CHAINPREVIEW PROPERTIES
             TIMEOUT 120
             WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
         set_tests_properties(UI_FLOATINGWIDGET UI_POOL UI_PORTCLOSE UI_EXITASSERT PROPERTIES

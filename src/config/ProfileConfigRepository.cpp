@@ -25,7 +25,15 @@ std::vector<db::models::Profileitem> ProfileConfigRepository::loadProfiles(const
     Logger::write("[ConfigGenerator] SQL returned " + std::to_string(profiles.size()) + " profiles", LogLevel::INFO);
     
     std::vector<db::models::Profileitem> validProfiles;
-    for (db::models::Profileitem& p : profiles) {
+    validProfiles.reserve(profiles.size());
+    for (const db::models::Profileitem& src : profiles) {
+        // Skip proxies with empty required fields — they cannot be tested
+        if (src.address.empty() || src.port.empty() || src.configtype.empty()) {
+            Logger::write("[ConfigGenerator] Skipping proxy with empty required fields: " + src.indexid, LogLevel::WARN);
+            continue;
+        }
+        
+        db::models::Profileitem p = src;
         if (p.network.empty()) {
             Logger::write("[ConfigGenerator] Using default network 'tcp' for " + p.address + ":" + p.port, LogLevel::DEBUG);
             p.network = "tcp";

@@ -11,9 +11,11 @@
 #include "Events.h"
 #include "Logger.h"
 #include "Profileitem.h"
+#include "RefreshCommands.h"
 #include "ToolbarIcons.h"
 #include "NetworkMonitor.h"
 #include "version.h"
+#include "config/ConfigPathResolver.h"
 
 #include <wx/sizer.h>
 #include <wx/splitter.h>
@@ -323,7 +325,11 @@ Bind(wxEVT_SUBSCRIPTION_REFRESH, [this](SubscriptionRefreshEvent&) {
     if (proxyPanel_ && controller_) {
         controller_->loadProxiesAsync("", this);
     }
-    setStatusText(0, "Refresh: loaded all proxies");
+    if (statusTextProtected_.exchange(false)) {
+        rewriteRefreshStatusText();
+    } else {
+        setStatusText(0, "Refresh: loaded all proxies");
+    }
 });
 
 // ── Async proxy list loaded ───────────────────────────────────
@@ -332,7 +338,11 @@ Bind(wxEVT_PROXY_LIST_LOADED, [this](ProxyListLoadedEvent& evt) {
         proxyPanel_->loadProxies(evt.takeProxies(), evt.takeExItems(),
                                  evt.takeMaps(), evt.getSubId());
     }
-    setStatusText(0, "Loaded subscription: " + wxString(evt.getSubId()));
+    if (statusTextProtected_.exchange(false)) {
+        rewriteRefreshStatusText();
+    } else {
+        setStatusText(0, "Loaded subscription: " + wxString(evt.getSubId()));
+    }
 });
 
 // ── Async subscription list loaded ────────────────────────────
@@ -1053,7 +1063,7 @@ void MainFrame::onMenuImportSub(wxCommandEvent&) {
     if (dlg.ShowModal() == wxID_OK) {
         wxString url = dlg.GetValue();
         if (!url.empty()) {
-            controller_->importSubscription(url.ToStdString());
+            controller_->importSubscription(url.ToStdString(), this);
         }
     }
 }
@@ -1157,7 +1167,10 @@ void MainFrame::onMenuConfig(wxCommandEvent&) {
         delete configDialog_;
         configDialog_ = nullptr;
     }
-    configDialog_ = new ConfigDialog(this, controller_->getConfig());
+    // 获取 config.json 路径
+    std::string configPath = config::ConfigPathResolver(config::ConfigPathResolver::detectExeDir())
+                                .defaultConfigPath();
+    configDialog_ = new ConfigDialog(this, controller_->getConfig(), db_, configPath);
     if (configDialog_->ShowModal() == wxID_OK) {
         config::AppConfig cfg = configDialog_->getConfig();
         // Saving config while a USER-INITIATED async operation is running
@@ -1488,39 +1501,87 @@ void MainFrame::onToggleDetailPane(wxCommandEvent&) {
 }
 
 // -------------------------------------------------------------------
-//  StatusUpdateEvent handler — fallback for messages from worker
-//  threads that are NOT find-proxy payloads (already handled above
-//  in the Bind lambda).
+//  StatusUpdateEvent handler — routes refresh commands to panels,
+//  status bar, and log window.  Preserves existing DEDUP_* modal
+//  behaviour (P1 will remove the modal).
 // -------------------------------------------------------------------
 void MainFrame::onStatusUpdate(StatusUpdateEvent& event) {
-    wxString text = event.getText();
-    if (text == "DEDUP_OK") {
+    const std::string text = event.getText();
+
+    // ── Step 1: status-bar human-readable text ─────────────
+    const std::string status = ui::refresh_cmd::statusTextFor(text);
+    if (!status.empty()) {
+        statusTextPending_ = status;
+        statusTextProtected_ = true;
+        setStatusText(0, wxString(status));
+    }
+
+    // ── Step 2: panel reload ───────────────────────────────
+    if (text == std::string(ui::refresh_cmd::kDedupOk)) {
         if (subPanel_ && controller_) {
             controller_->loadSubscriptionsAsync(this);
         }
         if (proxyPanel_ && subPanel_) {
-            std::string currentSubId = subPanel_->getSelectedSubId();
+            const std::string currentSubId = subPanel_->getSelectedSubId();
             if (!currentSubId.empty()) {
                 controller_->loadProxiesAsync(currentSubId, this);
             }
         }
         wxMessageBox("Dedup completed.", "Dedup",
                      wxOK | wxICON_INFORMATION);
-        setStatusText(0, "Dedup completed.");
-    } else if (text == "DEDUP_FAIL") {
+        return;
+    }
+    if (text == std::string(ui::refresh_cmd::kDedupFail)) {
         wxMessageBox("Dedup failed.", "Dedup",
                      wxOK | wxICON_WARNING);
         setStatusText(0, "Dedup failed.");
-    } else if (text == "REGION_RESOLVE_DONE") {
-        // Region resolution (single or batch) finished: reload the proxy
-        // rows so the Region column reflects values written to ProfileItem
-        // by the background resolver.  refreshResults() alone is not enough
-        // because it only re-reads ProfileExItem test results.
+        return;
+    }
+    if (text == std::string(ui::refresh_cmd::kRegionResolveDone) ||
+        text == std::string(ui::refresh_cmd::kRowsChanged)) {
         if (proxyPanel_) {
             proxyPanel_->reloadFromDatabase();
         }
-    } else {
-        setStatusText(0, text);
+        // ProfileItem changes (Region / SubId) may also shift the
+        // "有效" count in the subscription panel (e.g. region
+        // resolution after a test run); refresh subscription counts
+        // as well.
+        if (subPanel_ && controller_) {
+            controller_->loadSubscriptionsAsync(this);
+        }
+        return;
+    }
+    if (text == std::string(ui::refresh_cmd::kResultsChanged)) {
+        if (proxyPanel_) {
+            proxyPanel_->refreshResults();
+        }
+        // ProfileExItem.Delay changes directly affect the "有效"
+        // count in the subscription panel.
+        if (subPanel_ && controller_) {
+            controller_->loadSubscriptionsAsync(this);
+        }
+        return;
+    }
+
+    // ── Unknown: distinguish protocol drift from normal text ─
+    if (text.rfind("DATA_", 0) == 0) {
+        Logger::write("Unknown refresh command: " + text, LogLevel::WARN);
+        return;
+    }
+    // Chinese status messages etc.: keep original behaviour
+    setStatusText(0, text);
+}
+
+// -------------------------------------------------------------------
+//  Rewrite the refresh-command status text after the async panel
+//  load completes, preventing "Loaded subscription: ..." from
+//  overwriting the Chinese command message.
+// -------------------------------------------------------------------
+void MainFrame::rewriteRefreshStatusText() {
+    const std::string status = statusTextPending_;
+    if (!status.empty()) {
+        setStatusText(0, wxString(status));
+        statusTextPending_.clear();
     }
 }
 

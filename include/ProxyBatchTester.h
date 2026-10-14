@@ -70,6 +70,15 @@ public:
     /// E13: Teardown a worker's lastResult_ after a non-success path.
     void teardownWorkerResult(int workerId, const std::string& errorMsg);
 
+    /// P2-1: single sink for every "the backing Xray instance looks
+    /// unreachable" report (XrayApi::instanceHealthHook_). Fires from both the
+    /// CLI-spawn failure site (src/XrayApi.cpp:171-175) and the 2nd
+    /// consecutive gRPC connect failure (src/XrayApi.cpp:1952), plus the
+    /// ProxyBatchTester gate at "3 failed injections". Throttled per apiPort
+    /// inside XrayManager::evaluateInstanceHealthThrottled, so callers do not
+    /// need their own rate limiting.
+    void onXrayEndpointUnreachable(int apiPort);
+
     sqlite3* db_;
     config::AppConfig config_;
     XrayManager* xrayManager_;

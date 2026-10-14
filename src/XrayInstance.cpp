@@ -1,5 +1,9 @@
 #include "XrayInstance.h"
 #include "Logger.h"
+#include "config/ConfigBuilder.h"
+#include "FullConfigTemplateDAO.h"
+#include "Profileitem.h"
+#include "Utils.h"
 #include <iostream>
 #include <fstream>
 #include <thread>
@@ -7,9 +11,10 @@
 #include <filesystem>
 #include <vector>
 
-XrayInstance::XrayInstance(const std::string& xrayPath, int socksPort, int apiPort, const std::string& configDir)
+XrayInstance::XrayInstance(const std::string& xrayPath, int socksPort, int apiPort, const std::string& configDir, sqlite3* db)
     : xrayPath_(xrayPath), socksPort_(socksPort), apiPort_(apiPort),
       stdoutFile_(INVALID_HANDLE_VALUE), stderrFile_(INVALID_HANDLE_VALUE),
+      db_(db),
       running_(false), lastExitCode_(STILL_ACTIVE) {
     
     configPath_ = configDir + "/xray_config_" + std::to_string(socksPort) + ".json";
@@ -31,7 +36,7 @@ bool XrayInstance::start() {
         return true;
     }
 
-    Logger::write("[XrayInstance] Creating config: " + configPath_, LogLevel::INFO);
+    Logger::write("[XrayInstance] Creating config: " + utils::toWindowsPath(configPath_), LogLevel::INFO);
     if (!createConfigFile()) {
         Logger::write("[XrayInstance] Failed to create config file", LogLevel::ERR);
         return false;
@@ -67,7 +72,7 @@ bool XrayInstance::start() {
     MultiByteToWideChar(CP_UTF8, 0,
         ("run -c \"" + configPath_ + "\"").c_str(), -1, cmdW.data(), cmdWLen);
 
-    Logger::write("[XrayInstance] Executing: " + xrayPath_ + " run -c " + configPath_, LogLevel::INFO);
+    Logger::write("[XrayInstance] Executing: " + utils::toWindowsPath(xrayPath_) + " run -c " + utils::toWindowsPath(configPath_), LogLevel::INFO);
 
     // Redirect the child's stdout/stderr into per-instance log files so that
     // xray warnings and panic stacks survive (previously no std handles were
@@ -306,50 +311,137 @@ bool XrayInstance::createConfigFile() {
         out.close();
         return true;
     }
-
-    // Ensure the config directory exists
-    std::filesystem::path configPath(configPath_);
-    std::error_code ec;
-    if (!std::filesystem::exists(configPath.parent_path()) && 
-        !std::filesystem::create_directories(configPath.parent_path(), ec)) {
-        Logger::write("[XrayInstance] Failed to create config directory: " + 
-                     configPath.parent_path().string() + " (err=" + ec.message() + ")", LogLevel::ERR);
+    
+    // ConfigBuilder mode: use template from database
+    if (!db_) {
+        // No database connection: generate a minimal config for testing/edge cases
+        Logger::write("[XrayInstance] No database connection - generating minimal config", LogLevel::WARN);
+        
+        boost::json::object root;
+        
+        // Log section
+        boost::json::object logObj;
+        logObj["loglevel"] = "warning";
+        root["log"] = logObj;
+        
+        // API section (minimal for gRPC)
+        boost::json::object apiObj;
+        apiObj["tag"] = "api";
+        apiObj["listen"] = std::string("127.0.0.1:") + std::to_string(apiPort_);
+        boost::json::array apiServices;
+        apiServices.push_back(boost::json::value("HandlerService"));
+        apiServices.push_back(boost::json::value("StatsService"));
+        apiObj["services"] = apiServices;
+        root["api"] = apiObj;
+        
+        // Inbounds: SOCKS
+        boost::json::array inbounds;
+        boost::json::object socksIn;
+        socksIn["tag"] = "socks";
+        socksIn["listen"] = "127.0.0.1";
+        socksIn["port"] = socksPort_;
+        socksIn["protocol"] = "mixed";
+        boost::json::object socksSettings;
+        socksSettings["auth"] = "noauth";
+        socksSettings["udp"] = true;
+        socksIn["settings"] = socksSettings;
+        inbounds.push_back(socksIn);
+        root["inbounds"] = inbounds;
+        
+        // Outbounds: direct + proxy placeholder
+        boost::json::array outbounds;
+        boost::json::object directOut;
+        directOut["tag"] = "direct";
+        directOut["protocol"] = "freedom";
+        outbounds.push_back(directOut);
+        boost::json::object proxyOut;
+        proxyOut["tag"] = "proxy";
+        proxyOut["protocol"] = "freedom";
+        outbounds.push_back(proxyOut);
+        root["outbounds"] = outbounds;
+        
+        // Routing: minimal
+        boost::json::object routing;
+        boost::json::array rules;
+        boost::json::object apiRule;
+        apiRule["type"] = "field";
+        boost::json::array apiInboundTag;
+        apiInboundTag.push_back(boost::json::value("api"));
+        apiRule["inboundTag"] = apiInboundTag;
+        apiRule["outboundTag"] = "api";
+        rules.push_back(apiRule);
+        boost::json::object socksRule;
+        socksRule["type"] = "field";
+        boost::json::array socksInboundTag;
+        socksInboundTag.push_back(boost::json::value("socks"));
+        socksRule["inboundTag"] = socksInboundTag;
+        socksRule["outboundTag"] = "proxy";
+        rules.push_back(socksRule);
+        routing["rules"] = rules;
+        root["routing"] = routing;
+        
+        // Serialize
+        std::string json = boost::json::serialize(root);
+        
+        // Ensure the config directory exists
+        std::filesystem::path configPath(configPath_);
+        std::error_code ec;
+        if (!std::filesystem::exists(configPath.parent_path()) && 
+            !std::filesystem::create_directories(configPath.parent_path(), ec)) {
+            Logger::write("[XrayInstance] Failed to create config directory: " + 
+                         configPath.parent_path().string() + " (err=" + ec.message() + ")", LogLevel::ERR);
+            return false;
+        }
+        
+        std::ofstream out(configPath_);
+        if (!out.is_open()) return false;
+        out << json;
+        out.close();
+        
+        Logger::write("[XrayInstance] Config generated (minimal, no DB)", LogLevel::DEBUG);
+        return true;
+    }
+    
+    Logger::write("[XrayInstance] Using ConfigBuilder for test config", LogLevel::INFO);
+    
+    try {
+        config::ConfigBuilder builder(db_);
+        config::ConfigVariables vars;
+        vars.socksPort = socksPort_;
+        vars.apiPort = apiPort_;
+        
+        // Use a dummy profile (test config doesn't need a specific proxy)
+        db::models::Profileitem dummyProfile;
+        boost::json::value configJson = builder.build(config::ConfigMode::Test, "xray", dummyProfile, vars);
+        
+        if (!configJson.is_object()) {
+            Logger::write("[XrayInstance] ConfigBuilder returned invalid config", LogLevel::ERR);
+            return false;
+        }
+        
+        std::string json = builder.serialize(configJson);
+        
+        // Ensure the config directory exists
+        std::filesystem::path configPath(configPath_);
+        std::error_code ec;
+        if (!std::filesystem::exists(configPath.parent_path()) && 
+            !std::filesystem::create_directories(configPath.parent_path(), ec)) {
+            Logger::write("[XrayInstance] Failed to create config directory: " + 
+                         configPath.parent_path().string() + " (err=" + ec.message() + ")", LogLevel::ERR);
+            return false;
+        }
+        
+        std::ofstream out(configPath_);
+        if (!out.is_open()) return false;
+        out << json;
+        out.close();
+        
+        Logger::write("[XrayInstance] Config generated by ConfigBuilder", LogLevel::DEBUG);
+        return true;
+    } catch (const std::exception& e) {
+        Logger::write("[XrayInstance] ConfigBuilder failed: " + std::string(e.what()), LogLevel::ERR);
         return false;
     }
-
-    std::string content = R"({
-        "log": {"loglevel": "warning"},
-        "api": {
-            "tag": "api",
-            "services": ["HandlerService", "LoggerService", "StatsService", "RoutingService"]
-        },
-        "stats": {},
-        "policy": {
-            "levels": {"0": {"statsUserUplink": true, "statsUserDownlink": true}},
-            "system": {"statsInboundUplink": true, "statsInboundDownlink": true, "statsOutboundUplink": true, "statsOutboundDownlink": true}
-        },
-        "inbounds": [
-            {"tag": "api", "listen": "127.0.0.1", "port": )" + std::to_string(apiPort_) + R"(, "protocol": "dokodemo-door", "settings": {"address": "127.0.0.1"}},
-            {"tag": "socks-in", "listen": "127.0.0.1", "port": )" + std::to_string(socksPort_) + R"(, "protocol": "mixed", "settings": {"auth": "noauth", "udp": true}}
-        ],
-        "outbounds": [
-            {"tag": "direct", "protocol": "freedom"},
-            {"tag": "proxy", "protocol": "freedom"}
-        ],
-        "routing": {
-            "domainStrategy": "AsIs",
-            "rules": [
-                {"type": "field", "inboundTag": ["api"], "outboundTag": "api"},
-                {"type": "field", "outboundTag": "proxy", "network": "tcp"}
-            ]
-        }
-    })";
-    
-    std::ofstream out(configPath_);
-    if (!out.is_open()) return false;
-    out << content;
-    out.close();
-    return true;
 }
 
 void XrayInstance::setExplicitConfig(const std::string& configJson) {

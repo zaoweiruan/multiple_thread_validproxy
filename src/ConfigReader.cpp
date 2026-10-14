@@ -12,6 +12,7 @@
 #include "config/ConfigFileStore.h"
 #include "config/ConfigPathResolver.h"
 #include "config/ConfigJsonParser.h"
+#include "config/StreamSettingsBuilder.h"
 #include "config/ConfigJsonSerializer.h"
 #include "config/ConfigValidator.h"
 #include "config/sections/DatabaseConfigParser.h"
@@ -28,6 +29,7 @@
 #include "config/sections/ProxyProcessMonitorConfigParser.h"
 #include "config/sections/IndependentProbeConfigParser.h"
 #include "config/sections/StandalonePoolConfigParser.h"
+#include "config/sections/PortConfigParser.h"
 
 namespace config {
 
@@ -81,6 +83,7 @@ std::optional<AppConfig> ConfigReader::load(const std::string& configPath) {
     ProxyProcessMonitorConfigParser().parse(jv, config);
     IndependentProbeConfigParser().parse(jv, config);
     StandalonePoolConfigParser().parse(jv, config, exeDir);
+    PortConfigParser().parse(jv, config);   // 2-arg form: port.* holds no exeDir-resolvable paths
 
     // Step 5: Log SQL queries
     if (!config.sql_query.empty())
@@ -110,6 +113,11 @@ std::optional<AppConfig> ConfigReader::load(const std::string& configPath) {
         Logger::write("WARNING: " + validationResult.warnings[i], LogLevel::WARN);
     }
 
+    // 下发 ECH 开关到 config::setEchEnabled()。
+    // 放在此处（而非各调用点）是因为 load() 是 GUI 与 main_cli 全部 15 处
+    // ConfigReader::load() 调用的共同必经点，一处即可全覆盖，避免遗漏。
+    config::setEchEnabled(config.proxy.ech_enabled);
+
     return config;
 }
 
@@ -123,7 +131,7 @@ bool ConfigReader::save(const std::string& configPath, const AppConfig& config) 
     try {
         fileStore.write(configPath, boost::json::serialize(root));
     } catch (const std::runtime_error& e) {
-        Logger::write("Failed to write config to: " + configPath, LogLevel::ERR);
+        Logger::write("Failed to write config to: " + utils::toWindowsPath(configPath), LogLevel::ERR);
         return false;
     }
 

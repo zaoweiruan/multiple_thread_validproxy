@@ -5,6 +5,20 @@
 
 namespace config {
 
+namespace {
+/// 进程级 ECH 开关。默认 false（不输出 echConfigList）。
+/// 用函数内静态 + 显式 setter，避免头文件暴露可变全局变量。
+bool g_echEnabled = false;
+} // namespace
+
+void setEchEnabled(bool enabled) {
+    g_echEnabled = enabled;
+}
+
+bool echEnabled() {
+    return g_echEnabled;
+}
+
 boost::json::object StreamSettingsBuilder::build(const db::models::Profileitem& p) const {
     boost::json::object streamSettings;
     
@@ -46,8 +60,12 @@ boost::json::object StreamSettingsBuilder::build(const db::models::Profileitem& 
             if (!p.fingerprint.empty()) {
                 tlsSettings["fingerprint"] = p.fingerprint;
             }
-            if (!p.echconfiglist.empty()) {
-                tlsSettings["echConfigList"] = boost::json::value(p.echconfiglist);
+            if (echEnabled() && !p.echconfiglist.empty()) {
+                // 订阅源常把 base64url 的 '+' 误写成空格（或 URL 解码把 '+' 吃成空格），
+                // 导致 xray 解析 echConfigList 失败。启用 ECH 时统一还原为空格→'+'。
+                std::string list = p.echconfiglist;
+                std::replace(list.begin(), list.end(), ' ', '+');
+                tlsSettings["echConfigList"] = boost::json::value(list);
             }
             if (!p.echforcequery.empty()) {
                 tlsSettings["echForceQuery"] = (p.echforcequery == "1");

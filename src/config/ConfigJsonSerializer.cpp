@@ -102,28 +102,29 @@ boost::json::object ConfigJsonSerializer::serialize(const AppConfig& config) con
         autoTaskObj["state_file"] = config.auto_task.state_file;
     }
     root["auto_task"] = autoTaskObj;
+    {
+        boost::json::object portObj;
+        portObj["time_wait_blocking"] = config.port.time_wait_blocking;
+        root["port"] = portObj;
+    }
 
     // proxy
     boost::json::object proxyObj;
     proxyObj["socks_base_port"] = config.proxy.socks_base_port;
+    proxyObj["api_base_port"] = config.proxy.api_base_port;
     if (!config.proxy.xray_executable.empty()) {
         proxyObj["xray_executable"] = config.proxy.xray_executable;
     }
     proxyObj["use_singbox"] = config.proxy.use_singbox;
+    proxyObj["ech_enabled"] = config.proxy.ech_enabled;
     if (!config.proxy.xray_asset_dir.empty()) {
         proxyObj["xray_asset_dir"] = config.proxy.xray_asset_dir;
-    }
-    if (!config.proxy.template_config_path.empty()) {
-        proxyObj["template_config_path"] = config.proxy.template_config_path;
     }
     if (!config.proxy.singbox_executable.empty()) {
         proxyObj["singbox_executable"] = config.proxy.singbox_executable;
     }
     if (!config.proxy.singbox_asset_dir.empty()) {
         proxyObj["singbox_asset_dir"] = config.proxy.singbox_asset_dir;
-    }
-    if (!config.proxy.singbox_template_config_path.empty()) {
-        proxyObj["singbox_template_config_path"] = config.proxy.singbox_template_config_path;
     }
     proxyObj["scoring_delay_weight"] = config.proxy.scoring_delay_weight;
     proxyObj["scoring_stability_weight"] = config.proxy.scoring_stability_weight;

@@ -31,6 +31,8 @@
 #include "Logger.h"
 #include "version.h"
 #include "service/DatabaseConnectionService.h"
+#include "FullConfigTemplateDAO.h"
+#include "config/TemplateDecomposer.h"
 
 
 namespace {
@@ -62,13 +64,21 @@ void logError(const std::string& msg, LogLevel level = LogLevel::ERR) {
 static bool openDatabase(const config::AppConfig& config, sqlite3*& db, const std::string& context) {
     if (sqlite3_open_v2(config.database_path.c_str(), &db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX, nullptr) != SQLITE_OK) {
         Logger::write(context + " - Failed to open database: " + std::string(sqlite3_errmsg(db)), LogLevel::ERR);
-        Logger::write(context + " - Database path from config: " + config.database_path, LogLevel::ERR);
+        Logger::write(context + " - Database path from config: " + utils::toWindowsPath(config.database_path), LogLevel::ERR);
         std::cerr << context << " - Failed to open database: " << sqlite3_errmsg(db) << std::endl;
-        std::cerr << context << " - Database path from config: " << config.database_path << std::endl;
+        std::cerr << context << " - Database path from config: " << utils::toWindowsPath(config.database_path) << std::endl;
         return false;
     }
     // Apply performance pragmas (WAL, cache, sync, etc.) and composite dedup index
     service::DatabaseConnectionService::applyPragmas(db);
+    
+    // Seed default config templates if table is empty
+    {
+        db::FullConfigTemplateDAO configTemplateDao(db);
+        configTemplateDao.createTableIfNotExists();
+        configTemplateDao.seedDefaultTemplates();
+    }
+    
     return true;
 }
 
@@ -85,6 +95,14 @@ void printHelp() {
               << "  -T, -test-sub <id>   Test proxies from subscription by ID\n"
               << "  -TA, -test-all      Test all proxies in the database\n"
               << "  -D, -dedup           Remove duplicate proxies from database\n"
+              << "  -DC, -decompose       Decompose templates into ComponentBundle entries\n"
+
+<< "                         from decomposed Bundles and save to template table\n"
+              << "  -RB, -rebuild-bundles Rebuild minimal (core x component-type) Bundles\n"
+              << "                         and rewrite each template's component chain\n"
+              << "  -SM, -sync-materialize Re-materialize each template's Config column from\n"
+              << "                         its EXISTING component chain (does NOT rebuild\n"
+              << "                         bundles; safe after editing chains by hand)\n"
               << "  -TU, -tourl         Export proxies (delay>0) to share links file\n"
               << "  -S, -sync [src[:dst]] Sync valid proxies from source to target DB\n"
                << "  -IS, -import-sub-config <file|url>  Batch import subitems from file or URL\n"
@@ -114,6 +132,7 @@ static int runDefaultTest(const std::string& configPath, const std::string& exeD
     Logger::init(logDir.string(), logMode);
 
     std::optional<config::AppConfig> appConfig = config::ConfigReader::load(configPath);
+    if (appConfig) utils::setTimeWaitBlocking(appConfig->port.time_wait_blocking);
     if (!appConfig) {
         logError("Failed to load config from: " + configPath);
         Logger::close();
@@ -192,6 +211,12 @@ ProxyBatchTester tester(db, *appConfig, exeDir, &g_cancelRequested);
 
 } // anonymous namespace
 
+// Every sub-command branch loads config.json itself (there is no single
+// configuration entry point), so the port-semantics rollback switch must be
+// published into utils right after each successful load. A CLI process never
+// constructs AppController, so unlike the GUI (AppController constructor +
+// saveConfig) it would otherwise leave g_timeWaitBlocking stuck at its default
+// false, making port.time_wait_blocking un-rollable for CLI runs.
 int main(int argc, char* argv[]) {
     SetConsoleCtrlHandler(consoleCtrlHandler, TRUE);
     CurlGlobalGuard curlGuard;  // RAII guard for curl global init/cleanup
@@ -264,6 +289,12 @@ int main(int argc, char* argv[]) {
             }
         } else if (arg == "-D" || arg == "-dedup" || arg == "--dedup") {
             commandMode = "dedup";
+} else if (arg == "-DC" || arg == "-decompose" || arg == "--decompose") {
+            commandMode = "decompose";
+        } else if (arg == "-RB" || arg == "-rebuild-bundles" || arg == "--rebuild-bundles") {
+            commandMode = "rebuildbundles";
+        } else if (arg == "-SM" || arg == "-sync-materialize" || arg == "--sync-materialize") {
+            commandMode = "syncmaterialize";
         } else if (arg == "-TA" || arg == "-test-all" || arg == "--test-all") {
             commandMode = "test-all";
         } else if (arg == "-TU" || arg == "-tourl" || arg == "--tourl") {
@@ -341,6 +372,7 @@ int main(int argc, char* argv[]) {
     if (commandMode == "generator") {
         Logger::init(logDir.string(), commandMode);
         std::optional<config::AppConfig> appConfig = config::ConfigReader::load(configPath);
+        if (appConfig) utils::setTimeWaitBlocking(appConfig->port.time_wait_blocking);
         if (!appConfig) {
             logError("Failed to load config from: " + configPath);
             Logger::close();
@@ -402,6 +434,7 @@ int main(int argc, char* argv[]) {
         Logger::init(logDir.string(), commandMode);
         
         std::optional<config::AppConfig> appConfig = config::ConfigReader::load(configPath);
+        if (appConfig) utils::setTimeWaitBlocking(appConfig->port.time_wait_blocking);
         if (!appConfig) {
             logError("Failed to load config from: " + configPath);
             Logger::close();
@@ -505,6 +538,7 @@ int main(int argc, char* argv[]) {
         Logger::init(logDir.string(), commandMode);
         
         std::optional<config::AppConfig> appConfig = config::ConfigReader::load(configPath);
+        if (appConfig) utils::setTimeWaitBlocking(appConfig->port.time_wait_blocking);
         if (!appConfig) {
             logError("Failed to load config from: " + configPath);
             Logger::close();
@@ -534,7 +568,7 @@ int main(int argc, char* argv[]) {
         std::filesystem::path configDirFs = std::filesystem::path(exeBaseDir) / "config";
         std::string configDirStr = configDirFs.string();
         
-        XrayManager* xrayMgr = XrayManager::getInstance(appConfig->proxy.xray_executable, configDirStr, appConfig->xray_workers);
+        XrayManager* xrayMgr = XrayManager::getInstance(appConfig->proxy.xray_executable, configDirStr, appConfig->xray_workers, db);
         int started = xrayMgr->start(1, appConfig->xray_start_port, appConfig->xray_api_port);
         
         if (started == 0) {
@@ -578,6 +612,7 @@ int main(int argc, char* argv[]) {
         Logger::init(logDir.string(), commandMode);
         
         std::optional<config::AppConfig> appConfig = config::ConfigReader::load(configPath);
+        if (appConfig) utils::setTimeWaitBlocking(appConfig->port.time_wait_blocking);
         if (!appConfig) {
             logError("Failed to load config from: " + configPath);
             Logger::close();
@@ -675,6 +710,7 @@ int main(int argc, char* argv[]) {
         Logger::init(logDir.string(), commandMode);
         
         std::optional<config::AppConfig> appConfig = config::ConfigReader::load(configPath);
+        if (appConfig) utils::setTimeWaitBlocking(appConfig->port.time_wait_blocking);
         if (!appConfig) {
             logError("Failed to load config from: " + configPath);
             Logger::close();
@@ -716,6 +752,7 @@ int main(int argc, char* argv[]) {
         sqlite3* db = nullptr;
         
         std::optional<config::AppConfig> appConfig = config::ConfigReader::load(configPath);
+        if (appConfig) utils::setTimeWaitBlocking(appConfig->port.time_wait_blocking);
         if (!appConfig) {
             logError("Failed to load config from: " + configPath);
             Logger::close();
@@ -768,6 +805,7 @@ int main(int argc, char* argv[]) {
         Logger::init(logDir.string(), commandMode);
 
         std::optional<config::AppConfig> appConfig = config::ConfigReader::load(configPath);
+        if (appConfig) utils::setTimeWaitBlocking(appConfig->port.time_wait_blocking);
         if (!appConfig) {
             logError("Failed to load config from: " + configPath);
             Logger::close();
@@ -830,6 +868,7 @@ int main(int argc, char* argv[]) {
     if (commandMode == "cancel-task") {
         Logger::init(logDir.string(), commandMode);
         std::optional<config::AppConfig> appConfig = config::ConfigReader::load(configPath);
+        if (appConfig) utils::setTimeWaitBlocking(appConfig->port.time_wait_blocking);
         if (!appConfig) {
             logError("Failed to load config from: " + configPath);
             Logger::close();
@@ -878,6 +917,7 @@ int main(int argc, char* argv[]) {
         Logger::init(logDir.string(), commandMode);
 
         std::optional<config::AppConfig> appConfig = config::ConfigReader::load(configPath);
+        if (appConfig) utils::setTimeWaitBlocking(appConfig->port.time_wait_blocking);
         if (!appConfig) {
             logError("Failed to load config from: " + configPath);
             Logger::close();
@@ -925,6 +965,7 @@ int main(int argc, char* argv[]) {
         Logger::init(logDir.string(), commandMode);
         
         std::optional<config::AppConfig> appConfig = config::ConfigReader::load(configPath);
+        if (appConfig) utils::setTimeWaitBlocking(appConfig->port.time_wait_blocking);
         if (!appConfig) {
             logError("Failed to load config from: " + configPath);
             Logger::close();
@@ -956,10 +997,134 @@ int main(int argc, char* argv[]) {
         return result ? 0 : 1;
     }
     
+    if (commandMode == "decompose") {
+        Logger::init(logDir.string(), commandMode);
+        
+        std::optional<config::AppConfig> appConfig = config::ConfigReader::load(configPath);
+        if (appConfig) utils::setTimeWaitBlocking(appConfig->port.time_wait_blocking);
+        if (!appConfig) {
+            logError("Failed to load config from: " + configPath);
+            Logger::close();
+            return 1;
+        }
+        
+        Logger::setFileEnabled(appConfig->log_enabled);
+        Logger::setFileLevel(Logger::stringToLevel(appConfig->log_file_level));
+        Logger::setConsoleLevel(Logger::stringToLevel(appConfig->log_console_level));
+        logInfo("validproxy decompose starting...");
+        
+        sqlite3* db = nullptr;
+        if (!openDatabase(*appConfig, db, "[main] decompose")) {
+            Logger::close();
+            return 1;
+        }
+        sqlite3_busy_timeout(db, 5000);
+        sqlite3_exec(db, "PRAGMA journal_mode=WAL", nullptr, nullptr, nullptr);
+        sqlite3_exec(db, "PRAGMA cache_size=-8000", nullptr, nullptr, nullptr);
+        sqlite3_exec(db, "PRAGMA synchronous=NORMAL", nullptr, nullptr, nullptr);
+        sqlite3_exec(db, "PRAGMA temp_store=MEMORY", nullptr, nullptr, nullptr);
+        sqlite3_exec(db, "PRAGMA mmap_size=268435456", nullptr, nullptr, nullptr);
+        sqlite3_exec(db, "PRAGMA journal_size_limit=67108864", nullptr, nullptr, nullptr);
+        
+        config::TemplateDecomposer decomposer(db);
+        int saved = decomposer.decomposeAndSave(true);
+        
+        std::cout << "Decomposition complete: " << saved << " bundles saved" << std::endl;
+        
+        sqlite3_close(db);
+        Logger::write("decompose completed (" + std::to_string(saved) + " bundles)", LogLevel::REPORT);
+        Logger::close();
+        
+        return 0;
+    }
+    
+    // -RB: 按「代理类型 × 组件类型」重建最小粒度组件包，并回写各模板组件链
+    if (commandMode == "rebuildbundles") {
+        Logger::init(logDir.string(), commandMode);
+
+        std::optional<config::AppConfig> appConfig = config::ConfigReader::load(configPath);
+        if (appConfig) utils::setTimeWaitBlocking(appConfig->port.time_wait_blocking);
+        if (!appConfig) {
+            logError("Failed to load config from: " + configPath);
+            Logger::close();
+            return 1;
+        }
+
+        Logger::setFileEnabled(appConfig->log_enabled);
+        Logger::setFileLevel(Logger::stringToLevel(appConfig->log_file_level));
+        Logger::setConsoleLevel(Logger::stringToLevel(appConfig->log_console_level));
+        logInfo("validproxy rebuild-bundles starting...");
+
+        sqlite3* db = nullptr;
+        if (!openDatabase(*appConfig, db, "[main] rebuild-bundles")) {
+            Logger::close();
+            return 1;
+        }
+        sqlite3_busy_timeout(db, 5000);
+        sqlite3_exec(db, "PRAGMA journal_mode=WAL", nullptr, nullptr, nullptr);
+        sqlite3_exec(db, "PRAGMA synchronous=NORMAL", nullptr, nullptr, nullptr);
+
+        config::TemplateDecomposer decomposer(db);
+        const int saved = decomposer.rebuildBundlesAndChains();
+
+        std::cout << "Rebuild complete: " << saved << " minimal bundles" << std::endl;
+
+        sqlite3_close(db);
+        Logger::write("rebuild-bundles completed (" + std::to_string(saved) + " bundles)",
+                      LogLevel::REPORT);
+        Logger::close();
+
+        return 0;
+    }
+
+    // -SM, -sync-materialize: 仅按**现有组件链**重新物化各模板的 Config 列。
+    // 与 -RB 的区别：-RB 会按「core × component-type」重建最小包并改写链
+    // （曾把链里引用的 xray_DNS 拆成 xray_DNS_base/_pool/_standalone，导致物化丢 dns/log 节）；
+    // 本命令不碰组件包表，只跑 TemplateDecomposer::syncConfigsFromChains()。
+    if (commandMode == "syncmaterialize") {
+        Logger::init(logDir.string(), commandMode);
+
+        std::optional<config::AppConfig> appConfig = config::ConfigReader::load(configPath);
+        if (!appConfig) utils::setTimeWaitBlocking(appConfig->port.time_wait_blocking);
+        if (!appConfig) {
+            logError("Failed to load config from: " + configPath);
+            Logger::close();
+            return 1;
+        }
+
+        Logger::setFileEnabled(appConfig->log_enabled);
+        Logger::setFileLevel(Logger::stringToLevel(appConfig->log_file_level));
+        Logger::setConsoleLevel(Logger::stringToLevel(appConfig->log_console_level));
+        logInfo("validproxy sync-materialize starting...");
+
+        sqlite3* db = nullptr;
+        if (!openDatabase(*appConfig, db, "[main] sync-materialize")) {
+            Logger::close();
+            return 1;
+        }
+        sqlite3_busy_timeout(db, 5000);
+
+        config::TemplateDecomposer decomposer(db);
+        const int synced = decomposer.syncConfigsFromChains();
+
+        std::cout << "Materialize complete: " << synced << " templates" << std::endl;
+
+        sqlite3_close(db);
+        Logger::write("sync-materialize completed (" + std::to_string(synced) + " templates)",
+                      LogLevel::REPORT);
+        Logger::close();
+
+        return 0;
+    }
+
+    // 组件链只能经由「配置链 → 解析 → 保存」产生（配置编辑器「组件链编辑」页），
+    // 不再提供 CLI 自动生成：模板 = 组件链配置 + 组件包间整合关系，没有默认值。
+    
     if (!singleSubId.empty()) {
         Logger::init(logDir.string(), commandMode.empty() ? "test" : commandMode);
         
         std::optional<config::AppConfig> appConfig = config::ConfigReader::load(configPath);
+        if (appConfig) utils::setTimeWaitBlocking(appConfig->port.time_wait_blocking);
         if (!appConfig) {
             logError("Failed to load config from: " + configPath);
             Logger::close();

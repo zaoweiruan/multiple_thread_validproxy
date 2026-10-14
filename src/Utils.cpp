@@ -13,6 +13,9 @@
     #include <cctype>
     #include <vector>
     #include <iphlpapi.h>
+#include <atomic>
+#include <unordered_set>
+#include <mutex>
     #include "Logger.h"
 
 namespace utils {
@@ -178,16 +181,37 @@ bool isValidUrlFormat(const std::string& url) {
     // is permitted to COEXIST with an existing wildcard/specific listener (verified
     // live — an exclusive bind to 0.0.0.0:10808 succeeded while xray already held it),
     // so it cannot detect occupancy across processes. The TCP table does not have
-    // this blind spot. See docs/bugfix/2026-08-31-Bugfix-IsPortAvailable-Wildcard-v1.0.md.
-    static bool isPortOccupiedInTable(int port) {
-        bool occupied = false;
+    // =====================================================================
+    // Port occupancy predicates (2026-10-12 Spec StandalonePortImmediateRebind)
+    // Measured semantics on Windows (tw5 experiment, TcpTimedWaitDelay=0x1e=30s
+    // on this host): a port holding ONLY a TIME_WAIT row can be rebound via
+    // every variant (wildcard/loopback x no-flags/REUSEADDR/EXCLUSIVEADDRUSE).
+    // So TIME_WAIT is NOT a kernel-level obstacle to a rebind, and treating it
+    // as occupancy is what made a just-closed standalone proxy's port look busy
+    // for the whole 30s window — the "slow rebind / shifted port" symptom.
+    //
+    // bind()/connect() probing is still not a trustworthy oracle: an existing
+    // listener carrying SO_REUSEADDR (the xray/Go case) lets both a wildcard and
+    // a loopback bind succeed, and SO_REUSEADDR + SO_EXCLUSIVEADDRUSE are
+    // mutually exclusive (both set -> WSAEINVAL). The kernel TCP endpoint table
+    // remains the source of truth. See
+    // docs/bugfix/2026-10-12-Evidence-TimeWait-Bind-v1.0.md.
+    // =====================================================================
+    namespace {
+        std::atomic<bool> g_timeWaitBlocking{false};
 
-        // IPv4
-        {
+        // Contract: when listening == true we break early, so *timeWaitHit may
+        // not have been populated by the IPv6 pass yet. *timeWaitHit is only
+        // meaningful when listening == false.
+        // Returns listening; sets *timeWaitHit. NEVER reads the snapshot cache.
+        bool scanPortStatesRaw(int port, bool* timeWaitHit) {
+            *timeWaitHit = false;
+            bool listening = false;
+            // ---- AF_INET ----
             DWORD size = 0;
-            DWORD ret = GetExtendedTcpTable(nullptr, &size, FALSE, AF_INET,
-                                            TCP_TABLE_OWNER_PID_ALL, 0);
-            if (ret == ERROR_INSUFFICIENT_BUFFER && size > 0) {
+            GetExtendedTcpTable(nullptr, &size, FALSE, AF_INET,
+                                TCP_TABLE_OWNER_PID_ALL, 0);
+            if (size > 0) {
                 std::vector<unsigned char> buf(size);
                 PMIB_TCPTABLE_OWNER_PID table =
                     reinterpret_cast<PMIB_TCPTABLE_OWNER_PID>(buf.data());
@@ -195,65 +219,204 @@ bool isValidUrlFormat(const std::string& url) {
                                         TCP_TABLE_OWNER_PID_ALL, 0) == NO_ERROR) {
                     for (DWORD i = 0; i < table->dwNumEntries; ++i) {
                         if (ntohs(static_cast<u_short>(table->table[i].dwLocalPort))
-                                == static_cast<u_short>(port)) {
-                            DWORD st = table->table[i].dwState;
-                            if (st == MIB_TCP_STATE_LISTEN
-                                    || st == MIB_TCP_STATE_TIME_WAIT) {
-                                occupied = true;
-                                break;
-                            }
+                                != static_cast<u_short>(port)) {
+                            continue;
+                        }
+                        const DWORD st = table->table[i].dwState;
+                        if (st == MIB_TCP_STATE_LISTEN) {
+                            listening = true;
+                            break;
+                        }
+                        if (st == MIB_TCP_STATE_TIME_WAIT) {
+                            *timeWaitHit = true;
                         }
                     }
                 }
             }
-        }
-
-        // IPv6
-        if (!occupied) {
-            DWORD size = 0;
-            DWORD ret = GetExtendedTcpTable(nullptr, &size, FALSE, AF_INET6,
-                                            TCP_TABLE_OWNER_PID_ALL, 0);
-            if (ret == ERROR_INSUFFICIENT_BUFFER && size > 0) {
-                std::vector<unsigned char> buf(size);
-                PMIB_TCP6TABLE_OWNER_PID table =
-                    reinterpret_cast<PMIB_TCP6TABLE_OWNER_PID>(buf.data());
-                if (GetExtendedTcpTable(table, &size, FALSE, AF_INET6,
+            if (listening) {
+                return true;
+            }
+            // ---- AF_INET6 ----
+            size = 0;
+            GetExtendedTcpTable(nullptr, &size, FALSE, AF_INET6,
+                                TCP_TABLE_OWNER_PID_ALL, 0);
+            if (size > 0) {
+                std::vector<unsigned char> buf6(size);
+                PMIB_TCP6TABLE_OWNER_PID table6 =
+                    reinterpret_cast<PMIB_TCP6TABLE_OWNER_PID>(buf6.data());
+                if (GetExtendedTcpTable(table6, &size, FALSE, AF_INET6,
                                         TCP_TABLE_OWNER_PID_ALL, 0) == NO_ERROR) {
-                    for (DWORD i = 0; i < table->dwNumEntries; ++i) {
-                        if (ntohs(static_cast<u_short>(table->table[i].dwLocalPort))
-                                == static_cast<u_short>(port)) {
-                            DWORD st = table->table[i].dwState;
-                            if (st == MIB_TCP_STATE_LISTEN
-                                    || st == MIB_TCP_STATE_TIME_WAIT) {
-                                occupied = true;
-                                break;
-                            }
+                    for (DWORD i = 0; i < table6->dwNumEntries; ++i) {
+                        if (ntohs(static_cast<u_short>(table6->table[i].dwLocalPort))
+                                != static_cast<u_short>(port)) {
+                            continue;
+                        }
+                        const DWORD st = table6->table[i].dwState;
+                        if (st == MIB_TCP_STATE_LISTEN) {
+                            listening = true;
+                            break;
+                        }
+                        if (st == MIB_TCP_STATE_TIME_WAIT) {
+                            *timeWaitHit = true;
                         }
                     }
                 }
             }
+            return listening;
         }
+        // ---- TCP 端点表快照缓存（P1-3）------------------------------------
+        // 值返回：调用方在锁外拿到的是拷贝，杜绝「返回引用 + 锁已析构」的数据竞争
+        // （rev.1 缺陷：调用方无锁访问 unordered_set，与其它线程 rehash 竞争）。
+        struct TcpPortSnapshot {
+            std::unordered_set<int> listening;   // 处于 LISTEN 的本地端口
+            std::unordered_set<int> timeWait;    // 处于 TIME_WAIT 的本地端口
+            ULONGLONG stampMs = 0;               // 0 表示「尚无有效快照」
+        };
 
-        return occupied;
-    }
+        std::mutex g_snapMutex;
+        TcpPortSnapshot g_snap;
+        const ULONGLONG kSnapTtlMs = 250;        // 200-500ms 取中值
 
-    bool isPortAvailable(int port) {
-        static bool wsaStarted = false;
-        if (!wsaStarted) {
-            WSADATA wsaData;
-            if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
+        // 一次枚举，把某个地址族全表的 LISTEN / TIME_WAIT 端口填充进 out。
+        // 返回 true 表示枚举成功（即使 out 为空）；false 表示 GetExtendedTcpTable 失败。
+        bool scanPortStatesRawFamily(int af, TcpPortSnapshot* out) {
+#ifdef TEST_BUILD
+            // T5 专用的枚举计数钩子：每次枚举一个地址族 +1。
+            // portSnapshot() 一次刷新调用本函数两次，因此「一次刷新 = 计数 +2」。
+            testing::g_tcpTableEnumerationCount.fetch_add(1, std::memory_order_relaxed);
+#endif
+            DWORD size = 0;
+            GetExtendedTcpTable(nullptr, &size, FALSE, af, TCP_TABLE_OWNER_PID_ALL, 0);
+            if (size == 0) return false;
+            std::vector<unsigned char> buf(size);
+            if (af == AF_INET) {
+                PMIB_TCPTABLE_OWNER_PID table =
+                    reinterpret_cast<PMIB_TCPTABLE_OWNER_PID>(buf.data());
+                if (GetExtendedTcpTable(table, &size, FALSE, AF_INET,
+                                        TCP_TABLE_OWNER_PID_ALL, 0) != NO_ERROR) {
+                    return false;
+                }
+                for (DWORD i = 0; i < table->dwNumEntries; ++i) {
+                    const int p = ntohs(table->table[i].dwLocalPort);
+                    const DWORD st = table->table[i].dwState;
+                    if (st == MIB_TCP_STATE_LISTEN)           out->listening.insert(p);
+                    else if (st == MIB_TCP_STATE_TIME_WAIT)   out->timeWait.insert(p);
+                }
+                return true;
+            }
+            PMIB_TCP6TABLE_OWNER_PID table6 =
+                reinterpret_cast<PMIB_TCP6TABLE_OWNER_PID>(buf.data());
+            if (GetExtendedTcpTable(table6, &size, FALSE, AF_INET6,
+                                    TCP_TABLE_OWNER_PID_ALL, 0) != NO_ERROR) {
                 return false;
             }
-            wsaStarted = true;
+            for (DWORD i = 0; i < table6->dwNumEntries; ++i) {
+                const int p = ntohs(table6->table[i].dwLocalPort);
+                // dwState 在 IPv4/IPv6 两族都是 DWORD，可与 MIB_TCP_STATE_* 跨族比较。
+                const DWORD st = table6->table[i].dwState;
+                if (st == MIB_TCP_STATE_LISTEN)           out->listening.insert(p);
+                else if (st == MIB_TCP_STATE_TIME_WAIT)   out->timeWait.insert(p);
+            }
+            return true;
         }
 
-        // Consult the real system TCP table (netstat-grade). The port is available
-        // only if no endpoint currently holds it in LISTEN or TIME_WAIT. This catches
-        // wildcard listeners (e.g. xray on 0.0.0.0 / [::]) AND lingering TIME_WAIT
-        // sockets from a just-killed connection — the two historically broken cases.
-        return !isPortOccupiedInTable(port);
+        // 命中条件只看 stampMs，不看 listening 是否为空：否则「系统确实没有 LISTEN
+        // 端点」或「枚举失败」这两种情况会让缓存永不命中且 stampMs 不更新，
+        // 退化为每次全量枚举（rev.1 缺陷）。
+        TcpPortSnapshot portSnapshot() {
+            std::lock_guard<std::mutex> lock(g_snapMutex);
+            const ULONGLONG now = GetTickCount64();
+            if (g_snap.stampMs != 0 && (now - g_snap.stampMs) < kSnapTtlMs) {
+                return g_snap;                   // 值拷贝（典型 1-3k 个 int，~100µs 级）
+            }
+            TcpPortSnapshot fresh;
+            // 两族都要枚举。`(v4Rows > 0) ? 0 : scan(AF_INET6)` 是错的：v4Rows 是
+            // 「IPv4 全表行数」而非「本端口是否命中」，任何真实机器恒 > 0，结果
+            // IPv6 几乎永不被枚举 —— 会重新引入 bugfix #17/#73 修掉的 IPv6 漏报。
+            const bool ok4 = scanPortStatesRawFamily(AF_INET, &fresh);
+            const bool ok6 = scanPortStatesRawFamily(AF_INET6, &fresh);
+            if (!ok4 && !ok6) {
+                // 两族枚举都失败：不写 stampMs，让下次调用重试，避免把失败缓存 250ms。
+                return g_snap;
+            }
+            fresh.stampMs = now;
+            g_snap = fresh;
+            return g_snap;
+        }
+
+        // 带缓存版的端口判定：isPortBlocking 的实现改调本函数。
+        // isPortListening 与 waitPortReleased 必须继续走无缓存的 scanPortStatesRaw，
+        // 否则会读到 250ms 内的旧快照而提前返回 true（见 §8 R-3）。
+        bool isPortBlockingCached(int port) {
+            TcpPortSnapshot snap = portSnapshot();
+            if (snap.listening.find(port) != snap.listening.end()) return true;
+            if (configTimeWaitBlocking() &&
+                snap.timeWait.find(port) != snap.timeWait.end()) return true;
+            return false;
+        }
+    }  // namespace
+
+    // 丢弃已缓存的快照，迫使下一次 portSnapshot() 重新枚举内核表。
+    // 两个调用点：① waitPortReleased 观测到 LISTEN 行消失的那一刻 —— 那正是我们
+    // *确知*缓存刚变陈旧的唯一时机，若不在此时失效，关闭独立代理后至多一个 TTL
+    // （250ms）内 isPortBlocking 仍会报告该端口被占用，从而重新触发端口顺延/弹窗
+    // （本 Spec P1-3 + G1/G2 要消除的现象）；② 直接创建/销毁 socket 的测试。
+    void invalidatePortSnapshot() {
+        std::lock_guard<std::mutex> lock(g_snapMutex);
+        g_snap = TcpPortSnapshot{};
     }
 
+#ifdef TEST_BUILD
+    // T5（P1-3）专用的枚举计数钩子：scanPortStatesRawFamily 每枚举一个地址族 +1。
+    // portSnapshot() 一次刷新调用它两次，因此「一次刷新 = 计数 +2」。
+    // 仅测试构建编译；声明在 include/Utils.h（同样由 TEST_BUILD 包裹）。
+    namespace testing {
+        std::atomic<long> g_tcpTableEnumerationCount{0};
+    }  // namespace testing
+#endif
+
+    // P1-3: the sole occupancy oracle now goes through the 250 ms snapshot cache,
+    // so a scan over N candidate ports costs one table enumeration instead of N.
+    // isPortListening / waitPortReleased deliberately stay uncached — they must
+    // observe the instant the LISTEN row disappears.
+    bool isPortBlocking(int port) {
+        return isPortBlockingCached(port);
+    }
+
+    void setTimeWaitBlocking(bool blocking) {
+        g_timeWaitBlocking.store(blocking, std::memory_order_relaxed);
+    }
+
+    bool configTimeWaitBlocking() {
+        return g_timeWaitBlocking.load(std::memory_order_relaxed);
+    }
+
+
+    bool isPortListening(int port) {
+        bool timeWaitHit = false;
+        return scanPortStatesRaw(port, &timeWaitHit);
+    }
+
+    bool waitPortReleased(int port, int budgetMs) {
+        const ULONGLONG deadline = GetTickCount64() + static_cast<ULONGLONG>(budgetMs);
+        for (;;) {
+            if (!isPortListening(port)) {
+                return true;
+            }
+            if (GetTickCount64() >= deadline) {
+                return false;
+            }
+            Sleep(20);
+        }
+    }
+
+    // Single source of truth: isPortBlocking (LISTEN always blocks,
+    // TIME_WAIT only when the rollback switch is on). Winsock is no longer
+    // initialised here — scanPortStatesRaw goes through iphlpapi, which does
+    // not need it, and every caller that does need Winsock already sets it up.
+    bool isPortAvailable(int port) {
+        return !isPortBlocking(port);
+    }
     int findAvailablePort(int startPort, int maxAttempts) {
         for (int i = 0; i < maxAttempts; ++i) {
             int port = startPort + i;
@@ -593,6 +756,12 @@ bool isValidUrlFormat(const std::string& url) {
         } catch (...) {
             return false;
         }
+    }
+
+    std::string toWindowsPath(const std::string& path) {
+        std::string result = path;
+        std::replace(result.begin(), result.end(), '/', '\\');
+        return result;
     }
 
     ProxyListMaps buildProxyListMaps(const std::vector<db::models::ProfileExItem>& exItems) {
