@@ -10,7 +10,7 @@
 | **目标平台** | Windows (MinGW/GCC) | 必须保证 GCC 编译器的兼容性。**默认终端：PowerShell**，所有模型、MCP tools、skills 必须使用 PowerShell 命令语法 |
 | **核心业务** | 代理验证与网络转发 | 涉及 Xray-core、gRPC API、cURL HTTP 请求及 SQLite 存储 |
 | **文档总图** | **`docs/INDEX.md`** ⭐ | **全量静态文档、历史分析及变更记录的唯一分类总索引入口** |
-| **系统版本** | 1.0.3 | 入口点：`src/main_gui.cpp`（包含 `main()`，创建并启动 `UIApp` wxWidgets 实例） |
+| **系统版本** | 1.5.1 | 入口点：`src/main_gui.cpp`（包含 `main()`，创建并启动 `UIApp` wxWidgets 实例） |
 
 * * *
 
