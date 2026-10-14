@@ -84,6 +84,62 @@ mainSizer(横向)
 `populateBundleVarTable()` 用静态表列出 `variablesToMap()`（`ConfigBuilder.cpp:35-46`）
 的 8 个占位符。此处**必须**静态：布尔/字符串占位符无法从注册表推导。
 
+---
+
+## 追加：组件链编辑页三栏布局（2026-10-14）
+
+「组件链编辑」Tab 经多轮调整定为「三栏水平并列」。
+
+### 布局
+
+```
+mainSizer(纵向)
+└── editPanel
+    ├── templateLabel   「当前模板：<id>（<备注>）」，随模板列表选中项刷新
+    └── editBodySizer(横向)   比例 2 : 3 : 4
+        ├── col1(纵向) [表头面板: 添加/移除/解析] + BundleChainEditor(仅列表)
+        ├── col2(纵向) [表头面板: 解析状态]            + ComponentListPanel
+        └── col3(纵向) [表头面板: 配置预览: + 保存链]    + previewBox
+```
+
+宽度比例 2:3:4 系「Bundle 列表缩减约三分之一、宽度补给配置预览框」而设。
+
+### 三个反复出现的要求及其结构性解法
+
+| 要求 | 实现要点 |
+|---|---|
+| 三框顶/底对齐 | 三栏表头用 `minHeight=30` 的 wxPanel 统一高度；框同处一行、各 `proportion=1` |
+| 「配置预览:」与预览框左对齐 | 标签与框**同属 col3**、均无左边距 ⇒ 左边缘天然一致 |
+| 「解析成功:…」与组件列表左对齐 | 状态文字置于 col2 表头面板内，与列表同栏 |
+
+### 两条必须记住的 wx 约束
+
+1. **不要靠手调 `wxLEFT` 做跨 sizer 行的像素对齐。** 标签与输入框各有客户区边距，
+   不体现在 sizer 计算里，理论推算必然失准（本项目曾连续五轮 0→50→100→120 仍未对齐）。
+   对齐必须靠**控件归属**——同栏、同 sizer。
+2. **不要用「带自有 sizer 的 wxPanel」包住 parent 不同的控件。** 违反
+   `wxSizer::SetContainingWindow` 的 parent 断言。正确做法：**先建面板、再以该面板为 parent 建控件**。
+
+> 本项目曾因「先建控件（parent=editPanel）、再建面板并 SetSizer」触发断言
+> （`bin/ui-assert-*.log` 捕获，见 `docs/bugfix/2026-10-08-Bugfix-ChainTab-ParentAssert-v1.0.md` §6）。
+
+### 其它调整
+
+- BundleChainEditor 构造函数新增 `showButtons` 参数（默认 true）：三栏布局下由
+  ConfigDialog 以 `editPanel` 为 parent 重建三个按钮，经 `triggerAddBundle()` 等触发原逻辑
+- 移除内部按钮条后，`BundleChainEditor` 只剩列表；按钮事件绑定保持等价行为
+- Tab 顺序：`模板配置 | 组件链编辑 | 组件包配置`（链编辑为上游操作，前置）
+
+### 验证
+
+构建 0 error；`UI_CHAINPREVIEW`（构造本 Tab、遍历子 Tab、点「解析」校验预览框内容）+
+`UI_MAINWINDOW` PASS，wx 断言捕获文件为空；ctest 46/49（失败项均为既有：
+`XrayManagerStartupTest` 需真实 xray、`RegionBatchResolverTest` 链接缺源、
+`UI_FLOATINGWIDGET` 并行负载偶发、`UI_PORTCLOSE` 需真实 xray）。
+
+**未目视确认**：沙箱内无法驱动 GUI 打开对话框（SendKeys / WM_COMMAND 均失效），
+最终观感需用户复核。
+
 ## 文档校正内容
 
 `docs/design/2026-09-22-Design-ConfigPipeline-Component-v1.0.md` 两处：
