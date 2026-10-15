@@ -733,25 +733,25 @@ void MainFrame::initMenuBar() {
 
     wxMenu* fileMenu = new wxMenu;
     Logger::write("[MainFrame] initMenuBar step 3: fileMenu created", LogLevel::DEBUG);
-    fileMenu->Append(ID_MENU_IMPORT_SUB,  "Import Subscription URL…\tCtrl+I");
-    fileMenu->Append(ID_MENU_UPDATE_ALL,  "Update All Subscriptions\tCtrl+U");
-    fileMenu->Append(ID_MENU_SYNC_DB,     "Sync Database…");
+    fileMenu->Append(ID_MENU_IMPORT_SUB,  L"导入订阅链接…\tCtrl+I");
+    fileMenu->Append(ID_MENU_UPDATE_ALL,  L"更新全部订阅\tCtrl+U");
+    fileMenu->Append(ID_MENU_SYNC_DB,     L"同步数据库…");
     fileMenu->AppendSeparator();
-    fileMenu->Append(ID_MENU_EXIT,        "Exit\tAlt+X");
-    bar->Append(fileMenu, "&File");
+    fileMenu->Append(ID_MENU_EXIT,        L"退出\tAlt+X");
+    bar->Append(fileMenu, L"&文件");
     Logger::write("[MainFrame] initMenuBar step 4: fileMenu appended", LogLevel::DEBUG);
 
     proxyMenu_ = new wxMenu;
-    proxyMenu_->Append(ID_MENU_FIND_PROXY, "Find First Working Proxy\tCtrl+F");
-    proxyMenu_->Append(ID_MENU_FIND_BEST,  "Find Best Proxy\tCtrl+Shift+F");
+    proxyMenu_->Append(ID_MENU_FIND_PROXY, L"查找首个可用代理\tCtrl+F");
+    proxyMenu_->Append(ID_MENU_FIND_BEST,  L"查找最佳代理\tCtrl+Shift+F");
     proxyMenu_->AppendSeparator();
-    proxyMenu_->Append(ID_MENU_DEDUP,      "Remove Duplicates");
-    proxyMenu_->Append(ID_MENU_EXPORT,     "Export Share Links");
-    proxyMenu_->Append(ID_MENU_GEN_CONFIG, "Generate Config…");
+    proxyMenu_->Append(ID_MENU_DEDUP,      L"移除重复代理");
+    proxyMenu_->Append(ID_MENU_EXPORT,     L"导出分享链接");
+    proxyMenu_->Append(ID_MENU_GEN_CONFIG, L"生成配置…");
     proxyMenu_->AppendSeparator();
     proxyMenu_->Append(ID_MENU_STANDALONE_MON, L"独立代理监控…\tCtrl+M", "显示/隐藏独立代理悬浮窗", wxITEM_CHECK);
     proxyMenu_->Check(ID_MENU_STANDALONE_MON, config_.proxy_process_monitor.enabled);
-    bar->Append(proxyMenu_, "&Proxy");
+    bar->Append(proxyMenu_, L"&代理");
 
     wxMenu* taskMenu = new wxMenu;
     taskMenu->Append(ID_MENU_AUTOTASK_RUN,  L"执行自动任务\tCtrl+T");
@@ -761,12 +761,12 @@ void MainFrame::initMenuBar() {
     bar->Append(taskMenu, L"&任务");
 
     wxMenu* settingsMenu = new wxMenu;
-    settingsMenu->Append(ID_MENU_CONFIG, "Configuration…\tCtrl+,");
-    bar->Append(settingsMenu, "&Settings");
+    settingsMenu->Append(ID_MENU_CONFIG, L"配置…\tCtrl+,");
+    bar->Append(settingsMenu, L"&设置");
 
     wxMenu* helpMenu = new wxMenu;
-    helpMenu->Append(ID_MENU_ABOUT, "About");
-    bar->Append(helpMenu, "&Help");
+    helpMenu->Append(ID_MENU_ABOUT, L"关于");
+    bar->Append(helpMenu, L"&帮助");
     Logger::write("[MainFrame] initMenuBar step 5: helpMenu appended", LogLevel::DEBUG);
 
     Logger::write("[MainFrame] initMenuBar step 6: storing menuBar", LogLevel::DEBUG);
@@ -794,7 +794,7 @@ void MainFrame::initToolBar() {
     m_toolbar->AddTool(ID_TOOL_CANCEL, "取消", ToolbarIcons::load("tool_cancel"), "取消测试");
     m_toolbar->EnableTool(ID_TOOL_CANCEL, false);  // disabled until operation starts
     m_toolbar->AddTool(ID_TOOL_SYNC, "同步", ToolbarIcons::load("tool_synchronize"), "同步");
-    m_toolbar->AddTool(ID_TOOL_FIND, "查找", ToolbarIcons::load("tool_find"), "查找最佳代理");
+    m_toolbar->AddTool(ID_TOOL_FIND, "最佳代理", ToolbarIcons::load("tool_find"), "查找最佳代理");
     m_toolbar->AddTool(ID_TOOL_DEDUP, "去重", ToolbarIcons::load("tool_dedup"), "去重");
     m_toolbar->AddTool(ID_TOOL_IMPORT, "导入", ToolbarIcons::load("tool_import"), "增加新订阅");
     m_toolbar->AddTool(ID_TOOL_AUTOTASK, "自动任务", ToolbarIcons::load("tool_pipeline"), "自动任务");
@@ -828,7 +828,7 @@ void MainFrame::initToolBar() {
     // Toggle detail panel button (rightmost)
     m_toggleDetailItem = m_toolbar->AddTool(ID_TOOL_DETAIL_TOGGLE, "详情",
                                              ToolbarIcons::load("tool_dockarrow"),
-                                             "Toggle Detail Panel");
+                                             "切换详情面板");
 
     m_toolbar->Realize();
 }

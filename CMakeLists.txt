@@ -1520,6 +1520,7 @@ if(wxWidgets_FOUND AND BUILD_UI_TESTS)
             tests/ui/TestChainPreview.cpp
             tests/ui/TestWindowSensing.cpp
             tests/ui/TestLayoutSensing.cpp
+            tests/ui/TestMenuAction.cpp
             tests/ui/TestPopupGuard.cpp
         )
         add_executable(UITests ${UI_FRAMEWORK_SOURCES} ${UI_TEST_SOURCES})
@@ -1547,6 +1548,7 @@ if(wxWidgets_FOUND AND BUILD_UI_TESTS)
         add_test(NAME UI_CHAINPREVIEW COMMAND UITests "[chainpreview]")
         add_test(NAME UI_WINDOWSENSING COMMAND UITests "[window]")
         add_test(NAME UI_LAYOUTSENSING COMMAND UITests "[layout]")
+        add_test(NAME UI_MENUACTION COMMAND UITests "[menu]")
         add_test(NAME UI_POPUPGUARD COMMAND UITests "[popup]")
         set_tests_properties(UI_MAINWINDOW UI_SEARCH UI_CLEAR UI_CHAINPREVIEW PROPERTIES
             TIMEOUT 120
@@ -1556,7 +1558,7 @@ if(wxWidgets_FOUND AND BUILD_UI_TESTS)
             WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
         # The new sensing suites boot the GUI once per TEST_CASE, so they need a
         # longer budget than the single-fixture suites above.
-        set_tests_properties(UI_WINDOWSENSING UI_LAYOUTSENSING UI_POPUPGUARD PROPERTIES
+        set_tests_properties(UI_WINDOWSENSING UI_LAYOUTSENSING UI_MENUACTION UI_POPUPGUARD PROPERTIES
             TIMEOUT 240
             WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
     endif()
