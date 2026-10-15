@@ -16,7 +16,7 @@
 # 用法: run_sync_db_schema.ps1 [-Db <数据库路径>]
 
 param(
-    [string]$Db = (Join-Path (Split-Path $PSScriptRoot -Parent) "bin\worker\guiNDB.db")
+    [string]$Db = (Join-Path (Split-Path $PSScriptRoot -Parent) "E:\v2rayN-windows-64\guiConfigs\guiNDB_update.db")
 )
 
 $ErrorActionPreference = "Continue"

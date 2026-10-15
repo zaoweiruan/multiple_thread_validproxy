@@ -683,7 +683,9 @@ add_executable(test_config_reader tests/test_config_reader.cpp tests/test_config
     src/ConfigReader.cpp src/Utils.cpp src/Logger.cpp src/LoggerInstance.cpp
     src/config/ConfigFileStore.cpp src/config/ConfigPathResolver.cpp
     src/config/ConfigJsonParser.cpp src/config/ConfigJsonSerializer.cpp
-    src/config/ConfigValidator.cpp)
+    src/config/ConfigValidator.cpp
+    # ConfigReader::load() 下发 config::setEchEnabled()，实现位于此文件
+    src/config/StreamSettingsBuilder.cpp)
 target_include_directories(test_config_reader PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(test_config_reader PRIVATE gtest_main gtest ${VCPKG_ROOT}/installed/x64-mingw-static/lib/libboost_json-gcc14-mt-x64-1_91.a -lws2_32)
 set_target_properties(test_config_reader PROPERTIES
@@ -1439,6 +1441,12 @@ add_executable(test_region_batch_resolver tests/test_region_batch_resolver.cpp
     src/RegionBatchResolver.cpp src/ConfigGenerator.cpp src/ProfileitemDAO.cpp
     src/ConfigReader.cpp src/FullConfigTemplateDAO.cpp src/config/ConfigBuilder.cpp
     src/config/StepRegistry.cpp src/config/ConfigPipeline.cpp src/config/StepHandlers.cpp
+    # ConfigPipeline.cpp 调用的 StepToComponentMapper::convertAll 实现在此文件
+    src/config/StepToComponentMapper.cpp
+    # PipelineConfigGenerator 定义在 src/config/ConfigGenerator.cpp（非 src/ConfigGenerator.cpp）
+    src/config/ConfigGenerator.cpp src/config/BundleChainResolver.cpp
+    src/config/ComponentRegistry.cpp src/config/ComponentBundleDAO.cpp
+    src/config/ConflictDetector.cpp src/config/ComponentResolver.cpp
     src/config/ConfigFileStore.cpp src/config/ConfigPathResolver.cpp
     src/config/ConfigJsonParser.cpp src/config/ConfigJsonSerializer.cpp src/config/ConfigValidator.cpp
     src/config/ProfileConfigRepository.cpp src/config/ProfileNormalizer.cpp
@@ -1510,6 +1518,9 @@ if(wxWidgets_FOUND AND BUILD_UI_TESTS)
             tests/ui/TestStandalonePortClose.cpp
             tests/ui/TestExitAssert.cpp
             tests/ui/TestChainPreview.cpp
+            tests/ui/TestWindowSensing.cpp
+            tests/ui/TestLayoutSensing.cpp
+            tests/ui/TestPopupGuard.cpp
         )
         add_executable(UITests ${UI_FRAMEWORK_SOURCES} ${UI_TEST_SOURCES})
         target_include_directories(UITests PRIVATE
@@ -1534,11 +1545,19 @@ if(wxWidgets_FOUND AND BUILD_UI_TESTS)
         add_test(NAME UI_PORTCLOSE COMMAND UITests "[portclose]")
         add_test(NAME UI_EXITASSERT COMMAND UITests "[exitassert]")
         add_test(NAME UI_CHAINPREVIEW COMMAND UITests "[chainpreview]")
+        add_test(NAME UI_WINDOWSENSING COMMAND UITests "[window]")
+        add_test(NAME UI_LAYOUTSENSING COMMAND UITests "[layout]")
+        add_test(NAME UI_POPUPGUARD COMMAND UITests "[popup]")
         set_tests_properties(UI_MAINWINDOW UI_SEARCH UI_CLEAR UI_CHAINPREVIEW PROPERTIES
             TIMEOUT 120
             WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
         set_tests_properties(UI_FLOATINGWIDGET UI_POOL UI_PORTCLOSE UI_EXITASSERT PROPERTIES
             TIMEOUT 120
+            WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+        # The new sensing suites boot the GUI once per TEST_CASE, so they need a
+        # longer budget than the single-fixture suites above.
+        set_tests_properties(UI_WINDOWSENSING UI_LAYOUTSENSING UI_POPUPGUARD PROPERTIES
+            TIMEOUT 240
             WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
     endif()
 endif()

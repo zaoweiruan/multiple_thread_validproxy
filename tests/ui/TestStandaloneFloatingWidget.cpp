@@ -89,6 +89,43 @@ HWND findMainWindow(DWORD pid) {
     return ctx.hwnd;
 }
 
+// Pick a screen point guaranteed to be OUTSIDE `pr` (with `margin` breathing
+// room) so the floating widget receives a genuine WM_MOUSELEAVE.
+//
+// Why this exists: the original test hardcoded ::SetCursorPos(10, 10). That
+// only worked while the expanded panel happened to sit mid-screen. After the
+// orb is dragged to the left edge the panel gets clamped to roughly
+// x=[8,608], y=[8,...] -- so (10,10) landed INSIDE the panel rectangle, no
+// WM_MOUSELEAVE was ever synthesized, and the widget never auto-hid.
+// Measured evidence: collapsed=false after the full budget, and the
+// post-collapse readback returned the *expanded* panel centre (275 + 33 = 308
+// == 8 + 300).
+POINT pickPointOutsideRect(RECT pr, int margin) {
+    const int vx = ::GetSystemMetrics(SM_XVIRTUALSCREEN);
+    const int vy = ::GetSystemMetrics(SM_YVIRTUALSCREEN);
+    const int vw = ::GetSystemMetrics(SM_CXVIRTUALSCREEN);
+    const int vh = ::GetSystemMetrics(SM_CYVIRTUALSCREEN);
+
+    POINT cands[6];
+    int n = 0;
+    cands[n].x = vx + margin;          cands[n].y = vy + margin;          ++n;
+    cands[n].x = vx + vw - 1 - margin; cands[n].y = vy + margin;          ++n;
+    cands[n].x = vx + margin;          cands[n].y = vy + vh - 1 - margin; ++n;
+    cands[n].x = vx + vw - 1 - margin; cands[n].y = vy + vh - 1 - margin; ++n;
+    cands[n].x = pr.right + 40;       cands[n].y = pr.bottom + 40;       ++n;
+    cands[n].x = pr.left - 40;        cands[n].y = pr.top - 40;          ++n;
+
+    for (int i = 0; i < n; ++i) {
+        POINT p = cands[i];
+        if (p.x < vx || p.x >= vx + vw) p.x = vx + vw / 2;
+        if (p.y < vy || p.y >= vy + vh) p.y = vy + vh / 2;
+        const bool inside = (p.x >= pr.left && p.x <= pr.right &&
+                             p.y >= pr.top && p.y <= pr.bottom);
+        if (!inside) return p;
+    }
+    return POINT{ vx + vw / 2, vy + vh / 2 };
+}
+
 // Polls until the floating widget's visibility matches `want` (or timeout).
 bool waitForFloating(bool want, DWORD pid, int timeoutMs = 5000, int pollMs = 100) {
     const DWORD start = ::GetTickCount();
@@ -354,7 +391,18 @@ TEST_CASE("Click-expand then auto-hide keeps free-drop position",
         ::PostMessageW(hPanel, WM_MOUSEMOVE, 0, MAKELPARAM(ppt.x, ppt.y));
         ::Sleep(80);
     }
-    ::SetCursorPos(10, 10);
+    // Hardcoding (10,10) is wrong: once the orb sits at the left screen edge the
+    // clamped panel covers roughly x=[8,608], y=[8,...], so (10,10) lands
+    // *inside* the panel and no WM_MOUSELEAVE is ever delivered.
+    POINT away{ 0, 0 };
+    {
+        HWND hPanel = findFloatingHwnd(fx.pid());
+        away = pickPointOutsideRect(getRect(hPanel), 40);
+    }
+    // Independent budget: `t0` is shared with the expansion loop above and had
+    // already burned ~8s, leaving the collapse loop barely half its allowance.
+    const DWORD tCollapse = ::GetTickCount();
+    ::SetCursorPos(away.x, away.y);
     bool collapsed = false;
     for (;;) {
         HWND h = findFloatingHwnd(fx.pid());
@@ -363,10 +411,36 @@ TEST_CASE("Click-expand then auto-hide keeps free-drop position",
             collapsed = true;
             break;
         }
-        if (static_cast<int>(::GetTickCount() - t0) >= 20000) break;
+        if (static_cast<int>(::GetTickCount() - tCollapse) >= 20000) break;
         ::Sleep(200);
     }
+    CAPTURE(away.x);
+    CAPTURE(away.y);
     REQUIRE(collapsed);
+
+    // 4b. The collapse must be STABLE before we read the final position: a
+    //     click pair still queued by the expansion loop above (it re-sends one
+    //     every 800ms) can be processed after the auto-hide and re-expand the
+    //     panel. Without this gate the readback below observed the expanded
+    //     600x480 panel rect and reported bogus 275/215 px drift.
+    bool stayedCollapsed = false;
+    {
+        int consecutive = 0;
+        const DWORD ts = ::GetTickCount();
+        while (static_cast<int>(::GetTickCount() - ts) < 6000) {
+            const HWND h = findFloatingHwnd(fx.pid());
+            const RECT r = getRect(h);
+            const bool small =
+                (r.right - r.left) <= 100 && (r.bottom - r.top) <= 100;
+            consecutive = small ? consecutive + 1 : 0;
+            if (consecutive >= 4) {
+                stayedCollapsed = true;
+                break;
+            }
+            ::Sleep(200);
+        }
+    }
+    REQUIRE(stayedCollapsed);
 
     // 4. Regression assertion: the orb must be back at the free-drop position
     //    (keepCenter preserved), NOT reset to the default right-edge center.
@@ -529,7 +603,18 @@ TEST_CASE("Edge orb returns to original position after expand-and-collapse",
         ::PostMessageW(hPanel, WM_MOUSEMOVE, 0, MAKELPARAM(ppt.x, ppt.y));
         ::Sleep(80);
     }
-    ::SetCursorPos(10, 10);
+    // Hardcoding (10,10) is wrong: once the orb sits at the left screen edge the
+    // clamped panel covers roughly x=[8,608], y=[8,...], so (10,10) lands
+    // *inside* the panel and no WM_MOUSELEAVE is ever delivered.
+    POINT away{ 0, 0 };
+    {
+        HWND hPanel = findFloatingHwnd(fx.pid());
+        away = pickPointOutsideRect(getRect(hPanel), 40);
+    }
+    // Independent budget: `t0` is shared with the expansion loop above and had
+    // already burned ~8s, leaving the collapse loop barely half its allowance.
+    const DWORD tCollapse = ::GetTickCount();
+    ::SetCursorPos(away.x, away.y);
     bool collapsed = false;
     for (;;) {
         HWND h = findFloatingHwnd(fx.pid());
@@ -538,9 +623,11 @@ TEST_CASE("Edge orb returns to original position after expand-and-collapse",
             collapsed = true;
             break;
         }
-        if (static_cast<int>(::GetTickCount() - t0) >= 20000) break;
+        if (static_cast<int>(::GetTickCount() - tCollapse) >= 20000) break;
         ::Sleep(200);
     }
+    CAPTURE(away.x);
+    CAPTURE(away.y);
     REQUIRE(collapsed);
 
     // 4. Regression assertion: the orb returns to its ORIGINAL edge position,

@@ -18,6 +18,8 @@
 #include <windows.h>
 #include <UIAutomation.h>
 #include <string>
+#include <cstdio>
+#include <cstring>
 #include "framework/Application.h"
 #include "framework/UIAutomation.h"
 #include "framework/UIElement.h"
@@ -289,16 +291,105 @@ HWND nativeOf(const UiElement& el, HWND hFloat, const wchar_t* fallbackName) {
     return h ? h : findChildByText(hFloat, fallbackName);
 }
 
-// Authoritative capability probe: spawn xray with a minimal config on the probe
-// port (45000) and check whether that port actually becomes LISTENING. This is
+// Authoritative capability probe: spawn xray with a minimal config on a probe
+// port and check whether that port actually becomes LISTENING. This is
 // robust against xray either exiting OR stalling on failure — we only care about
 // the observable bind result. The probe xray is always terminated afterward so it
 // never leaks. std handles go to NUL so xray cannot block on invalid console
 // handles in a GUI test context.
-bool xrayCanStart() {
+//
+// ---------------------------------------------------------------------------
+// HARD BOUNDING MANDATORY — read before changing anything below.
+//
+// The first implementation used a BLOCKING connect() retried 25 times with no
+// timeout.  On this machine a HIPS/ESET filter silently DROPs the loopback SYN,
+// so every connect() blocked ~2.1s until the Windows SYN-retransmission budget
+// ran out: 25 x 2.1s ~= 53s per call. This gate is hit several times across the
+// suite, which is why UI_POOL used to take ~58s.
+//
+// Three invariants keep this cheap and correct:
+//   1. non-blocking connect() + select() with a per-attempt cap;
+//   2. an overall wall-clock budget for the entire probe;
+//   3. memoisation — the answer cannot change mid-run, so probe at most once.
+//
+// The probe config is GENERATED into the sandbox rather than read from
+// bin\config\probe2.json, which does not exist in this checkout (xray exited
+// immediately, so the probe could never succeed).  Tests may only write under
+// test\ui-sandbox\.
+// ---------------------------------------------------------------------------
+
+// Find a free loopback TCP port by actually binding one (self-contained: this
+// file has no port-table helpers).
+int pickProbePort() {
+    WSADATA wsa{};
+    if (::WSAStartup(MAKEWORD(2, 2), &wsa) != 0) return -1;
+    int chosen = -1;
+    for (int port = 45000; port < 45000 + 50 && chosen < 0; ++port) {
+        SOCKET s = ::socket(AF_INET, SOCK_STREAM, 0);
+        if (s == INVALID_SOCKET) break;
+        sockaddr_in a{};
+        a.sin_family = AF_INET;
+        a.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        a.sin_port = htons(static_cast<unsigned short>(port));
+        if (::bind(s, reinterpret_cast<sockaddr*>(&a), sizeof(a)) == 0) chosen = port;
+        ::closesocket(s);
+    }
+    ::WSACleanup();
+    return chosen;
+}
+
+// One connect attempt that never blocks longer than `budgetMs`.
+bool probeConnectOnce(SOCKET s, const sockaddr_in& addr, int budgetMs) {
+    const int rc = ::connect(s, reinterpret_cast<const sockaddr*>(&addr), sizeof(addr));
+    if (rc == 0) return true;                                  // instant success
+    const int wsaErr = ::WSAGetLastError();
+    if (wsaErr != WSAEWOULDBLOCK && wsaErr != WSAEINPROGRESS) {
+        return false;                                          // ECONNREFUSED: retry
+    }
+    fd_set wfds{};
+    FD_ZERO(&wfds);
+    FD_SET(s, &wfds);
+    timeval tv{};
+    tv.tv_sec  = budgetMs / 1000;
+    tv.tv_usec = (budgetMs % 1000) * 1000;
+    if (::select(0, nullptr, &wfds, nullptr, &tv) <= 0) return false;  // timed out
+    int err = 0;
+    int len = sizeof(err);
+    if (::getsockopt(s, SOL_SOCKET, SO_ERROR,
+                     reinterpret_cast<char*>(&err), &len) != 0) {
+        return false;
+    }
+    return err == 0;
+}
+
+bool xrayCanStartUncached() {
     const std::wstring xray = L"E:\\v2rayN-windows-64\\bin\\xray\\xray.exe";
-    const std::wstring cfg  =
-        L"E:\\eclipse_workspace\\multiple_thread_validproxy\\bin\\config\\probe2.json";
+
+    const int port = pickProbePort();
+    if (port <= 0) return false;
+
+    // Minimal standalone-style config: mixed inbound on PORT + freedom
+    // outbound. Written into the sandbox only (hard rule).
+    ::CreateDirectoryW(Paths::sandboxDir().c_str(), nullptr);   // ignore EEXIST
+    const std::wstring cfg = Paths::sandboxDir() + L"\\xray-pool-probe.json";
+    {
+        char buf[512];
+        std::snprintf(buf, sizeof(buf),
+            "{\"log\":{\"loglevel\":\"error\"},"
+            "\"inbounds\":[{\"tag\":\"s-in\",\"listen\":\"0.0.0.0\",\"port\":%d,"
+            "\"protocol\":\"mixed\",\"settings\":{\"auth\":\"noauth\",\"udp\":true}}],"
+            "\"outbounds\":[{\"tag\":\"direct\",\"protocol\":\"freedom\"}]}",
+            port);
+        HANDLE h = ::CreateFileW(cfg.c_str(), GENERIC_WRITE, 0, nullptr,
+                                 CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+        if (h == INVALID_HANDLE_VALUE) return false;
+        DWORD written = 0;
+        const BOOL ok = ::WriteFile(h, buf, static_cast<DWORD>(std::strlen(buf)),
+                                    &written, nullptr);
+        ::CloseHandle(h);
+        if (ok == FALSE) return false;
+    }
+
     std::wstring cmd = L"\"" + xray + L"\" run -c \"" + cfg + L"\"";
     STARTUPINFOW si{};
     si.cb = sizeof(si);
@@ -321,15 +412,24 @@ bool xrayCanStart() {
     if (::WSAStartup(MAKEWORD(2, 2), &wsa) == 0) {
         SOCKET s = ::socket(AF_INET, SOCK_STREAM, 0);
         if (s != INVALID_SOCKET) {
+            // Non-blocking, otherwise select() below can never fire.
+            u_long nonBlocking = 1;
+            ::ioctlsocket(s, FIONBIO, &nonBlocking);
+
             sockaddr_in a{};
             a.sin_family = AF_INET;
             a.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-            a.sin_port = htons(45000);
-            for (int i = 0; i < 25 && !listening; ++i) { // ~2.5s
-                if (::connect(s, reinterpret_cast<sockaddr*>(&a), sizeof(a)) == 0) {
-                    listening = true; break;
+            a.sin_port = htons(static_cast<unsigned short>(port));
+
+            const DWORD startedAt = ::GetTickCount();
+            const DWORD budgetMs  = 2000;   // whole probe, was effectively infinite
+            const int  attemptMs  = 120;    // per connect() attempt
+            while (::GetTickCount() - startedAt < budgetMs) {
+                if (probeConnectOnce(s, a, attemptMs)) { listening = true; break; }
+                if (::WaitForSingleObject(pi.hProcess, 0) == WAIT_OBJECT_0) {
+                    break;                  // xray already exited: stop probing
                 }
-                ::Sleep(100);
+                ::Sleep(40);
             }
             ::closesocket(s);
         }
@@ -337,9 +437,18 @@ bool xrayCanStart() {
     }
     // Always reap the probe xray.
     ::TerminateProcess(pi.hProcess, 0);
+    ::WaitForSingleObject(pi.hProcess, 2000);
     ::CloseHandle(pi.hThread);
     ::CloseHandle(pi.hProcess);
+    ::DeleteFileW(cfg.c_str());
     return listening;
+}
+
+// Memoised entry point. The environment cannot gain/lose the ability to bind a
+// localhost socket between test cases in one run, so probe exactly once.
+bool xrayCanStart() {
+    static const bool cached = xrayCanStartUncached();
+    return cached;
 }
 
 } // namespace

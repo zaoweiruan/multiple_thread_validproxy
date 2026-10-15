@@ -3,6 +3,8 @@
 #include "framework/UIAutomation.h"
 #include "framework/Wait.h"
 #include <sstream>
+#include <vector>
+#include <cmath>
 
 namespace uitest {
 std::wstring UiElement::name() const {
@@ -101,7 +103,14 @@ UiElement UiElement::fromHwnd(HWND hwnd) {
     return UiElement(raw);
 }
 
-bool UiElement::click() {
+UiElement UiElement::clone() const {
+    if (!element_.get()) return UiElement();
+    IUIAutomationElement* copy = element_.get();
+    copy->AddRef();
+    return UiElement(copy);   // takes the reference we just added
+}
+
+bool UiElement::click() const {
     if (!element_.get()) return false;
     IUnknown* unk = nullptr;         // MinGW header: IUnknown** out-param, not VARIANT
     HRESULT hr = element_->GetCurrentPattern(UIA_InvokePatternId, &unk);
@@ -118,7 +127,7 @@ bool UiElement::click() {
     return ok;
 }
 
-bool UiElement::setText(const wchar_t* text) {
+bool UiElement::setText(const wchar_t* text) const {
     if (!element_.get()) return false;
     IUnknown* unk = nullptr;         // MinGW header: IUnknown** out-param, not VARIANT
     HRESULT hr = element_->GetCurrentPattern(UIA_ValuePatternId, &unk);
@@ -135,7 +144,7 @@ bool UiElement::setText(const wchar_t* text) {
     return ok;
 }
 
-std::wstring UiElement::getText() {
+std::wstring UiElement::getText() const {
     if (!element_.get()) return std::wstring();
     VARIANT v;
     ::VariantInit(&v);
@@ -191,5 +200,141 @@ std::wstring UiElement::dumpTree(int maxDepth) const {
     IUIAutomation* ua = Uia::instance().com();
     if (ua && element_.get()) walk(ua, element_.get(), out, 0, maxDepth);
     return out.str();
+}
+
+// ----------------------------------------------------------------------
+// introspection additions (window-type / layout sensing)
+// ----------------------------------------------------------------------
+
+int UiElement::controlType() const {
+    if (!element_.get()) return 0;
+    CONTROLTYPEID ct = UIA_ControlTypePropertyId;
+    if (FAILED(element_->get_CurrentControlType(&ct)) || ct == UIA_ControlTypePropertyId) {
+        return 0;
+    }
+    return static_cast<int>(ct);
+}
+
+bool boundingRectOf(IUIAutomationElement* raw, RECT* out) {
+    if (!raw || !out) return false;
+
+    // Primary path: IUIAutomationElement projects BoundingRectangle as a plain
+    // RECT out-param. (MSDN describes the underlying property as a double[4]
+    // SAFEARRAY, but the projected interface hands back a RECT directly, which
+    // is exactly what we want and avoids fighting VARIANT/SafeArray on MinGW.)
+    RECT r = {0, 0, 0, 0};
+    if (SUCCEEDED(raw->get_CurrentBoundingRectangle(&r)) &&
+        r.right > r.left && r.bottom > r.top) {
+        *out = r;
+        return true;
+    }
+
+    // Fallback: element backed by a native HWND -> ask Win32 directly. wxWidgets
+    // native controls always answer here, so this covers providers that do not
+    // implement the bounding rectangle property.
+    VARIANT hwndVar;
+    ::VariantInit(&hwndVar);
+    if (SUCCEEDED(raw->GetCurrentPropertyValue(
+            UIA_NativeWindowHandlePropertyId, &hwndVar)) &&
+        hwndVar.vt == VT_I4 && hwndVar.lVal != 0) {
+        const HWND hwnd = reinterpret_cast<HWND>(
+            static_cast<LONG_PTR>(hwndVar.lVal));
+        ::VariantClear(&hwndVar);
+        if (::IsWindow(hwnd) && ::GetWindowRect(hwnd, out)) {
+            return true;
+        }
+        return false;
+    }
+    ::VariantClear(&hwndVar);
+    return false;
+}
+
+bool UiElement::boundingRect(RECT* out) const {
+    return boundingRectOf(element_.get(), out);
+}
+
+UiElement UiElement::parent() const {
+    if (!element_.get()) return UiElement();
+    IUIAutomation* ua = Uia::instance().com();
+    if (!ua) return UiElement();
+    IUIAutomationTreeWalker* walker = nullptr;
+    if (FAILED(ua->get_ControlViewWalker(&walker)) || !walker) return UiElement();
+    IUIAutomationElement* p = nullptr;
+    UiElement result;
+    if (SUCCEEDED(walker->GetParentElement(element_.get(), &p)) && p) {
+        result = UiElement(p);   // ownership transferred
+    }
+    walker->Release();
+    return result;
+}
+
+bool UiElement::hasPattern(PATTERNID patternId) const {
+    if (!element_.get()) return false;
+    IUnknown* unk = nullptr;
+    if (FAILED(element_->GetCurrentPattern(patternId, &unk)) || !unk) return false;
+    unk->Release();
+    return true;
+}
+
+std::vector<UiElement> UiElement::findAll(const UiElement& scope, const Locator& loc,
+                                          DWORD pidFilter, int timeoutMs, int pollMs) {
+    std::vector<UiElement> results;
+    if (!scope.valid()) return results;
+
+    // Same condition construction as findBy: the MinGW projection takes a
+    // VARIANT, and passing the wchar_t* directly does not compile.
+    VARIANT v;
+    ::VariantInit(&v);
+    v.vt = VT_BSTR;
+    v.bstrVal = ::SysAllocString(loc.value.c_str());
+    ComPtr<IUIAutomationCondition> cond;
+    const HRESULT hr = Uia::instance().com()
+                           ? Uia::instance().com()->CreatePropertyCondition(
+                                 loc.property, v, &cond)
+                           : E_FAIL;
+    ::VariantClear(&v);
+    if (FAILED(hr) || !cond.get()) return results;
+
+    // FindAll lives on IUIAutomationElement, not on IUIAutomation, and returns
+    // an IUIAutomationElementArray directly (no collection indirection).
+    std::vector<IUIAutomationElement*> found;   // raw candidates, released on all paths
+    const bool ok = waitFor(timeoutMs, pollMs, [&]() -> bool {
+        for (size_t i = 0; i < found.size(); ++i) found[i]->Release();
+        found.clear();
+
+        IUIAutomationElementArray* arr = nullptr;
+        if (FAILED(scope.raw()->FindAll(TreeScope_Subtree, cond.get(), &arr)) ||
+            !arr) {
+            return false;
+        }
+        int total = 0;
+        if (SUCCEEDED(arr->get_Length(&total)) && total > 0) {
+            found.reserve(static_cast<size_t>(total));
+            for (int i = 0; i < total; ++i) {
+                IUIAutomationElement* e = nullptr;
+                if (SUCCEEDED(arr->GetElement(i, &e)) && e) {
+                    int pidRaw = 0;   // MinGW header declares int*, not DWORD*
+                    if (FAILED(e->get_CurrentProcessId(&pidRaw))) {
+                        e->Release();
+                        continue;
+                    }
+                    if (pidFilter != 0 && static_cast<DWORD>(pidRaw) != pidFilter) {
+                        e->Release();
+                        continue;
+                    }
+                    found.push_back(e);   // keep ownership until handed over
+                }
+            }
+        }
+        arr->Release();
+        return !found.empty();
+    });
+
+    if (ok) {
+        for (size_t i = 0; i < found.size(); ++i) results.push_back(UiElement(found[i]));
+    } else {
+        for (size_t i = 0; i < found.size(); ++i) found[i]->Release();
+    }
+    return results;
 }
 }
