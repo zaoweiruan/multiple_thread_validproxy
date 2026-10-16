@@ -20,6 +20,7 @@
 #include <array>
 #include <functional>
 #include <cstdint>
+#include <cstring>
 #include <random>
 #include <windows.h>
 
@@ -114,6 +115,15 @@ namespace {
     }
 }
 
+// True when the subscription URL targets a GitHub host (github.com /
+// *.githubusercontent.com / gist...). Used only to decide whether a 404
+// returned by the URL accelerator can be attributed to the origin - see
+// httpStatusIsAboutOrigin in processSub().
+static bool isGitHubHostedUrl(const std::string& url) {
+    return url.find("github.com") != std::string::npos ||
+           url.find("githubusercontent.com") != std::string::npos;
+}
+
 SubitemUpdaterV2::SubitemUpdaterV2(sqlite3* db,
                                     const std::string& xrayPath,
                                     const config::AppConfig& config,
@@ -146,7 +156,17 @@ bool SubitemUpdaterV2::run() {
     db::models::SubitemDAO subDao(db_);
     std::vector<db::models::Subitem> enabledSubs = subDao.getEnabledSubscriptions();
 
-    if (enabledSubs.empty()) {
+    // Subscriptions previously marked as "upstream gone" (remarks carry the
+    // 404- prefix and Enabled was forced to 0). They no longer provide nodes,
+    // but the upstream may have been recreated, so each run still probes them
+    // exactly once: a successful parse clears the marker.
+    std::vector<db::models::Subitem> goneSubs = getSourceGoneSubscriptions();
+    if (!goneSubs.empty()) {
+        Logger::write("Probing " + std::to_string(goneSubs.size())
+                      + " subscription(s) previously marked 404", LogLevel::INFO);
+    }
+
+    if (enabledSubs.empty() && goneSubs.empty()) {
         Logger::write("No enabled subscriptions found", LogLevel::WARN);
         return true;
     }
@@ -235,14 +255,22 @@ bool SubitemUpdaterV2::run() {
             }
 
             // A 404 is only authoritative evidence about the SUBSCRIPTION when the
-            // request actually reached the origin. Going through a URL accelerator
-            // means the 404 may belong to the accelerator itself (e.g. it refuses
-            // the target) while a later method would still succeed, so in that one
-            // case we must keep the old retry behaviour. fetchUrlViaAccelerator()
-            // degrades to a plain direct fetch when accelerator_url is empty, hence
-            // the second half of the condition.
+            // response can be attributed to the origin:
+            //  - direct / proxy fetch, or accelerator with no accelerator_url
+            //    (fetchUrlViaAccelerator degrades to a plain direct fetch):
+            //    the request reached the origin -> trust the 404;
+            //  - accelerator configured AND the target is GitHub-hosted
+            //    (isGitHubHostedUrl): the accelerator (production: gh-proxy.com)
+            //    transparently relays GitHub content and forwards the origin's
+            //    status code, so its 404 is still the origin's verdict. Production
+            //    runs update_methods = ["accelerator"], so without this arm the
+            //    whole 404-marking feature would never fire there;
+            //  - accelerator + NON-GitHub target: the accelerator itself may be
+            //    refusing the target (it is GitHub-specific) -> the 404 says
+            //    nothing about the origin, keep the old retry behaviour.
             const bool httpStatusIsAboutOrigin =
-                (method != UpdateMethod::Accelerator) || config_.accelerator_url.empty();
+                (method != UpdateMethod::Accelerator) || config_.accelerator_url.empty() ||
+                isGitHubHostedUrl(subUrl);
 
             if (isCancelled()) return false;
             if (netMon_ && !netMon_->IsConnected()) {
@@ -257,6 +285,8 @@ bool SubitemUpdaterV2::run() {
                     updateProfileItems(subId, profiles);
                     successCount++;
                     phaseSuccess++;
+                    // Upstream produced nodes again -> drop the 404- marker if any.
+                    clearSourceGoneMarker(subId, subRemarks);
                     Logger::write("INFO: Updated successfully: " + subId, LogLevel::INFO);
                     std::string newTime = getCurrentTimestamp();
                     std::string updateSql = "UPDATE SubItem SET UpdateTime = '" + newTime + "' WHERE Id = '" + subId + "'";
@@ -266,13 +296,17 @@ bool SubitemUpdaterV2::run() {
                     // body ("404: Not Found") is non-empty, so without this check it
                     // would be reported as "Parse failed" and retried through every
                     // remaining method — three futile fetches per dead subscription.
-                    // A gone source cannot recover, so it is reported distinctly and
-                    // deliberately NOT queued into stillFailed (no cross-method retry).
+                    // A gone source cannot recover on its own, so the row is marked
+                    // (Remarks += "404-", Enabled = 0) to make the failure visible in
+                    // the UI list and to stop it from feeding scheduled updates.
+                    // The marker is NOT a death sentence: run() still probes marked
+                    // subscriptions once per run and clears it if nodes come back.
                     if (httpStatus == 404 && httpStatusIsAboutOrigin) {
                         phaseFail++;
+                        markSourceGone(subId, subRemarks);
                         Logger::write("ERROR: Subscription source gone (HTTP 404): " + subId
                                       + " remarks=" + subRemarks + " url=" + subUrl
-                                      + " - upstream removed/renamed; disable or replace this subscription",
+                                      + " - upstream removed/renamed; marked and disabled",
                                       LogLevel::ERR);
                     } else {
                         phaseFail++;
@@ -307,6 +341,22 @@ bool SubitemUpdaterV2::run() {
                 }
                 Logger::write("[" + std::to_string(i + 1) + "/" + std::to_string(enabledSubs.size()) + "] " + methodName + ": " + sub.url, LogLevel::REPORT);
                 attemptedCount++;
+                if (!processSub(sub.id, sub.remarks, sub.url)) break;
+            }
+            // Probe the subscriptions previously marked 404. Deliberately NOT
+            // gated by shouldSkipUpdate(): these rows carry Enabled=0 and would
+            // otherwise fall outside the interval logic, and the whole point of
+            // probing is to notice an upstream that came back. One request per
+            // marked subscription per run is cheap, and processSub() already keeps
+            // a still-404 source out of stillFailed so there is no cross-phase retry.
+            for (size_t i = 0; i < goneSubs.size(); ++i) {
+                if (isCancelled()) {
+                    Logger::write("INFO: Update cancelled by user during " + methodName + " probe", LogLevel::REPORT);
+                    break;
+                }
+                const db::models::Subitem& sub = goneSubs[i];
+                Logger::write("[probe " + std::to_string(i + 1) + "/" + std::to_string(goneSubs.size()) + "] "
+                              + methodName + ": " + sub.url, LogLevel::REPORT);
                 if (!processSub(sub.id, sub.remarks, sub.url)) break;
             }
         } else {
@@ -470,6 +520,82 @@ bool SubitemUpdaterV2::execSql(const std::string& sql, const std::string& errorC
     return true;
 }
 
+bool SubitemUpdaterV2::execSqlBind(const std::string& sql, const std::string& first,
+                                    const std::string& second) {
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db_, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
+        Logger::write("ERROR: SQL prepare failed - " + std::string(sqlite3_errmsg(db_)), LogLevel::ERR);
+        return false;
+    }
+    // SQLITE_TRANSIENT: sqlite3 copies the bound text, so the caller's
+    // std::string may go out of scope immediately after this call.
+    sqlite3_bind_text(stmt, 1, first.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 2, second.c_str(), -1, SQLITE_TRANSIENT);
+    const bool ok = (sqlite3_step(stmt) == SQLITE_DONE);
+    if (!ok) {
+        Logger::write("ERROR: SQL exec failed - " + std::string(sqlite3_errmsg(db_)), LogLevel::ERR);
+    }
+    sqlite3_finalize(stmt);
+    return ok;
+}
+
+bool SubitemUpdaterV2::hasSourceGoneMarker(const std::string& remarks) {
+    return remarks.compare(0, std::strlen(kSourceGonePrefix), kSourceGonePrefix) == 0;
+}
+
+void SubitemUpdaterV2::markSourceGone(const std::string& subId, const std::string& remarks) {
+    if (hasSourceGoneMarker(remarks)) {
+        // Already marked. Still make sure Enabled is 0 — a user may have
+        // re-enabled it manually after the source disappeared again.
+        execSqlBind("UPDATE SubItem SET Enabled = 0 WHERE Id = ?1", subId, std::string());
+        return;
+    }
+    // A remark consisting only of the prefix marker would be indistinguishable
+    // from an unmarked empty remark, so refuse to create that degenerate row.
+    if (remarks.empty()) {
+        Logger::write("WARN: cannot mark source gone for " + subId
+                      + " - remark is empty, prefix would be indistinguishable", LogLevel::WARN);
+        execSqlBind("UPDATE SubItem SET Enabled = 0 WHERE Id = ?1", subId, std::string());
+        return;
+    }
+    const std::string marked = std::string(kSourceGonePrefix) + remarks;
+    if (execSqlBind("UPDATE SubItem SET Remarks = ?1, Enabled = 0 WHERE Id = ?2", marked, subId)) {
+        Logger::write("Marked subscription source gone: " + subId
+                      + " remarks=" + marked + " (Enabled=0; still probed for recovery)",
+                      LogLevel::REPORT);
+    }
+}
+
+void SubitemUpdaterV2::clearSourceGoneMarker(const std::string& subId, const std::string& remarks) {
+    if (!hasSourceGoneMarker(remarks)) return;
+    const std::size_t prefixLen = std::strlen(kSourceGonePrefix);
+    const std::string restored = remarks.substr(prefixLen);
+    // Only the Remarks column is touched: Enabled is deliberately left at 0 so a
+    // recovered source does not silently rejoin the scheduled update batch.
+    // Re-enabling stays an explicit user action (UI checkbox), which is the
+    // point of having marked it gone in the first place.
+    if (execSqlBind("UPDATE SubItem SET Remarks = ?1 WHERE Id = ?2", restored, subId)) {
+        Logger::write("Subscription source recovered: " + subId
+                      + " remarks=" + restored + " (404- prefix removed; Enabled left as-is)",
+                      LogLevel::REPORT);
+    }
+}
+
+std::vector<db::models::Subitem> SubitemUpdaterV2::getSourceGoneSubscriptions() {
+    std::vector<db::models::Subitem> subs;
+    std::string sql = "SELECT * FROM SubItem WHERE Enabled = 0 AND Remarks LIKE '404-%';";
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db_, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
+        Logger::write("ERROR: SQL prepare failed - " + std::string(sqlite3_errmsg(db_)), LogLevel::ERR);
+        return subs;
+    }
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        subs.push_back(db::models::Subitem::fromStmt(stmt));
+    }
+    sqlite3_finalize(stmt);
+    return subs;
+}
+
 std::optional<db::models::Subitem> SubitemUpdaterV2::getSubscription(const std::string& subId) {
     std::string sql = "SELECT * FROM SubItem WHERE Id = '" + subId + "';";
     sqlite3_stmt* stmt = nullptr;
@@ -492,6 +618,12 @@ std::optional<db::models::Subitem> SubitemUpdaterV2::getSubscription(const std::
 
 bool SubitemUpdaterV2::updateWithMethods(const std::string& subUrl, const std::string& subId,
                                           const std::vector<UpdateMethod>& methods) {
+    // Read the remark once: it carries the "404-" marker that has to be added or
+    // removed when this single-subscription update concludes.
+    std::string subRemarks;
+    std::optional<db::models::Subitem> markerRow = getSubscription(subId);
+    if (markerRow) subRemarks = markerRow->remarks;
+
     for (const UpdateMethod& method : methods) {
         std::string methodName;
         switch (method) {
@@ -527,18 +659,22 @@ bool SubitemUpdaterV2::updateWithMethods(const std::string& subUrl, const std::s
             Logger::write("INFO: " + methodName + " connection successful", LogLevel::INFO);
             std::vector<db::models::Profileitem> profiles = parseSubscription(content, subId);
             if (!profiles.empty()) {
+                clearSourceGoneMarker(subId, subRemarks);
                 return updateProfileItems(subId, profiles);
             }
             // Same rationale as processSub(): a 404 body is non-empty, so without
             // this branch a dead upstream is indistinguishable from a parse bug and
-            // every remaining method is tried for nothing. The accelerator caveat
-            // applies here too — see the comment in processSub().
+            // every remaining method is tried for nothing. The three-arm origin
+            // attribution (direct / accelerator+GitHub / accelerator+non-GitHub)
+            // is spelled out at httpStatusIsAboutOrigin in processSub().
             const bool statusIsAboutOrigin =
-                (method != UpdateMethod::Accelerator) || config_.accelerator_url.empty();
+                (method != UpdateMethod::Accelerator) || config_.accelerator_url.empty() ||
+                isGitHubHostedUrl(subUrl);
             if (httpStatus == 404 && statusIsAboutOrigin) {
+                markSourceGone(subId, subRemarks);
                 Logger::write("ERROR: Subscription source gone (HTTP 404): " + subId
                               + " url=" + subUrl
-                              + " - upstream removed/renamed; disable or replace this subscription",
+                              + " - upstream removed/renamed; marked and disabled",
                               LogLevel::ERR);
                 return false;
             }

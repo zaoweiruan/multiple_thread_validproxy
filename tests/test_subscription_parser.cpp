@@ -464,3 +464,104 @@ TEST(SubscriptionParserTest, MetadataCommentLinesAreCountedSeparately) {
     // 这条断言因此是有鉴别力的。
     EXPECT_FALSE(cap.contains("s-meta: drop rate"));
 }
+
+// --- 守护 9：明文 VLESS 误挂 vmess:// 前缀 -> 容错改写为 vless:// ---
+//
+// 真实数据（crackbest 订阅 line 127/313）：
+//   vmess://06d4d001-4168-4876-9416-7caecf578f40@178.105.168.171:211#...
+// 该载荷不是 base64 —— 修复前 decodeBase64 会把 UUID 里的 '-' 与 ':' '@'
+// 一并丢弃，把十六进制字符当 base64 解出乱码，命中 "not JSON" 整行被丢。
+//
+// 修复后：主循环在进入 scheme 分支之前改写 line = "vless://" + 剥掉 fragment
+// 的载荷，控制流不变，自然落入既有 vless 分支。countedAsVmess 保持 false，
+// 该行最终计 otherOk，等式不变量不受影响。
+//
+// 同内容里放一条真正的 vmess base64 行做反向守卫：标准 base64 字母表不含
+// '@'，looksLikePlainVlessUri 第一条判据即失败，绝不会被误改写。
+TEST(SubscriptionParserTest, VmessMislabeledPlainVlessIsRewrittenToVless) {
+    update::SubscriptionParser parser;
+    update::ParseStats stats;
+
+    // 真实形态样本：必须带 '?' 参数串（crackbest line 20/399 就是
+    // "uuid@host:port?ed=...&type=ws"），早期夹具漏掉 '?' 导致单测绿、
+    // 真实数据 mislabeled 恒 0 —— 判据漏截 hostPart 的参数串是实打实的 bug。
+    const std::string content =
+        "vmess://uuid-aaa@178.105.168.171:211?encryption=auto&type=ws&security=none#meh-24\n"
+        "vmess://uuid-bbb@57.128.164.21:80?ed=2560&host=example.com#frag2\n"
+        + vmessLine("{\"v\":\"2\",\"ps\":\"ok\",\"add\":\"1.2.3.4\","
+                    "\"port\":443,\"id\":\"u\",\"net\":\"tcp\"}") + "\n";  // 真正的 vmess base64
+
+    LogCapture cap;
+    std::vector<db::models::Profileitem> profiles = parser.parse(content, "s-mislabeled", stats);
+
+    // 三条都必须成功入库（修复前明文行必被 "not JSON" 丢弃）
+    ASSERT_EQ(profiles.size(), 3);
+
+    // 明文行：按 vless 解析出的
+    int foundVless = 0;
+    bool foundVmess = false;
+    for (size_t i = 0; i < profiles.size(); ++i) {
+        if (profiles[i].configtype == "5") {
+            ++foundVless;
+            EXPECT_FALSE(profiles[i].address.empty());
+            EXPECT_FALSE(profiles[i].port.empty());
+        }
+        if (profiles[i].configtype == "1") foundVmess = true;
+    }
+    EXPECT_EQ(foundVless, 2);
+    EXPECT_TRUE(foundVmess);
+
+    EXPECT_EQ(stats.vmessMislabeledPlainVless, 2);  // 观察字段
+    EXPECT_EQ(stats.vmessFailParse, 0);             // 修复前这里 >= 1
+    EXPECT_EQ(stats.vmessOk, 1);                    // 真 vmess 行照常
+    EXPECT_EQ(stats.otherOk, 2);                    // 改写行落 otherOk
+    EXPECT_EQ(stats.lineCount, 3);
+    EXPECT_EQ(stats.lineCount,
+              stats.droppedEmptyLine + stats.metadataCommentLines +
+              stats.vmessOk + stats.vmessFailParse +
+              stats.vmessSkipEmpty + stats.unrecognizedLines + stats.droppedMalformedLine +
+              stats.otherOk);
+    // summary 必须带 mislabeled 字段，否则线上无法归因
+    EXPECT_TRUE(cap.contains("mislabeled=2"));
+}
+
+// --- 守护 10：旧式 SIP001（整段 base64 无 '@'）容错解析 ---
+//
+// SIP001 旧式：整个 "method:password@host:port" 被一次性 base64，分享链接里
+// 看不到 '@'，修复前在 ss 分支 atPos == npos 处被直接计数丢弃。
+// 真实数据：crackbest 订阅 74 条 ss:// 中 4 条命中。
+//
+// 容错：atPos == npos 时先整段解一次，结果形如 "method:password@host:port"
+// 就改写 uri 走既有 SIP002 路径；userInfo 此时已是明文，不得再喂
+// decodeBase64（sip001UserInfoIsPlaintext 标志保证）。
+TEST(SubscriptionParserTest, SsSip001WholeLinkBase64IsRecovered) {
+    update::SubscriptionParser parser;
+    update::ParseStats stats;
+
+    // b64("aes-128-gcm:shadowsocks@158.173.20.208:443") —— 输出不含 '@'/'#'
+    const std::string content =
+        "ss://" + b64s("aes-128-gcm:shadowsocks@158.173.20.208:443") + "\n"
+        "ss://not-recoverable-garbage\n";  // 反向：解不出 '@' 仍必须计数丢弃
+
+    LogCapture cap;
+    std::vector<db::models::Profileitem> profiles = parser.parse(content, "s-sip001", stats);
+
+    ASSERT_EQ(profiles.size(), 1);
+    EXPECT_EQ(profiles[0].configtype, "3");
+    EXPECT_EQ(profiles[0].address, "158.173.20.208");
+    EXPECT_EQ(profiles[0].port, "443");
+    EXPECT_EQ(profiles[0].security, "aes-128-gcm");
+    EXPECT_EQ(profiles[0].id, "shadowsocks");
+
+    EXPECT_EQ(stats.ssSip001Recovered, 1);       // 观察字段
+    EXPECT_EQ(stats.otherOk, 1);
+    EXPECT_EQ(stats.droppedMalformedLine, 1);   // 第 2 行仍被丢弃
+    EXPECT_EQ(stats.lineCount, 2);
+    EXPECT_EQ(stats.lineCount,
+              stats.droppedEmptyLine + stats.metadataCommentLines +
+              stats.vmessOk + stats.vmessFailParse +
+              stats.vmessSkipEmpty + stats.unrecognizedLines + stats.droppedMalformedLine +
+              stats.otherOk);
+    // summary 必须带 sip001 字段，否则线上无法归因
+    EXPECT_TRUE(cap.contains("sip001=1"));
+}

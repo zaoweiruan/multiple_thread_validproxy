@@ -73,6 +73,26 @@ private:
     
     std::optional<db::models::Subitem> getSubscription(const std::string& subId);
     std::string fetchUrlViaProxy(const std::string& url, int socksPort, long* httpStatus = nullptr);
+
+    // ── 上游订阅失效（HTTP 404）标记机制 ─────────────────────────────
+    // 判定源站已删除/改名后：Remarks 加 "404-" 前缀 + Enabled 置 0。
+    // 这样失效订阅在 UI 列表里一眼可见（备注前缀）且不再参与自动更新
+    // （Enabled=0 会让它退出 getEnabledSubscriptions()）。
+    // 但「上游可能恢复」，所以 run() 仍会定期探测这批订阅：一旦某次
+    // 更新解析出节点，就自动摘掉前缀并把 Enabled 恢复原值。
+    // 标记是幂等的：重复标记不会叠成 "404-404-"，探测成功后的去前缀
+    // 也只针对当前确实带前缀的行。
+    static constexpr const char* kSourceGonePrefix = "404-";
+    static bool hasSourceGoneMarker(const std::string& remarks);
+    void markSourceGone(const std::string& subId, const std::string& remarks);
+    void clearSourceGoneMarker(const std::string& subId, const std::string& remarks);
+    std::vector<db::models::Subitem> getSourceGoneSubscriptions();
+
+    // Prepared-statement helper for the two text parameters of the marker
+    // updates. Remarks is user-supplied free text, so it must never be
+    // interpolated into SQL text (an apostrophe in a remark would either
+    // break the statement or inject into it).
+    bool execSqlBind(const std::string& sql, const std::string& first, const std::string& second);
     
     std::vector<db::models::Profileitem> parseSubscription(const std::string& content, const std::string& subid);
     bool updateProfileItems(const std::string& subid, const std::vector<db::models::Profileitem>& profiles);

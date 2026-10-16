@@ -125,6 +125,49 @@ std::string decodePercentEscapesOnly(const std::string& s) {
     return out;
 }
 
+// 去掉第一个 '#' 及其后的 fragment（分享链接的节点名）。没有 '#' 时原样返回。
+std::string stripFragment(const std::string& s) {
+    const size_t hashPos = s.find('#');
+    return (hashPos == std::string::npos) ? s : s.substr(0, hashPos);
+}
+
+// 判断 vmess:// 之后的载荷是不是「本应是 vless:// 的明文 URI」。
+//
+// 起因：部分上游把明文 VLESS 分享链接误挂到 "vmess://" 前缀上，例如
+//   vmess://06d4d001-4168-4876-9416-7caecf578f40@178.105.168.171:211#备注
+// 这段 payload 不是 base64，decodeBase64 会把 UUID 里的 4 个 '-' 与 ':'、'@'
+// 一并丢弃，把十六进制字符当 base64 解，于是命中 "not JSON" 被整行丢弃。
+//
+// 判据（宁缺勿滥，避免误伤真正的 vmess base64 载荷）：
+//   1) 含 '@'（标准 base64 字母表不含 '@'，所以真正的 vmess 载荷绝不会含它）；
+//   2) '@' 之前是非空 id；'@' 之后形如 host:port，且 port 是 1..65535 的纯数字。
+// 三条同时成立才认定，把误挂的行改写成真正的 vless:// 交给既有 vless 分支处理。
+bool looksLikePlainVlessUri(const std::string& payload) {
+    const size_t atPos = payload.find('@');
+    if (atPos == std::string::npos || atPos == 0) return false;
+
+    const std::string hostPart = payload.substr(atPos + 1);
+    if (hostPart.empty()) return false;
+
+    // vless 明文载荷是 uuid@host:port?query 形态 - fragment 已由调用方
+    // stripFragment 剥掉，但 ? 之后的参数串必须在此截断，否则 port 切片
+    // 会变成 80?ed=2560... 这类非纯数字串，判据恒为 false。
+    // 真实数据：crackbest line 20/399 正是此形态（修前 mislabeled 恒 0）。
+    std::string hostNoQuery = hostPart;
+    const size_t qPos = hostNoQuery.find('?');
+    if (qPos != std::string::npos) hostNoQuery = hostNoQuery.substr(0, qPos);
+
+    const size_t colonPos = hostNoQuery.rfind(':');
+    if (colonPos == std::string::npos || colonPos == 0 || colonPos + 1 >= hostNoQuery.size()) return false;
+
+    const std::string port = hostNoQuery.substr(colonPos + 1);
+    for (size_t i = 0; i < port.size(); ++i) {
+        if (port[i] < '0' || port[i] > '9') return false;
+    }
+    const long portNum = std::stol(port);
+    return portNum >= 1 && portNum <= 65535;
+}
+
 } // anonymous namespace
 
 std::vector<db::models::Profileitem> SubscriptionParser::parse(const std::string& content, const std::string& subid) {
@@ -193,6 +236,26 @@ std::vector<db::models::Profileitem> SubscriptionParser::parse(const std::string
         if (line[0] == '#') {
             ++stats.metadataCommentLines;
             continue;
+        }
+
+        // 容错：部分上游把明文 VLESS 分享链接误挂到 "vmess://" 前缀上，例如
+        //   vmess://06d4d001-4168-4876-9416-7caecf578f40@178.105.168.171:211#备注
+        // 这段载荷不是 base64 —— decodeBase64 会把 UUID 里的 '-' 与 ':' '@'
+        // 一并静默丢弃，把十六进制字符当 base64 解出乱码，命中 "not JSON"
+        // 被整行丢弃（真实数据：crackbest 订阅 line 127/313 共 2 行）。
+        //
+        // 判据严格（looksLikePlainVlessUri）：载荷含 '@'、id 非空、host:port
+        // 且 port ∈ 1..65535。标准 base64 字母表不含 '@'，真正的 vmess base64
+        // 载荷绝不会含它，因此误判风险极低。
+        //
+        // 改写后控制流完全不变：line 落入下方既有的 vless:// 分支解析。
+        // countedAsVmess 保持 false ⇒ 该行最终计 otherOk，等式不变量不受影响。
+        if (line.compare(0, 8, "vmess://") == 0) {
+            const std::string vlessPayload = stripFragment(line.substr(8));
+            if (looksLikePlainVlessUri(vlessPayload)) {
+                line = "vless://" + vlessPayload;
+                ++stats.vmessMislabeledPlainVless;
+            }
         }
 
         db::models::Profileitem profile;
@@ -396,6 +459,27 @@ std::vector<db::models::Profileitem> SubscriptionParser::parse(const std::string
             }
 
             size_t atPos = uri.find('@');
+            // 旧式 SIP001：整个 "method:password@host:port" 被一次性 base64，
+            // 解码后的明文里才有 '@'，分享链接本身看不到 '@'。SIP002（明文
+            // userInfo + base64 host，或 base64 userInfo + 明文 host）都带 '@'，
+            // 因此只有走到这里（无 '@'）才可能是 SIP001。
+            // 容错：先整段解一次，若结果形如 "method:password@host:port"
+            // （'@' 前有 ':'），就把 uri 改写成该明文并继续走既有 SIP002 路径。
+            // sip001UserInfoIsPlaintext 记录「userInfo 此时已是明文，勿再 base64」。
+            bool sip001UserInfoIsPlaintext = false;
+            if (atPos == std::string::npos) {
+                const std::string decodedWhole = decodeBase64(decodePercentEscapesOnly(uri));
+                const size_t sipAt = decodedWhole.rfind('@');
+                if (sipAt != std::string::npos && sipAt > 0) {
+                    const size_t sipColon = decodedWhole.find(':');
+                    if (sipColon != std::string::npos && sipColon < sipAt) {
+                        uri = decodedWhole;
+                        atPos = sipAt;
+                        sip001UserInfoIsPlaintext = true;
+                        ++stats.ssSip001Recovered;
+                    }
+                }
+            }
             if (atPos == std::string::npos) { ++stats.droppedMalformedLine; ++stats.droppedByProtocol[1]; continue; }
 
             profile.configtype = "3";
@@ -505,8 +589,10 @@ std::vector<db::models::Profileitem> SubscriptionParser::parse(const std::string
                 }
             }
 
-            // ss 级特征统计：在解码之前预扫（:364 调用点专属字段，不得混入 payload*）
-            stats.ssUrlCharCount += countUrlAlphabetChars(userInfo);
+            // ss 级特征统计：在解码之前预扫（:364 调用点专属字段，不得混入 payload*）。
+            // SIP001 容错路径下 userInfo 已是解码后的明文，'-'/'_' 属密码字符
+            // 而非 base64url 特征，不计入（保持该字段「base64url 特征」的口径）。
+            stats.ssUrlCharCount += sip001UserInfoIsPlaintext ? 0 : countUrlAlphabetChars(userInfo);
             // 面板在生成分享链接时会对 userInfo 做 URL 编码，最常见的破坏是把
             // base64 padding 的 '=' 编码成 '%3D'。decodeBase64 会丢掉 '%'、把 '3D'
             // 当成两个有效数据字符，于是 32 字符的正确 base64 变成 33 字符，解出
@@ -517,7 +603,10 @@ std::vector<db::models::Profileitem> SubscriptionParser::parse(const std::string
             // 真实数据：crackbest 订阅 74 条 ss:// 中有 14 条命中此形态。
             // 注意此处必须用只解 %XX 的变体而不是 urlDecode()，否则含 '+' 的
             // 合法 base64 会被 urlDecode 第二轮替换成空格。
-            std::string decodedInfo = decodeBase64(decodePercentEscapesOnly(userInfo));
+            // SIP001 容错路径的 userInfo 已是明文 method:password，直接采用，
+            // 不得再喂 decodeBase64（会把明文搅成乱码）。
+            std::string decodedInfo = sip001UserInfoIsPlaintext ? userInfo
+                                           : decodeBase64(decodePercentEscapesOnly(userInfo));
             size_t methodPos = decodedInfo.find(':');
             if (methodPos == std::string::npos) {
                 // No "method:password" separator -> malformed link, drop node.
@@ -700,6 +789,8 @@ std::vector<db::models::Profileitem> SubscriptionParser::parse(const std::string
                       " malformed="      + std::to_string(stats.droppedMalformedLine) +
                       " emptyLine="      + std::to_string(stats.droppedEmptyLine) +
                       " metaComment="   + std::to_string(stats.metadataCommentLines) +
+                      " mislabeled="    + std::to_string(stats.vmessMislabeledPlainVless) +
+                      " sip001="        + std::to_string(stats.ssSip001Recovered) +
                       // P4 问题 2：载荷是否含 base64url 特征字符（行数 / 总数）
                       " payloadUrlLines=" + std::to_string(stats.payloadUrlCharLines) +
                       " payloadUrlChars=" + std::to_string(stats.payloadUrlCharTotal) +

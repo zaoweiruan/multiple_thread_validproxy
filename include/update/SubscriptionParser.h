@@ -31,6 +31,14 @@ struct ParseStats {
     // 单列供日志与 P4 判断「裁剪重试的救回率」。
     long vmessFailSalvaged    = 0;
 
+    // 以下三个均为**纯观察字段，不进上面的等式**（改写/恢复不改变行的分类归属）。
+    // vmessMislabeledPlainVless: 误挂 "vmess://" 前缀的明文 vless 行（改写后按 vless 解析）。
+    // 该行最终落 otherOk 桶（countedAsVmess 保持 false），等式不受影响。
+    long vmessMislabeledPlainVless = 0;
+    // ssSip001Recovered: 旧式 SIP001（整段 base64 无 '@'）经容错恢复的 ss 行。
+    // 该行最终落 otherOk 桶，等式不受影响。
+    long ssSip001Recovered    = 0;
+
     // ---- body 级（仅整段订阅 :51 调用点写入） ----
     bool bodyHadProtocol      = false;
     bool bodyDecodeApplied    = false;
