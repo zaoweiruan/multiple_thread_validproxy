@@ -35,26 +35,100 @@ void sanitizeNetwork(std::string& network, const std::string& indexid = "") {
     }
 }
 
+// ---------------------------------------------------------------------------
+// P0 可观测性辅助（纯统计，不改变任何解析行为）
+//
+// 刻意用自由函数预扫而不是给 decodeBase64 加 out 参数：P0 阶段必须保持
+// decodeBase64 签名不变（零功能行为变更、零回归风险），P2 阶段再决定是否
+// 改成 out 参数。预扫口径与 decodeBase64 的跳过规则保持一致：
+//   '=' padding、空白、>127 字节、以及不在标准 base64 字母表内的字符均不计数。
+// ---------------------------------------------------------------------------
+
+// 字母表与 decodeBase64 的 base64_chars 保持一致（"A-Za-z0-9+/"）。
+inline bool isBase64AlphabetChar(unsigned char c) {
+    return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+           (c >= '0' && c <= '9') || c == '+' || c == '/';
+}
+
+// 载荷中真正参与 base64 分组的字符数。decodeBase64 在 i==2/3 时也会产出
+// 非空结果（尾部补零追加 1~2 字节），所以不能用 jsonStr.empty() 判定载荷是否
+// 「过短」—— decodeBase64("AA") 返回 1 字节非空串但同样无法解出 JSON。
+size_t countAlphabetChars(const std::string& s) {
+    size_t n = 0;
+    for (size_t i = 0; i < s.size(); ++i) {
+        const unsigned char c = static_cast<unsigned char>(s[i]);
+        if (c == '=' || c == ' ' || c == '\t' || c == '\n' || c == '\r') continue;
+        if (c > 127) continue;
+        if (isBase64AlphabetChar(c)) ++n;
+    }
+    return n;
+}
+
+// decodeBase64 会静默丢弃的字符数（不在字母表内、且不是 padding/空白/高位字节）。
+long countDroppedChars(const std::string& s) {
+    long n = 0;
+    for (size_t i = 0; i < s.size(); ++i) {
+        const unsigned char c = static_cast<unsigned char>(s[i]);
+        if (c == '=' || c == ' ' || c == '\t' || c == '\n' || c == '\r') continue;
+        if (c > 127) continue;
+        if (!isBase64AlphabetChar(c)) ++n;
+    }
+    return n;
+}
+
+// base64url 特征字符 '-' 与 '_' 的个数。它们不在标准 base64 字母表内，
+// decodeBase64 会静默丢弃（4 字符分组因此可能错位）。
+long countUrlAlphabetChars(const std::string& s) {
+    long n = 0;
+    for (size_t i = 0; i < s.size(); ++i) {
+        if (s[i] == '-' || s[i] == '_') ++n;
+    }
+    return n;
+}
+
 } // anonymous namespace
 
 std::vector<db::models::Profileitem> SubscriptionParser::parse(const std::string& content, const std::string& subid) {
+    ParseStats ignored;
+    return parse(content, subid, ignored);
+}
+
+std::vector<db::models::Profileitem> SubscriptionParser::parse(const std::string& content, const std::string& subid,
+                                                                ParseStats& stats) {
     std::vector<db::models::Profileitem> profiles;
+
+    // 明细日志限流：必须是本函数的栈上局部变量，禁止 static 或成员变量，
+    // 否则跨订阅共享「第 3 条」额度，只有第一个订阅有明细日志。
+    int failureDetailBudget = 3;
 
     bool hasProtocol = (content.find("://") != std::string::npos);
     std::string decoded;
+
+    stats.bodyHadProtocol = hasProtocol;
 
     if (hasProtocol) {
         Logger::write("INFO: Content appears to be plain text share links", LogLevel::INFO);
         decoded = content;
     } else {
         Logger::write("INFO: Attempting base64 decode...", LogLevel::INFO);
+        stats.bodyDecodeApplied = true;
+        // body 级特征统计：在解码**之前**预扫（decodeBase64 签名不变）
+        stats.bodyUrlCharCount   = countUrlAlphabetChars(content);
+        stats.bodyNonBase64Chars = countDroppedChars(content);
         decoded = decodeBase64(content);
 
         if (decoded.length() < 10 || decoded.find("://") == std::string::npos) {
-            Logger::write("WARN: Base64 decode produced invalid content, using original", LogLevel::WARN);
+            stats.bodyDecodeFellBack = true;
+            Logger::write("WARN: Base64 decode produced invalid content, using original [subid=" + subid +
+                              "] hadProtocol=" + (hasProtocol ? "1" : "0") +
+                              " decodedLen=" + std::to_string(decoded.length()) +
+                              " urlChars=" + std::to_string(stats.bodyUrlCharCount) +
+                              " junk=" + std::to_string(stats.bodyNonBase64Chars) + " -> 0 nodes",
+                          LogLevel::WARN);
             decoded = content;
         }
     }
+    stats.bodyDecodedLength = static_cast<long>(decoded.length());
 
     Logger::write("INFO: Final content length: " + std::to_string(decoded.length()), LogLevel::INFO);
 
@@ -65,20 +139,32 @@ std::vector<db::models::Profileitem> SubscriptionParser::parse(const std::string
     int validCount = 0;
     while (std::getline(stream, line)) {
         lineCount++;
-        if (line.empty()) continue;
+        ++stats.lineCount;
+        if (line.empty()) { ++stats.droppedEmptyLine; continue; }
         if (line.back() == '\r') line.pop_back();
 
         db::models::Profileitem profile;
         profile.subid = subid;
         profile.issub = "1";
 
+        bool countedAsVmess = false;
+
         if (line.find("vmess://") == 0) {
+            countedAsVmess = true;
             std::string encoded = line.substr(8);
+            // payload 级特征统计：在解码之前预扫
+            const long urlChars = countUrlAlphabetChars(encoded);
+            stats.payloadUrlCharTotal += urlChars;
+            if (urlChars > 0) ++stats.payloadUrlCharLines;
+            stats.payloadNonBase64Chars += countDroppedChars(encoded);
+
+            if (countAlphabetChars(encoded) < 2) { ++stats.vmessSkipEmpty; continue; }
+
             std::string jsonStr = decodeBase64(encoded);
             if (jsonStr.empty()) {
                 jsonStr = urlDecode(encoded);
             }
-            if (jsonStr.empty()) continue;
+            if (jsonStr.empty()) { ++stats.vmessSkipEmpty; continue; }
 
             bool isJson = (jsonStr.find('{') != std::string::npos && jsonStr.find('}') != std::string::npos);
             bool parseSuccess = false;
@@ -167,19 +253,25 @@ std::vector<db::models::Profileitem> SubscriptionParser::parse(const std::string
                                 profile.remarks = getJsonValueString(obj, "ps", "");
                                 sanitizeNetwork(profile.network, profile.indexid);
                                 parseSuccess = true;
+                                ++stats.vmessFailSalvaged;  // 子集标记，不进等式
                             } catch (...) {}
                         }
                     }
                 }
                 if (!parseSuccess) {
-                    Logger::write("WARN: Failed to parse vmess: " + errMsg, LogLevel::WARN);
+                    if (failureDetailBudget > 0) {
+                        --failureDetailBudget;
+                        Logger::write("WARN: vmess parse failed [subid=" + subid +
+                                          " line=" + std::to_string(lineCount) + "] " + errMsg,
+                                      LogLevel::WARN);
+                    }
                 }
             }
-            if (!parseSuccess) continue;
+            if (!parseSuccess) { ++stats.vmessFailParse; continue; }
         } else if (line.find("vless://") == 0) {
             std::string uri = line.substr(8);
             size_t atPos = uri.find('@');
-            if (atPos == std::string::npos) continue;
+            if (atPos == std::string::npos) { ++stats.droppedMalformedLine; ++stats.droppedByProtocol[0]; continue; }
 
             profile.configtype = "5";
             profile.configversion = "2";
@@ -201,7 +293,7 @@ std::vector<db::models::Profileitem> SubscriptionParser::parse(const std::string
             std::pair<std::string, std::string> addrPort = parseAddressPort(addrPart);
             std::string addr = addrPort.first;
             std::string port = addrPort.second;
-            if (addr.empty()) continue;
+            if (addr.empty()) { ++stats.droppedMalformedLine; ++stats.droppedByProtocol[0]; continue; }
             profile.address = addr;
             if (!profile.address.empty() && profile.address.back() == '/') {
                 profile.address.pop_back();
@@ -252,7 +344,7 @@ std::vector<db::models::Profileitem> SubscriptionParser::parse(const std::string
             }
 
             size_t atPos = uri.find('@');
-            if (atPos == std::string::npos) continue;
+            if (atPos == std::string::npos) { ++stats.droppedMalformedLine; ++stats.droppedByProtocol[1]; continue; }
 
             profile.configtype = "3";
             profile.configversion = "2";
@@ -268,7 +360,7 @@ std::vector<db::models::Profileitem> SubscriptionParser::parse(const std::string
             std::pair<std::string, std::string> addrPort2 = parseAddressPort(hostInfo);
             std::string addr = addrPort2.first;
             std::string portWithParams = addrPort2.second;
-            if (addr.empty()) continue;
+            if (addr.empty()) { ++stats.droppedMalformedLine; ++stats.droppedByProtocol[1]; continue; }
             profile.address = addr;
             if (!profile.address.empty() && profile.address.back() == '/') {
                 profile.address.pop_back();
@@ -361,10 +453,13 @@ std::vector<db::models::Profileitem> SubscriptionParser::parse(const std::string
                 }
             }
 
+            // ss 级特征统计：在解码之前预扫（:364 调用点专属字段，不得混入 payload*）
+            stats.ssUrlCharCount += countUrlAlphabetChars(userInfo);
             std::string decodedInfo = decodeBase64(userInfo);
             size_t methodPos = decodedInfo.find(':');
             if (methodPos == std::string::npos) {
                 // No "method:password" separator -> malformed link, drop node.
+                ++stats.droppedMalformedLine; ++stats.droppedByProtocol[1];
                 continue;
             }
             const std::string method = decodedInfo.substr(0, methodPos);
@@ -373,14 +468,15 @@ std::vector<db::models::Profileitem> SubscriptionParser::parse(const std::string
                 !utils::isPrintableAscii(method) || !utils::isPrintableAscii(password)) {
                 // Binary garbage (e.g. base64 of a URL-encoded username) can
                 // never form a usable shadowsocks cipher/password -> drop node.
+                ++stats.droppedMalformedLine; ++stats.droppedByProtocol[1];
                 continue;
             }
             profile.security = method;
             profile.id = password;
         } else if (line.find("trojan://") == 0) {
-            std::string uri = line.substr(9);
+            std::string uri = line.substr(9);  // "trojan://" is 9 chars
             size_t atPos = uri.find('@');
-            if (atPos == std::string::npos) continue;
+            if (atPos == std::string::npos) { ++stats.droppedMalformedLine; ++stats.droppedByProtocol[2]; continue; }
 
             profile.configtype = "6";
             profile.configversion = "2";
@@ -401,7 +497,7 @@ std::vector<db::models::Profileitem> SubscriptionParser::parse(const std::string
             std::pair<std::string, std::string> addrPort3 = parseAddressPort(addrPart);
             std::string addr = addrPort3.first;
             std::string port = addrPort3.second;
-            if (addr.empty()) continue;
+            if (addr.empty()) { ++stats.droppedMalformedLine; ++stats.droppedByProtocol[2]; continue; }
             profile.address = addr;
             if (!profile.address.empty() && profile.address.back() == '/') {
                 profile.address.pop_back();
@@ -449,7 +545,7 @@ std::vector<db::models::Profileitem> SubscriptionParser::parse(const std::string
         } else if (line.find("hysteria2://") == 0 || line.find("hy2://") == 0) {
             std::string uri = line.find("hysteria2://") == 0 ? line.substr(12) : line.substr(5);
             size_t atPos = uri.find('@');
-            if (atPos == std::string::npos) continue;
+            if (atPos == std::string::npos) { ++stats.droppedMalformedLine; ++stats.droppedByProtocol[3]; continue; }
 
             profile.configtype = "7";
             profile.configversion = "2";
@@ -468,7 +564,7 @@ std::vector<db::models::Profileitem> SubscriptionParser::parse(const std::string
             std::string addrPart = (qPos != std::string::npos) ? hostPart.substr(0, qPos) : hostPart;
 
             size_t colonPos = addrPart.find(':');
-            if (colonPos == std::string::npos) continue;
+            if (colonPos == std::string::npos) { ++stats.droppedMalformedLine; ++stats.droppedByProtocol[3]; continue; }
             profile.address = addrPart.substr(0, colonPos);
             if (!profile.address.empty() && profile.address.back() == '/') {
                 profile.address.pop_back();
@@ -519,14 +615,72 @@ std::vector<db::models::Profileitem> SubscriptionParser::parse(const std::string
                 profile.extra.erase(profile.extra.begin());
             }
         } else {
+            ++stats.unrecognizedLines;
             continue;
         }
 
         profiles.push_back(profile);
         validCount++;
+        if (countedAsVmess) ++stats.vmessOk; else ++stats.otherOk;
     }
 
     Logger::write("INFO: Parsed " + std::to_string(validCount) + " valid profiles from " + std::to_string(lineCount) + " lines", LogLevel::INFO);
+
+    // ---- P0.4 归因汇总（每个 subid 一行，字段覆盖 P4 的四个必答问题） ----
+    Logger::write("WARN: vmess summary [subid=" + subid + "]"
+                      " lines="          + std::to_string(stats.lineCount) +
+                      " ok="             + std::to_string(stats.vmessOk) +
+                      " otherOk="        + std::to_string(stats.otherOk) +
+                      " fail="           + std::to_string(stats.vmessFailParse) +
+                      " salvaged="       + std::to_string(stats.vmessFailSalvaged) +
+                      " skipEmpty="      + std::to_string(stats.vmessSkipEmpty) +
+                      " unrecognized="   + std::to_string(stats.unrecognizedLines) +
+                      " malformed="      + std::to_string(stats.droppedMalformedLine) +
+                      " emptyLine="      + std::to_string(stats.droppedEmptyLine) +
+                      // P4 问题 2：载荷是否含 base64url 特征字符（行数 / 总数）
+                      " payloadUrlLines=" + std::to_string(stats.payloadUrlCharLines) +
+                      " payloadUrlChars=" + std::to_string(stats.payloadUrlCharTotal) +
+                      " payloadJunk="     + std::to_string(stats.payloadNonBase64Chars) +
+                      // P4 问题 3：明文 JSON / URL 编码（P3 才写入，P0 恒 0）
+                      " payloadPlainJson=" + std::to_string(stats.payloadPlainJsonLines) +
+                      " payloadUrlEncoded=" + std::to_string(stats.payloadUrlEncoded) +
+                      // body 级：区分「整段 base64 解崩」与「逐行解码错位」
+                      " bodyUrlChars="    + std::to_string(stats.bodyUrlCharCount) +
+                      " bodyJunk="        + std::to_string(stats.bodyNonBase64Chars) +
+                      " bodyDecodedLen="  + std::to_string(stats.bodyDecodedLength) +
+                      " bodyFellBack="    + std::string(stats.bodyDecodeFellBack ? "1" : "0") +
+                      " ssUrlChars="      + std::to_string(stats.ssUrlCharCount) +
+                      " byProto=v"        + std::to_string(stats.droppedByProtocol[0]) +
+                      ",s"                + std::to_string(stats.droppedByProtocol[1]) +
+                      ",t"                + std::to_string(stats.droppedByProtocol[2]) +
+                      ",h"                + std::to_string(stats.droppedByProtocol[3]),
+                  LogLevel::WARN);
+
+    // ---- P0.5 丢弃率告警（两档，互斥不重叠） ----
+    // 注：v1.2 原定的「lineCount == 0 && !content.empty()」这一档恒假
+    // （任何非空 content 至少产出 1 行 ⇒ lineCount >= 1），且生产不可达 ——
+    // src/SubitemUpdaterV2.cpp:242/:421/:499 三个调用点都在 parse() 之前
+    // 就挡掉了空 content 并打 INFO。空体场景由 :53-56 那条带 subid 的 WARN 覆盖。
+    const long parsedOk = stats.vmessOk + stats.otherOk;
+    if (stats.lineCount > 0 && parsedOk == 0) {
+        Logger::write("WARN: subid=" + subid + ": parsed 0 nodes from " +
+                          std::to_string(stats.lineCount) + " lines" +
+                          " (fail=" + std::to_string(stats.vmessFailParse) +
+                          " skipEmpty=" + std::to_string(stats.vmessSkipEmpty) +
+                          " unrecognized=" + std::to_string(stats.unrecognizedLines) +
+                          " malformed=" + std::to_string(stats.droppedMalformedLine) + ")",
+                      LogLevel::WARN);
+    } else if (parsedOk > 0 &&
+               (stats.vmessFailParse + stats.unrecognizedLines + stats.droppedMalformedLine) * 2 > parsedOk) {
+        const long dropped = stats.vmessFailParse + stats.unrecognizedLines + stats.droppedMalformedLine;
+        const long pct = dropped * 100 / parsedOk;
+        Logger::write("WARN: subid=" + subid + ": drop rate " + std::to_string(pct) + "%" +
+                          " (ok=" + std::to_string(parsedOk) +
+                          " fail=" + std::to_string(stats.vmessFailParse) +
+                          " unrecognized=" + std::to_string(stats.unrecognizedLines) +
+                          " malformed=" + std::to_string(stats.droppedMalformedLine) + ")",
+                      LogLevel::WARN);
+    }
     return profiles;
 }
 
