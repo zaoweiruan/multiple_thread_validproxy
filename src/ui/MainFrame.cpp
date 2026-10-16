@@ -790,15 +790,15 @@ void MainFrame::initToolBar() {
     Logger::write("[MainFrame] initToolBar step 3: adding tools", LogLevel::DEBUG);
     m_toolbar->AddTool(ID_TOOL_UPDATE_ALL, "更新", ToolbarIcons::load("tool_update1"), "更新");
     Logger::write("[MainFrame] initToolBar step 3a: tool_update1 added", LogLevel::DEBUG);
-    m_toolbar->AddTool(ID_TOOL_TEST, "测试", ToolbarIcons::load("tool_test"), "测试全部代理");
-    m_toolbar->AddTool(ID_TOOL_CANCEL, "取消", ToolbarIcons::load("tool_cancel"), "取消测试");
+    m_toolbar->AddTool(ID_TOOL_TEST, "批量测试", ToolbarIcons::load("tool_test"), "测试全部代理");
+    m_toolbar->AddTool(ID_TOOL_CANCEL, "终止当前测试", ToolbarIcons::load("tool_cancel"), "取消测试");
     m_toolbar->EnableTool(ID_TOOL_CANCEL, false);  // disabled until operation starts
     m_toolbar->AddTool(ID_TOOL_SYNC, "同步", ToolbarIcons::load("tool_synchronize"), "同步");
     m_toolbar->AddTool(ID_TOOL_FIND, "最佳代理", ToolbarIcons::load("tool_find"), "查找最佳代理");
-    m_toolbar->AddTool(ID_TOOL_DEDUP, "去重", ToolbarIcons::load("tool_dedup"), "去重");
-    m_toolbar->AddTool(ID_TOOL_IMPORT, "导入", ToolbarIcons::load("tool_import"), "增加新订阅");
+    m_toolbar->AddTool(ID_TOOL_DEDUP, "清洗", ToolbarIcons::load("tool_dedup"), "去重");
+    m_toolbar->AddTool(ID_TOOL_IMPORT, "添加订阅", ToolbarIcons::load("tool_import"), "增加新订阅");
     m_toolbar->AddTool(ID_TOOL_AUTOTASK, "自动任务", ToolbarIcons::load("tool_pipeline"), "自动任务");
-    m_toolbar->AddTool(ID_TOOL_STANDALONE_MON, "监控代理", ToolbarIcons::load("tool_monitoring_proxy_process"), "监控代理", wxITEM_CHECK);
+    m_toolbar->AddTool(ID_TOOL_STANDALONE_MON, "悬浮窗", ToolbarIcons::load("tool_monitoring_proxy_process"), "监控代理", wxITEM_CHECK);
     m_toolbar->ToggleTool(ID_TOOL_STANDALONE_MON, config_.proxy_process_monitor.enabled);
     m_toolbar->AddTool(ID_TOOL_CONFIG, "配置", ToolbarIcons::load("tool_config"), "配置");
 

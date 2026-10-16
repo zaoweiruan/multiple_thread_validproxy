@@ -95,8 +95,36 @@ inline const wchar_t* const MenuCancelTaskItem    = L"取消任务";        // 6
 inline const wchar_t* const MenuConfigItem       = L"配置…";           // 6110 [Ctrl+,]
 inline const wchar_t* const MenuAboutItem        = L"关于";            // 6111
 
-// Toolbar button label for ID_TOOL_FIND (short help stays "查找最佳代理").
-inline const wchar_t* const ToolBarFindBestLabel = L"最佳代理";
+// ---------------------------------------------------------------------------
+// Toolbar button labels (wxAuiToolBar::AddTool label argument).
+//
+// IMPORTANT: these are NOT UIA locators. wxAuiToolBar draws its tools itself —
+// it is a plain wxWindowNR (not a native wToolbarWindow32) and exposes no child
+// HWNDs or UIA elements, so a [dumptree] walk of the main frame yields only the
+// single toolbar node `type=Custom name="control" class="wxWindowNR"` with an
+// empty child list. Per the ui-automation-test Iron Law 1 ("never guess a Name /
+// ClassName") no measurable locator can exist for an individual tool, and
+// fabricating one would violate the law. The constants below are therefore the
+// single source of truth for these label strings, so reviewers and any future
+// screenshot/diff tooling read them from one place instead of re-deriving them.
+// ---------------------------------------------------------------------------
+inline const wchar_t* const ToolBarFindBestLabel = L"最佳代理";  // ID_TOOL_FIND
+inline const wchar_t* const ToolBarTestLabel     = L"批量测试";   // ID_TOOL_TEST
+inline const wchar_t* const ToolBarCancelLabel   = L"终止当前测试"; // ID_TOOL_CANCEL
+inline const wchar_t* const ToolBarDedupLabel    = L"清洗";      // ID_TOOL_DEDUP
+inline const wchar_t* const ToolBarImportLabel   = L"添加订阅";   // ID_TOOL_IMPORT
+inline const wchar_t* const ToolBarStandaloneMonLabel = L"悬浮窗"; // ID_TOOL_STANDALONE_MON
+
+// Unchanged toolbar labels, kept here so the whole bar is readable in one place.
+inline const wchar_t* const ToolBarUpdateAllLabel = L"更新";    // ID_TOOL_UPDATE_ALL
+inline const wchar_t* const ToolBarSyncLabel      = L"同步";    // ID_TOOL_SYNC
+inline const wchar_t* const ToolBarAutoTaskLabel  = L"自动任务"; // ID_TOOL_AUTOTASK
+inline const wchar_t* const ToolBarConfigLabel    = L"配置";    // ID_TOOL_CONFIG
+inline const wchar_t* const ToolBarDetailLabel    = L"详情";    // ID_TOOL_DETAIL_TOGGLE
+
+// The toolbar host node itself, as measured by [dumptree]. Present so any future
+// toolbar-level geometry assertion has a pinned locator.
+inline const wchar_t* const ToolBarHostName       = L"control";
 
 } // namespace ids
 } // namespace uitest
