@@ -219,19 +219,30 @@ bool SubitemUpdaterV2::run() {
             Logger::write("INFO: " + methodName + ": " + subUrl, LogLevel::REPORT);
 
             std::string content;
+            long httpStatus = 0;
             switch (method) {
                 case UpdateMethod::Accelerator:
-                    content = fetchUrlViaAccelerator(subUrl);
+                    content = fetchUrlViaAccelerator(subUrl, &httpStatus);
                     break;
                 case UpdateMethod::Proxy:
                     if (proxySocksPort > 0) {
-                        content = fetchUrlViaProxy(subUrl, proxySocksPort);
+                        content = fetchUrlViaProxy(subUrl, proxySocksPort, &httpStatus);
                     }
                     break;
                 case UpdateMethod::Direct:
-                    content = fetchUrl(subUrl);
+                    content = fetchUrl(subUrl, &httpStatus);
                     break;
             }
+
+            // A 404 is only authoritative evidence about the SUBSCRIPTION when the
+            // request actually reached the origin. Going through a URL accelerator
+            // means the 404 may belong to the accelerator itself (e.g. it refuses
+            // the target) while a later method would still succeed, so in that one
+            // case we must keep the old retry behaviour. fetchUrlViaAccelerator()
+            // degrades to a plain direct fetch when accelerator_url is empty, hence
+            // the second half of the condition.
+            const bool httpStatusIsAboutOrigin =
+                (method != UpdateMethod::Accelerator) || config_.accelerator_url.empty();
 
             if (isCancelled()) return false;
             if (netMon_ && !netMon_->IsConnected()) {
@@ -251,9 +262,24 @@ bool SubitemUpdaterV2::run() {
                     std::string updateSql = "UPDATE SubItem SET UpdateTime = '" + newTime + "' WHERE Id = '" + subId + "'";
                     execSql(updateSql, "[SubitemUpdaterV2] SQL exec failed");
                 } else {
-                    phaseFail++;
-                    stillFailed.push_back({subId, subRemarks, subUrl});
-                    Logger::write("ERROR: Parse failed: " + subId, LogLevel::ERR);
+                    // HTTP 404 means the upstream repository/endpoint is gone: the
+                    // body ("404: Not Found") is non-empty, so without this check it
+                    // would be reported as "Parse failed" and retried through every
+                    // remaining method — three futile fetches per dead subscription.
+                    // A gone source cannot recover, so it is reported distinctly and
+                    // deliberately NOT queued into stillFailed (no cross-method retry).
+                    if (httpStatus == 404 && httpStatusIsAboutOrigin) {
+                        phaseFail++;
+                        Logger::write("ERROR: Subscription source gone (HTTP 404): " + subId
+                                      + " remarks=" + subRemarks + " url=" + subUrl
+                                      + " - upstream removed/renamed; disable or replace this subscription",
+                                      LogLevel::ERR);
+                    } else {
+                        phaseFail++;
+                        stillFailed.push_back({subId, subRemarks, subUrl});
+                        Logger::write("ERROR: Parse failed: " + subId + " (http=" + std::to_string(httpStatus)
+                                      + ", content=" + std::to_string(content.size()) + " bytes)", LogLevel::ERR);
+                    }
                 }
             } else {
                 Logger::write(methodName + " connection failed", LogLevel::ERR);
@@ -477,22 +503,23 @@ bool SubitemUpdaterV2::updateWithMethods(const std::string& subUrl, const std::s
         Logger::write("INFO: Trying " + methodName + " connection...", LogLevel::INFO);
 
         std::string content;
+        long httpStatus = 0;
         switch (method) {
             case UpdateMethod::Accelerator:
-                content = fetchUrlViaAccelerator(subUrl);
+                content = fetchUrlViaAccelerator(subUrl, &httpStatus);
                 break;
             case UpdateMethod::Proxy: {
                 std::pair<int, int> proxyResult = getProxyPorts(subUrl);
                 int socks = proxyResult.first;
                 if (socks > 0) {
-                    content = fetchUrlViaProxy(subUrl, socks);
+                    content = fetchUrlViaProxy(subUrl, socks, &httpStatus);
                 } else {
                     Logger::write("WARN: No proxy available for " + methodName, LogLevel::WARN);
                 }
                 break;
             }
             case UpdateMethod::Direct:
-                content = fetchUrl(subUrl);
+                content = fetchUrl(subUrl, &httpStatus);
                 break;
         }
 
@@ -502,23 +529,38 @@ bool SubitemUpdaterV2::updateWithMethods(const std::string& subUrl, const std::s
             if (!profiles.empty()) {
                 return updateProfileItems(subId, profiles);
             }
+            // Same rationale as processSub(): a 404 body is non-empty, so without
+            // this branch a dead upstream is indistinguishable from a parse bug and
+            // every remaining method is tried for nothing. The accelerator caveat
+            // applies here too — see the comment in processSub().
+            const bool statusIsAboutOrigin =
+                (method != UpdateMethod::Accelerator) || config_.accelerator_url.empty();
+            if (httpStatus == 404 && statusIsAboutOrigin) {
+                Logger::write("ERROR: Subscription source gone (HTTP 404): " + subId
+                              + " url=" + subUrl
+                              + " - upstream removed/renamed; disable or replace this subscription",
+                              LogLevel::ERR);
+                return false;
+            }
         }
     }
 
     return false;
 }
 
-std::string SubitemUpdaterV2::fetchUrlViaAccelerator(const std::string& url) {
+std::string SubitemUpdaterV2::fetchUrlViaAccelerator(const std::string& url, long* httpStatus) {
+    if (httpStatus) *httpStatus = 0;
     if (config_.accelerator_url.empty()) {
         Logger::write("accelerator_url empty, falling back to direct fetch", LogLevel::ERR);
-        return fetchUrl(url);
+        return fetchUrl(url, httpStatus);
     }
     std::string joinedUrl = utils::joinUrl(config_.accelerator_url, url);
     Logger::write("INFO: Fetching via accelerator: " + joinedUrl, LogLevel::INFO);
-    return fetchUrl(joinedUrl);
+    return fetchUrl(joinedUrl, httpStatus);
 }
 
-std::string SubitemUpdaterV2::fetchUrl(const std::string& url) {
+std::string SubitemUpdaterV2::fetchUrl(const std::string& url, long* httpStatus) {
+    if (httpStatus) *httpStatus = 0;
     try {
         std::string response;
         CurlEasyHandle curl;
@@ -529,6 +571,7 @@ std::string SubitemUpdaterV2::fetchUrl(const std::string& url) {
             .setTimeoutMs(config_.subscription_timeout_ms);
 
         curl.perform();
+        if (httpStatus) *httpStatus = curl.getResponseCode();
         return response;
 
     } catch (const std::exception& e) {
@@ -537,7 +580,8 @@ std::string SubitemUpdaterV2::fetchUrl(const std::string& url) {
     }
 }
 
-std::string SubitemUpdaterV2::fetchUrlViaProxy(const std::string& url, int socksPort) {
+std::string SubitemUpdaterV2::fetchUrlViaProxy(const std::string& url, int socksPort, long* httpStatus) {
+    if (httpStatus) *httpStatus = 0;
     try {
         std::string response;
         CurlEasyHandle curl;
@@ -554,6 +598,7 @@ std::string SubitemUpdaterV2::fetchUrlViaProxy(const std::string& url, int socks
             .setSslVerifyHost(false);
 
         curl.perform();
+        if (httpStatus) *httpStatus = curl.getResponseCode();
         return response;
 
     } catch (const std::exception& e) {

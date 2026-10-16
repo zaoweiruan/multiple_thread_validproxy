@@ -62,13 +62,17 @@ private:
     };
     
     std::vector<UpdateMethod> parseUpdateMethods(const std::vector<std::string>& methods);
-    std::string fetchUrlViaAccelerator(const std::string& url);
+    // httpStatus (optional): receives the HTTP response code of the transfer.
+    // 0 means "no response was obtained" (exception, timeout, DNS failure) and is
+    // distinct from a real 4xx/5xx, so the caller can tell an upstream subscription
+    // that is GONE (404) apart from a body that was fetched but could not be parsed.
+    std::string fetchUrlViaAccelerator(const std::string& url, long* httpStatus = nullptr);
     bool updateWithMethods(const std::string& subUrl, const std::string& subId,
                            const std::vector<UpdateMethod>& methods);
-    std::string fetchUrl(const std::string& url);
+    std::string fetchUrl(const std::string& url, long* httpStatus = nullptr);
     
     std::optional<db::models::Subitem> getSubscription(const std::string& subId);
-    std::string fetchUrlViaProxy(const std::string& url, int socksPort);
+    std::string fetchUrlViaProxy(const std::string& url, int socksPort, long* httpStatus = nullptr);
     
     std::vector<db::models::Profileitem> parseSubscription(const std::string& content, const std::string& subid);
     bool updateProfileItems(const std::string& subid, const std::vector<db::models::Profileitem>& profiles);

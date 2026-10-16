@@ -86,6 +86,45 @@ long countUrlAlphabetChars(const std::string& s) {
     return n;
 }
 
+// 只解码 %XX 转义，**绝不把字面 '+' 变成空格**。
+//
+// 为什么不能用 SubscriptionParser::urlDecode()：它在第二轮
+// （maxIterations == 1）会把每个字面 '+' 替换成空格，这是为 URL 查询串
+// 的 application/x-www-form-urlencoded 设计的。而标准 base64 的 '+'
+// 是 sextet 62，是合法且必需的数据。一旦用户信息里含 %XX（正是我们要
+// 处理的情形），urlDecode 就会跑满两轮并把所有 '+' 吃掉，4 字符分组错位，
+// 把一个能救回的节点变成乱码。
+//
+// 只做 %XX 也足以覆盖真实故障：面板 URL 编码分享链接时破坏的都是
+// '=' padding（编码成 %3D）与极少量非字母表字符，而 '+' 本身在
+// base64 文本里不会被编码（encodeURIComponent 不转义 '+'）。
+std::string decodePercentEscapesOnly(const std::string& s) {
+    std::string out;
+    out.reserve(s.size());
+    for (size_t i = 0; i < s.size(); ++i) {
+        if (s[i] == '%' && i + 2 < s.size()) {
+            int value = 0;
+            bool ok = true;
+            for (int k = 1; k <= 2; ++k) {
+                const char h = s[i + static_cast<size_t>(k)];
+                int digit;
+                if (h >= '0' && h <= '9') digit = h - '0';
+                else if (h >= 'a' && h <= 'f') digit = h - 'a' + 10;
+                else if (h >= 'A' && h <= 'F') digit = h - 'A' + 10;
+                else { ok = false; break; }
+                value = (value << 4) | digit;
+            }
+            if (ok) {
+                out += static_cast<char>(static_cast<unsigned char>(value));
+                i += 2;
+                continue;
+            }
+        }
+        out += s[i];
+    }
+    return out;
+}
+
 } // anonymous namespace
 
 std::vector<db::models::Profileitem> SubscriptionParser::parse(const std::string& content, const std::string& subid) {
@@ -142,6 +181,19 @@ std::vector<db::models::Profileitem> SubscriptionParser::parse(const std::string
         ++stats.lineCount;
         if (line.empty()) { ++stats.droppedEmptyLine; continue; }
         if (line.back() == '\r') line.pop_back();
+
+        // 订阅元数据注释头：v2rayN / Clash Verge 等面板会在明文订阅里以
+        // "#profile-title:"、"#subscription-userinfo:"、"#support-url:"、
+        // "#profile-update-interval:" 开头的行给出展示信息与流量配额。
+        // 这些行本来就不是节点，之前会掉进末尾的 else 分支被计入
+        // unrecognizedLines，把「丢弃率」统计污染成假告警。
+        // 判据：行首第一个字符是 '#'。没有任何分享链接 scheme 以 '#' 开头，
+        // 所以这个判据不会误伤合法节点；共享链接的 '#' 是 fragment（位于行尾），
+        // 也不受影响。
+        if (line[0] == '#') {
+            ++stats.metadataCommentLines;
+            continue;
+        }
 
         db::models::Profileitem profile;
         profile.subid = subid;
@@ -455,7 +507,17 @@ std::vector<db::models::Profileitem> SubscriptionParser::parse(const std::string
 
             // ss 级特征统计：在解码之前预扫（:364 调用点专属字段，不得混入 payload*）
             stats.ssUrlCharCount += countUrlAlphabetChars(userInfo);
-            std::string decodedInfo = decodeBase64(userInfo);
+            // 面板在生成分享链接时会对 userInfo 做 URL 编码，最常见的破坏是把
+            // base64 padding 的 '=' 编码成 '%3D'。decodeBase64 会丢掉 '%'、把 '3D'
+            // 当成两个有效数据字符，于是 32 字符的正确 base64 变成 33 字符，解出
+            // 多一个字节 —— 实测 "aes-128-gcm:shadowsocks" 被解成
+            // "aes-128-gcm:shadowsocks7"。**该串仍是可打印 ASCII，能通过下面
+            // 的 isPrintableAscii 检查，节点照常入库，但密码是错的**，连接必然
+            // 失败且无任何日志提示。这比「节点被丢弃」更隐蔽，务必先解 %XX。
+            // 真实数据：crackbest 订阅 74 条 ss:// 中有 14 条命中此形态。
+            // 注意此处必须用只解 %XX 的变体而不是 urlDecode()，否则含 '+' 的
+            // 合法 base64 会被 urlDecode 第二轮替换成空格。
+            std::string decodedInfo = decodeBase64(decodePercentEscapesOnly(userInfo));
             size_t methodPos = decodedInfo.find(':');
             if (methodPos == std::string::npos) {
                 // No "method:password" separator -> malformed link, drop node.
@@ -637,6 +699,7 @@ std::vector<db::models::Profileitem> SubscriptionParser::parse(const std::string
                       " unrecognized="   + std::to_string(stats.unrecognizedLines) +
                       " malformed="      + std::to_string(stats.droppedMalformedLine) +
                       " emptyLine="      + std::to_string(stats.droppedEmptyLine) +
+                      " metaComment="   + std::to_string(stats.metadataCommentLines) +
                       // P4 问题 2：载荷是否含 base64url 特征字符（行数 / 总数）
                       " payloadUrlLines=" + std::to_string(stats.payloadUrlCharLines) +
                       " payloadUrlChars=" + std::to_string(stats.payloadUrlCharTotal) +

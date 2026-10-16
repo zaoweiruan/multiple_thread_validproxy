@@ -227,7 +227,8 @@ TEST(SubscriptionParserTest, StatsLineBucketsAreExhaustive) {
 
     // 关键不变量：桶和 == 总行数（独立评审判定 v1.2 此等式因缺 otherOk 而永久算不平）
     EXPECT_EQ(stats.lineCount,
-              stats.droppedEmptyLine + stats.vmessOk + stats.vmessFailParse +
+              stats.droppedEmptyLine + stats.metadataCommentLines +
+              stats.vmessOk + stats.vmessFailParse +
               stats.vmessSkipEmpty + stats.unrecognizedLines + stats.droppedMalformedLine +
               stats.otherOk);
 }
@@ -250,7 +251,8 @@ TEST(SubscriptionParserTest, StatsVmessFailureAndSkipEmptyAreCounted) {
     EXPECT_EQ(stats.vmessSkipEmpty, 1);
     EXPECT_GE(stats.vmessFailParse, 1);
     EXPECT_EQ(stats.lineCount,
-              stats.droppedEmptyLine + stats.vmessOk + stats.vmessFailParse +
+              stats.droppedEmptyLine + stats.metadataCommentLines +
+              stats.vmessOk + stats.vmessFailParse +
               stats.vmessSkipEmpty + stats.unrecognizedLines + stats.droppedMalformedLine +
               stats.otherOk);
 }
@@ -378,4 +380,87 @@ TEST(SubscriptionParserTest, ZeroNodeWarningFiredWhenNothingParsed) {
 
     EXPECT_EQ(profiles.size(), 0);
     EXPECT_TRUE(cap.contains("s-zero: parsed 0 nodes"));
+}
+
+// --- 守护 7：ss:// userInfo 的 %3D 必须先解转义再进 base64 ---
+//
+// 真实数据（crackbest 订阅，74 条 ss:// 中 14 条命中）：面板在生成分享链接时对
+// userInfo 做了 URL 编码，base64 的 padding '=' 被写成 '%3D'。
+//
+// 修复前的真实行为**不是「节点被丢弃」，而是「密码被静默改错」**（这一点必须在
+// 测试注释里写死，否则后人会按错误的假设去改断言）：
+//   decodeBase64 丢掉 '%'、把 '3D' 当成两个有效数据字符，
+//   于是 32 字符的正确 base64 变成 33 字符 -> 解出 24 字节
+//   "aes-128-gcm:shadowsocks7"（末尾多出一个字符）。
+//   该串仍然是可打印 ASCII，能通过 isPrintableAscii 检查，于是节点照常入库，
+//   但密码是错的 —— 连接必然失败，且没有任何日志提示。
+//
+// 反向注意：本用例**绝不能**改用 SubscriptionParser::urlDecode() 去做那步解码。
+// urlDecode 第二轮会把每个字面 '+' 替换成空格，而 '+' 是 base64 的 sextet 62，
+// 那样会把本来能解的节点再次破坏掉。
+TEST(SubscriptionParserTest, SsUserInfoPercentEncodedPaddingIsDecodedBeforeBase64) {
+    update::SubscriptionParser parser;
+    update::ParseStats stats;
+
+    // b64("aes-128-gcm:shadowsocks") + padding '=' 被编码成 %3D
+    //   正确形态： YWVzLTEyOC1nY206c2hhZG93c29ja3M=
+    //   线上形态： YWVzLTEyOC1nY206c2hhZG93c29ja3M%3D
+    const std::string content =
+        "ss://YWVzLTEyOC1nY206c2hhZG93c29ja3M%3D@158.173.20.208:443#ss-pct\n";
+
+    std::vector<db::models::Profileitem> profiles = parser.parse(content, "s-sspct", stats);
+
+    ASSERT_EQ(profiles.size(), 1);
+    EXPECT_EQ(profiles[0].configtype, "3");
+    EXPECT_EQ(profiles[0].address, "158.173.20.208");
+    EXPECT_EQ(profiles[0].port, "443");
+    EXPECT_EQ(profiles[0].security, "aes-128-gcm");
+    // 关键断言：修复前得到的是 "shadowsocks7"（多一个字符），修复后精确还原。
+    EXPECT_EQ(profiles[0].id, "shadowsocks");
+    EXPECT_EQ(stats.otherOk, 1);
+    EXPECT_EQ(stats.droppedMalformedLine, 0);
+}
+
+// --- 守护 8：行首 '#' 的订阅元数据注释单列，不计入 unrecognizedLines ---
+//
+// 真实数据（MatinGhanbari 订阅）：v2rayN / Clash Verge 等面板会在明文订阅里以
+// "#profile-title:"、 "#subscription-userinfo:"、 "#support-url:"、
+// "#profile-update-interval:" 开头的行给出展示名与流量配额。
+// 修复前这些行落进末尾的 else 分支被计入 unrecognizedLines，从而把「丢弃率」
+// 统计污染成假告警（v1.2 的 P0.5 第二档正是按丢弃率判定）。
+TEST(SubscriptionParserTest, MetadataCommentLinesAreCountedSeparately) {
+    update::SubscriptionParser parser;
+    update::ParseStats stats;
+
+    const std::string content =
+        "#profile-title: My Subscription\n"
+        "#subscription-userinfo: upload=1; download=2; total=3\n"
+        "#support-url: https://example.com/support\n"
+        "vless://uuid-aaa@h.example.com:443?type=ws#ok1\n"
+        "vless://uuid-bbb@h.example.com:443?type=ws#ok2\n"
+        "vless://uuid-ccc@h.example.com:443?type=ws#ok3\n"
+        "vless://uuid-ddd@h.example.com:443?type=ws#ok4\n"
+        "unknown-protocol://whatever\n";
+
+    LogCapture cap;
+    std::vector<db::models::Profileitem> profiles = parser.parse(content, "s-meta", stats);
+
+    EXPECT_EQ(profiles.size(), 4);
+    EXPECT_EQ(stats.metadataCommentLines, 3);
+    // 元数据注释不得混进 unrecognizedLines，否则丢弃率告警失真
+    EXPECT_EQ(stats.unrecognizedLines, 1);  // 只剩那 1 行真正无法识别的协议
+    EXPECT_EQ(stats.otherOk, 4);
+    EXPECT_EQ(stats.lineCount, 8);
+    EXPECT_EQ(stats.lineCount,
+              stats.droppedEmptyLine + stats.metadataCommentLines +
+              stats.vmessOk + stats.vmessFailParse +
+              stats.vmessSkipEmpty + stats.unrecognizedLines + stats.droppedMalformedLine +
+              stats.otherOk);
+    // summary 行必须带上 metaComment，否则汇总无法复算
+    EXPECT_TRUE(cap.contains("metaComment=3"));
+    // 丢弃率判据：(unrecognized + malformed) * 2 > parsedOk。
+    //   正确口径：1 * 2 = 2 > 4 为假 -> 不告警
+    //   若元数据注释被误计入 unrecognized：4 * 2 = 8 > 4 为真 -> 会误告警
+    // 这条断言因此是有鉴别力的。
+    EXPECT_FALSE(cap.contains("s-meta: drop rate"));
 }

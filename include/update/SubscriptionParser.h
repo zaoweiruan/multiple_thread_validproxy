@@ -10,6 +10,7 @@ namespace update {
 // P0 可观测性：逐行分类统计。口径为「进入 while(getline) 的每一行恰好落入
 // lineCount == droppedEmptyLine + vmessOk + vmessFailParse + vmessSkipEmpty
 //                    + unrecognizedLines + droppedMalformedLine + otherOk
+//                    + metadataCommentLines
 // 之一」，用于回答 P4 的归因问题。只含 bool/long，无 Boost 依赖。
 struct ParseStats {
     // ---- 行级分类 ----
@@ -21,6 +22,9 @@ struct ParseStats {
     long unrecognizedLines    = 0;  // 不属于任何已知 scheme
     long droppedMalformedLine = 0;  // 协议级畸形丢弃（vless/ss/trojan/hy2）
     long otherOk              = 0;  // 非 vmess 行成功入 profiles
+    // 行首 '#' 的订阅元数据注释（#profile-title: / #subscription-userinfo: 等）。
+    // 单列而不计入 unrecognizedLines：它们本来就不是节点，计进去会让丢弃率告警失真。
+    long metadataCommentLines = 0;
     long droppedByProtocol[6] = {0, 0, 0, 0, 0, 0};  // 0=vless 1=ss 2=trojan 3=hy2
 
     // vmessFailSalvaged 是 vmessFailParse 的子集，**不进上面的等式**（否则重复计数），
