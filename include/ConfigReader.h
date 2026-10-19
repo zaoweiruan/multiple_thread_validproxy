@@ -86,11 +86,9 @@ struct AppConfig {
         };
         int checkIntervalMs{10000};
         int checkTimeoutMs{5000};
-
-        // Probe-on-disconnect: pause testing on disconnect, probe N times before cancel.
-        // If maxProbes > 0: pause and probe before cancel (configurable grace window).
-        // If maxProbes = 0: immediate cancel on first disconnect (legacy behavior).
-        int maxProbes{3};
+        // NOTE: the probe-on-disconnect grace window was removed on 2026-10-19 (D2).
+        // NetworkMonitor is now a pure probe and no longer cancels anything, so
+        // there is no grace-window knob left to configure.
     } network_monitor;
 
     // ProxyProcessMonitor configuration

@@ -143,11 +143,6 @@ boost::json::object ConfigJsonSerializer::serialize(const AppConfig& config) con
     }
     nmObj["check_interval_ms"] = config.network_monitor.checkIntervalMs;
     nmObj["check_timeout_ms"] = config.network_monitor.checkTimeoutMs;
-    {
-        boost::json::object pdObj;
-        pdObj["max_probes"] = config.network_monitor.maxProbes;
-        nmObj["probe_on_disconnect"] = pdObj;
-    }
     root["network_monitor"] = nmObj;
 
     // proxy_process_monitor

@@ -1,5 +1,6 @@
 #include "RegionBatchResolver.h"
 #include "CurlEasyHandle.h"
+#include "NetworkMonitor.h"
 #include "ConfigGenerator.h"
 #include "Profileitem.h"
 #include "Logger.h"
@@ -13,12 +14,16 @@
 
 // ---------------------------------------------------------------
 RegionBatchResolver::RegionBatchResolver(sqlite3* db, const config::AppConfig& config,
-                                         std::atomic<bool>* externalCancel)
-    : db_(db), config_(config), externalCancel_(externalCancel) {
+                                         std::atomic<bool>* externalCancel, const NetworkMonitor* netMon)
+    : db_(db), config_(config), externalCancel_(externalCancel), netMon_(netMon) {
 }
 
 RegionBatchResolver::~RegionBatchResolver() {
     cancel();
+}
+
+bool RegionBatchResolver::networkDown() const {
+    return netMon_ && !netMon_->IsConnected();
 }
 
 // ---------------------------------------------------------------
@@ -154,6 +159,14 @@ void RegionBatchResolver::workerThreadFunc(int workerId) {
         if (cancelRequested_.load() || (externalCancel_ && externalCancel_->load())) {
             Logger::write("[RegionBatchResolver] Worker " + std::to_string(workerId)
                           + " exiting (cancelled)", LogLevel::DEBUG);
+            break;
+        }
+        if (networkDown()) {
+            // F7 (2026-10-19): stop the whole resolution when the network drops,
+            // instead of grinding through every remaining profile.
+            Logger::write("[RegionBatchResolver] network disconnected — cancelling resolution",
+                          LogLevel::WARN);
+            cancel();
             break;
         }
 

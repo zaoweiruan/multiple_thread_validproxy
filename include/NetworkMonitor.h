@@ -22,19 +22,20 @@ public:
     bool IsEnabled() const;
     void setEnabled(bool enabled) { enabled_ = enabled; }
 
-    /// Register an external flag that will be set to true when the network
-    /// transitions from connected to disconnected. This allows the monitor
-    /// to trigger cancellation in dependent operations (e.g. batch testing).
-    void setCancelOnDisconnect(std::atomic<bool>* flag) { cancelOnDisconnect_ = flag; }
-
-    /// Configure probe-on-disconnect behavior: wait for N consecutive failed
-    /// checks before setting cancelOnDisconnect_ instead of acting on the first failure.
-    /// If maxProbes > 0: use probe mode (grace window before cancel).
-    /// If maxProbes == 0: immediate cancel on disconnect (legacy behavior).
-    void setProbeOnDisconnect(int maxProbes) {
-        maxProbes_ = maxProbes;
-        probeEnabled_ = (maxProbes > 0);
-    }
+    /// Verdict of one probe round — pure, no I/O, unit-testable without a network.
+    ///
+    /// F8 (2026-10-19): a single flaky check URL must not be able to declare the
+    /// whole network down. Requires strictly more successes than transport
+    /// failures, instead of "every URL must succeed".
+    ///
+    /// DNS failures abstain (they are jitter, not an outage — see the
+    /// 2026-08-06 probe-counter fix). If every probe abstained, the verdict stays
+    /// connected, preserving the pre-F8 behaviour exactly.
+    ///
+    /// okCount      - probes that succeeded
+    /// netFailCount - probes that failed with a transport error (not a DNS error)
+    /// totalUrls    - number of configured check URLs; 0 means "nothing to probe"
+    static bool majorityVerdict(int okCount, int netFailCount, int totalUrls);
 
     int getConsecutiveFailures() const { return consecutiveFailures_.load(); }
     int getDnsFailures() const { return dnsFailures_.load(); }
@@ -54,12 +55,11 @@ private:
     std::atomic<bool> connected_{false};
     std::atomic<bool> stopRequested_{false};
     std::atomic<bool> firstCheckDone_{false};
-    std::atomic<bool>* cancelOnDisconnect_{nullptr};
     std::thread thread_;
 
-    // Probe-on-disconnect state
-    bool probeEnabled_{true};
-    int  maxProbes_{3};
-    std::atomic<int> consecutiveFailures_{0};   // non-DNS failures (triggers cancel)
-    std::atomic<int> dnsFailures_{0};           // DNS-specific failures (does NOT trigger cancel)
+    // Diagnostic probe state. Since D2 was removed (2026-10-19) NetworkMonitor is
+    // a pure probe: these counters drive logging only and never raise a
+    // cancellation. Stopping the batch belongs to ProxyBatchTester.
+    std::atomic<int> consecutiveFailures_{0};   // non-DNS failures (diagnostic only)
+    std::atomic<int> dnsFailures_{0};           // DNS-specific failures (neutral vote)
 };

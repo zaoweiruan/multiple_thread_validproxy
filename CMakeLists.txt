@@ -1481,7 +1481,10 @@ add_executable(test_region_batch_resolver tests/test_region_batch_resolver.cpp
     src/config/outbound/TUICOutboundBuilder.cpp
     src/config/outbound/WireGuardOutboundBuilder.cpp
     src/ProfileExItemDAO.cpp
-    src/utils/DnsCache.cpp src/Logger.cpp src/LoggerInstance.cpp src/Utils.cpp)
+    src/utils/DnsCache.cpp src/Logger.cpp src/LoggerInstance.cpp src/Utils.cpp
+    # F7 (2026-10-19): RegionBatchResolver::networkDown() lives in the .cpp and
+    # calls NetworkMonitor::IsConnected(), so this target needs the monitor linked.
+    src/NetworkMonitor.cpp)
 target_include_directories(test_region_batch_resolver PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(test_region_batch_resolver PRIVATE
     gtest_main gtest

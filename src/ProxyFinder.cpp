@@ -1,4 +1,5 @@
 #include "ProxyFinder.h"
+#include "NetworkMonitor.h"
 #include "XrayManager.h"
 #include "XrayInstance.h"
 #include "ConfigGenerator.h"
@@ -27,14 +28,19 @@ namespace ProxyFinderUtils {
 
 ProxyFinder::ProxyFinder(sqlite3* db, XrayManager* manager, const std::string& xrayPath, 
                          const std::string& testUrl, const std::string& targetUrl, 
-                         int timeoutMs, std::atomic<bool>* cancelFlag)
+                         int timeoutMs, std::atomic<bool>* cancelFlag, const NetworkMonitor* netMon)
     : db_(db), manager_(manager), xrayPath_(xrayPath), testUrl_(testUrl), targetUrl_(targetUrl),
-      timeoutMs_(timeoutMs), currentSocksPort_(-1), currentApiPort_(-1), cancelRequested_(cancelFlag) {
+      timeoutMs_(timeoutMs), currentSocksPort_(-1), currentApiPort_(-1), cancelRequested_(cancelFlag),
+      netMon_(netMon) {
     lastResult_ = {false, -1, "", "", "", 0, 0};
 }
 
 ProxyFinder::~ProxyFinder() {
     release();
+}
+
+bool ProxyFinder::networkDown() const {
+    return netMon_ && !netMon_->IsConnected();
 }
 
 std::pair<int, int> ProxyFinder::findFirstWorkingProxy(const std::string& targetUrl) {
@@ -59,6 +65,10 @@ std::pair<int, int> ProxyFinder::findFirstWorkingProxy(const std::string& target
     for (size_t i = 0; i < validProxies.size(); ++i) {
         if (isCancelled()) {
             Logger::write("[ProxyFinder] Cancelled during first proxy search", LogLevel::INFO);
+            return result;
+        }
+        if (networkDown()) {
+            Logger::write("[ProxyFinder] network disconnected — aborting first proxy search", LogLevel::WARN);
             return result;
         }
         const FallbackProxy& proxy = validProxies[i];
@@ -134,6 +144,10 @@ std::pair<int, int> ProxyFinder::findWorkingProxy(const std::string& targetUrl) 
     for (size_t i = 0; i < validProxies.size(); ++i) {
         if (isCancelled()) {
             Logger::write("[ProxyFinder] Cancelled during best proxy search", LogLevel::INFO);
+            return result;
+        }
+        if (networkDown()) {
+            Logger::write("[ProxyFinder] network disconnected — aborting best proxy search", LogLevel::WARN);
             return result;
         }
         const FallbackProxy& proxy = validProxies[i];

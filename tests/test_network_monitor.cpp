@@ -103,26 +103,34 @@ TEST(NetworkMonitorTest, LoggingOnConnectionLost) {
     EXPECT_TRUE(foundLost);
 }
 
-TEST(NetworkMonitorTest, ProbeThreshold_TriggersCancelAfterNFailures) {
-    LogCapture capture;
-    std::atomic<bool> cancelFlag{false};
+// --- F8: majority vote so a single flaky URL cannot declare an outage ---------
 
-    NetworkMonitor nm;
-    nm.setCancelOnDisconnect(&cancelFlag);
-    nm.setProbeOnDisconnect(2);  // Require 2 consecutive failures
+TEST(NetworkMonitorTest, MajorityVerdict_TwoOfThreeStaysConnected) {
+    // The jitter regression: 2 of 3 check URLs reachable must stay connected.
+    // Before F8 any single failure meant disconnected.
+    EXPECT_TRUE(NetworkMonitor::majorityVerdict(2, 1, 3));
+}
 
-    // Use longer interval to ensure multiple check cycles
-    nm.Start(kBadUrls, 100, kShortTimeoutMs);
-    std::this_thread::sleep_for(std::chrono::milliseconds(800));
-    nm.Stop();
+TEST(NetworkMonitorTest, MajorityVerdict_OneOfThreeIsDown) {
+    EXPECT_FALSE(NetworkMonitor::majorityVerdict(1, 2, 3));
+}
 
-    // After threshold reached, cancel flag should be set
-    EXPECT_TRUE(cancelFlag.load());
+TEST(NetworkMonitorTest, MajorityVerdict_AllProbesAbstainedStaysConnected) {
+    // All-DNS-failure round: legacy semantics (2026-08-06 fix) must be preserved.
+    EXPECT_TRUE(NetworkMonitor::majorityVerdict(0, 0, 3));
+}
+
+TEST(NetworkMonitorTest, MajorityVerdict_NoUrlsIsDown) {
+    EXPECT_FALSE(NetworkMonitor::majorityVerdict(0, 0, 0));
+}
+
+TEST(NetworkMonitorTest, MajorityVerdict_SingleUrlNeedsSuccess) {
+    EXPECT_TRUE(NetworkMonitor::majorityVerdict(1, 0, 1));
+    EXPECT_FALSE(NetworkMonitor::majorityVerdict(0, 1, 1));
 }
 
 TEST(NetworkMonitorTest, ConsecutiveFailures_CountsCorrectly) {
     NetworkMonitor nm;
-    nm.setProbeOnDisconnect(3);
     nm.resetProbeCount();
 
     nm.Start(kBadUrls, kShortIntervalMs, kShortTimeoutMs);

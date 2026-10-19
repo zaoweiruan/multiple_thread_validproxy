@@ -32,6 +32,18 @@ void NetworkMonitor::Stop() {
     }
 }
 
+bool NetworkMonitor::majorityVerdict(int okCount, int netFailCount, int totalUrls) {
+    if (totalUrls <= 0) {
+        return false;  // nothing to probe -> treat as down (pre-existing behaviour)
+    }
+    const int decisive = okCount + netFailCount;
+    if (decisive == 0) {
+        // Every probe abstained (DNS only). Legacy behaviour: stay connected.
+        return true;
+    }
+    return okCount > netFailCount;
+}
+
 bool NetworkMonitor::IsConnected() const {
     if (!enabled_) return true;
     return connected_;
@@ -93,89 +105,60 @@ NetworkMonitor::ProbeResult NetworkMonitor::CheckURLWithDnsFlag(const std::strin
 
 void NetworkMonitor::ThreadLoop() {
     while (!stopRequested_) {
-        bool allOk = true;
+        // F8 (2026-10-19): probe EVERY url instead of breaking on the first
+        // failure, then decide by majority. Previously a single flaky URL flipped
+        // connected_ to false and left the remaining URLs unprobed, which made the
+        // 30s outage gate far easier to reach than it looks.
+        int okCount = 0;
+        int netFailCount = 0;
+        int probedCount = 0;
 
         for (size_t i = 0; i < urls_.size(); ++i) {
             if (stopRequested_) break;
 
+            ++probedCount;
             const std::string& url = urls_[i];
 
             ProbeResult pr = CheckURLWithDnsFlag(url, checkTimeoutMs_);
-            if (!pr.success) {
-                if (pr.isDnsError) {
-                    // DNS error: do NOT increment consecutiveFailures_,
-                    // but count dnsFailures separately for diagnostics
-                    dnsFailures_.fetch_add(1);
-                    continue;
-                }
-                allOk = false;
-                break;
+            if (pr.success) {
+                ++okCount;
+            } else if (pr.isDnsError) {
+                // DNS error: a neutral vote (jitter, not an outage). Counted for
+                // diagnostics only; it never votes against connectivity.
+                dnsFailures_.fetch_add(1);
+            } else {
+                ++netFailCount;
             }
         }
 
-        if (urls_.empty()) {
-            allOk = false;
-        }
+        const bool allOk = majorityVerdict(okCount, netFailCount, probedCount);
 
         bool prev = connected_.exchange(allOk);
         bool afterFirst = firstCheckDone_.exchange(true);
 
         if (afterFirst && prev && !allOk) {
-            // LOST — increment consecutive failures (DNS errors are excluded above)
-            int fails = (consecutiveFailures_.load() < maxProbes_) ? consecutiveFailures_.fetch_add(1) + 1 : maxProbes_;
-
-            if (probeEnabled_ && fails < maxProbes_) {
-                Logger::write("Network connection LOST (probe " + std::to_string(fails) +
-                              "/" + std::to_string(maxProbes_) + ")", LogLevel::ERR);
-            } else if (fails >= maxProbes_) {
-                Logger::write("Network connection LOST (threshold reached: " + std::to_string(fails) +
-                              "/" + std::to_string(maxProbes_) + ")", LogLevel::ERR);
-                if (cancelOnDisconnect_) {
-                    cancelOnDisconnect_->store(true);
-                    Logger::write("[NetworkMonitor] cancelOnDisconnect triggered after " +
-                                  std::to_string(fails) + " failed probes", LogLevel::ERR);
-                }
-                consecutiveFailures_.store(maxProbes_);
-            }
+            // LOST — count for diagnostics only. D2 was removed (2026-10-19):
+            // NetworkMonitor no longer raises any cancellation flag; stopping the
+            // batch is ProxyBatchTester's job (see
+            // docs/bugfix/2026-10-19-Bugfix-ProxyBatchTester-WorkerThreadStall-v1.0.md).
+            const int fails = consecutiveFailures_.fetch_add(1) + 1;
+            Logger::write("Network connection LOST (consecutive failures: " +
+                          std::to_string(fails) + ")", LogLevel::ERR);
         } else if (afterFirst && !prev && allOk) {
-            // RESTORED — reset probe counter and DNS failure counter.
-            // DNS resolution deduplication is handled entirely by the
-            // program-wide DnsShareCache in CurlEasyHandle (CURLOPT_SHARE
-            // + CURLOPT_DNS_CACHE_TIMEOUT=-1), so there is no per-monitor
-            // cache to clear here.
+            // RESTORED — reset counters. DNS dedup is handled by the program-wide
+            // DnsShareCache in CurlEasyHandle (CURLOPT_SHARE +
+            // CURLOPT_DNS_CACHE_TIMEOUT=-1), so there is no per-monitor cache here.
             consecutiveFailures_.store(0);
             dnsFailures_.store(0);
-            Logger::write("Network connection RESTORED (probes reset)", LogLevel::ERR);
+            Logger::write("Network connection RESTORED", LogLevel::ERR);
         } else if (afterFirst && !allOk) {
-            // Already disconnected — continue counting consecutive failures
-            int fails = (consecutiveFailures_.load() < maxProbes_) ? consecutiveFailures_.fetch_add(1) + 1 : maxProbes_;
-
-            if (probeEnabled_ && fails < maxProbes_) {
-                Logger::write("Network connection LOST (probe " + std::to_string(fails) +
-                              "/" + std::to_string(maxProbes_) + ")", LogLevel::ERR);
-            } else {
-                Logger::write("Network connection LOST (probe " + std::to_string(fails) +
-                              "/" + std::to_string(maxProbes_) + ")", LogLevel::ERR);
-                if (cancelOnDisconnect_ && !cancelOnDisconnect_->load()) {
-                    cancelOnDisconnect_->store(true);
-                    Logger::write("[NetworkMonitor] cancelOnDisconnect triggered after " +
-                                  std::to_string(fails) + " failed probes", LogLevel::ERR);
-                }
-                consecutiveFailures_.store(maxProbes_);
-            }
+            const int fails = consecutiveFailures_.fetch_add(1) + 1;
+            Logger::write("Network connection LOST (consecutive failures: " +
+                          std::to_string(fails) + ")", LogLevel::ERR);
         } else if (!afterFirst && !allOk) {
-            // First check failed before any connection was established
-            int fails = (consecutiveFailures_.load() < maxProbes_) ? consecutiveFailures_.fetch_add(1) + 1 : maxProbes_;
-            if (probeEnabled_ && fails < maxProbes_) {
-                Logger::write("Network connection check failed (probe " + std::to_string(fails) +
-                              "/" + std::to_string(maxProbes_) + ")", LogLevel::ERR);
-            } else {
-                Logger::write("Network connection check failed (probe " + std::to_string(fails) +
-                              "/" + std::to_string(maxProbes_) + ")", LogLevel::ERR);
-                if (cancelOnDisconnect_) {
-                    cancelOnDisconnect_->store(true);
-                }
-            }
+            const int fails = consecutiveFailures_.fetch_add(1) + 1;
+            Logger::write("Network connection check failed (consecutive failures: " +
+                          std::to_string(fails) + ")", LogLevel::ERR);
         }
 
         int slept = 0;

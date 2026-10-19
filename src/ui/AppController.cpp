@@ -62,14 +62,9 @@ AppController::AppController(sqlite3* db, const config::AppConfig& cfg)
         netMon_.Start(config_.network_monitor.checkUrls,
                      config_.network_monitor.checkIntervalMs,
                      config_.network_monitor.checkTimeoutMs);
-        // Configure probe-on-disconnect: wait for N consecutive failed probes
-        // before setting the cancel flag, instead of aborting immediately.
-        // maxProbes > 0: probe mode (grace window). maxProbes == 0: immediate cancel.
-        netMon_.setProbeOnDisconnect(config_.network_monitor.maxProbes);
-        // When the monitor exhausts its probe threshold, it will set this flag,
-        // which propagates to ProxyBatchTester via externalCancel,
-        // causing active tests to abort.
-        netMon_.setCancelOnDisconnect(&cancelRequested_);
+        // D2 was removed on 2026-10-19: the monitor no longer raises the
+        // application cancel flag. Stopping a batch is ProxyBatchTester's own
+        // decision, taken when one of its workers exhausts its 30s wait.
     }
     exitListener_ = new proc::ProcessExitListener();
 }
@@ -607,7 +602,8 @@ TestResult AppController::findFirstProxy() {
     std::string xrayPath = config_.proxy.xray_executable;
     std::string configDir = utils::getExecutableDir() + "/config";
     XrayManager* manager = XrayManager::getInstance(xrayPath, configDir, config_.xray_workers, db_);
-    ProxyFinder finder(db_, manager, xrayPath, config_.test_url, "", config_.test_timeout_ms);
+    ProxyFinder finder(db_, manager, xrayPath, config_.test_url, "", config_.test_timeout_ms,
+                        nullptr, &netMon_);
     finder.findFirstWorkingProxy();
     return finder.getLastResult();
 }
@@ -616,7 +612,8 @@ TestResult AppController::findBestProxy() {
     std::string xrayPath = config_.proxy.xray_executable;
     std::string configDir = utils::getExecutableDir() + "/config";
     XrayManager* manager = XrayManager::getInstance(xrayPath, configDir, config_.xray_workers, db_);
-    ProxyFinder finder(db_, manager, xrayPath, config_.test_url, "", config_.test_timeout_ms);
+    ProxyFinder finder(db_, manager, xrayPath, config_.test_url, "", config_.test_timeout_ms,
+                        nullptr, &netMon_);
     finder.findWorkingProxy();
     return finder.getLastResult();
 }
@@ -744,9 +741,6 @@ void AppController::restartNetworkMonitor() {
         netMon_.Start(config_.network_monitor.checkUrls,
                       config_.network_monitor.checkIntervalMs,
                       config_.network_monitor.checkTimeoutMs);
-        // Configure probe-on-disconnect: maxProbes > 0 enables probe mode
-        netMon_.setProbeOnDisconnect(config_.network_monitor.maxProbes);
-        netMon_.setCancelOnDisconnect(&cancelRequested_);
     } else {
         netMon_.setEnabled(false);
     }
@@ -2418,7 +2412,7 @@ void AppController::doFindFirstProxy(wxEvtHandler* wxHandler) {
                 return;
             }
         }
-        ProxyFinder finder(db_, manager, xrayPath, config_.test_url, "", config_.test_timeout_ms, &cancelRequested_);
+        ProxyFinder finder(db_, manager, xrayPath, config_.test_url, "", config_.test_timeout_ms, &cancelRequested_, &netMon_);
 
         std::pair<int, int> ports = finder.findFirstWorkingProxy();
 
@@ -2482,7 +2476,7 @@ void AppController::doFindBestProxy(wxEvtHandler* wxHandler) {
                 return;
             }
         }
-        ProxyFinder finder(db_, manager, xrayPath, config_.test_url, "", config_.test_timeout_ms, &cancelRequested_);
+        ProxyFinder finder(db_, manager, xrayPath, config_.test_url, "", config_.test_timeout_ms, &cancelRequested_, &netMon_);
 
         std::pair<int, int> ports = finder.findWorkingProxy();
 
@@ -2598,7 +2592,7 @@ void AppController::syncDatabasesAsync(wxEvtHandler* wxHandler) {
 // Batch Region Resolution
 // ---------------------------------------------------------------
 int AppController::resolveRegionsForValidProxies(const std::string& subId) {
-    RegionBatchResolver resolver(db_, config_);
+    RegionBatchResolver resolver(db_, config_, nullptr, &netMon_);
     return resolver.run(subId);
 }
 
@@ -2636,7 +2630,7 @@ void AppController::doResolveRegionsBatch(wxEvtHandler* handler, const std::stri
             }
         }
 
-        RegionBatchResolver resolver(db_, config_, &cancelRequested_);
+        RegionBatchResolver resolver(db_, config_, &cancelRequested_, &netMon_);
         resolver.setProgressCallback([handler](const std::string& indexId, const std::string& region, int processed, int total) {
             if (handler) {
                 std::string msg = "地区解析: " + indexId;

@@ -12,9 +12,14 @@
 #include "ConfigReader.h"
 #include "Profileitem.h"
 
+// Forward declaration only: networkDown() is defined in the .cpp so this header
+// stays free of a NetworkMonitor link dependency for every consumer.
+class NetworkMonitor;
+
 class RegionBatchResolver {
 public:
-    RegionBatchResolver(sqlite3* db, const config::AppConfig& config, std::atomic<bool>* externalCancel = nullptr);
+    RegionBatchResolver(sqlite3* db, const config::AppConfig& config, std::atomic<bool>* externalCancel = nullptr,
+                        const NetworkMonitor* netMon = nullptr);
     ~RegionBatchResolver();
 
     /// Run batch region resolution for all (or filtered subId) valid proxies
@@ -70,6 +75,14 @@ private:
     std::atomic<int> errorCount_{0};           // exception occurred
     std::atomic<bool> cancelRequested_{false};
     std::atomic<bool>* externalCancel_{nullptr};
+    // F7 (2026-10-19): this class never received a NetworkMonitor and used to
+    // depend on the application cancel flag being raised by the monitor's
+    // probe-on-disconnect path. That path is gone, so the monitor is now checked
+    // directly. A null monitor means "never down".
+    const NetworkMonitor* netMon_{nullptr};
+    /// F7 (2026-10-19): true when a monitor was supplied and reports the network
+    /// as down; a null monitor means "never down". Defined in the .cpp.
+    bool networkDown() const;
     std::function<void(const std::string&, const std::string&, int, int)> progressCallback_;
     int totalTargets_{0};
 

@@ -239,8 +239,8 @@ ConfigDialog::ConfigDialog(wxWindow* parent, const config::AppConfig& cfg, sqlit
     propGrid_->Append(new wxStringProperty(L"检测URL(逗号分隔)", "network_monitor_checkUrls", ""));
     propGrid_->Append(new wxIntProperty(L"检测间隔(毫秒)", "network_monitor_interval", cfg.network_monitor.checkIntervalMs));
     propGrid_->Append(new wxIntProperty(L"检测超时(毫秒)", "network_monitor_timeout", cfg.network_monitor.checkTimeoutMs));
-    propGrid_->Append(new wxIntProperty(L"最大探测次数", "network_monitor_maxProbes", cfg.network_monitor.maxProbes));
-    // Note: maxProbes=0 means immediate cancel (legacy behavior), >0 enables probe grace window
+    // The "最大探测次数" property was removed on 2026-10-19 (D2): the network
+    // monitor no longer cancels anything, so there is no grace window to tune.
 
     // --- 订阅 配置 ---
     propGrid_->Append(new wxPropertyCategory(L"订阅"));
@@ -454,7 +454,6 @@ void ConfigDialog::loadConfig(const config::AppConfig& cfg) {
     }
     propGrid_->SetPropertyValue("network_monitor_interval", cfg.network_monitor.checkIntervalMs);
     propGrid_->SetPropertyValue("network_monitor_timeout", cfg.network_monitor.checkTimeoutMs);
-    propGrid_->SetPropertyValue("network_monitor_maxProbes", cfg.network_monitor.maxProbes);
     // Set accelerator_url
     propGrid_->SetPropertyValue("accelerator_url", wxString(cfg.accelerator_url));
     // Set update_methods checkboxes
@@ -561,9 +560,6 @@ bool ConfigDialog::saveConfig() {
     }
     editedConfig_.network_monitor.checkIntervalMs = propGrid_->GetPropertyValueAsInt("network_monitor_interval");
     editedConfig_.network_monitor.checkTimeoutMs = propGrid_->GetPropertyValueAsInt("network_monitor_timeout");
-    editedConfig_.network_monitor.maxProbes = propGrid_->GetPropertyValueAsInt("network_monitor_maxProbes");
-    // Clamp maxProbes to valid range
-    if (editedConfig_.network_monitor.maxProbes < 0) editedConfig_.network_monitor.maxProbes = 0;
 
     // Subscription fields
     {

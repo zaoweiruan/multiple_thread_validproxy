@@ -488,9 +488,9 @@ bool ProxyBatchTester::waitForNetworkRecovery() {
     // Bounded polling instead of an unbounded condition-variable wait:
     // NetworkMonitor never notifies networkCv_, so once ALL workers sleep on
     // the CV nobody re-checks IsConnected() and a transient probe failure
-    // would hang the whole batch forever (or, after maxProbes failed cycles,
-    // spuriously cancel it). Poll every 250ms and give up after 30s (longer
-    // than one full probe cycle: up to 3 urls x checkTimeoutMs + interval).
+    // would hang the whole batch forever. Poll every 250ms and give up after
+    // 30s. Exceeding that budget raises a batch-wide cancellation (D1), it is
+    // not a per-worker retirement.
     const int totalWaitMs = 30000;
     int elapsedMs = 0;
     while (!isCancelled() && elapsedMs < totalWaitMs) {
