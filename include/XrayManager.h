@@ -8,6 +8,7 @@
 #include <mutex>
 #include <sqlite3.h>
 #include "XrayInstance.h"
+#include "BatchWorkerPolicy.h"
 
 class XrayManager {
 public:
@@ -54,6 +55,21 @@ public:
     // Lock contract (four-tier order, see Spec §2.5):
     //   per-port mutex -> instancesMutex_ -> PortManager::mutex_ -> g_snapMutex
     // The per-port mutex must NEVER be acquired while holding any other lock.
+    // D3 (2026-10-19): the previous bool contract could not distinguish "hit the 30s
+    // cooldown, another reporter already restarted this instance" from "the
+    // relaunch was attempted and failed". Callers treated both as failure, so a
+    // perfectly healthy instance retired its worker.
+    //
+    // The enum lives in BatchWorkerPolicy.h (pure, unit-testable) and is aliased
+    // here rather than redeclared, so production and the unit tests share one
+    // type instead of two that can drift apart.
+    using InstanceHealthOutcome = batch_policy::InstanceHealthOutcome;
+    /// D3: full three-state wrapper. See InstanceHealthOutcome.
+    InstanceHealthOutcome evaluateInstanceHealthThrottledEx(int apiPort);
+
+    /// D3 (2026-10-19): compatibility shim kept so the existing call sites and
+    /// tests keep their exact behaviour. It reports ONLY a successful relaunch;
+    /// both "throttled" and "relaunch failed" collapse to false, as before.
     bool evaluateInstanceHealthThrottled(int apiPort);
 
  private:

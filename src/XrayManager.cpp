@@ -271,7 +271,7 @@ bool XrayManager::evaluateInstanceHealth(int apiPort) {
     return false;  // relaunch failed — ports freed; re-created on next start()
 }
 
-bool XrayManager::evaluateInstanceHealthThrottled(int apiPort) {
+XrayManager::InstanceHealthOutcome XrayManager::evaluateInstanceHealthThrottledEx(int apiPort) {
     std::shared_ptr<std::mutex> portLock;
     {
         std::lock_guard<std::mutex> mapLock(g_portLockMapMutex);
@@ -289,10 +289,19 @@ bool XrayManager::evaluateInstanceHealthThrottled(int apiPort) {
     std::map<int, ULONGLONG>::iterator stamp = lastHealthRestart_.find(apiPort);
     if (stamp != lastHealthRestart_.end() && stamp->second != 0 &&
         (now - stamp->second) < kHealthRestartCooldownMs) {
-        return false;  // within the 30s cooldown — another reporter already ran
+        // D3: the instance is very likely already being handled by whoever armed
+        // the cooldown. Report it as such instead of as a failure, so the caller
+        // keeps its worker instead of retiring it.
+        return InstanceHealthOutcome::Throttled;
     }
     lastHealthRestart_[apiPort] = now;  // arm the cooldown even if the relaunch fails
-    return evaluateInstanceHealth(apiPort);
+    return evaluateInstanceHealth(apiPort) ? InstanceHealthOutcome::Relaunched
+                                           : InstanceHealthOutcome::RelaunchFailed;
+}
+
+bool XrayManager::evaluateInstanceHealthThrottled(int apiPort) {
+    // D3: preserved exactly as before — only a real, successful relaunch is true.
+    return evaluateInstanceHealthThrottledEx(apiPort) == InstanceHealthOutcome::Relaunched;
 }
 
 XrayInstance* XrayManager::getInstance(int index) {

@@ -4,6 +4,7 @@
 #include "Logger.h"
 #include "XrayApi.h"
 #include "NetworkMonitor.h"
+#include "BatchWorkerPolicy.h"
 #include <fstream>
 #include <filesystem>
 #include <algorithm>
@@ -128,14 +129,24 @@ std::string xrayApiAddr = "127.0.0.1:" + std::to_string(apiPort);
     // items. Only a failed relaunch stops the worker (its queue items are then
     // picked up by the other workers of the shared queue).
     std::atomic<bool> instanceDead{false};
-    std::atomic<bool> relaunchedOk{false};
+    // D3: three-state outcome of the last health evaluation (see
+    // XrayManager::InstanceHealthOutcome). Stored as int because <atomic> has no
+    // lock-free guaranteed form for enum class.
+    std::atomic<int> relaunchDecision{
+        static_cast<int>(XrayManager::InstanceHealthOutcome::RelaunchFailed)};
 #ifdef USE_GRPC_API
-    xrayApi.setConnectFailureHook([this, &instanceDead, &relaunchedOk, apiPort]() {
+    xrayApi.setConnectFailureHook([this, &instanceDead, &relaunchDecision, apiPort]() {
         instanceDead.store(true, std::memory_order_relaxed);
         // P2-1: throttled variant — this hook and instanceHealthHook_ (registered
         // above) can both fire for the same gRPC failure, and the 30s per-port
         // cooldown makes the second one a no-op instead of a second restart.
-        relaunchedOk.store(xrayManager_->evaluateInstanceHealthThrottled(apiPort), std::memory_order_relaxed);
+        //
+        // D3: store the three-state outcome, not a bool. Reporting "hit the
+        // cooldown" as false used to look like a failed relaunch and retired the
+        // worker even though the instance was healthy.
+        relaunchDecision.store(
+            static_cast<int>(xrayManager_->evaluateInstanceHealthThrottledEx(apiPort)),
+            std::memory_order_relaxed);
     });
 #endif
 
@@ -144,16 +155,36 @@ std::string xrayApiAddr = "127.0.0.1:" + std::to_string(apiPort);
         if (isCancelled()) {
             break;
         }
-        if (instanceDead.load() && relaunchedOk.load()) {
+        if (instanceDead.load()) {
+            // D3: route the outcome through the shared pure policy so production
+            // and the unit tests cannot drift apart.
+            const XrayManager::InstanceHealthOutcome outcome =
+                static_cast<XrayManager::InstanceHealthOutcome>(
+                    relaunchDecision.load(std::memory_order_relaxed));
+            const batch_policy::InstanceDeadDecision decision =
+                batch_policy::decideInstanceDead(outcome);
+            if (decision == batch_policy::InstanceDeadDecision::StopWorkerAndLog) {
+                // D3: this branch used to `break` with zero logging, which is why
+                // a worker could vanish mid-batch with nothing in the log to
+                // explain it.
+                Logger::write("[ProxyBatchTester] worker "
+                              + std::to_string(workerId)
+                              + ": instance relaunch FAILED (api="
+                              + std::to_string(apiPort)
+                              + ") — stopping this worker",
+                              LogLevel::ERR);
+                break;
+            }
             Logger::write("[ProxyBatchTester] worker "
                           + std::to_string(workerId)
-                          + ": instance relaunched (api="
-                          + std::to_string(apiPort)
+                          + ": instance " +
+                          (decision == batch_policy::InstanceDeadDecision::ClearAndContinueRelaunched
+                               ? "relaunched"
+                               : "healthy (health check throttled)") +
+                          " (api=" + std::to_string(apiPort)
                           + ") — continuing to serve remaining queue items",
                           LogLevel::WARN);
             instanceDead.store(false);
-        } else if (instanceDead.load()) {
-            break;
         }
         if (netMon_ && !netMon_->IsConnected()) {
             if (!waitForNetworkRecovery()) {
@@ -283,7 +314,16 @@ std::string xrayApiAddr = "127.0.0.1:" + std::to_string(apiPort);
             // instance on the same ports, give this SAME proxy item one more
             // chance instead of discarding it — the relaunched instance is
             // ready and can run the injection + connectivity test.
-            if (!addSuccess && instanceDead.load() && relaunchedOk.load()) {
+            //
+            // D3: only Relaunched qualifies, which is exactly what the old boolean
+            // "relaunch succeeded" check meant. Throttled must NOT retry: we
+            // have no evidence that the instance finished coming back up.
+            const bool relaunchedForThisItem =
+                instanceDead.load() &&
+                static_cast<XrayManager::InstanceHealthOutcome>(
+                    relaunchDecision.load(std::memory_order_relaxed)) ==
+                    XrayManager::InstanceHealthOutcome::Relaunched;
+            if (!addSuccess && relaunchedForThisItem) {
                 Logger::write("[Worker-" + std::to_string(workerId) + "] instance relaunched (api=" + std::to_string(apiPort) + ") — retrying proxy " + profile.indexid + " once", LogLevel::WARN);
 #ifdef USE_GRPC_API
                 xrayApi.removeOutboundDirect(tag);
