@@ -156,7 +156,18 @@ std::string xrayApiAddr = "127.0.0.1:" + std::to_string(apiPort);
             break;
         }
         if (netMon_ && !netMon_->IsConnected()) {
-            if (!waitForNetworkRecovery()) break;
+            if (!waitForNetworkRecovery()) {
+                // false means EITHER "cancelled" OR "30s bounded wait exhausted".
+                // Only the latter is an outage, and an outage must stop the whole
+                // batch (owner policy, 2026-10-19) instead of silently retiring
+                // single workers until the batch limps along at 1/N concurrency.
+                if (!isCancelled()) {
+                    requestBatchCancellation(
+                        workerId, apiPort,
+                        "network unreachable for 30s (bounded wait exhausted)");
+                }
+                break;
+            }
             continue;
         }
         
@@ -445,6 +456,31 @@ void ProxyBatchTester::teardownWorkerResult(int workerId, const std::string& err
     lastResult_ = TestResult{};
     lastResult_.errorMsg = errorMsg;
     (void)workerId;
+}
+
+void ProxyBatchTester::requestBatchCancellation(int workerId, int apiPort,
+                                                const std::string& reason) {
+    // Flag first, log second: a sibling worker may observe the cancellation and
+    // exit before this line runs, so the latch must not depend on the log.
+    const bool firstReport = !batchStopReported_.exchange(true);
+
+    // externalCancel_ is the owning operation's flag (AppController::cancelRequested_
+    // in GUI/CLI). Without it the batch would only lose THIS worker.
+    if (externalCancel_) {
+        externalCancel_->store(true);
+    }
+    cancelRequested_.store(true);
+    // Notified without holding the mutex: both CVs use timed waits with an atomic
+    // predicate, so this is a wake-up optimisation, never a correctness requirement.
+    cancelCv_.notify_all();
+    networkCv_.notify_all();
+
+    if (firstReport) {
+        Logger::write("[ProxyBatchTester] worker " + std::to_string(workerId) +
+                      " (api=" + std::to_string(apiPort) + "): " + reason +
+                      " — requesting whole-batch cancellation",
+                      LogLevel::ERR);
+    }
 }
 
 bool ProxyBatchTester::waitForNetworkRecovery() {

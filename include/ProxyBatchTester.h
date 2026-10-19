@@ -67,6 +67,17 @@ public:
     /// when cancellation is requested. Returns true if cancelled.
     bool waitInterruptible(int totalMs);
 
+    /// D1 (2026-10-19): raise a batch-wide cancellation because `reason` left this
+    /// worker unable to make progress. Called only when a bounded network wait is
+    /// exhausted (never on user cancellation, which exits quietly). Setting the
+    /// external flag stops sibling workers and the owning operation, so the batch
+    /// ends as a whole instead of degrading to 1/N concurrency.
+    ///
+    /// Idempotent: only the first caller logs, because several workers run their
+    /// own 30s timer independently and would otherwise report the same event once
+    /// per worker.
+    void requestBatchCancellation(int workerId, int apiPort, const std::string& reason);
+
     /// E13: Teardown a worker's lastResult_ after a non-success path.
     void teardownWorkerResult(int workerId, const std::string& errorMsg);
 
@@ -91,6 +102,10 @@ public:
     std::queue<int> proxiesQueue_;
     std::mutex queueMutex_;
     std::atomic<bool> cancelRequested_{false};
+    // D1: each worker runs its own 30s network-wait timer, so several of them can
+    // exhaust it within microseconds of each other. This latch keeps the
+    // "whole batch is stopping" report to a single line.
+    std::atomic<bool> batchStopReported_{false};
 
     TestResult lastResult_;
     std::string lastIndexId_;
