@@ -1,8 +1,10 @@
 # Bugfix: ProxyBatchTester Worker 线程停摆、网络中断整批取消与相关次要缺陷
 
-> **版本**：v2.1（2026-10-19）— **架构语义已全部裁决，新增 F8 抖动防护，9 个 Task 全部实施**
+> **版本**：v2.2（2026-10-19）— **✅ 全部 9 个 Task 实施完成**
 
 > [!IMPORTANT]
+> **实施结果**：`ctest` **53/54**（唯一失败为既有基线 `XrayManagerStartupTest`）；`BatchWorkerPolicyTest` 11/11、`NetworkMonitorTest` 15/15。58 个 Step 全部勾选。三处实施偏差与一处既有 flake 记录见 **§15 v2.2**。
+>
 > **v2.0 核心变更（相对 v1.0）：**
 > 1. **D1 改为「首个 worker 等满 30s 未恢复 → 置应用级取消 → 整批停止」**（ERR 日志），取代原先「worker 各自静默退出」。
 > 2. **D2 改为「移除」** —— 取消整批的触发源唯一化（只剩 worker 30s 超时）；删除 `cancelOnDisconnect` 机制与 `probe_on_disconnect.max_probes` 配置项。
@@ -80,7 +82,7 @@
 - Create: `tests/test_batch_worker_policy.cpp`
 - Modify: `CMakeLists.txt`（在 `:985` 之后插 11 行）
 
-- [ ] **Step 1: 先写失败的测试文件 `tests/test_batch_worker_policy.cpp`**
+- [x] **Step 1: 先写失败的测试文件 `tests/test_batch_worker_policy.cpp`**
 
 ```cpp
 // Unit tests for include/BatchWorkerPolicy.h.
@@ -162,7 +164,7 @@ TEST(BatchWorkerPolicyTest, ProbeFailureDisabledThreshold_NoLog) {
 }
 ```
 
-- [ ] **Step 2: 注册测试目标（此时必然编译失败：`BatchWorkerPolicy.h` 尚不存在）**
+- [x] **Step 2: 注册测试目标（此时必然编译失败：`BatchWorkerPolicy.h` 尚不存在）**
 
 在 `CMakeLists.txt` 中，紧接 `:985` 这一行之后插入：
 
@@ -194,7 +196,7 @@ cmake --build build --parallel 8 --target test_batch_worker_policy
 
 Expected: **FAIL** — `fatal error: BatchWorkerPolicy.h: No such file or directory`。
 
-- [ ] **Step 3: 创建 `include/BatchWorkerPolicy.h`**
+- [x] **Step 3: 创建 `include/BatchWorkerPolicy.h`**
 
 ```cpp
 #pragma once
@@ -270,7 +272,7 @@ inline bool shouldLogProbeFailureCrossing(int priorConsecutiveFailures, int prob
 }  // namespace batch_policy
 ```
 
-- [ ] **Step 4: 编译并运行，确认 9 个用例全绿**
+- [x] **Step 4: 编译并运行，确认 9 个用例全绿**
 
 Run:
 
@@ -281,7 +283,7 @@ ctest -R BatchWorkerPolicyTest -V
 
 Expected: `100% tests passed, 0 tests failed out of 1`，测试二进制内 **13 tests from BatchWorkerPolicyTest** 全 `OK`。
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```powershell
 git add include/BatchWorkerPolicy.h tests/test_batch_worker_policy.cpp CMakeLists.txt
@@ -307,7 +309,7 @@ plus tests/test_batch_worker_policy.cpp mirroring the contract."
 
 **目标行为**：首个 worker 耗尽 30s 有界等待且期间未恢复时，置应用级取消标志使**全部** worker 退出，并打一条 ERR 日志说明是哪个 worker、哪个 api 端口、什么原因。
 
-- [ ] **Step 1: 头文件新增私有方法声明**
+- [x] **Step 1: 头文件新增私有方法声明**
 
 锚点（`include/ProxyBatchTester.h:62-68`，紧随 `waitInterruptible` 声明之后）：
 
@@ -326,7 +328,7 @@ plus tests/test_batch_worker_policy.cpp mirroring the contract."
     void requestBatchCancellation(int workerId, int apiPort, const std::string& reason);
 ```
 
-- [ ] **Step 2: 实现 `requestBatchCancellation`**
+- [x] **Step 2: 实现 `requestBatchCancellation`**
 
 锚点（`src/ProxyBatchTester.cpp` 文件末尾，`preGenerateConfigs` 定义之前或之后均可）：
 
@@ -350,7 +352,7 @@ void ProxyBatchTester::requestBatchCancellation(int workerId, int apiPort,
 }
 ```
 
-- [ ] **Step 3: 替换主循环中的网络等待分支**
+- [x] **Step 3: 替换主循环中的网络等待分支**
 
 锚点（`src/ProxyBatchTester.cpp:158-161`，当前内容）：
 
@@ -382,7 +384,7 @@ void ProxyBatchTester::requestBatchCancellation(int workerId, int apiPort,
 
 说明：**不改动** `waitForNetworkRecovery()` 本身（`:450-481`）——它继续返回 `false` 承载两种语义，由调用点在 `isCancelled()` 处判别。这避免了改签名与两处调用点的连带风险。
 
-- [ ] **Step 4: 构建并回归**
+- [x] **Step 4: 构建并回归**
 
 ```powershell
 cmake --build build --parallel 8
@@ -391,7 +393,7 @@ ctest -R "ProxyBatchComponentsTest|BatchWorkerPolicyTest" -V
 
 Expected: 构建 EXIT 0；两个测试 `100% tests passed`。
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```powershell
 git add include/ProxyBatchTester.h src/ProxyBatchTester.cpp
@@ -416,7 +418,7 @@ wait now raises a batch-wide cancellation and logs the reason."
 
 Task 2 落地后，超时已会置位取消标志，因此 `return true` 在结果上不再错误；但**语义必须显式化**，否则下一个改动方仍会误读为「超时 == 取消」。
 
-- [ ] **Step 1: 替换 `waitInterruptible` 实现**
+- [x] **Step 1: 替换 `waitInterruptible` 实现**
 
 锚点（`src/ProxyBatchTester.cpp:483-500`，完整函数）：
 
@@ -474,7 +476,7 @@ bool ProxyBatchTester::waitInterruptible(int totalMs) {
 }
 ```
 
-- [ ] **Step 2: 核对两个调用点语义仍然正确（无需改动，仅确认）**
+- [x] **Step 2: 核对两个调用点语义仍然正确（无需改动，仅确认）**
 
 ```powershell
 Select-String -Path src/ProxyBatchTester.cpp -Pattern 'waitInterruptible\('
@@ -486,7 +488,7 @@ Expected（3 处，全部语义正确）：
 - `:483` 定义
 - （本文件内无其它命中；若出现多于 3 处，需复核是否新增了调用点）
 
-- [ ] **Step 3: 构建与回归**
+- [x] **Step 3: 构建与回归**
 
 ```powershell
 cmake --build build --parallel 8
@@ -495,7 +497,7 @@ ctest -V
 
 Expected: 构建 EXIT 0；`ctest` **53/54**（与基线一致，`XrayManagerStartupTest` 为已知基线失败）。
 
-- [ ] **Step 4: 提交**
+- [x] **Step 4: 提交**
 
 ```powershell
 git add include/ProxyBatchTester.h src/ProxyBatchTester.cpp
@@ -530,7 +532,7 @@ network-wait timeout."
 
 **为何需要 F7**：`ProxyFinder` 与 `RegionBatchResolver` 的构造函数**只收 `cancelFlag`，不收 `netMon_`**，断网时能停下来唯一依赖 D2 置的应用级标志。移除 D2 后必须自补，否则这两条路径（工具栏「最佳代理」/ CLI `-F`、`-FMIN`；地区解析）断网时只会逐个尝试到自身超时。
 
-- [ ] **Step 1: `include/NetworkMonitor.h` 删除取消联动与探针阈值**
+- [x] **Step 1: `include/NetworkMonitor.h` 删除取消联动与探针阈值**
 
 删除 `:25-37` 整段（含 `setCancelOnDisconnect` 与 `setProbeOnDisconnect`）：
 
@@ -566,7 +568,7 @@ network-wait timeout."
 
 保留 `consecutiveFailures_`（改为纯诊断计数，不再触发任何动作）与 `dnsFailures_`、`getConsecutiveFailures()`、`resetProbeCount()`。把 `:63` 的行尾注释 `(triggers cancel)` 改为 `(diagnostic only)`。
 
-- [ ] **Step 2: `src/NetworkMonitor.cpp` 简化状态机（`:123-179`）**
+- [x] **Step 2: `src/NetworkMonitor.cpp` 简化状态机（`:123-179`）**
 
 整段 `:123-179` 替换为：
 
@@ -597,7 +599,7 @@ network-wait timeout."
         }
 ```
 
-- [ ] **Step 2b: F8 去抖 — URL 判定改为多数投票（`NetworkMonitor.h/.cpp`）**
+- [x] **Step 2b: F8 去抖 — URL 判定改为多数投票（`NetworkMonitor.h/.cpp`）**
 
 **为什么必须做（抖动缺口 1）**：现有判定要求 `check_urls` **全部**成功，任意一个 URL 抖动（CDN 抽风、站点限流）就判「断网」，且 `break` 会让后续 URL 根本没被探测。这让「30s 连续断网」这个门槛的**实际到达难度远低于名义值** —— 是当前最大的误判来源。
 
@@ -713,7 +715,7 @@ bool NetworkMonitor::majorityVerdict(int okCount, int netFailCount, int totalUrl
 | 3 DNS 失败（全部弃权） | 连通 | 连通（`decisive == 0` 分支） | 否 |
 | `urls_` 为空 | 断网 | 断网（`totalUrls <= 0` 分支） | 否 |
 
-- [ ] **Step 2c: `tests/test_network_monitor.cpp` 补 F8 单测（5 例）**
+- [x] **Step 2c: `tests/test_network_monitor.cpp` 补 F8 单测（5 例）**
 
 在文件末尾追加：
 
@@ -747,15 +749,15 @@ TEST(NetworkMonitorTest, MajorityVerdict_SingleUrlNeedsSuccess) {
 
 `NetworkMonitorTest` 用例数 **11 → 15**（Task 4 Step 11 删 1 例 `ProbeThreshold_TriggersCancelAfterNFailures`，本步加 5 例）。
 
-- [ ] **Step 3: 删除配置字段与解析（`include/ConfigReader.h:88-94`）**
+- [x] **Step 3: 删除配置字段与解析（`include/ConfigReader.h:88-94`）**
 
 删除 `probe_on_disconnect` 段与其注释（保留 `check_interval_ms` / `check_timeout_ms` / `check_urls`）。
 
-- [ ] **Step 4: 删除配置解析（`include/config/sections/NetworkMonitorConfigParser.h:52-61`）**
+- [x] **Step 4: 删除配置解析（`include/config/sections/NetworkMonitorConfigParser.h:52-61`）**
 
 删除 `max_probes` 的整个 `if (pd.contains("max_probes") && ...)` 解析块（连同 `pd` 取值与两层 `else if` 的 WARN 分支）。
 
-- [ ] **Step 5: 删除配置序列化（`src/config/ConfigJsonSerializer.cpp:148-149`）**
+- [x] **Step 5: 删除配置序列化（`src/config/ConfigJsonSerializer.cpp:148-149`）**
 
 删除：
 
@@ -766,15 +768,15 @@ TEST(NetworkMonitorTest, MajorityVerdict_SingleUrlNeedsSuccess) {
 
 并删除其上方构造 `pdObj` 的声明（若 `pdObj` 仅供此用途）。
 
-- [ ] **Step 6: 删除 UI 属性（`src/ui/ConfigDialog.cpp`）**
+- [x] **Step 6: 删除 UI 属性（`src/ui/ConfigDialog.cpp`）**
 
 删除 `:242`（`propGrid_->Append(new wxIntProperty(L"最大探测次数", "network_monitor_maxProbes", ...))` 及其上方注释）、`:457`（`SetPropertyValue`）、`:564-566`（`GetPropertyValueAsInt` 与 clamp）。
 
-- [ ] **Step 7: 删除 `bin/config.json` 的配置段**
+- [x] **Step 7: 删除 `bin/config.json` 的配置段**
 
 从 `"network_monitor"` 对象中删除 `"probe_on_disconnect":{"max_probes":3}`（注意该文件为单行 JSON，需精确编辑）。
 
-- [ ] **Step 8: F7 — `ProxyFinder` 补 `netMon_`**
+- [x] **Step 8: F7 — `ProxyFinder` 补 `netMon_`**
 
 `include/ProxyFinder.h` 构造函数**末尾**追加 `NetworkMonitor* netMon = nullptr`，并新增成员 `NetworkMonitor* netMon_{nullptr};`（需 `#include "NetworkMonitor.h"` 或前向声明）。
 
@@ -788,23 +790,23 @@ TEST(NetworkMonitorTest, MajorityVerdict_SingleUrlNeedsSuccess) {
         }
 ```
 
-- [ ] **Step 9: F7 — `RegionBatchResolver` 补 `netMon_`**
+- [x] **Step 9: F7 — `RegionBatchResolver` 补 `netMon_`**
 
 同 Step 8 模式：`include/RegionBatchResolver.h` 构造函数末尾追加形参与成员；`src/RegionBatchResolver.cpp` 主循环开头加同样的 `IsConnected()` 检查与 `[RegionBatchResolver]` WARN。
 
-- [ ] **Step 10: 更新 `src/ui/AppController.cpp` 调用点**
+- [x] **Step 10: 更新 `src/ui/AppController.cpp` 调用点**
 
 - 删除 `:68` 与 `:748` 的 `netMon_.setProbeOnDisconnect(config_.network_monitor.maxProbes);`
 - 删除 `:72` 与 `:749` 的 `netMon_.setCancelOnDisconnect(&cancelRequested_);`
 - `:2421`、`:2485` 的 `ProxyFinder finder(...)` 与 `:2639` 的 `RegionBatchResolver resolver(...)` 构造，**末尾实参加 `&netMon_`**
 
-- [ ] **Step 11: 更新 `tests/test_network_monitor.cpp`**
+- [x] **Step 11: 更新 `tests/test_network_monitor.cpp`**
 
 - **删除** `ProbeThreshold_TriggersCancelAfterNFailures`（`:106-121`）——该行为已不存在
 - `ConsecutiveFailures_CountsCorrectly`（`:123-134`）删除 `nm.setProbeOnDisconnect(3);` 一行，其余保留
 - `NetworkMonitorTest` 用例数 **11 → 10**；其断言仅匹配 `"LOST"` 子串，Step 2 的新日志格式仍满足，无需改动
 
-- [ ] **Step 12: 构建 + 回归**
+- [x] **Step 12: 构建 + 回归**
 
 ```powershell
 cmake --build build --parallel 8
@@ -813,14 +815,14 @@ ctest -V
 
 Expected: 构建 EXIT 0；`ctest` **53/54**（与基线一致）；`NetworkMonitorTest` **10/10**。
 
-- [ ] **Step 13: 完整性核对（对应 §11 V2）**
+- [x] **Step 13: 完整性核对（对应 §11 V2）**
 
 ```powershell
 Select-String -Path src,include -Pattern 'cancelOnDisconnect'      # 期望 0 命中
 Select-String -Path src,include -Pattern 'maxProbes|max_probes|probe_on_disconnect'  # 期望 0 命中
 ```
 
-- [ ] **Step 14: 提交**
+- [x] **Step 14: 提交**
 
 ```powershell
 git add -A
@@ -845,7 +847,7 @@ application-level flag, so both now check IsConnected() directly."
 
 **机理**：`setConnectFailureHook` 先触发（`src/XrayApi.cpp:1951-1960`），调 `evaluateInstanceHealthThrottled`；紧接着 `instanceHealthHook_` 触发，30s 冷却内必然返回 `false`。worker 把该 `false` 当成「重启失败」→ `:155-157 break`，**零日志**地永久退出。
 
-- [ ] **Step 1: `include/XrayManager.h` 加 include**
+- [x] **Step 1: `include/XrayManager.h` 加 include**
 
 在文件顶部最后一个 `#include` 之后插入：
 
@@ -855,7 +857,7 @@ application-level flag, so both now check IsConnected() directly."
 
 （验证：`Select-String -Path include/XrayManager.h -Pattern '#include'`。）
 
-- [ ] **Step 2: `include/XrayManager.h` 追加三态声明**
+- [x] **Step 2: `include/XrayManager.h` 追加三态声明**
 
 锚点（`include/XrayManager.h:57`）：
 
@@ -877,7 +879,7 @@ application-level flag, so both now check IsConnected() directly."
     batch_policy::InstanceHealthOutcome evaluateInstanceHealthThrottledEx(int apiPort);
 ```
 
-- [ ] **Step 3: `src/XrayManager.cpp` 把 `:274-296` 改为 Ex + 包装**
+- [x] **Step 3: `src/XrayManager.cpp` 把 `:274-296` 改为 Ex + 包装**
 
 锚点（`src/XrayManager.cpp:274-296`，完整函数）：
 
@@ -944,7 +946,7 @@ bool XrayManager::evaluateInstanceHealthThrottled(int apiPort) {
 }
 ```
 
-- [ ] **Step 4: `src/ProxyBatchTester.cpp` 把 `relaunchedOk` 换成三态**
+- [x] **Step 4: `src/ProxyBatchTester.cpp` 把 `relaunchedOk` 换成三态**
 
 锚点（`src/ProxyBatchTester.cpp:130-139`）：
 
@@ -984,7 +986,7 @@ bool XrayManager::evaluateInstanceHealthThrottled(int apiPort) {
 #endif
 ```
 
-- [ ] **Step 5: `src/ProxyBatchTester.cpp` 重写循环顶部的 instanceDead 分支**
+- [x] **Step 5: `src/ProxyBatchTester.cpp` 重写循环顶部的 instanceDead 分支**
 
 锚点（`src/ProxyBatchTester.cpp:147-157`）：
 
@@ -1027,7 +1029,7 @@ bool XrayManager::evaluateInstanceHealthThrottled(int apiPort) {
         }
 ```
 
-- [ ] **Step 6: `src/ProxyBatchTester.cpp` 修正 in-flight 补试条件**
+- [x] **Step 6: `src/ProxyBatchTester.cpp` 修正 in-flight 补试条件**
 
 锚点（`src/ProxyBatchTester.cpp:275`）：
 
@@ -1042,7 +1044,7 @@ bool XrayManager::evaluateInstanceHealthThrottled(int apiPort) {
                 && instanceHealthOutcome.load() == static_cast<int>(batch_policy::InstanceHealthOutcome::Relaunched)) {
 ```
 
-- [ ] **Step 7: 确认无残留引用**
+- [x] **Step 7: 确认无残留引用**
 
 Run:
 
@@ -1052,7 +1054,7 @@ Select-String -Path src/ProxyBatchTester.cpp -Pattern 'relaunchedOk'
 
 Expected: **0 命中**。
 
-- [ ] **Step 8: 构建 + 回归**
+- [x] **Step 8: 构建 + 回归**
 
 Run:
 
@@ -1063,7 +1065,7 @@ ctest -V
 
 Expected: 构建 EXIT 0；`ctest` 53/54（`XrayManagerStartupTest` 已知基线失败）。
 
-- [ ] **Step 9: 提交**
+- [x] **Step 9: 提交**
 
 ```powershell
 git add include/XrayManager.h src/XrayManager.cpp src/ProxyBatchTester.cpp
@@ -1084,7 +1086,7 @@ bare 'break' and no log line at all."
 
 **机理**：`XrayInstance` 的构造第 5 参 `sqlite3* db` 有默认值 `nullptr`（`include/XrayInstance.h:12`）。正常启动路径传了 `db_`（`src/XrayManager.cpp:144`），relaunch 路径漏传 → `src/XrayInstance.cpp:317-318` 打 `[XrayInstance] No database connection - generating minimal config` 并生成**无 outbound/路由**的最小配置 → 重启窗口内必然连续注入失败（解释日志中 97 条 `addOutbound fallback failed with empty output, likely instance restart window`）。
 
-- [ ] **Step 1: 补第 5 个实参**
+- [x] **Step 1: 补第 5 个实参**
 
 锚点（`src/XrayManager.cpp:256`）：
 
@@ -1102,7 +1104,7 @@ bare 'break' and no log line at all."
         std::unique_ptr<XrayInstance> replacement = std::make_unique<XrayInstance>(xrayPath_, socksPort, apiPort, configDir_, db_);
 ```
 
-- [ ] **Step 2: 确认两处构造实参一致**
+- [x] **Step 2: 确认两处构造实参一致**
 
 Run:
 
@@ -1112,7 +1114,7 @@ Select-String -Path src/XrayManager.cpp -Pattern 'make_unique<XrayInstance>'
 
 Expected: 2 命中，两行结尾**都是** `configDir_, db_);`。
 
-- [ ] **Step 3: 构建 + 回归**
+- [x] **Step 3: 构建 + 回归**
 
 Run:
 
@@ -1123,7 +1125,7 @@ ctest -R XrayManagerStartupTest -V
 
 Expected: 构建 EXIT 0；`XrayManagerStartupTest` 维持基线状态（本方案不负责修它）。**注意**：不要因为该测试失败就回退本步——它是既知基线失败。
 
-- [ ] **Step 4: 提交**
+- [x] **Step 4: 提交**
 
 ```powershell
 git add src/XrayManager.cpp
@@ -1145,7 +1147,7 @@ connection - generating minimal config' path with no outbound rules."
 
 > **范围说明（评审 B6）**：RCA 的 F4 含两个半边——「relaunch 后等实例真正 ready」与「OnlineProbe 加重试退避」。本方案中：前半边由 D4（relaunch 补传 `db_`）+ `XrayManager::evaluateInstanceHealth` 现有的 `waitInstanceReady()` 覆盖；后半边**只降低日志频度、不改重试节律**，理由是探活由 `network_monitor.check_interval_ms`（默认 10000ms）驱动，属**有界周期轮询**而非无退避的重试风暴——同一 indexId 3 分钟内 ~36 条 WARN 的根因是 `>=` 判据（每个周期重复打同一句），不是重试频率。若 Architect 认定仍需退避，则单列 Task 10（按 `consecutive_failures` 指数拉长失败节点的探活间隔）。
 
-- [ ] **Step 1: 修正 socks-port-unknown 分支**
+- [x] **Step 1: 修正 socks-port-unknown 分支**
 
 锚点（`src/ui/AppController.cpp:2310-2313`）：
 
@@ -1167,7 +1169,7 @@ connection - generating minimal config' path with no outbound rules."
                 }
 ```
 
-- [ ] **Step 2: 修正常规失败分支**
+- [x] **Step 2: 修正常规失败分支**
 
 锚点（`src/ui/AppController.cpp:2332-2335`）：
 
@@ -1188,7 +1190,7 @@ connection - generating minimal config' path with no outbound rules."
                 }
 ```
 
-- [ ] **Step 3: `src/ui/AppController.cpp` 顶部加 include**
+- [x] **Step 3: `src/ui/AppController.cpp` 顶部加 include**
 
 在 `#include "AppController.h"` 之后插入：
 
@@ -1198,7 +1200,7 @@ connection - generating minimal config' path with no outbound rules."
 
 （验证：`Select-String -Path src/ui/AppController.cpp -Pattern 'BatchWorkerPolicy'`。）
 
-- [ ] **Step 4: 确认无残留 `>= probeFailStreak`**
+- [x] **Step 4: 确认无残留 `>= probeFailStreak`**
 
 Run:
 
@@ -1208,7 +1210,7 @@ Select-String -Path src/ui/AppController.cpp -Pattern 'probeFailStreak'
 
 Expected: 仅剩读取 `probeFailStreak` 的赋值行与两处 `shouldLogProbeFailureCrossing(curBad|cur, probeFailStreak)`；**0** 处 `>= probeFailStreak`。
 
-- [ ] **Step 5: 构建 + 回归**
+- [x] **Step 5: 构建 + 回归**
 
 Run:
 
@@ -1219,7 +1221,7 @@ ctest -R BatchWorkerPolicyTest -V
 
 Expected: 构建 EXIT 0；17 tests 全绿。
 
-- [ ] **Step 6: 提交**
+- [x] **Step 6: 提交**
 
 ```powershell
 git add src/ui/AppController.cpp
@@ -1234,7 +1236,7 @@ reached the threshold every ~5s probe cycle re-logged the identical WARN
 
 ## §9 Task 8：F5（Medium）— proxy tag 残留不得冒充实例故障
 
-- [ ] **Step 0: 先实证 stale-tag 的两种 output 形态是否同源（评审 B5）**
+- [x] **Step 0: 先实证 stale-tag 的两种 output 形态是否同源（评审 B5）**
 
 RCA 记录到 10:34:09–10:34:11 的失败 output 有两种形态：`output= adding: proxy` 与 `... existing tag found: proxy`。`isStaleTagInjectionError()` 只匹配后者，因此若有失败只带 `adding: proxy`（xray CLI 的进度行）而不含 `existing tag found`，F5 的门不会生效、实例仍会被误重启 ⇒ 本方案目标未达成。
 
@@ -1255,7 +1257,7 @@ Select-String -Path bin/log/ui_20261019_083638.log -Pattern 'adding: proxy' -Con
 
 **证据**：日志 10:34:09–10:34:11 多条 `addOutbound FAILED ... output= adding: proxy` / `... existing tag found: proxy`，且这些失败随即触发实例重启（`instance relaunch attempted`）。`removeOutbound` 的失败只在 DEBUG 输出（`src/XrayApi.cpp:250`），默认日志不可见，问题被掩盖。
 
-- [ ] **Step 1: `src/XrayApi.cpp` 把 `removeOutbound` 失败升为 WARN**
+- [x] **Step 1: `src/XrayApi.cpp` 把 `removeOutbound` 失败升为 WARN**
 
 锚点（`src/XrayApi.cpp:250`）：
 
@@ -1272,7 +1274,7 @@ Select-String -Path bin/log/ui_20261019_083638.log -Pattern 'adding: proxy' -Con
         Logger::write("[XrayApi] removeOutbound FAILED: " + lastError_, LogLevel::WARN);
 ```
 
-- [ ] **Step 2: `src/ProxyBatchTester.cpp` 用策略门替换裸的 `retryCount >= 3`**
+- [x] **Step 2: `src/ProxyBatchTester.cpp` 用策略门替换裸的 `retryCount >= 3`**
 
 锚点（`src/ProxyBatchTester.cpp:296-298`）：
 
@@ -1298,7 +1300,7 @@ Select-String -Path bin/log/ui_20261019_083638.log -Pattern 'adding: proxy' -Con
             }
 ```
 
-- [ ] **Step 3: 构建 + 回归**
+- [x] **Step 3: 构建 + 回归**
 
 Run:
 
@@ -1309,7 +1311,7 @@ ctest -R BatchWorkerPolicyTest -V
 
 Expected: 构建 EXIT 0；17 tests 全绿（其中 `StaleTagError_NotReportedAsEndpointUnreachable` 直接覆盖本改动）。
 
-- [ ] **Step 4: 提交**
+- [x] **Step 4: 提交**
 
 ```powershell
 git add src/XrayApi.cpp src/ProxyBatchTester.cpp
@@ -1331,7 +1333,7 @@ so a healthy Xray process got restarted."
 
 **理由**：该字段输出的是 `stats.droppedByProtocol[0..3]`（被丢弃行按协议的分布），当前字面串 `byProto=` 极易被误读为「成功按协议」。
 
-- [ ] **Step 1: 改字面串（数组下标与后缀 `s`/`t`/`h` 都不动）**
+- [x] **Step 1: 改字面串（数组下标与后缀 `s`/`t`/`h` 都不动）**
 
 锚点（`src/update/SubscriptionParser.cpp:807`）：
 
@@ -1345,7 +1347,7 @@ so a healthy Xray process got restarted."
                               " droppedByProto=v" + std::to_string(stats.droppedByProtocol[0]) +
 ```
 
-- [ ] **Step 2: 确认改名生效、无残留**
+- [x] **Step 2: 确认改名生效、无残留**
 
 Run:
 
@@ -1355,7 +1357,7 @@ Select-String -Path src/update/SubscriptionParser.cpp -Pattern 'byProto'
 
 Expected: **1** 处 `droppedByProto=v`；**0** 处 `byProto=`。（可用 `-Pattern 'byProto'` 同时命中两者以人工核对。）
 
-- [ ] **Step 3: 构建 + 回归**
+- [x] **Step 3: 构建 + 回归**
 
 Run:
 
@@ -1366,7 +1368,7 @@ ctest -R SubscriptionParserTest -V
 
 Expected: 构建 EXIT 0；`SubscriptionParserTest` 全绿。
 
-- [ ] **Step 4: 提交**
+- [x] **Step 4: 提交**
 
 ```powershell
 git add src/update/SubscriptionParser.cpp
@@ -1515,3 +1517,4 @@ v2.0 下三个 Critical 缺陷**均被修复**，但引入以下**新的行为�
 | v1.0.2b | 2026-10-19 | 补齐 §13 决策 3：owner 裁决 **D3 保留 `bool` 兼容包装**（`bool` 版本退化为 `Ex == Relaunched` 薄包装，既有调用点与测试零改动）→ **§13 三项全部裁决完毕**，Task 5 解除阻塞。同时记录：owner 对决策 1（D1/D1b 维持现状）**提出暂停，要求重新评估**，故 Task 5/6/7/8/9 **尚未开工**，源码零改动。 |
 | **v2.0** | 2026-10-19 | **架构语义反转 + 方案改写**。owner 复核时指出「网络恢复需要较长时间，排除抖动后**应该停摆任务**」，据此推翻 v1.0.2 的「维持现状」：**问题不是「停不停」而是「怎么停」**——现状是 worker 各自为政静默退出，批次带着 1/4 并发跑完 16 分钟（残废），而非干净停止。**① D1/D1b 改为「首个 worker 等满 30s 未恢复 → 置应用级取消 → 整批停止 + ERR 日志」**；**② D2 改为「移除」**（`cancelOnDisconnect` 机制 + `probe_on_disconnect.max_probes` 配置项一并删除，取消整批的触发源唯一化），Task 4 改动面由 2 个文件扩至 8 个；**③ 新增 F7**：`ProxyFinder` / `RegionBatchResolver` 补 `NetworkMonitor*` 形参与断网检查，替代其因移除 D2 而失去的能力；**④ D3 = 保留 `bool` 兼容包装**（决策 3 落档）。9 个 Task 全部实施（v1.0.2 的作废标记被推翻）。同步改写 §0（含新增 F7 行）、§1、§11（V1/V2 改为新设计的静态核对，V10 判据①② 恢复并重写）、§12、§13（含 owner 决策演进轨迹与 4 条新风险）、§15。**源码仍未改动。** |
 | **v2.1** | 2026-10-19 | **新增 F8：worker 超时的抖动防护**。owner 追问「worker 超时如何防止网络抖动」，勘察后定位真实误判源：现有 `allOk` 要求 `check_urls` **全部**成功且遇首个失败即 `break`（`NetworkMonitor.cpp:96-118`），任意单个 URL 抖动即误判断网，使 30s 停批门槛实际到达难度远低于名义值；DNS 失败已是中性票（全弃权判连通，2026-08-06 修复确立的语义，保留）。**owner 选 A**：连通判定改为**多数投票**——纯静态 `NetworkMonitor::majorityVerdict(okCount, netFailCount, totalUrls)`（零 I/O 可单测，符合本项目「纯策略外提」模式），判据 `okCount > netFailCount`，`decisive == 0`（全 DNS 弃权）保持连通、`totalUrls <= 0` 保持断网；探测循环去掉 `break` 探完全部 URL。附 8 行行为等价性核对表，**唯一变化是「2 成功 + 1 传输失败」由断网变连通**。新增 5 个 `MajorityVerdict_*` 单测，`NetworkMonitorTest` 11 → 15。另两个抖动缺口（恢复侧稳定窗口、curl 期间抖动宽限）**本期明确不做**。同步 §0（F8 行）、§1、§11 V2、§12、§13 决策 5。**源码仍未改动。** |
+| **v2.2** | 2026-10-19 | **全部 9 个 Task 实施完成**（58 个 Step 全部勾选）。构建 EXIT 0；`ctest` **53/54**，唯一失败为既有基线 `XrayManagerStartupTest.RealXrayStartsBounded`。`BatchWorkerPolicyTest` **11/11**、`NetworkMonitorTest` **15/15**。TDD RED 均已实证：Task 1 `BatchWorkerPolicy.h: No such file or directory`；Task 4 `majorityVerdict is not a member of NetworkMonitor`。提交序列 `9c333a4` → `f6b367c` → `51bfe67` → `cee365d` → `9c4ffb1` → `fefa5b8` → `3b14ce3` → `fd4da8b` → `4511cf5`。**三处实施偏差**（均为实证后的正确决定，非计划遗漏）：① **B5 预设被 Step 0 实证推翻** —— 现场两种报文不同源（`existing tag found` 来自 gRPC desc，`output=adding: proxy` 来自 `xray api ado` 回退子进程 stdout），OR 扩大判据会掩盖真实实例故障，故**不做扩大**，改为覆盖同族措辞（`already exists` / `duplicate`），并加 `CliSubprocessOutput_IsNotTreatedAsStaleTag` 单测锁定；② **F7 接入点由 3 处增至 6 处** —— 另 3 处是同步 GUI 入口（`findFirstProxy` / `findBestProxy` / `resolveRegionsForValidProxies`，本就不传取消标志，保留 `nullptr` 只加 `&netMon_`）；③ **新增设计决策（非评审要求）** —— `requestBatchCancellation` 加 `batchStopReported_` 幂等闩锁，避免多 worker 各自 30s 计时几乎同时超时时重复打 ERR；`XrayManager::InstanceHealthOutcome` 改为**别名** `batch_policy::InstanceHealthOutcome` 而非重复定义枚举；`ProxyFinder`/`RegionBatchResolver` 的 `networkDown()` **移出头文件**（前置声明 + .cpp 定义），否则会给每个包含者引入 `NetworkMonitor.cpp` 链接依赖，`test_region_batch_resolver` 已因此补链该源文件。另发现既有 flake：`NetworkMonitorTest.LoggingOnConnectionLost` 依赖真实 `example.com`，5 次跑约挂 1 次，与本次改动无关。 |
