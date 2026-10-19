@@ -984,6 +984,17 @@ set_target_properties(test_proxy_batch_components PROPERTIES
 )
 add_test(NAME ProxyBatchComponentsTest COMMAND test_proxy_batch_components)
 
+# -- Batch worker lifecycle policy tests (pure logic, no external deps) --
+add_executable(test_batch_worker_policy tests/test_batch_worker_policy.cpp)
+target_include_directories(test_batch_worker_policy PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(test_batch_worker_policy PRIVATE gtest_main gtest)
+set_target_properties(test_batch_worker_policy PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+)
+add_test(NAME BatchWorkerPolicyTest COMMAND test_batch_worker_policy)
+
 # -- ProxyBatchQuery integration tests (uses test DB) --
 add_executable(test_proxy_batch_query tests/test_proxy_batch_query.cpp src/test/ProxyBatchQuery.cpp
     src/ConfigGenerator.cpp src/ProfileitemDAO.cpp src/utils/DnsCache.cpp src/ProfileExItemDAO.cpp
