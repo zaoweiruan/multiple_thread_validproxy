@@ -804,7 +804,7 @@ std::vector<db::models::Profileitem> SubscriptionParser::parse(const std::string
                       " bodyDecodedLen="  + std::to_string(stats.bodyDecodedLength) +
                       " bodyFellBack="    + std::string(stats.bodyDecodeFellBack ? "1" : "0") +
                       " ssUrlChars="      + std::to_string(stats.ssUrlCharCount) +
-                      " byProto=v"        + std::to_string(stats.droppedByProtocol[0]) +
+                      " droppedByProto=v"  + std::to_string(stats.droppedByProtocol[0]) +
                       ",s"                + std::to_string(stats.droppedByProtocol[1]) +
                       ",t"                + std::to_string(stats.droppedByProtocol[2]) +
                       ",h"                + std::to_string(stats.droppedByProtocol[3]),
