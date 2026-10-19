@@ -1,5 +1,6 @@
 #include "AppController.h"
 #include "config/StreamSettingsBuilder.h"
+#include "BatchWorkerPolicy.h"
 #include "Events.h"
 #include "RefreshCommands.h"
 #include "UnifiedMonitorRows.h"
@@ -2301,7 +2302,11 @@ void AppController::doTestOnlineProxies(wxEvtHandler* wxHandler, bool silent) {
                 std::optional<db::models::ProfileExItem> exBad =
                     exDao_.getByIndexId(mon.indexId);
                 int curBad = exBad ? exBad->consecutive_failures : 0;
-                if (curBad + 1 >= probeFailStreak) {
+                // D5: log only when the streak FIRST crosses the threshold.
+                // `>=` re-logged the same warning on every probe cycle (~5s) for
+                // the whole 3-minute failure window, producing a WARN storm.
+                // The rule lives in BatchWorkerPolicy so it is unit-tested.
+                if (batch_policy::shouldLogProbeFailureCrossing(curBad, probeFailStreak)) {
                     Logger::write("[OnlineProbe] test failed: " + mon.indexId
                                   + ": socks port unknown", LogLevel::WARN);
                 }
@@ -2323,7 +2328,8 @@ void AppController::doTestOnlineProxies(wxEvtHandler* wxHandler, bool silent) {
                 std::optional<db::models::ProfileExItem> ex =
                     exDao_.getByIndexId(mon.indexId);
                 int cur = ex ? ex->consecutive_failures : 0;
-                if (cur + 1 >= probeFailStreak) {
+                // D5: see the note above — crossing, not ">=" .
+                if (batch_policy::shouldLogProbeFailureCrossing(cur, probeFailStreak)) {
                     Logger::write("[OnlineProbe] test failed: " + mon.indexId
                                   + ": " + r.errorMsg, LogLevel::WARN);
                 }
