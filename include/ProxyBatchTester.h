@@ -64,7 +64,9 @@ public:
     bool waitForNetworkRecovery();
 
     /// Interruptible sleep: waits up to totalMs in small steps, returning early
-    /// when cancellation is requested. Returns true if cancelled.
+    /// when cancellation is requested. Returns true **only** when the batch was
+    /// cancelled -- never merely because the delay was cut short by a bounded
+    /// network wait (D1b, 2026-10-19).
     bool waitInterruptible(int totalMs);
 
     /// D1 (2026-10-19): raise a batch-wide cancellation because `reason` left this

@@ -516,13 +516,23 @@ bool ProxyBatchTester::waitForNetworkRecovery() {
     return false;
 }
 
+// D1b (2026-10-19): the return value means "the batch was cancelled", NOT
+// "the requested delay was interrupted". Callers do `if (waitInterruptible(n))
+// return;`, which abandons the whole worker, so conflating a bounded network-wait
+// timeout with cancellation is what silently killed workers. A timeout now ends
+// only the delay; the batch-wide stop is raised by requestBatchCancellation().
 bool ProxyBatchTester::waitInterruptible(int totalMs) {
     const int stepMs = 10;
     int elapsed = 0;
     while (elapsed < totalMs) {
         if (isCancelled()) return true;
         if (netMon_ && !netMon_->IsConnected()) {
-            if (!waitForNetworkRecovery()) return true;
+            if (!waitForNetworkRecovery()) {
+                // Timed out. requestBatchCancellation() already raised the batch-wide
+                // stop, so isCancelled() is true here; returning it keeps the
+                // "cancellation only" contract without assuming that.
+                return isCancelled();
+            }
             continue;
         }
         {
