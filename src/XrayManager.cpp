@@ -253,7 +253,11 @@ bool XrayManager::evaluateInstanceHealth(int apiPort) {
     // which XrayInstance::start() regenerates via createConfigFile().
     // start() + waitInstanceReady (bounded, crash-aware) must NOT run under instancesMutex_.
     std::unique_ptr<XrayInstance> replacement =
-        std::make_unique<XrayInstance>(xrayPath_, socksPort, apiPort, configDir_);
+        // D4 (2026-10-19): db_ was missing here while the first-launch path passes
+        // it. With a null db_ the instance builds a minimal config (no outbounds,
+        // no routing), so every injection during the restart window failed. It must
+        // match line 144 exactly.
+        std::make_unique<XrayInstance>(xrayPath_, socksPort, apiPort, configDir_, db_);
     if (replacement->start() && waitInstanceReady(replacement.get(), apiPort)) {
         Logger::write("[XrayManager][evaluateInstanceHealth] relaunched instance with original config (socks=" +
                       std::to_string(socksPort) + ", api=" + std::to_string(apiPort) + ")", LogLevel::WARN);
