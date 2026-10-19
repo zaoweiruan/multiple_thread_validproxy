@@ -42,8 +42,18 @@ inline InstanceDeadDecision decideInstanceDead(InstanceHealthOutcome outcome) {
 // ---------------------------------------------------------------------------
 // F5: a leftover/duplicate proxy tag is NOT an instance-health failure
 // ---------------------------------------------------------------------------
+// A duplicate/leftover tag is not an instance-health failure: the gRPC handler
+// answered with a semantic error, which proves the instance is alive and
+// reachable. Restarting it would be pure churn.
+//
+// Scope note (2026-10-19, empirical): only the gRPC "duplicate tag" family is
+// matched. The separate "output=adding: proxy" text seen in the field log comes
+// from the `xray api ado` fallback SUBPROCESS stdout and proves nothing about
+// the instance, so it is deliberately NOT treated as stale-tag noise.
 inline bool isStaleTagInjectionError(const std::string& error) {
-    return error.find("existing tag found") != std::string::npos;
+    return error.find("existing tag found") != std::string::npos ||
+           error.find("already exists") != std::string::npos ||
+           error.find("duplicate") != std::string::npos;
 }
 
 // retryCount: injection attempts already consumed (3 == the retry loop is exhausted)

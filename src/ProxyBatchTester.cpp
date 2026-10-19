@@ -341,10 +341,18 @@ std::string xrayApiAddr = "127.0.0.1:" + std::to_string(apiPort);
             // P2-1: all three injection attempts failed and no relaunch rescued
             // this item. Report the endpoint so XrayManager can evaluate/relaunch
             // the backing instance before the next queue item hits the same dead
-            // process. Gated on retryCount>=3 so a single bad outbound JSON
+            // process. Gated on the retry count so a single bad outbound JSON
             // (configuration-level failure) never triggers an instance restart;
             // the 30s per-apiPort cooldown inside Throttled absorbs the rest.
-            if (!addSuccess && retryCount >= 3) {
+            //
+            // F5: a leftover/duplicate tag is a gRPC semantic error — it proves the
+            // instance is reachable, so restarting it would be pure churn. Route
+            // the decision through the shared pure policy (unit-tested) instead of
+            // the bare `retryCount >= 3`.
+            const std::string lastInjectionError =
+                injectError.empty() ? xrayApi.getLastError() : injectError;
+            if (!addSuccess &&
+                batch_policy::shouldReportEndpointUnreachable(lastInjectionError, retryCount)) {
                 onXrayEndpointUnreachable(apiPort);
             }
 

@@ -48,6 +48,24 @@ TEST(BatchWorkerPolicyTest, StaleTagError_NotReportedAsEndpointUnreachable) {
     EXPECT_FALSE(batch_policy::shouldReportEndpointUnreachable(err, 5));
 }
 
+TEST(BatchWorkerPolicyTest, StaleTagError_CoversSiblingWording) {
+    // Same "the tag is taken" family, different xray wording.
+    EXPECT_TRUE(batch_policy::isStaleTagInjectionError(
+        "failed to add outbound: app/proxyman/outbound: already exists"));
+    EXPECT_TRUE(batch_policy::isStaleTagInjectionError(
+        "duplicate outbound tag"));
+}
+
+TEST(BatchWorkerPolicyTest, CliSubprocessOutput_IsNotTreatedAsStaleTag) {
+    // Empirically distinct from the gRPC duplicate-tag error (Step 0 evidence,
+    // 2026-10-19): this text is stdout from the `xray api ado` fallback process
+    // and says nothing about the instance's health, so it must still be allowed
+    // to trigger an endpoint-unreachable report.
+    const std::string cliErr = "xray api ado failed with code: 1 output: adding: proxy";
+    EXPECT_FALSE(batch_policy::isStaleTagInjectionError(cliErr));
+    EXPECT_TRUE(batch_policy::shouldReportEndpointUnreachable(cliErr, 3));
+}
+
 TEST(BatchWorkerPolicyTest, GenericInjectionError_ReportedAfterThreeRetries) {
     const std::string err = "xray api ado failed with code: 1 output:";
     EXPECT_FALSE(batch_policy::isStaleTagInjectionError(err));
