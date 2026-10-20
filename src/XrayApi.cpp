@@ -19,6 +19,7 @@
 #include <windows.h>
 #include "XrayApi.h"
 #include "Logger.h"
+#include "OutboundPayload.h"
 
 namespace xray {
 
@@ -167,8 +168,23 @@ bool XrayApi::addOutbound(const std::string& outboundJson, const std::string& ta
     std::string cmd = "\"" + normalizedXray + "\" api ado --server=" + normalizedServer + " stdin:";
     Logger::write("[XrayApi] command: " + cmd, LogLevel::DEBUG);
 
+    // Normalize the payload to a single outbound (the same one the gRPC path reads
+    // from outbounds[0]); `xray api ado` imports EVERY outbound in the document, so a
+    // full standalone config would collide with the instance's built-in `direct` tag.
+    std::string adoPayload = outboundJson;
+    std::string normalizedPayload;
+    if (outbound_payload::normalizeForAdo(outboundJson, normalizedPayload)) {
+        const std::size_t totalOutbounds = outbound_payload::outboundCount(outboundJson);
+        if (totalOutbounds > 1) {
+            Logger::write("[XrayApi] addOutbound normalized payload: " +
+                          std::to_string(totalOutbounds) + " outbounds -> 1 (tag=" + tag + ")",
+                          LogLevel::DEBUG);
+        }
+        adoPayload = normalizedPayload;
+    }
+
     std::string output;
-    int exitCode = runProcess(cmd, output, &outboundJson);
+    int exitCode = runProcess(cmd, output, &adoPayload);
     if (exitCode < 0) {
         lastError_ = "Failed to run xray api ado command (GetLastError=" + std::to_string(GetLastError()) + ")";
         // P2-1 site 1 (the ONLY report site in this file). runProcess returns -1
@@ -193,7 +209,7 @@ bool XrayApi::addOutbound(const std::string& outboundJson, const std::string& ta
             Logger::write("[XrayApi] addOutbound fallback failed with empty output, likely instance restart window; retrying once", LogLevel::WARN);
             std::this_thread::sleep_for(std::chrono::milliseconds(300));
             output.clear();
-            exitCode = runProcess(cmd, output, &outboundJson);
+            exitCode = runProcess(cmd, output, &adoPayload);
             success = (exitCode == 0);
             if (success) {
                 resultOutput = output;

@@ -28,6 +28,9 @@ public:
     XrayApi(const std::string& xrayPath, const std::string& serverAddr);
 
     // Subprocess-based methods (always available)
+    // NOTE: `outboundJson` is normalized to {"outbounds":[outbounds[0]]} before it is
+    // piped to `xray api ado`, matching addOutboundDirect's outbounds[0] semantics.
+    // Multi-outbound documents are intentionally NOT supported on this path.
     bool addOutbound(const std::string& outboundJson, const std::string& tag, std::string& resultOutput);
     bool removeOutbound(const std::string& tag);
     bool listOutbounds();

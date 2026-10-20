@@ -995,6 +995,17 @@ set_target_properties(test_batch_worker_policy PROPERTIES
 )
 add_test(NAME BatchWorkerPolicyTest COMMAND test_batch_worker_policy)
 
+# -- ado payload normalization tests (pure logic, boost::json only) --
+add_executable(test_outbound_payload tests/test_outbound_payload.cpp)
+target_include_directories(test_outbound_payload PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(test_outbound_payload PRIVATE gtest_main gtest ${VCPKG_ROOT}/installed/x64-mingw-static/lib/libboost_json-gcc14-mt-x64-1_91.a)
+set_target_properties(test_outbound_payload PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+)
+add_test(NAME OutboundPayloadTest COMMAND test_outbound_payload)
+
 # -- ProxyBatchQuery integration tests (uses test DB) --
 add_executable(test_proxy_batch_query tests/test_proxy_batch_query.cpp src/test/ProxyBatchQuery.cpp
     src/ConfigGenerator.cpp src/ProfileitemDAO.cpp src/utils/DnsCache.cpp src/ProfileExItemDAO.cpp
