@@ -148,3 +148,35 @@ TEST(AutoTaskStatePersistenceTest, cancelledState) {
     EXPECT_TRUE(loaded.cancelled);
     EXPECT_EQ(loaded.steps[0].status, StepStatus::CANCELLED);
 }
+
+// ============================================================
+// Log-level contract (2026-10-20)
+// docs/bugfix/2026-10-20-Bugfix-LogLevels-NetworkMonitorRestored-AutoTaskCancelled-v1.0.md
+//
+// A cancellation is a normal outcome, so run()'s summary line must be REPORT,
+// not ERR. cancel() raises cancelRequested_ — a separate atomic that run()
+// does NOT reset — so the first isCancelled() check breaks out of runSteps()
+// before any DB access, which makes this deterministic with a null db.
+// ============================================================
+TEST(AutoTaskLogLevelTest, CancelledSummaryIsReportNotError) {
+    TempDir tmp;
+    config::AppConfig cfg;
+    cfg.auto_task.state_file = tmp.path() + "/auto_task_state.json";
+    AutoTaskManager mgr(nullptr, cfg, tmp.path());
+
+    LogCapture capture;
+    mgr.cancel();
+    const bool ok = mgr.run({"update"});
+
+    EXPECT_FALSE(ok);
+
+    bool foundCancelled = false;
+    const std::vector<LogCapture::Entry> entries = capture.entries();
+    for (const LogCapture::Entry& e : entries) {
+        if (e.message.find("AutoTask: cancelled") != std::string::npos) {
+            foundCancelled = true;
+            EXPECT_EQ(static_cast<int>(e.level), static_cast<int>(LogLevel::REPORT));
+        }
+    }
+    EXPECT_TRUE(foundCancelled) << "expected the AutoTask cancellation summary line to be logged";
+}

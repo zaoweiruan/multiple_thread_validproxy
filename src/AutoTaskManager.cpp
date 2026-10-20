@@ -59,8 +59,14 @@ bool AutoTaskManager::run(const std::vector<std::string>& stepNames) {
 
     bool result = runSteps();
 
+    // A cancellation (user stop, or a whole-batch network stop) is a normal
+    // outcome, not a failure — report it at REPORT and keep ERR for a real
+    // failure. This is the summary line in run(); runSteps() already reports
+    // its own "cancelled at step N" at REPORT.
+    // See docs/bugfix/2026-10-20-Bugfix-LogLevels-NetworkMonitorRestored-AutoTaskCancelled-v1.0.md
+    const bool cancelledOutcome = !result && state_.cancelled;
     Logger::write("AutoTask: " + std::string(result ? "completed" : (state_.cancelled ? "cancelled" : "failed")),
-        result ? LogLevel::REPORT : LogLevel::ERR);
+        (result || cancelledOutcome) ? LogLevel::REPORT : LogLevel::ERR);
 
     return result;
 }

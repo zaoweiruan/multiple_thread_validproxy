@@ -1106,19 +1106,19 @@ bool AppController::startStandaloneProxy(const std::string& indexId, int overrid
                               LogLevel::INFO);
                 return false;
             }
-            // wxNO / wxCANCEL → leave the process alive but unmanaged: no history row,
-            // no exit-listener watch, no monitoring.
-            StandaloneProxyInfo& info = standaloneProxies_[indexId];
-            info.running = false;
-            info.managed = false;
-            Logger::write("[StandaloneProxy] Proxy left unmanaged (connectivity failed) for " + indexId,
-                          LogLevel::WARN);
-            return true;
+            // wxNO / wxCANCEL → keep the process alive AND keep monitoring it.
+            // Monitoring must not depend on the connectivity probe result: the
+            // process is running, so it needs a history row + exit-listener watch
+            // and must show up in the floating monitor. Tracking (below) proceeds
+            // unchanged; only the "startup time" stamp stays success-only.
+            Logger::write("[StandaloneProxy] Proxy kept alive but unverified; tracking it anyway for "
+                          + indexId, LogLevel::WARN);
+        } else {
+            Logger::write("[StandaloneProxy] Connectivity test PASSED for " + indexId
+                          + " on SOCKS5 :" + std::to_string(socksPort), LogLevel::REPORT);
+            // Write startup time into ProfileExItem.message (+<startup time>)
+            exDao_.updateStartupTime(indexId, db_);
         }
-        Logger::write("[StandaloneProxy] Connectivity test PASSED for " + indexId
-                      + " on SOCKS5 :" + std::to_string(socksPort), LogLevel::REPORT);
-        // Write startup time into ProfileExItem.message (+<startup time>)
-        exDao_.updateStartupTime(indexId, db_);
         if (topWindow_) {
             wxQueueEvent(topWindow_, new StandaloneProxyEvent(
                 indexId, "127.0.0.1", socksPort, /*started=*/true,

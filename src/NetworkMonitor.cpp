@@ -150,7 +150,9 @@ void NetworkMonitor::ThreadLoop() {
             // CURLOPT_DNS_CACHE_TIMEOUT=-1), so there is no per-monitor cache here.
             consecutiveFailures_.store(0);
             dnsFailures_.store(0);
-            Logger::write("Network connection RESTORED", LogLevel::ERR);
+            // Recovery is a normal lifecycle event, not an error
+            // (docs/bugfix/2026-10-20-Bugfix-LogLevels-NetworkMonitorRestored-AutoTaskCancelled-v1.0.md).
+            Logger::write("Network connection RESTORED", LogLevel::INFO);
         } else if (afterFirst && !allOk) {
             const int fails = consecutiveFailures_.fetch_add(1) + 1;
             Logger::write("Network connection LOST (consecutive failures: " +
