@@ -1322,6 +1322,22 @@ addOutbound 'existing tag found' error was classified as instance-unreachable,
 so a healthy Xray process got restarted."
 ```
 
+- [x] **Step 5: 现场复核（F5 门是否真的拦住误重启）— 2026-10-20 补记**
+
+用 V10 现场日志 `bin/worker/log/ui_20261020_092411.log` 反向验证 F5 门（该日志出自本方案修复后的构建，二进制同一性双证见 §11「V10 现场取证结果」）。
+
+取证（`Select-String -LiteralPath <log> -Pattern "relaunch|existing tag found|addOutbound FAILED"`）：
+
+| 时刻 | 前导注入失败 | 是否重启 | F5 判定 |
+| :--- | :--- | :--- | :--- |
+| 09:38:50–52 | `addOutbound FAILED error: xray api ado failed with code: 1 output: `（**空输出**） | **是**（`[WARN] [XrayManager][evaluateInstanceHealth] … API port unresponsive (possible hang) — releasing resources and relaunching` + `[ProxyBatchTester] instance relaunch attempted after injection failures`） | **正确**：空输出不是 stale-tag，实例确已不可服务 |
+| 09:38:52 之后 | `failed to add outbound: … existing tag found: proxy`（含 gRPC desc） | **否** | **正确**：`isStaleTagInjectionError()` 命中 ⇒ `shouldReportEndpointUnreachable()` 返回 false ⇒ 不报告、不重启 |
+| 09:46:39–41 | 并发注入失败的同一窗口 | **是**，但触发源是 `XrayApi::setConnectFailureHook`（gRPC **连接**失败）→ D3 健康评估 → 重启；与注入错误文本**无关** | **正确**：另一条独立触发路径，按设计 |
+
+**结论**：F5 的**报告门**按设计生效——现场所有重启均可归因于「空输出（实例真死）」或「API 端口连接失败」，**没有**任何一次重启是由 `existing tag found` 触发的。Step 0 的实证判断（不把 `output=adding: proxy` 当 stale-tag 噪音）在现场得到确认。
+
+> **遗留（不在本 Task 范围）**：`existing tag found` 使注入本身失败 ⇒ 该批代理全部无结果（现场约 90 条 ERR）。这是**既有功能问题**（`removeOutbound` 后 `addOutbound` 仍报 tag 已存在），F5 只消除了它引发的**实例重启churn**，未消除注入失败本身。建议另立 RCA，见 §16。
+
 ---
 
 ## §10 Task 9：F6（Low）— 日志字段 `byProto=` 改名为 `droppedByProto=`
@@ -1392,7 +1408,7 @@ labelled 'byProto=', which reads like a success-per-protocol breakdown."
 | V7 | D4 静态核对 | `Select-String -Path src/XrayManager.cpp -Pattern 'make_unique<XrayInstance>'` | 2 命中，实参都以 `configDir_, db_);` 结尾 |
 | V8 | D3 无残留 | `Select-String -Path src/ProxyBatchTester.cpp -Pattern 'relaunchedOk'` | 0 命中 |
 | V9 | D5 无残留 | `Select-String -Path src/ui/AppController.cpp -Pattern 'probeFailStreak'` | 无 `>= probeFailStreak` |
-| V10 | 现场复跑（人工） | 用 `bin/config.json` + `bin/worker/guindb.db` 跑一次批量测试，人为断网 40–60s 再恢复 | ① 断网超 30s 后出现**一条** `[ProxyBatchTester] network unreachable ... requesting whole-batch cancellation` ERR，随后**整批**退出（4 个 worker 全停），**不再**出现「3 死 1 活、批次带着 1/4 并发跑完」；② 网络恢复后不再有 worker 继续 `pausing` / `resuming`；③ 不再出现 `[XrayInstance] No database connection - generating minimal config`（D4）；④ 同一 indexId 的 `[OnlineProbe] test failed:` 每段 streak 只 1 条（D5；**B6**：本条只验证日志频度，不验证重试节律） |
+| V10 | 现场复跑（人工）— ✅ **已执行（2026-10-20），判据 ①②③④ 全部通过** | 用 `bin/config.json` + `bin/worker/guindb.db` 跑一次批量测试，人为断网 40–60s 再恢复 | ① 断网超 30s 后出现**一条** `[ProxyBatchTester] network unreachable ... requesting whole-batch cancellation` ERR，随后**整批**退出（4 个 worker 全停），**不再**出现「3 死 1 活、批次带着 1/4 并发跑完」；② 网络恢复后不再有 worker 继续 `pausing` / `resuming`；③ 不再出现 `[XrayInstance] No database connection - generating minimal config`（D4）；④ 同一 indexId 的 `[OnlineProbe] test failed:` 每段 streak 只 1 条（D5；**B6**：本条只验证日志频度，不验证重试节律）。**实测结论**：①整批取消 ERR 恰 1 条 + 另 3 worker `network wait cancelled` 一并退出；②`resuming` **0** 命中；③`No database connection` **0** 命中；④单 indexId 3 条/11 分钟（判读为 3 段 streak 各 1 条，无每周期风暴）——取证见下方「V10 现场取证结果」 |
 
 **V10 的日志取证命令**（沿用本次分析所用手法）：
 
@@ -1404,6 +1420,29 @@ Select-String -Path $log -SimpleMatch "No database connection" | Measure-Object 
 Select-String -Path $log -SimpleMatch "cancelOnDisconnect triggered" | Measure-Object  # 期望 0（瞬断场景）
 Select-String -Path $log -SimpleMatch "instance relaunch FAILED" | Measure-Object   # 期望 0
 ```
+
+### V10 现场取证结果（2026-10-20，已执行）
+
+- **取证日志**：`bin/worker/log/ui_20261020_092411.log`（365,108 B / 4,085 行 / 2026-10-20 09:24:11–09:51:18，GUI 实跑批量测试，人工断网窗口 09:39:54–09:41:59）。
+- **二进制同一性双证**（确认该日志出自本方案修复后的构建，而非基线）：
+  - `git grep -n "requesting whole-batch cancellation" 726599d -- src/ include/` → **0 命中**（基线无此串）；
+  - `git grep -n "requesting whole-batch cancellation" HEAD -- src/ include/` → `src/ProxyBatchTester.cpp:529`。
+- **D1/D1b 现场时序（与预期逐条吻合）**：
+
+  | 时刻 | 日志 |
+  | :--- | :--- |
+  | 09:39:54 | `NetworkMonitor: probe failed … curl_error=35` ×3 → `[ERROR] Network connection LOST (consecutive failures: 1)` |
+  | 09:39:55–56 | `[WARN] [ProxyBatchTester] network disconnected — pausing, waiting for recovery` ×**4** |
+  | 09:40:27 | `[WARN] [ProxyBatchTester] network wait timed out after 30s — exiting` ×1（worker 3） |
+  | 09:40:27 | `[ERROR] [ProxyBatchTester] worker 3 (api=10083): network unreachable for 30s (bounded wait exhausted) — requesting whole-batch cancellation` ×**1** |
+  | 09:40:27 | `[WARN] [ProxyBatchTester] network wait cancelled — exiting` ×**3**（其余 3 个 worker 由整批取消一并退出） |
+  | 09:40:27 | `[ERROR] AutoTask: cancelled` / `AutoTask failed`（取消传导至上层流水线） |
+
+  ⇒ **① 通过**：整批取消请求**恰 1 条**，4 个 worker **全部**退出；旧缺陷签名「3 死 1 活」不复现。
+- **判据 ② 通过**：全文 `resuming` **0 命中**（旧缺陷为「3×timed out → 1×resuming → 并发恒 1」）。
+- **判据 ③ 通过**：全文 `No database connection` **0 命中**（D4 的 relaunch 补传 `db_` 生效）。
+- **判据 ④ 通过（判读）**：`[OnlineProbe] test failed:` 仅 indexId `5046338036629160457` 出现 **3 条**（09:40:43 / 09:42:28 / 09:51:18，间隔约 2 min、9 min），对应 3 段 streak 各跨越阈值一次；**非**每 ~5s 的 WARN 风暴 ⇒ D5 的「仅跨越时记 1 条」生效。按 **B6** 口径，本条只验证日志频度、不验证重试节律。
+- **同批观察（非本方案判据，另行跟踪）**：同一日志 09:38–09:47 出现约 90 条 `failed to add outbound: … existing tag found: direct|proxy` 注入失败。经核对 `include/BatchWorkerPolicy.h:53` 与 `src/ProxyBatchTester.cpp:352-357`：**F5 的门按设计工作** —— 09:38:52 的三次实例重启其前导错误均为 `output=`（**空输出**，实例真死），`isStaleTagInjectionError` 正确返回 false ⇒ 重启正当；09:46:39–41 的重启来自另一条路径 `XrayApi::setConnectFailureHook`（API 端口无响应 → D3 健康评估），亦按设计。故**未发现 F5 失效**。但「注入本身因 tag 残留而失败」这一既有功能问题（使整批代理无结果）建议另立 RCA，见 §16。
 
 ---
 
@@ -1518,3 +1557,15 @@ v2.0 下三个 Critical 缺陷**均被修复**，但引入以下**新的行为�
 | **v2.0** | 2026-10-19 | **架构语义反转 + 方案改写**。owner 复核时指出「网络恢复需要较长时间，排除抖动后**应该停摆任务**」，据此推翻 v1.0.2 的「维持现状」：**问题不是「停不停」而是「怎么停」**——现状是 worker 各自为政静默退出，批次带着 1/4 并发跑完 16 分钟（残废），而非干净停止。**① D1/D1b 改为「首个 worker 等满 30s 未恢复 → 置应用级取消 → 整批停止 + ERR 日志」**；**② D2 改为「移除」**（`cancelOnDisconnect` 机制 + `probe_on_disconnect.max_probes` 配置项一并删除，取消整批的触发源唯一化），Task 4 改动面由 2 个文件扩至 8 个；**③ 新增 F7**：`ProxyFinder` / `RegionBatchResolver` 补 `NetworkMonitor*` 形参与断网检查，替代其因移除 D2 而失去的能力；**④ D3 = 保留 `bool` 兼容包装**（决策 3 落档）。9 个 Task 全部实施（v1.0.2 的作废标记被推翻）。同步改写 §0（含新增 F7 行）、§1、§11（V1/V2 改为新设计的静态核对，V10 判据①② 恢复并重写）、§12、§13（含 owner 决策演进轨迹与 4 条新风险）、§15。**源码仍未改动。** |
 | **v2.1** | 2026-10-19 | **新增 F8：worker 超时的抖动防护**。owner 追问「worker 超时如何防止网络抖动」，勘察后定位真实误判源：现有 `allOk` 要求 `check_urls` **全部**成功且遇首个失败即 `break`（`NetworkMonitor.cpp:96-118`），任意单个 URL 抖动即误判断网，使 30s 停批门槛实际到达难度远低于名义值；DNS 失败已是中性票（全弃权判连通，2026-08-06 修复确立的语义，保留）。**owner 选 A**：连通判定改为**多数投票**——纯静态 `NetworkMonitor::majorityVerdict(okCount, netFailCount, totalUrls)`（零 I/O 可单测，符合本项目「纯策略外提」模式），判据 `okCount > netFailCount`，`decisive == 0`（全 DNS 弃权）保持连通、`totalUrls <= 0` 保持断网；探测循环去掉 `break` 探完全部 URL。附 8 行行为等价性核对表，**唯一变化是「2 成功 + 1 传输失败」由断网变连通**。新增 5 个 `MajorityVerdict_*` 单测，`NetworkMonitorTest` 11 → 15。另两个抖动缺口（恢复侧稳定窗口、curl 期间抖动宽限）**本期明确不做**。同步 §0（F8 行）、§1、§11 V2、§12、§13 决策 5。**源码仍未改动。** |
 | **v2.2** | 2026-10-19 | **全部 9 个 Task 实施完成**（58 个 Step 全部勾选）。构建 EXIT 0；`ctest` **53/54**，唯一失败为既有基线 `XrayManagerStartupTest.RealXrayStartsBounded`。`BatchWorkerPolicyTest` **11/11**、`NetworkMonitorTest` **15/15**。TDD RED 均已实证：Task 1 `BatchWorkerPolicy.h: No such file or directory`；Task 4 `majorityVerdict is not a member of NetworkMonitor`。提交序列 `9c333a4` → `f6b367c` → `51bfe67` → `cee365d` → `9c4ffb1` → `fefa5b8` → `3b14ce3` → `fd4da8b` → `4511cf5`。**三处实施偏差**（均为实证后的正确决定，非计划遗漏）：① **B5 预设被 Step 0 实证推翻** —— 现场两种报文不同源（`existing tag found` 来自 gRPC desc，`output=adding: proxy` 来自 `xray api ado` 回退子进程 stdout），OR 扩大判据会掩盖真实实例故障，故**不做扩大**，改为覆盖同族措辞（`already exists` / `duplicate`），并加 `CliSubprocessOutput_IsNotTreatedAsStaleTag` 单测锁定；② **F7 接入点由 3 处增至 6 处** —— 另 3 处是同步 GUI 入口（`findFirstProxy` / `findBestProxy` / `resolveRegionsForValidProxies`，本就不传取消标志，保留 `nullptr` 只加 `&netMon_`）；③ **新增设计决策（非评审要求）** —— `requestBatchCancellation` 加 `batchStopReported_` 幂等闩锁，避免多 worker 各自 30s 计时几乎同时超时时重复打 ERR；`XrayManager::InstanceHealthOutcome` 改为**别名** `batch_policy::InstanceHealthOutcome` 而非重复定义枚举；`ProxyFinder`/`RegionBatchResolver` 的 `networkDown()` **移出头文件**（前置声明 + .cpp 定义），否则会给每个包含者引入 `NetworkMonitor.cpp` 链接依赖，`test_region_batch_resolver` 已因此补链该源文件。另发现既有 flake：`NetworkMonitorTest.LoggingOnConnectionLost` 依赖真实 `example.com`，5 次跑约挂 1 次，与本次改动无关。 |
+| **v2.3** | 2026-10-20 | **V10 现场复跑完成（判据 ①②③④ 全部通过）**。① **现场证据**：`bin/worker/log/ui_20261020_092411.log`（09:39:54 断网 → 09:41:59 恢复，出自修复后构建，二进制同一性双证）实测 —— 整批取消 ERR **恰 1 条** + 另 3 worker `network wait cancelled` 一并退出；`resuming` **0**；`No database connection` **0**；单 indexId `[OnlineProbe] test failed:` 3 条/11 min（3 段 streak 各 1 条）。详见 §11「V10 现场取证结果」。② **§9 Task 8 增 Step 5 现场复核**：F5 报告门按设计生效，现场所有实例重启均可归因于「空输出（实例真死）」或「API 端口连接失败」，**无一**由 `existing tag found` 触发。③ **既有 flake 修复**：`NetworkMonitorTest.LoggingOnConnectionLost` 改 `LoopbackHttpServer` 回环夹具，去除真实 `example.com` 依赖（40/40 单跑 + 25/25 全量；单例 2735 ms → 746 ms），提交 `632e321`。④ **本轮复验**：构建 EXIT 0；`BatchWorkerPolicyTest` 11/11、`NetworkMonitorTest` 15/15；全量 `ctest` **52/54**（`XrayManagerStartupTest` 为既有基线失败；`UI_FLOATINGWIDGET` 为 `docs/context.md` 记载的并行 flaky，实测「单跑 run1 PASS / run2-3 FAIL(20/25)」，且 `UITests` 目标只含 `tests/ui/framework/*.cpp`、**不含**本方案任何源文件，非回归）。⑤ 新增 §16 遗留问题清单。 |
+
+---
+
+## §16 遗留问题与后续跟踪（不属于本方案交付范围）
+
+| # | 问题 | 证据 / 现状 | 建议 |
+| :--- | :--- | :--- | :--- |
+| 1 | **`existing tag found` 注入失败使整批代理无结果** | `bin/worker/log/ui_20261020_092411.log` 09:38–09:47 约 90 条 `failed to add outbound: rpc error: … existing tag found: direct\|proxy`；`removeOutbound(tag)` 之后 `addOutbound` 仍报 tag 已存在 | **既有功能缺陷**（F5 只消除了它引发的实例重启 churn，未消除注入失败本身）。按 `AGENTS.md §6.1` 另立 RCA/Spec（`docs/bugfix/`），先定位 `src/XrayApi.cpp` 的 `addOutbound*` / `removeOutbound` 与 `config.outbound_json` 是否自带 `direct` outbound。**已完成 →** [2026-10-20-RCA-XrayApi-ExistingTagInjection-v1.0.md](2026-10-20-RCA-XrayApi-ExistingTagInjection-v1.0.md)（R1=CLI 回退整体投递整份配置；R2=部分成功残留 + 重试不清理；R3=无 protobuf 编码器协议） |
+| 2 | **CLI 批量测试后进程退出 AV `0xC0000005`** | `bin\validproxy-cli.exe` 批量完成后于**退出/静态析构路径**崩溃；`gdb` 得 `SIGSEGV in pthread_mutex_lock_intern`；**基线 `726599d` 同样复现**（对照实验），故**非本方案回归**；无 dump 产出；`src/main_cli.cpp` 不在本方案改动清单 | 另立 RCA + Spec；补 `bt` 栈定位（须先写文档再改码） |
+| 3 | **日志级别口径** ✅ **已修复（2026-10-20）** | `Network connection RESTORED` → **INFO**（`src/NetworkMonitor.cpp:155`）；`AutoTask: cancelled` → **REPORT**（`src/AutoTaskManager.cpp:67-69`）。**关键辨析**：现场日志的 `AutoTask: cancelled`（不带 `at step`）出自 `run()` 尾部三元表达式，而非 `runSteps()` 内本已 REPORT 的 `AutoTask: cancelled at step N`。**刻意保留 ERR**：`AutoTask failed`（真失败）、`AutoTask: aborted … network disconnected`、`Network connection LOST`（本次未要求） | 见 `docs/bugfix/2026-10-20-Bugfix-LogLevels-NetworkMonitorRestored-AutoTaskCancelled-v1.0.md`；新增 `AutoTaskLogLevelTest.CancelledSummaryIsReportNotError`（RED→GREEN 已实证），全量 `ctest` 53/54 |
+
