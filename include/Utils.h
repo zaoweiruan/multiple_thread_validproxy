@@ -40,6 +40,11 @@ namespace utils {
     // dependency of waitPortReleased, and a cached read would return a stale
     // "still listening" for up to the snapshot TTL.
     bool isPortListening(int port);
+    // True when the port answers a SOCKS5 greeting (send 05 01 00, expect 05).
+    // Used to tell a SOCKS inbound apart from the other listeners of the same
+    // process (e.g. the xray gRPC api inbound), which never replies 0x05.
+    // Connects to 127.0.0.1 only; never throws, false on any error.
+    bool respondsToSocks5Greeting(int port, int timeoutMs = 200);
     // Bounded wait for the LISTEN row to disappear from the OS TCP table.
     // Returns true as soon as the port is not listening; budgetMs is only a
     // fallback ceiling (normal path returns on the first poll, <20ms).

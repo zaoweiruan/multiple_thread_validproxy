@@ -55,6 +55,14 @@ public:
     // is covered by extractConfigFileName plus the caller's directory probe.
     static std::string extractConfigFullPath(const std::wstring& commandLine);
 
+    // Lists the TCP ports the given process is LISTENing on (IPv4 + IPv6),
+    // read straight from the OS TCP table (GetExtendedTcpTable) filtered by
+    // owning pid. This is the only source that describes the process that is
+    // running RIGHT NOW, so it is used as the primary port source when
+    // adopting a dangling standalone proxy whose config file is gone.
+    // Returns an empty vector when the table cannot be read.
+    static std::vector<int> listeningTcpPorts(DWORD pid);
+
     // Local time as "yyyy-MM-dd HH:mm:ss" (used for runtime-history sessions).
     static std::string nowTimestamp();
 

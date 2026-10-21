@@ -20,6 +20,7 @@ struct ProxyRuntimeHistoryItem {
   int64_t durationMs = 0;
   std::string source = "standalone";
   int64_t pid = -1;        // proxy process pid (populated by getInProgressSessions)
+  int socksPort = 0;       // SOCKS inbound port; 0 = not recorded (NULL column)
 };
 
 // DAO for proxy_runtime_history + the 3 aggregation columns on ProfileExItem
@@ -52,6 +53,17 @@ public:
   int64_t insertStart(const std::string& indexId, const std::string& startedAt,
                       int64_t pid, sqlite3* db = nullptr);
 
+  // Append variant of insertStart: same row shape plus the SOCKS port that
+  // was resolved for this process instance (socks_port column). The history
+  // table is the single source of truth for adopted standalone proxies, so a
+  // session whose live (in-progress) row is missing gets a NEW row appended
+  // carrying the port instead of an UPDATE of an unrelated existing row.
+  // socksPort <= 0 is stored as NULL (the column stays "unknown").
+  // Returns the new row id, or -1 on failure (rolled back).
+  int64_t insertStartWithPort(const std::string& indexId,
+                              const std::string& startedAt, int64_t pid,
+                              int socksPort, sqlite3* db = nullptr);
+
   // Exit: backfill ended_at/exit_code/duration_ms (only when ended_at IS NULL,
   // so a second call is a no-op) + accumulate total_runtime_ms / crash_count
   // (crash counted when exitCode == 259) in the same transaction.
@@ -76,15 +88,38 @@ public:
                                 const std::string& startedAt,
                                 sqlite3* db = nullptr);
 
+  // Same lookup without started_at, for callers that cannot reconstruct the
+  // triplet (process creation time unreadable). Used when discarding an
+  // unresolvable dangling process so its session does not stay "in progress"
+  // forever. Returns -1 when there is none.
+  int64_t findInProgressHistoryLoose(const std::string& indexId, int64_t pid,
+                                     sqlite3* db = nullptr);
+
   // Reads the 3 aggregation columns for a proxy. Returns false when the row
   // does not exist (outputs are zeroed).
   bool getRuntimeStats(const std::string& indexId, int* startCount,
                        int64_t* totalRuntimeMs, int* crashCount,
                        sqlite3* db = nullptr);
 
+  // Records the SOCKS inbound port of an in-progress session so a later
+  // adoption can recover it when the on-disk config file is gone.
+  // socksPort <= 0 is a no-op returning true. Does NOT open a transaction.
+  // Returns false when no in-progress row matched historyId (0 rows changed).
+  bool updateSocksPort(int64_t historyId, int socksPort,
+                       sqlite3* db = nullptr);
+
+  // Returns the recorded SOCKS port of the matching in-progress session, or 0
+  // when there is no match / the column is NULL / the value is invalid.
+  // When startedAt is empty (process creation time unreadable), matches on
+  // (indexId, pid) only -- the triplet is not reconstructible in that case.
+  int lookupSocksPort(const std::string& indexId, int64_t pid,
+                      const std::string& startedAt,
+                      sqlite3* db = nullptr);
+
   // Returns all in-progress (ended_at IS NULL) sessions ordered by started_at.
-  // Populates id/indexId/startedAt/pid on each item; used by the standalone
-  // monitor dialog to join live watched processes with their history rows.
+  // Populates id/indexId/startedAt/pid/socksPort on each item; used by the
+  // standalone monitor dialog to join live watched processes with their
+  // history rows.
   std::vector<ProxyRuntimeHistoryItem> getInProgressSessions(
       sqlite3* db = nullptr);
 };

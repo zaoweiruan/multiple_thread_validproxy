@@ -462,4 +462,180 @@ TEST_F(RuntimeHistoryDAOTest, GetInProgressSessions_EmptyTable_ReturnsEmpty) {
   EXPECT_TRUE(rows.empty());
 }
 
+TEST_F(RuntimeHistoryDAOTest, GetInProgressSessions_ReturnsSocksPort) {
+  insertProxy(A1);
+  db::models::ProxyRuntimeHistoryDAO dao(db_);
+  int64_t idA = dao.insertStart(A1, T0, 1001);
+  ASSERT_GT(idA, 0);
+  ASSERT_TRUE(dao.updateSocksPort(idA, 10809));
+
+  std::vector<db::models::ProxyRuntimeHistoryItem> rows =
+      dao.getInProgressSessions();
+  ASSERT_EQ(rows.size(), static_cast<std::size_t>(1));
+  EXPECT_EQ(rows[0].socksPort, 10809);
+}
+
+TEST_F(RuntimeHistoryDAOTest, GetInProgressSessions_NullSocksPortReadsZero) {
+  insertProxy(A1);
+  db::models::ProxyRuntimeHistoryDAO dao(db_);
+  ASSERT_GT(dao.insertStart(A1, T0, 1001), 0);
+
+  std::vector<db::models::ProxyRuntimeHistoryItem> rows =
+      dao.getInProgressSessions();
+  ASSERT_EQ(rows.size(), static_cast<std::size_t>(1));
+  EXPECT_EQ(rows[0].socksPort, 0);
+}
+
+// ---- socks_port (dangling-adoption port recovery) ----
+
+TEST_F(RuntimeHistoryDAOTest, MigrateTable_AddsSocksPortColumn) {
+  db::models::ProxyRuntimeHistoryDAO dao(db_);
+  insertProxy(A1);
+  int64_t id = dao.insertStart(A1, T0, 1001);
+  ASSERT_GT(id, 0);
+  // Column exists and starts NULL for rows written before updateSocksPort().
+  EXPECT_EQ(columnInt64(
+      "SELECT COUNT(*) FROM pragma_table_info('proxy_runtime_history') "
+      "WHERE name = 'socks_port'", -1), 1);
+  EXPECT_EQ(columnInt64(
+      "SELECT socks_port IS NULL FROM proxy_runtime_history WHERE id = ?", id), 1);
+}
+
+TEST_F(RuntimeHistoryDAOTest, SocksPort_RoundTrip) {
+  insertProxy(A1);
+  db::models::ProxyRuntimeHistoryDAO dao(db_);
+  int64_t id = dao.insertStart(A1, T0, 1001);
+  ASSERT_GT(id, 0);
+  EXPECT_TRUE(dao.updateSocksPort(id, 10809));
+  EXPECT_EQ(dao.lookupSocksPort(A1, 1001, T0), 10809);
+  EXPECT_EQ(columnInt64("SELECT socks_port FROM proxy_runtime_history WHERE id = ?", id), 10809);
+}
+
+TEST_F(RuntimeHistoryDAOTest, SocksPort_UpdateReturnsFalseForUnknownId) {
+  db::models::ProxyRuntimeHistoryDAO dao(db_);
+  EXPECT_FALSE(dao.updateSocksPort(9999, 10809));
+}
+
+TEST_F(RuntimeHistoryDAOTest, SocksPort_IgnoresFinalizedRow) {
+  insertProxy(A1);
+  db::models::ProxyRuntimeHistoryDAO dao(db_);
+  int64_t id = dao.insertStart(A1, T0, 1001);
+  ASSERT_GT(id, 0);
+  ASSERT_TRUE(dao.finalizeStop(id, T1, 0, 5000));
+  EXPECT_FALSE(dao.updateSocksPort(id, 10809));
+  EXPECT_EQ(dao.lookupSocksPort(A1, 1001, T0), 0);
+}
+
+TEST_F(RuntimeHistoryDAOTest, SocksPort_RejectsNonPositive) {
+  insertProxy(A1);
+  db::models::ProxyRuntimeHistoryDAO dao(db_);
+  int64_t id = dao.insertStart(A1, T0, 1001);
+  ASSERT_GT(id, 0);
+  EXPECT_TRUE(dao.updateSocksPort(id, 0));   // no-op, not an error
+  EXPECT_TRUE(dao.updateSocksPort(id, -1));  // no-op, not an error
+  EXPECT_EQ(columnInt64(
+      "SELECT socks_port IS NULL FROM proxy_runtime_history WHERE id = ?", id), 1);
+}
+
+TEST_F(RuntimeHistoryDAOTest, LookupSocksPort_DifferentPid_ReturnsZero) {
+  insertProxy(A1);
+  db::models::ProxyRuntimeHistoryDAO dao(db_);
+  int64_t id = dao.insertStart(A1, T0, 1001);
+  ASSERT_TRUE(dao.updateSocksPort(id, 10809));
+  EXPECT_EQ(dao.lookupSocksPort(A1, 2002, T0), 0);
+}
+
+TEST_F(RuntimeHistoryDAOTest, LookupSocksPort_DifferentStartedAt_ReturnsZero) {
+  insertProxy(A1);
+  db::models::ProxyRuntimeHistoryDAO dao(db_);
+  int64_t id = dao.insertStart(A1, T0, 1001);
+  ASSERT_TRUE(dao.updateSocksPort(id, 10809));
+  EXPECT_EQ(dao.lookupSocksPort(A1, 1001, T1), 0);
+}
+
+TEST_F(RuntimeHistoryDAOTest, LookupSocksPort_EmptyStartedAtMatchesPid) {
+  insertProxy(A1);
+  db::models::ProxyRuntimeHistoryDAO dao(db_);
+  int64_t id = dao.insertStart(A1, T0, 1001);
+  ASSERT_TRUE(dao.updateSocksPort(id, 10809));
+  // Creation time unreadable => triplet is not reconstructible.
+  EXPECT_EQ(dao.lookupSocksPort(A1, 1001, ""), 10809);
+}
+
+TEST_F(RuntimeHistoryDAOTest, LookupSocksPort_NullPort_ReturnsZero) {
+  insertProxy(A1);
+  db::models::ProxyRuntimeHistoryDAO dao(db_);
+  ASSERT_GT(dao.insertStart(A1, T0, 1001), 0);
+  EXPECT_EQ(dao.lookupSocksPort(A1, 1001, T0), 0);
+}
+
+TEST_F(RuntimeHistoryDAOTest, LookupSocksPort_LatestWins) {
+  insertProxy(A1);
+  db::models::ProxyRuntimeHistoryDAO dao(db_);
+  int64_t id1 = dao.insertStart(A1, T0, 1001);
+  int64_t id2 = dao.insertStart(A1, T1, 1001);
+  ASSERT_GT(id1, 0);
+  ASSERT_GT(id2, 0);
+  ASSERT_TRUE(dao.updateSocksPort(id1, 10809));
+  ASSERT_TRUE(dao.updateSocksPort(id2, 10810));
+  EXPECT_EQ(dao.lookupSocksPort(A1, 1001, T1), 10810);
+}
+
+TEST_F(RuntimeHistoryDAOTest, FindInProgressHistoryLoose_MatchesPidOnly) {
+  insertProxy(A1);
+  db::models::ProxyRuntimeHistoryDAO dao(db_);
+  int64_t id = dao.insertStart(A1, T0, 1001);
+  ASSERT_GT(id, 0);
+  EXPECT_EQ(dao.findInProgressHistoryLoose(A1, 1001), id);
+  EXPECT_EQ(dao.findInProgressHistoryLoose(A1, 2002), -1);
+  ASSERT_TRUE(dao.finalizeStop(id, T1, 0, 5000));
+  EXPECT_EQ(dao.findInProgressHistoryLoose(A1, 1001), -1);
+}
+
+// ---------------------------------------------------------------------------
+// Append semantics (spec v1.4): a new session for the same indexId is a NEW
+// row carrying the resolved port — never an UPDATE of an existing row.
+// ---------------------------------------------------------------------------
+TEST_F(RuntimeHistoryDAOTest, InsertStartWithPort_StoresPortOnNewRow) {
+  insertProxy(A1);
+  db::models::ProxyRuntimeHistoryDAO dao(db_);
+  int64_t id = dao.insertStartWithPort(A1, T0, 1001, 10809);
+  ASSERT_GT(id, 0);
+  EXPECT_EQ(dao.lookupSocksPort(A1, 1001, T0), 10809);
+  EXPECT_EQ(columnInt("SELECT socks_port FROM proxy_runtime_history WHERE id = ?", id), 10809);
+}
+
+TEST_F(RuntimeHistoryDAOTest, InsertStartWithPort_NonPositivePortStoresNull) {
+  insertProxy(A1);
+  db::models::ProxyRuntimeHistoryDAO dao(db_);
+  int64_t id = dao.insertStartWithPort(A1, T0, 1001, 0);
+  ASSERT_GT(id, 0);
+  EXPECT_EQ(dao.lookupSocksPort(A1, 1001, T0), 0);
+  EXPECT_EQ(columnInt("SELECT socks_port FROM proxy_runtime_history WHERE id = ?", id), 0);
+}
+
+TEST_F(RuntimeHistoryDAOTest, InsertStartWithPort_AppendsInsteadOfUpdating) {
+  insertProxy(A1);
+  db::models::ProxyRuntimeHistoryDAO dao(db_);
+  int64_t first = dao.insertStartWithPort(A1, T0, 1001, 10808);
+  ASSERT_GT(first, 0);
+  // Second session for the same indexId: a NEW row, the first one untouched.
+  int64_t second = dao.insertStartWithPort(A1, T1, 1001, 10809);
+  ASSERT_GT(second, 0);
+  EXPECT_NE(first, second);
+  EXPECT_EQ(columnInt("SELECT socks_port FROM proxy_runtime_history WHERE id = ?", first), 10808);
+  EXPECT_EQ(columnInt("SELECT socks_port FROM proxy_runtime_history WHERE id = ?", second), 10809);
+  // The latest in-progress row is the one the lookup resolves.
+  EXPECT_EQ(dao.lookupSocksPort(A1, 1001, T1), 10809);
+}
+
+TEST_F(RuntimeHistoryDAOTest, InsertStart_StillStoresNullSocksPort) {
+  insertProxy(A1);
+  db::models::ProxyRuntimeHistoryDAO dao(db_);
+  int64_t id = dao.insertStart(A1, T0, 1001);
+  ASSERT_GT(id, 0);
+  EXPECT_EQ(columnInt("SELECT socks_port FROM proxy_runtime_history WHERE id = ?", id), 0);
+  EXPECT_EQ(dao.lookupSocksPort(A1, 1001, T0), 0);
+}
+
 }  // namespace

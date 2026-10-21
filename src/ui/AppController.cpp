@@ -4,6 +4,7 @@
 #include "Events.h"
 #include "RefreshCommands.h"
 #include "UnifiedMonitorRows.h"
+#include "StandaloneAdoptionPolicy.h"
 #include "ui/AsyncOperationGuard.h"
 #include "ui/ScopeGuard.h"
 #include "service/DatabaseConnectionService.h"
@@ -189,6 +190,10 @@ sqlite3* AppController::switchDatabase(const std::string& newPath) {
     //    subsequent updateTestResult()/updateStartupTime() call.
     historyDao_.setDb(db_);
     exDao_.setDb(db_);
+    // setDb() is a plain assignment: it does NOT re-run migrations. Without
+    // this, a switched-in older database lacks the socks_port column and
+    // lookupSocksPort() would fail for every dangling process.
+    db::models::ProxyRuntimeHistoryDAO::migrateTable(db_);
 
     // 2) Clear stale standalone proxy state — old entries reference the
     //    previous database and may contain invalid runtimeHistoryId values.
@@ -757,10 +762,16 @@ bool AppController::isStandaloneProxyRunning(const std::string& indexId) const {
     return proc::ProcessInspector::isProcessRunningWithConfig(configFileName);
 }
 
-namespace {
 // (readFileTail removed — xray/sing-box output is now streamed to the local log
 //  directly via an anonymous pipe + detached reader thread in startStandaloneProxy.)
-} // namespace
+
+// Reads the SOCKS inbound port from a standalone config file (xray:
+// inbounds[].port / sing-box: listen_port); 0 when unreadable. Defined after
+// getWatchedStandaloneMonitors, declared here so startStandaloneProxy (R6
+// takeover) can resolve the port of a re-launched process.
+// NOTE: this must stay a file-scope `static` declaration (NOT inside an
+// anonymous namespace) so it denotes the same entity as the definition below.
+static int readStandaloneInboundPort(const std::string& configPath);
 
 bool AppController::startStandaloneProxy(const std::string& indexId, int overridePort) {
     std::unique_lock<std::mutex> lock(standaloneMutex_);
@@ -992,7 +1003,16 @@ bool AppController::startStandaloneProxy(const std::string& indexId, int overrid
     info.socksPort = socksPort;
     info.processHandle = pi.hProcess;
     info.running = true;
+    info.startedByThisSession = true;
     standaloneProxies_[indexId] = std::move(info);
+    // Remember that this pid is one of ours (spec v1.6): the dangling-adoption
+    // scan takes the "bypass detection" route for our own processes instead
+    // of probing the OS for a port we already know. The creation time is
+    // captured from the handle we own, so a recycled pid can be detected.
+    SessionStartedProxy sessionInfo;
+    sessionInfo.socksPort = socksPort;
+    sessionInfo.creationTime = proc::ProcessInspector::processCreationTime(pi.hProcess);
+    sessionStartedProxies_[pi.dwProcessId] = sessionInfo;
 
     CloseHandle(pi.hThread);
 
@@ -1033,6 +1053,9 @@ bool AppController::startStandaloneProxy(const std::string& indexId, int overrid
                 WaitForSingleObject(pi.hProcess, 5000);
                 CloseHandle(pi.hProcess);
                 standaloneProxies_.erase(indexId);
+                // The process is gone: drop the session registration so the
+                // adoption scan no longer mistakes this pid for one of ours.
+                sessionStartedProxies_.erase(pi.dwProcessId);
                 Logger::write("[StandaloneProxy] Terminated unverified process for " + indexId,
                               LogLevel::INFO);
                 return false;
@@ -1066,6 +1089,9 @@ bool AppController::startStandaloneProxy(const std::string& indexId, int overrid
                 WaitForSingleObject(pi.hProcess, 5000);
                 CloseHandle(pi.hProcess);
                 standaloneProxies_.erase(indexId);
+                // The process is gone: drop the session registration so the
+                // adoption scan no longer mistakes this pid for one of ours.
+                sessionStartedProxies_.erase(pi.dwProcessId);
                 Logger::write("[StandaloneProxy] Terminated crashed process for " + indexId,
                               LogLevel::INFO);
                 return false;
@@ -1102,6 +1128,9 @@ bool AppController::startStandaloneProxy(const std::string& indexId, int overrid
                 WaitForSingleObject(pi.hProcess, 5000);
                 CloseHandle(pi.hProcess);
                 standaloneProxies_.erase(indexId);
+                // The process is gone: drop the session registration so the
+                // adoption scan no longer mistakes this pid for one of ours.
+                sessionStartedProxies_.erase(pi.dwProcessId);
                 Logger::write("[StandaloneProxy] Terminated unverified process for " + indexId,
                               LogLevel::INFO);
                 return false;
@@ -1138,9 +1167,14 @@ bool AppController::startStandaloneProxy(const std::string& indexId, int overrid
         indexId, safeStartedAt, static_cast<int64_t>(pi.dwProcessId), db_);
     if (rhId >= 0) {
         runtimeHistoryId_ = rhId;
+        // Record the SOCKS port so a later adoption can recover it when the
+        // on-disk config file is gone. Best effort: a failure here must not
+        // abort a successfully launched proxy.
+        if (!historyDao_.updateSocksPort(rhId, socksPort, db_)) {
+            Logger::write("[StandaloneProxy] Failed to record socks_port for "
+                          + indexId, LogLevel::WARN);
+        }
         const std::string startedAtStr = safeStartedAt;
-        // Capture configFileName by value for the takeoverFn lambda
-        const std::string configFileNameCopy = configFileName;
 
         // Heartbeat/finalize baseline: process may have started before we
         // began watching (normally ~0 here; nonzero for adoption/takeover).
@@ -1150,6 +1184,11 @@ bool AppController::startStandaloneProxy(const std::string& indexId, int overrid
                 : proc::ProcessInspector::durationMsBetween(
                       safeStartedAt, utils::getCurrentTimestampFormatted());
 
+        // Remember the pid so the notify callback can drop our session
+        // bookkeeping for it (spec v1.6): once the process is gone the pid
+        // must no longer be treated as "one of ours", otherwise a recycled
+        // pid could be mistaken for a session started proxy.
+        const DWORD startedPid = pi.dwProcessId;
         proxyWatchKeys_[indexId] = exitListener_->watch(
             pi.hProcess, indexId, rhId,
             // InsertFn — not needed for standalone, returns -1
@@ -1166,13 +1205,14 @@ bool AppController::startStandaloneProxy(const std::string& indexId, int overrid
                 return historyDao_.finalizeStop(hid, endedAt, exitCode, durMs, db_);
             },
             // NotifyFn — mark not-running + notify UI
-            [this](const std::string& idx, int64_t hid) {
+            [this, startedPid](const std::string& idx, int64_t hid) {
                 {
                     std::lock_guard<std::mutex> lock(standaloneMutex_);
                     auto it = standaloneProxies_.find(idx);
                     if (it != standaloneProxies_.end()) {
                         it->second.running = false;
                     }
+                    sessionStartedProxies_.erase(startedPid);
                 }
                 if (topWindow_) {
                     wxQueueEvent(topWindow_, new StandaloneProxyEvent(
@@ -1181,7 +1221,7 @@ bool AppController::startStandaloneProxy(const std::string& indexId, int overrid
             },
             // TakeoverFn (R6 auto-takeover): when the old process exits but a new one
             // with the same config file is detected, take over the new process.
-            [this, &configFileNameCopy, indexId](
+            [this, indexId](
                 int oldPid, const std::string& oldIndexId, int64_t oldHistoryId,
                 const std::string& cfName) -> bool {
                 // If the proxy was manually stopped (running=false), do NOT takeover.
@@ -1210,8 +1250,11 @@ bool AppController::startStandaloneProxy(const std::string& indexId, int overrid
                             cfName)) {
                         continue;
                     }
+                    // PROCESS_TERMINATE is required so the adopted process can
+                    // later be stopped by stopStandaloneProxy (TerminateProcess
+                    // fails with ERROR_ACCESS_DENIED without it).
                     HANDLE newHandle = OpenProcess(
-                        PROCESS_QUERY_INFORMATION | SYNCHRONIZE,
+                        PROCESS_QUERY_INFORMATION | SYNCHRONIZE | PROCESS_TERMINATE,
                         FALSE, procs[i].pid);
                     if (!newHandle) {
                         continue;
@@ -1237,20 +1280,91 @@ bool AppController::startStandaloneProxy(const std::string& indexId, int overrid
                         procs[i].creationTime.empty()
                             ? utils::getCurrentTimestampFormatted()
                             : procs[i].creationTime;
-                    int64_t newRhId = historyDao_.insertStart(
+                    // Resolve the SOCKS port of the takeover session through the
+                    // same chain as adoption (spec v1.4): new process command
+                    // line config -> remembered port of the PREVIOUS process
+                    // -> live LISTEN ports of the new process. The D2 gate is
+                    // applied here because the remembered port belongs to the
+                    // old process and must be disproven by the live facts of
+                    // the new one before it is accepted.
+                    int takeoverPort = 0;
+                    std::string takeoverConfigPath =
+                        proc::ProcessInspector::extractConfigFullPath(
+                            procs[i].commandLine);
+                    int takeoverCmdlinePort = 0;
+                    if (!takeoverConfigPath.empty()) {
+                        takeoverCmdlinePort = readStandaloneInboundPort(takeoverConfigPath);
+                    }
+                    int takeoverMemoryPort = 0;
+                    {
+                        std::lock_guard<std::mutex> infoLock(standaloneMutex_);
+                        std::unordered_map<std::string, StandaloneProxyInfo>::const_iterator infoIt =
+                            standaloneProxies_.find(indexId);
+                        if (infoIt != standaloneProxies_.end()) {
+                            takeoverMemoryPort = infoIt->second.socksPort;
+                        }
+                    }
+                    const int takeoverApiPort =
+                        (config_.proxy.api_base_port > 0) ? config_.proxy.api_base_port : 10085;
+                    const std::vector<int> takeoverOsPorts =
+                        proc::ProcessInspector::listeningTcpPorts(procs[i].pid);
+                    const std::vector<int> takeoverOsCandidates =
+                        standalone_adoption::buildOsCandidates(takeoverOsPorts, takeoverApiPort);
+                    std::vector<int> takeoverSocksPorts;
+                    for (std::vector<int>::const_iterator it = takeoverOsCandidates.begin();
+                         it != takeoverOsCandidates.end(); ++it) {
+                        if (utils::respondsToSocks5Greeting(*it, 200)) {
+                            takeoverSocksPorts.push_back(*it);
+                        }
+                    }
+                    std::vector<standalone_adoption::PortCandidate> takeoverChain;
+                    standalone_adoption::PortCandidate takeoverCmdlineCand;
+                    takeoverCmdlineCand.port = takeoverCmdlinePort;
+                    takeoverCmdlineCand.source = standalone_adoption::PortSource::CmdlineConfig;
+                    takeoverChain.push_back(takeoverCmdlineCand);
+                    standalone_adoption::PortCandidate takeoverMemoryCand;
+                    takeoverMemoryCand.port = takeoverMemoryPort;
+                    takeoverMemoryCand.source = standalone_adoption::PortSource::RuntimeHistory;
+                    takeoverChain.push_back(takeoverMemoryCand);
+                    const std::vector<int> takeoverOrderedOs =
+                        standalone_adoption::orderOsCandidatesBySocks(
+                            takeoverOsCandidates, takeoverSocksPorts);
+                    for (std::vector<int>::const_iterator it = takeoverOrderedOs.begin();
+                         it != takeoverOrderedOs.end(); ++it) {
+                        standalone_adoption::PortCandidate takeoverOsCand;
+                        takeoverOsCand.port = *it;
+                        takeoverOsCand.source = standalone_adoption::PortSource::OsTcpTable;
+                        takeoverChain.push_back(takeoverOsCand);
+                    }
+                    const standalone_adoption::PortResolution takeoverResolution =
+                        standalone_adoption::resolveChainPort(
+                            takeoverChain, takeoverOsPorts, takeoverSocksPorts,
+                            takeoverApiPort);
+                    takeoverPort = takeoverResolution.port;
+                    // Append the takeover session row carrying the resolved
+                    // port (append semantics: a takeover is a NEW instance).
+                    int64_t newRhId = historyDao_.insertStartWithPort(
                         indexId, newStartedAt,
-                        static_cast<int64_t>(procs[i].pid), db_);
+                        static_cast<int64_t>(procs[i].pid), takeoverPort, db_);
                     if (newRhId < 0) {
                         CloseHandle(newHandle);
                         return false;
                     }
-                    // Update standaloneProxies_ with the new handle
+                    // Update standaloneProxies_ with the new handle AND the
+                    // new port/startedAt/configPath — otherwise the in-memory
+                    // entry keeps the port of the previous process and the
+                    // periodic online probe keeps hitting a dead port.
                     {
                         std::lock_guard<std::mutex> lock(standaloneMutex_);
                         auto& sp = standaloneProxies_[indexId];
                         sp.processHandle = newHandle;
                         sp.running = true;
                         sp.runtimeHistoryId = newRhId;
+                        sp.socksPort = takeoverPort;
+                        sp.startedAt = newStartedAt;
+                        if (!takeoverConfigPath.empty()) {
+                            sp.configPath = takeoverConfigPath;
+                        }
                     }
                     runtimeHistoryId_ = newRhId;
                     const long long takeoverBaselineMs =
@@ -1308,7 +1422,7 @@ bool AppController::startStandaloneProxy(const std::string& indexId, int overrid
                 // No takeover candidate found — fall through to normal finalize
                 return false;
             },
-            configFileNameCopy,  // R6: pass configFileName into the Watcher
+            configFileName,  // R6: pass configFileName into the Watcher
             /*heartbeatFn*/ [this](const std::string&, int64_t hid,
                                    int64_t elapsedMs) {
                 historyDao_.touchHeartbeat(hid, elapsedMs, db_);
@@ -1365,10 +1479,8 @@ int AppController::getRunningStandaloneCount() const {
     return count;
 }
 
-// Forward declaration: readStandaloneInboundPort is defined later in this file
-// (after getWatchedStandaloneMonitors) but is needed here to re-read the actual
-// listening port from the on-disk config, avoiding stale in-memory socksPort.
-static int readStandaloneInboundPort(const std::string& configPath);
+// Forward declaration moved above startStandaloneProxy (anonymous namespace)
+// so the R6 takeover path can resolve the port of a re-launched process.
 
 std::vector<StandaloneMonitorRow> AppController::getWatchedStandaloneMonitors() {
     // Pass 1: copy watched entries under the lock. Only running && managed
@@ -1421,29 +1533,59 @@ std::vector<StandaloneMonitorRow> AppController::getWatchedStandaloneMonitors() 
     for (std::size_t j = 0; j < watched.size(); ++j) {
         StandaloneMonitorRow row;
         row.indexId = watched[j].indexId;
-        // 从磁盘配置文件重新读取实际监听端口，避免使用内存中可能过时的 socksPort
-        //（例如进程崩溃后端口已释放，或外部进程修改了配置文件）。
-        // 优先使用记录下的权威完整配置路径（configPath，来自 start/adopt 的 cmdline
-        // 权威解析）；仅当其为空或读取失败时，才回退到两处已知目录布局探测，
-        // 最后才回退到内存值。
+        // Join the in-progress history row FIRST: it carries the port that
+        // was resolved (and verified) when the process was adopted, and it is
+        // the only *verified* port source available on this path.
+        std::unordered_map<int64_t, const db::models::ProxyRuntimeHistoryItem*>::const_iterator hit =
+            byId.find(watched[j].historyId);
+        int historyPort = 0;
+        if (hit != byId.end()) {
+            row.pid = hit->second->pid;
+            row.startedAt = hit->second->startedAt;
+            historyPort = hit->second->socksPort;
+        } else {
+            // History row missing (insertStart failed or legacy entry):
+            // fall back to the in-memory startedAt, pid unknown.
+            row.pid = -1;
+            row.startedAt = watched[j].fallbackStartedAt;
+        }
         {
+            // Port priority (spec v1.4):
+            //   1) history socks_port  — resolved + verified at adoption time
+            //   2) in-memory socksPort  — same verified value, kept as the
+            //                             fallback for legacy rows without
+            //                             a socks_port column value
+            //   3) disk config file    — UNVERIFIED: the file may belong to
+            //                             another process / another
+            //                             installation (the 2026-09-02
+            //                             port-drift defect class)
+            // The disk value used to win outright, which re-introduced the
+            // stale-port regression (live 10809 vs stale disk copy 10810).
             int diskPort = 0;
             std::string diskPath = watched[j].configPath;
             if (!diskPath.empty()) {
                 diskPort = readStandaloneInboundPort(diskPath);
             }
             if (diskPort <= 0) {
-                const std::string exeDir = utils::getExecutableDir();
-                const std::string dirs[2] = {
-                    exeDir + "\\config\\",
-                    exeDir + "\\worker\\config\\"
-                };
-                for (int di = 0; di < 2 && diskPort <= 0; ++di) {
-                    diskPath = dirs[di] + watched[j].configFileName;
-                    diskPort = readStandaloneInboundPort(diskPath);
-                }
+                // Only the config directory of the running executable is probed
+                // (spec v1.1.1): `<exeDir>\worker\config` belongs to the
+                // separate `bin\worker\validproxy.exe` copy (a second
+                // installation); probing it mixes ports of the same indexId
+                // across installations (the 2026-09-02 port-drift defect
+                // class). A process started by that copy carries the absolute
+                // config path in its command line, so it is resolved by the
+                // cmdline tier at adoption time.
+                diskPath = utils::getExecutableDir() + "\\config\\" +
+                           watched[j].configFileName;
+                diskPort = readStandaloneInboundPort(diskPath);
             }
-            row.socksPort = (diskPort > 0) ? diskPort : watched[j].socksPort;
+            if (historyPort > 0) {
+                row.socksPort = historyPort;
+            } else if (watched[j].socksPort > 0) {
+                row.socksPort = watched[j].socksPort;
+            } else {
+                row.socksPort = diskPort;
+            }
         }
         // Host = ProfileItem.Address (spec v1.1); "-" rendered by the dialog
         // when the profile has been deleted or the address is empty.
@@ -1451,17 +1593,6 @@ std::vector<StandaloneMonitorRow> AppController::getWatchedStandaloneMonitors() 
             profileDao.getByIndexId(watched[j].indexId);
         if (profile.has_value()) {
             row.host = profile->address;
-        }
-        std::unordered_map<int64_t, const db::models::ProxyRuntimeHistoryItem*>::const_iterator hit =
-            byId.find(watched[j].historyId);
-        if (hit != byId.end()) {
-            row.pid = hit->second->pid;
-            row.startedAt = hit->second->startedAt;
-        } else {
-            // History row missing (insertStart failed or legacy entry):
-            // fall back to the in-memory startedAt, pid unknown.
-            row.pid = -1;
-            row.startedAt = watched[j].fallbackStartedAt;
         }
         row.durationMs = row.startedAt.empty()
             ? 0LL
@@ -1578,13 +1709,350 @@ void AppController::adoptDanglingStandaloneProxies() {
                 continue;
             }
 
-            // Skip already-managed proxies (either in map or being watched).
+            // ---- Route decision (spec v1.6) ---------------------------------
+            // A proxy that THIS session started already knows its own SOCKS
+            // port: startStandaloneProxy configured it and waitForPort
+            // confirmed it. Probing the OS again is pure waste (one TCP table
+            // scan plus a SOCKS5 handshake per candidate) and may even resolve
+            // the wrong port. Such a proxy takes the "bypass detection" route:
+            // no live probe at all; the port comes from the history table or
+            // from our own bookkeeping, and the only work left is making sure
+            // the history table has a row for it.
+            //
+            // A proxy that was ADOPTED (started outside this application) still
+            // needs the full live detection — we know nothing about its port.
+            bool alreadyManaged = false;
+            bool startedHere = false;
+            int sessionPort = 0;
+            int memoryPort = 0;
             {
                 std::lock_guard<std::mutex> lock(standaloneMutex_);
-                if (standaloneProxies_.find(indexId) != standaloneProxies_.end() ||
-                    proxyWatchKeys_.find(indexId) != proxyWatchKeys_.end()) {
+                alreadyManaged =
+                    standaloneProxies_.find(indexId) != standaloneProxies_.end() ||
+                    proxyWatchKeys_.find(indexId) != proxyWatchKeys_.end();
+                std::unordered_map<std::string, StandaloneProxyInfo>::const_iterator
+                    infoIt = standaloneProxies_.find(indexId);
+                if (infoIt != standaloneProxies_.end()) {
+                    memoryPort = infoIt->second.socksPort;
+                }
+                std::unordered_map<DWORD, SessionStartedProxy>::const_iterator
+                    sessionIt = sessionStartedProxies_.find(procs[i].pid);
+                if (sessionIt != sessionStartedProxies_.end()) {
+                    // The pid is only "ours" when it still refers to the very
+                    // instance we launched: compare the creation time captured
+                    // at launch with the one the enumeration reports now. A
+                    // recycled pid must NOT take the bypass route.
+                    const std::string& launchedAt = sessionIt->second.creationTime;
+                    const bool sameInstance =
+                        launchedAt.empty() || procs[i].creationTime.empty() ||
+                        launchedAt == procs[i].creationTime;
+                    if (sameInstance) {
+                        startedHere = true;
+                        sessionPort = sessionIt->second.socksPort;
+                    }
+                }
+            }
+            const standalone_adoption::AdoptionRoute route =
+                standalone_adoption::decideAdoptionRoute(alreadyManaged,
+                                                          startedHere);
+            if (route == standalone_adoption::AdoptionRoute::Skip) {
+                continue;
+            }
+
+            // ---- D5 instance identity gate (spec v1.5) --------------------
+            // The candidate list is produced by enumerating the running
+            // xray / sing-box images. Between that enumeration and this
+            // adoption the original process may have died and a NEW process
+            // may have reused the same pid. Opening a read-only handle and
+            // comparing the creation timestamp proves whether the handle
+            // still belongs to the enumerated instance; if it does not, the
+            // live process is a FOREIGN one and must not be attached to
+            // this indexId.
+            //
+            // The gate uses PROCESS_QUERY_LIMITED_INFORMATION because it is
+            // never stricter than the enumeration itself (reading the command
+            // line already needs PROCESS_QUERY_INFORMATION | PROCESS_VM_READ),
+            // so the gate can never drop a process the enumeration accepted.
+            // The full mask (incl. PROCESS_TERMINATE) is opened further below,
+            // only for the processes we really adopt.
+            //
+            // An unreadable creation time is NOT evidence of a mismatch: the
+            // gate then reports "unverifiable" and the process is KEPT.
+            std::string instanceStartedAt;
+            {
+                HANDLE probeHandle = OpenProcess(
+                    PROCESS_QUERY_LIMITED_INFORMATION, FALSE, procs[i].pid);
+                if (probeHandle) {
+                    instanceStartedAt =
+                        proc::ProcessInspector::processCreationTime(probeHandle);
+                    CloseHandle(probeHandle);
+                }
+                const standalone_adoption::InstanceCheck identity =
+                    standalone_adoption::checkInstanceIdentity(
+                        procs[i].creationTime, instanceStartedAt);
+                if (identity == standalone_adoption::InstanceCheck::Recycled) {
+                    bool firstSkip = false;
+                    {
+                        std::lock_guard<std::mutex> lock(standaloneMutex_);
+                        firstSkip =
+                            discardedStandalonePids_.insert(procs[i].pid).second;
+                    }
+                    Logger::write(
+                        "[StandaloneProxy] Skipping pid=" +
+                        std::to_string(procs[i].pid) + " indexId=" + indexId +
+                        ": instance identity check=" +
+                        standalone_adoption::instanceCheckLabel(identity) +
+                        " (enumeratedCreatedAt=" + procs[i].creationTime +
+                        " handleCreatedAt=" + instanceStartedAt +
+                        "); the pid was reused, the enumerated process is gone.",
+                        firstSkip ? LogLevel::WARN : LogLevel::DEBUG);
                     continue;
                 }
+                if (identity ==
+                    standalone_adoption::InstanceCheck::Unverifiable) {
+                    Logger::write(
+                        "[StandaloneProxy] Instance identity for pid=" +
+                        std::to_string(procs[i].pid) + " indexId=" + indexId +
+                        " is unverifiable (enumeratedCreatedAt=" +
+                        procs[i].creationTime + " handleCreatedAt=" +
+                        instanceStartedAt +
+                        "); keeping the process (a mismatch cannot be proven).",
+                        LogLevel::DEBUG);
+                }
+            }
+
+            // ---- Port resolution (deliberately BEFORE OpenProcess / history
+            // row / watch registration): the port is recovered from the
+            // runtime history first, then from the config file, then from the
+            // live OS evidence; if all of them fail the process is DISCARDED.
+            // Nothing may be created for a process we are about to drop (no
+            // handle, no history row, no start_count bump, no watcher).
+            //
+            // Chain (spec v1.4, user ruling "历史表优先"):
+            //   1. proxy_runtime_history  (indexId + pid + started_at triple)
+            //   2. the config file located from the process command line
+            //   3. the config file found in the known config directory
+            //   4. the live LISTEN ports of the pid (OS TCP table)
+            //
+            // The live facts are collected ONCE and used twice: to produce the
+            // OS tier candidates and to D2-validate the chain-selected
+            // candidate. A candidate DISPROVEN by the live facts is skipped and
+            // the chain falls through to the next source (this is what corrects
+            // a stale recorded port, e.g. the 10810 leftover of the
+            // 2026-09-02 port-drift defect). An UNVERIFIED / UNKNOWN candidate
+            // is ACCEPTED so a healthy proxy is never dropped.
+            const int apiPort = (config_.proxy.api_base_port > 0)
+                                    ? config_.proxy.api_base_port
+                                    : 10085;
+            // Live OS facts are only needed for proxies we did NOT start
+            // ourselves (spec v1.6 bypass route): for our own processes the
+            // port is already known, so the TCP table scan and the SOCKS5
+            // handshakes are skipped entirely.
+            std::vector<int> osPorts;
+            std::vector<int> socksPorts;
+            std::vector<int> orderedOsCandidates;
+            if (route == standalone_adoption::AdoptionRoute::FullDetect) {
+                osPorts = proc::ProcessInspector::listeningTcpPorts(procs[i].pid);
+                const std::vector<int> osCandidates =
+                    standalone_adoption::buildOsCandidates(osPorts, apiPort);
+                for (std::vector<int>::const_iterator it = osCandidates.begin();
+                     it != osCandidates.end(); ++it) {
+                    if (utils::respondsToSocks5Greeting(*it, 200)) {
+                        socksPorts.push_back(*it);
+                    }
+                }
+                orderedOsCandidates =
+                    standalone_adoption::orderOsCandidatesBySocks(osCandidates,
+                                                                  socksPorts);
+            }
+            // Tier 1: the port recorded in proxy_runtime_history for THIS
+            // process instance. The row is bound to (indexId, pid, startedAt),
+            // so it is the port the process was really launched with and cannot
+            // be invalidated by a later edit of the config file — which is why
+            // it outranks the file tiers.
+            // creationTime may be empty (PEB unreadable) — the DAO then matches
+            // on (indexId, pid) only, because a "now" fallback would differ
+            // from the value stored by the launching session.
+            const int historyPort = historyDao_.lookupSocksPort(
+                indexId, static_cast<int64_t>(procs[i].pid),
+                procs[i].creationTime, db_);
+            // Tier 2: the config file the process was launched with — the
+            // full config path is derived from the launching command line
+            // (cmdline `-c`) and read directly. It is read NOW, so the file may
+            // already describe a different port than the running process.
+            int cmdlinePort = 0;
+            std::string adoptedConfigPath;
+            const std::string fullPath =
+                proc::ProcessInspector::extractConfigFullPath(procs[i].commandLine);
+            if (!fullPath.empty()) {
+                cmdlinePort = readStandaloneInboundPort(fullPath);
+                if (cmdlinePort > 0) {
+                    adoptedConfigPath = fullPath;
+                }
+            }
+            // Tier 3: fallback — a bare-filename `-c` (no directory) or a launch
+            // without a readable path can't be located from the command line, so
+            // probe the config directory of the running executable only.
+            // Least reliable tier: it may hit a stale copy of the config.
+            // NOTE: `<exeDir>\worker\config` is deliberately NOT probed — it
+            // belongs to the separate `bin\worker\validproxy.exe` copy (a
+            // second installation), and probing it mixes ports of the same
+            // indexId across installations (the 2026-09-02 port-drift defect
+            // class). A process started by that copy carries the absolute
+            // config path in its command line, so the cmdline tier above
+            // already resolves it.
+            int dirPort = 0;
+            if (cmdlinePort <= 0) {
+                const std::string adoptedConfigDir =
+                    utils::getExecutableDir() + "\\config\\";
+                dirPort = readStandaloneInboundPort(
+                    adoptedConfigDir + configFileName);
+                if (dirPort > 0) {
+                    adoptedConfigPath = adoptedConfigDir + configFileName;
+                }
+            }
+            // Assemble the candidate chain in priority order.
+            std::vector<standalone_adoption::PortCandidate> portChain;
+            if (historyPort > 0) {
+                standalone_adoption::PortCandidate candidate;
+                candidate.port = historyPort;
+                candidate.source = standalone_adoption::PortSource::RuntimeHistory;
+                portChain.push_back(candidate);
+            }
+            if (cmdlinePort > 0) {
+                standalone_adoption::PortCandidate candidate;
+                candidate.port = cmdlinePort;
+                candidate.source = standalone_adoption::PortSource::CmdlineConfig;
+                portChain.push_back(candidate);
+            }
+            if (dirPort > 0) {
+                standalone_adoption::PortCandidate candidate;
+                candidate.port = dirPort;
+                candidate.source = standalone_adoption::PortSource::DirProbe;
+                portChain.push_back(candidate);
+            }
+            for (std::vector<int>::const_iterator it = orderedOsCandidates.begin();
+                 it != orderedOsCandidates.end(); ++it) {
+                standalone_adoption::PortCandidate candidate;
+                candidate.port = *it;
+                candidate.source = standalone_adoption::PortSource::OsTcpTable;
+                portChain.push_back(candidate);
+            }
+            standalone_adoption::PortResolution resolution;
+            int adoptedPort = 0;
+            if (route == standalone_adoption::AdoptionRoute::BypassDetect) {
+                // Our own process: the port is the one WE configured. Prefer the
+                // history row (already verified), then the in-memory entry, then
+                // the session registry. The file tiers are ignored on purpose:
+                // the config file may have been edited after the launch.
+                adoptedPort = standalone_adoption::resolveBypassPort(
+                    historyPort, memoryPort, sessionPort);
+                resolution.port = adoptedPort;
+                resolution.source = (adoptedPort > 0)
+                    ? standalone_adoption::PortSource::RuntimeHistory
+                    : standalone_adoption::PortSource::None;
+                resolution.verdict = (adoptedPort > 0)
+                    ? standalone_adoption::PortVerdict::Verified
+                    : standalone_adoption::PortVerdict::Unknown;
+            } else {
+                resolution = standalone_adoption::resolveChainPort(
+                    portChain, osPorts, socksPorts, apiPort);
+                adoptedPort = resolution.port;
+            }
+            if (adoptedPort <= 0) {
+                if (route == standalone_adoption::AdoptionRoute::BypassDetect &&
+                    alreadyManaged) {
+                    // Our own process, already tracked: an unknown port is no
+                    // reason to drop it — the live entry keeps working.
+                    Logger::write(
+                        "[StandaloneProxy] Session-started proxy pid="
+                        + std::to_string(procs[i].pid) + " indexId=" + indexId
+                        + " has no known SOCKS port yet; keeping the existing "
+                        + "tracking.",
+                        LogLevel::DEBUG);
+                    continue;
+                }
+                // Discard: the process runs, but we cannot know which port it
+                // serves, so it is not tracked at all.
+                // The dangling history row is deliberately NOT closed here: the
+                // process IS alive, so the open row describes the truth, and
+                // closing it would make the next cycle append a duplicate row
+                // (and bump start_count again) for the very same instance.
+                // Logged once per pid because adoption runs every
+                // checkIntervalMs.
+                bool firstDiscard = false;
+                {
+                    std::lock_guard<std::mutex> lock(standaloneMutex_);
+                    firstDiscard =
+                        discardedStandalonePids_.insert(procs[i].pid).second;
+                }
+                Logger::write(
+                    "[StandaloneProxy] Discarding dangling process pid="
+                    + std::to_string(procs[i].pid) + " indexId=" + indexId
+                    + ": no SOCKS port found (no live LISTEN port, config "
+                    + "missing and no runtime-history port). "
+                    + "It is no longer tracked; clicking Start will offer to close it.",
+                    firstDiscard ? LogLevel::WARN : LogLevel::DEBUG);
+                continue;
+            }
+
+            // Bypass route for a proxy we already manage: the process is
+            // already tracked (handle + exit watcher + in-memory entry), so
+            // there is nothing to adopt again. The only thing that can be
+            // missing is the history row — e.g. after a database switch the new
+            // database has no row for this still-running process. Append it now
+            // (append-only semantics) so the history stays complete.
+            if (route == standalone_adoption::AdoptionRoute::BypassDetect &&
+                alreadyManaged) {
+                std::string bypassStartedAt;
+                if (!instanceStartedAt.empty()) {
+                    bypassStartedAt = instanceStartedAt;
+                } else if (!procs[i].creationTime.empty()) {
+                    bypassStartedAt = procs[i].creationTime;
+                } else {
+                    bypassStartedAt = utils::getCurrentTimestampFormatted();
+                }
+                int64_t bypassRhId = historyDao_.findInProgressHistory(
+                    indexId, static_cast<int64_t>(procs[i].pid),
+                    bypassStartedAt, db_);
+                bool appendedRow = false;
+                if (bypassRhId < 0) {
+                    // The triple does not match: the history table lacks the
+                    // live record of this instance (e.g. another database was
+                    // selected) — close the superseded row of the same
+                    // (indexId, pid) and append a new one carrying the port.
+                    const int64_t staleId =
+                        historyDao_.findInProgressHistoryLoose(
+                            indexId, static_cast<int64_t>(procs[i].pid), db_);
+                    if (staleId >= 0) {
+                        const std::string closeNow =
+                            utils::getCurrentTimestampFormatted();
+                        historyDao_.finalizeStop(
+                            staleId, closeNow, /*exitCode*/0,
+                            proc::ProcessInspector::durationMsBetween(
+                                procs[i].creationTime, closeNow), db_);
+                    }
+                    bypassRhId = historyDao_.insertStartWithPort(
+                        indexId, bypassStartedAt,
+                        static_cast<int64_t>(procs[i].pid), adoptedPort, db_);
+                    appendedRow = (bypassRhId >= 0);
+                } else if (historyPort != adoptedPort) {
+                    // The row exists but carries no (or a stale) port: correct
+                    // it so the history table stays authoritative.
+                    if (!historyDao_.updateSocksPort(bypassRhId, adoptedPort, db_)) {
+                        Logger::write("[StandaloneProxy] Failed to record socks_port for "
+                                      + indexId, LogLevel::WARN);
+                    }
+                }
+                if (appendedRow) {
+                    Logger::write("[StandaloneProxy] Session-started proxy pid="
+                                  + std::to_string(procs[i].pid) + " indexId=" + indexId
+                                  + " on SOCKS5 :" + std::to_string(adoptedPort)
+                                  + " route=bypass-detect historyRow="
+                                  + std::to_string(bypassRhId),
+                                  LogLevel::REPORT);
+                }
+                continue;
             }
 
             // Must include PROCESS_TERMINATE so that stopStandaloneProxy() /
@@ -1599,20 +2067,48 @@ void AppController::adoptDanglingStandaloneProxies() {
             }
 
             // Reuse an in-progress history session for THIS exact process instance
-            // (indexId + pid + system creation time), otherwise open a new one.
+            // (indexId + pid + system creation time). The history table is the
+            // single source of truth for adopted standalone proxies, so when the
+            // triple does not match it means the table lacks the live record of
+            // this instance: a NEW row is APPENDED (carrying the resolved
+            // port) instead of updating an unrelated existing row.
+            // started_at is the instance identity of the adopted process. The
+            // D5 gate already produced the authoritative value from a handle
+            // that belongs to the very process we are adopting, so it is
+            // preferred over the enumeration value. The final fallback only
+            // avoids writing an empty string into the column — it does NOT
+            // make the (indexId, pid, started_at) triple match, because the
+            // launching session wrote its own "now" (a different instant).
             // Fallback must be datetime-formatted: it is stored as started_at
             // and later parsed by durationMsBetween (epoch seconds would break).
-            const std::string procStartedAt =
-                procs[i].creationTime.empty()
-                    ? utils::getCurrentTimestampFormatted()
-                    : procs[i].creationTime;
+            std::string procStartedAt;
+            if (!instanceStartedAt.empty()) {
+                procStartedAt = instanceStartedAt;
+            } else if (!procs[i].creationTime.empty()) {
+                procStartedAt = procs[i].creationTime;
+            } else {
+                procStartedAt = utils::getCurrentTimestampFormatted();
+            }
             int64_t rhId = historyDao_.findInProgressHistory(
                 indexId, static_cast<int64_t>(procs[i].pid),
                 procStartedAt, db_);
             if (rhId < 0) {
-                rhId = historyDao_.insertStart(
+                // The triple does not match: close the superseded row of the
+                // same (indexId, pid) first — otherwise it lingers as a phantom
+                // "running" session — and append the new row with the port.
+                const int64_t staleId = historyDao_.findInProgressHistoryLoose(
+                    indexId, static_cast<int64_t>(procs[i].pid), db_);
+                if (staleId >= 0) {
+                    const std::string closeNow =
+                        utils::getCurrentTimestampFormatted();
+                    historyDao_.finalizeStop(
+                        staleId, closeNow, /*exitCode*/0,
+                        proc::ProcessInspector::durationMsBetween(
+                            procs[i].creationTime, closeNow), db_);
+                }
+                rhId = historyDao_.insertStartWithPort(
                     indexId, procStartedAt,
-                    static_cast<int64_t>(procs[i].pid), db_);
+                    static_cast<int64_t>(procs[i].pid), adoptedPort, db_);
             }
             if (rhId < 0) {
                 CloseHandle(hProcess);
@@ -1620,6 +2116,7 @@ void AppController::adoptDanglingStandaloneProxies() {
             }
             const std::string startedAt = procStartedAt;
 
+            const DWORD adoptedPid = procs[i].pid;
             proc::ProcessExitListener::WatchKey key = exitListener_->watch(
                 hProcess, indexId, rhId,
                 [](sqlite3*, const std::string&, const std::string&) -> int64_t {
@@ -1635,13 +2132,14 @@ void AppController::adoptDanglingStandaloneProxies() {
                        int64_t durMs) -> bool {
                     return historyDao_.finalizeStop(hid, endedAt, exitCode, durMs, db_);
                 },
-                [this](const std::string& idx, int64_t hid) {
+                [this, adoptedPid](const std::string& idx, int64_t hid) {
                     {
                         std::lock_guard<std::mutex> lock(standaloneMutex_);
                         auto it = standaloneProxies_.find(idx);
                         if (it != standaloneProxies_.end()) {
                             it->second.running = false;
                         }
+                        sessionStartedProxies_.erase(adoptedPid);
                     }
                     if (topWindow_) {
                         wxQueueEvent(topWindow_, new StandaloneProxyEvent(
@@ -1661,45 +2159,13 @@ void AppController::adoptDanglingStandaloneProxies() {
                 continue;
             }
 
-            // Resolve the SOCKS inbound port from the on-disk config so the
-            // monitor dialog and logs can show it for adopted processes too.
-            // Step (a) is authoritative: derive the full config path from the
-            // launching command line (cmdline `-c`) and read the port directly.
-            // The process was launched from exactly that file, so this is the
-            // ground truth even when the same indexId has configs in multiple
-            // directories (e.g. bin\config vs bin\worker\config produced by the
-            // bin\worker\validproxy.exe work copy). Directory probing earlier
-            // could hit a stale copy and report a port nothing is listening on.
-            int adoptedPort = 0;
-            std::string adoptedConfigPath;
-            const std::string fullPath =
-                proc::ProcessInspector::extractConfigFullPath(procs[i].commandLine);
-            if (!fullPath.empty()) {
-                adoptedPort = readStandaloneInboundPort(fullPath);
-                if (adoptedPort > 0) {
-                    adoptedConfigPath = fullPath;
-                }
-            }
-            // Step (b): fallback — a bare-filename `-c` (no directory) or a launch
-            // without a readable path can't be located from the command line, so
-            // probe the two known on-disk layouts under the executable's directory.
-            if (adoptedPort <= 0) {
-                const std::string adoptedExeDir = utils::getExecutableDir();
-                const std::string adoptedDirs[2] = {
-                    adoptedExeDir + "\\config\\",
-                    adoptedExeDir + "\\worker\\config\\"
-                };
-                for (int di = 0; di < 2 && adoptedPort <= 0; ++di) {
-                    adoptedPort = readStandaloneInboundPort(
-                        adoptedDirs[di] + configFileName);
-                    if (adoptedPort > 0) {
-                        adoptedConfigPath = adoptedDirs[di] + configFileName;
-                    }
-                }
-            }
-            if (adoptedPort <= 0) {
-                Logger::write("[StandaloneProxy] Could not resolve inbound port from "
-                              + configFileName, LogLevel::WARN);
+            // Remember the resolved port for the next GUI session. Covers both
+            // the reused-row and the newly-created-row cases (an externally
+            // launched process adopted here would otherwise keep a NULL port
+            // and be discarded after its config file is deleted).
+            if (!historyDao_.updateSocksPort(rhId, adoptedPort, db_)) {
+                Logger::write("[StandaloneProxy] Failed to record socks_port for adopted "
+                              + indexId, LogLevel::WARN);
             }
 
             {
@@ -1720,6 +2186,10 @@ void AppController::adoptDanglingStandaloneProxies() {
             Logger::write("[StandaloneProxy] Adopted dangling process pid="
                           + std::to_string(procs[i].pid) + " indexId=" + indexId
                           + " on SOCKS5 :" + std::to_string(adoptedPort)
+                          + " source="
+                          + standalone_adoption::portSourceLabel(resolution.source)
+                          + " verdict="
+                          + standalone_adoption::portVerdictLabel(resolution.verdict)
                           + " config=" + configFileName, LogLevel::REPORT);
             // Write startup time into ProfileExItem.message (+<startup time>)
             exDao_.updateStartupTime(indexId, db_);
@@ -1744,6 +2214,7 @@ bool AppController::stopStandaloneProxy(const std::string& indexId) {
     proc::ProcessExitListener::WatchKey key = 0;
     HANDLE hProcess = nullptr;
     int socksPort = -1;
+    DWORD stoppedPid = 0;
     {
         std::lock_guard<std::mutex> lock(standaloneMutex_);
         auto it = standaloneProxies_.find(indexId);
@@ -1753,6 +2224,10 @@ bool AppController::stopStandaloneProxy(const std::string& indexId) {
         key = it->second.watchKey;
         hProcess = it->second.processHandle;
         socksPort = it->second.socksPort;
+        // The handle keeps the pid valid even after the process died, so this
+        // is a reliable way to drop the session bookkeeping for it (spec
+        // v1.6): a stopped proxy must no longer count as "one of ours".
+        stoppedPid = (hProcess != nullptr) ? GetProcessId(hProcess) : 0;
         // Intentionally do NOT touch it->second in this phase.
     }
 
@@ -1797,6 +2272,9 @@ bool AppController::stopStandaloneProxy(const std::string& indexId) {
             it->second.running = false;
             it->second.watchKey = 0;
             standaloneProxies_.erase(it);
+        }
+        if (stoppedPid != 0) {
+            sessionStartedProxies_.erase(stoppedPid);
         }
     }
 

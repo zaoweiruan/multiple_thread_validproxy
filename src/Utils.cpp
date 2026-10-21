@@ -397,6 +397,64 @@ bool isValidUrlFormat(const std::string& url) {
         return scanPortStatesRaw(port, &timeWaitHit);
     }
 
+    namespace {
+        // One-shot Winsock startup for the SOCKS greeting probe. The TCP-table
+        // helpers go through iphlpapi, which needs no Winsock, so the probe has
+        // to initialise it itself.
+        bool ensureWinsockStartedForProbe() {
+            static const bool started = []() -> bool {
+                WSADATA wsa;
+                return WSAStartup(MAKEWORD(2, 2), &wsa) == 0;
+            }();
+            return started;
+        }
+    }
+
+    bool respondsToSocks5Greeting(int port, int timeoutMs) {
+        if (port <= 0 || port > 65535) {
+            return false;
+        }
+        if (!ensureWinsockStartedForProbe()) {
+            return false;
+        }
+        SOCKET sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+        if (sock == INVALID_SOCKET) {
+            return false;
+        }
+        // Bounded I/O: a peer that accepts the connection but never answers
+        // must not block the caller (the adoption loop runs on a worker
+        // thread and probes every candidate port).
+        const int boundedTimeout = (timeoutMs > 0) ? timeoutMs : 200;
+        DWORD tv = static_cast<DWORD>(boundedTimeout);
+        setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO,
+                   reinterpret_cast<const char*>(&tv), sizeof(tv));
+        setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO,
+                   reinterpret_cast<const char*>(&tv), sizeof(tv));
+
+        struct sockaddr_in addr;
+        ZeroMemory(&addr, sizeof(addr));
+        addr.sin_family = AF_INET;
+        addr.sin_port = htons(static_cast<unsigned short>(port));
+        addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+
+        bool isSocks = false;
+        if (connect(sock, reinterpret_cast<struct sockaddr*>(&addr),
+                    sizeof(addr)) == 0) {
+            const unsigned char greeting[3] = { 0x05, 0x01, 0x00 };
+            if (send(sock, reinterpret_cast<const char*>(greeting), 3, 0) == 3) {
+                unsigned char reply[2] = { 0x00, 0x00 };
+                const int received =
+                    recv(sock, reinterpret_cast<char*>(reply), 2, 0);
+                // A SOCKS5 server answers VER=0x05 followed by its method list;
+                // 0x05 0xFF means "no acceptable methods" (not a SOCKS server).
+                isSocks = (received == 2) && (reply[0] == 0x05) &&
+                          (reply[1] != 0xFF);
+            }
+        }
+        closesocket(sock);
+        return isSocks;
+    }
+
     bool waitPortReleased(int port, int budgetMs) {
         const ULONGLONG deadline = GetTickCount64() + static_cast<ULONGLONG>(budgetMs);
         for (;;) {

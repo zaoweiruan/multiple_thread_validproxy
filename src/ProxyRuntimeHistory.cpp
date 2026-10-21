@@ -36,6 +36,26 @@ void ProxyRuntimeHistoryDAO::migrateTable(sqlite3* db) {
         "ALTER TABLE proxy_runtime_history ADD COLUMN pid INTEGER";
     sqlite3_exec(db, addPidColSql, nullptr, nullptr, nullptr);
 
+    // socks_port column: lets dangling-process adoption recover the SOCKS
+    // port when the on-disk config file is missing. Idempotent ALTER —
+    // pre-existing rows get NULL and fall back to config/dir resolution.
+    // A real failure (not "duplicate column") must be visible: a missing
+    // column makes getInProgressSessions()'s SELECT fail as a whole.
+    {
+        char* errMsg = nullptr;
+        int rc = sqlite3_exec(
+            db, "ALTER TABLE proxy_runtime_history ADD COLUMN socks_port INTEGER",
+            nullptr, nullptr, &errMsg);
+        const std::string msg = (errMsg ? errMsg : "");
+        if (rc != SQLITE_OK &&
+            msg.find("duplicate column name") == std::string::npos) {
+            Logger::write("ProxyRuntimeHistoryDAO::migrateTable: add socks_port failed: "
+                          + (msg.empty() ? std::string("unknown") : msg),
+                          LogLevel::ERR);
+        }
+        sqlite3_free(errMsg);
+    }
+
     // Aggregate columns on ProfileExItem (idempotent - column already exists is OK).
     const char* addCols[] = {
         "ALTER TABLE ProfileExItem ADD COLUMN start_count INTEGER NOT NULL DEFAULT 0",
@@ -51,6 +71,14 @@ int64_t ProxyRuntimeHistoryDAO::insertStart(const std::string& indexId,
                                             const std::string& startedAt,
                                             int64_t pid,
                                             sqlite3* db) {
+    return insertStartWithPort(indexId, startedAt, pid, 0, db);
+}
+
+int64_t ProxyRuntimeHistoryDAO::insertStartWithPort(const std::string& indexId,
+                                                     const std::string& startedAt,
+                                                     int64_t pid,
+                                                     int socksPort,
+                                                     sqlite3* db) {
     sqlite3* execDb = db ? db : db_;
 
     // Nested-transaction safety: only begin when the connection is in
@@ -72,8 +100,10 @@ int64_t ProxyRuntimeHistoryDAO::insertStart(const std::string& indexId,
     bool ok = true;
 
     // 1. Insert the detail row (ended_at = NULL, session in progress).
+    //    socks_port is written together with the row when known, so the
+    //    history table carries the port of this instance from the start.
     {
-        const char* sql = "INSERT INTO proxy_runtime_history (index_id, started_at, pid, source) VALUES (?, ?, ?, 'standalone')";
+        const char* sql = "INSERT INTO proxy_runtime_history (index_id, started_at, pid, socks_port, source) VALUES (?, ?, ?, ?, 'standalone')";
         sqlite3_stmt* stmt = nullptr;
         if (sqlite3_prepare_v2(execDb, sql, -1, &stmt, nullptr) != SQLITE_OK) {
             Logger::write("ProxyRuntimeHistoryDAO::insertStart: insert prepare failed: " + std::string(sqlite3_errmsg(execDb)), LogLevel::ERR);
@@ -82,6 +112,11 @@ int64_t ProxyRuntimeHistoryDAO::insertStart(const std::string& indexId,
             sqlite3_bind_text(stmt, 1, indexId.c_str(), -1, SQLITE_TRANSIENT);
             sqlite3_bind_text(stmt, 2, startedAt.c_str(), -1, SQLITE_TRANSIENT);
             sqlite3_bind_int64(stmt, 3, pid);
+            if (socksPort > 0) {
+                sqlite3_bind_int(stmt, 4, socksPort);
+            } else {
+                sqlite3_bind_null(stmt, 4);
+            }
             if (sqlite3_step(stmt) == SQLITE_DONE) {
                 historyId = sqlite3_last_insert_rowid(execDb);
             } else {
@@ -288,6 +323,103 @@ int64_t ProxyRuntimeHistoryDAO::findInProgressHistory(const std::string& indexId
     return historyId;
 }
 
+int64_t ProxyRuntimeHistoryDAO::findInProgressHistoryLoose(
+    const std::string& indexId, int64_t pid, sqlite3* db) {
+    sqlite3* execDb = db ? db : db_;
+    const char* sql = "SELECT id FROM proxy_runtime_history "
+                      "WHERE index_id = ? AND pid = ? AND ended_at IS NULL "
+                      "ORDER BY id DESC LIMIT 1";
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(execDb, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        Logger::write("ProxyRuntimeHistoryDAO::findInProgressHistoryLoose: prepare failed: "
+                      + std::string(sqlite3_errmsg(execDb)), LogLevel::ERR);
+        sqlite3_finalize(stmt);
+        return -1;
+    }
+    sqlite3_bind_text(stmt, 1, indexId.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int64(stmt, 2, pid);
+    int64_t historyId = -1;
+    if (sqlite3_step(stmt) == SQLITE_ROW) {
+        historyId = sqlite3_column_int64(stmt, 0);
+    }
+    sqlite3_finalize(stmt);
+    return historyId;
+}
+
+bool ProxyRuntimeHistoryDAO::updateSocksPort(int64_t historyId, int socksPort,
+                                             sqlite3* db) {
+    // Port unknown => nothing to record, and that is not an error.
+    if (socksPort <= 0) {
+        return true;
+    }
+    sqlite3* execDb = db ? db : db_;
+    // Single UPDATE: intentionally does NOT open a transaction. This DAO's
+    // contract warns against nested BEGIN, and the write is a startup
+    // annotation that does not need to be atomic with insertStart.
+    const char* sql = "UPDATE proxy_runtime_history SET socks_port = ? "
+                      "WHERE id = ? AND ended_at IS NULL";
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(execDb, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        Logger::write("ProxyRuntimeHistoryDAO::updateSocksPort: prepare failed: "
+                      + std::string(sqlite3_errmsg(execDb)), LogLevel::ERR);
+        sqlite3_finalize(stmt);
+        return false;
+    }
+    sqlite3_bind_int(stmt, 1, socksPort);
+    sqlite3_bind_int64(stmt, 2, historyId);
+    int rc = sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+    if (rc != SQLITE_DONE) {
+        Logger::write("ProxyRuntimeHistoryDAO::updateSocksPort: step failed: "
+                      + std::string(sqlite3_errmsg(execDb)), LogLevel::ERR);
+        return false;
+    }
+    // 0 changed rows = unknown id or already finalized session.
+    return sqlite3_changes(execDb) > 0;
+}
+
+int ProxyRuntimeHistoryDAO::lookupSocksPort(const std::string& indexId,
+                                            int64_t pid,
+                                            const std::string& startedAt,
+                                            sqlite3* db) {
+    sqlite3* execDb = db ? db : db_;
+    // When creation time could not be read, the triplet is not
+    // reconstructible (the writer used a different "now" fallback), so match
+    // on (indexId, pid) only instead of reporting a false negative -- a
+    // false negative now costs a discarded, still-running process.
+    const bool useStartedAt = !startedAt.empty();
+    const char* sql = useStartedAt
+        ? "SELECT socks_port FROM proxy_runtime_history "
+          "WHERE index_id = ? AND pid = ? AND started_at = ? "
+          "AND ended_at IS NULL AND socks_port IS NOT NULL "
+          "ORDER BY id DESC LIMIT 1"
+        : "SELECT socks_port FROM proxy_runtime_history "
+          "WHERE index_id = ? AND pid = ? "
+          "AND ended_at IS NULL AND socks_port IS NOT NULL "
+          "ORDER BY id DESC LIMIT 1";
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(execDb, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        Logger::write("ProxyRuntimeHistoryDAO::lookupSocksPort: prepare failed: "
+                      + std::string(sqlite3_errmsg(execDb)), LogLevel::ERR);
+        sqlite3_finalize(stmt);
+        return 0;
+    }
+    sqlite3_bind_text(stmt, 1, indexId.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int64(stmt, 2, pid);
+    if (useStartedAt) {
+        sqlite3_bind_text(stmt, 3, startedAt.c_str(), -1, SQLITE_TRANSIENT);
+    }
+    int port = 0;
+    if (sqlite3_step(stmt) == SQLITE_ROW) {
+        port = sqlite3_column_int(stmt, 0);
+    }
+    sqlite3_finalize(stmt);
+    if (port <= 0 || port > 65535) {
+        return 0;
+    }
+    return port;
+}
+
 bool ProxyRuntimeHistoryDAO::getRuntimeStats(const std::string& indexId,
                                              int* startCount,
                                              int64_t* totalRuntimeMs,
@@ -324,7 +456,7 @@ std::vector<ProxyRuntimeHistoryItem> ProxyRuntimeHistoryDAO::getInProgressSessio
     std::vector<ProxyRuntimeHistoryItem> result;
     sqlite3* execDb = db ? db : db_;
     const char* sql =
-        "SELECT id, index_id, started_at, pid FROM proxy_runtime_history "
+        "SELECT id, index_id, started_at, pid, socks_port FROM proxy_runtime_history "
         "WHERE ended_at IS NULL ORDER BY started_at;";
     sqlite3_stmt* stmt = nullptr;
     if (sqlite3_prepare_v2(execDb, sql, -1, &stmt, nullptr) != SQLITE_OK) {
@@ -344,6 +476,9 @@ std::vector<ProxyRuntimeHistoryItem> ProxyRuntimeHistoryDAO::getInProgressSessio
             item.startedAt = reinterpret_cast<const char*>(started);
         }
         item.pid = sqlite3_column_int64(stmt, 3);
+        item.socksPort = (sqlite3_column_type(stmt, 4) == SQLITE_NULL)
+                             ? 0
+                             : sqlite3_column_int(stmt, 4);
         result.push_back(item);
     }
     sqlite3_finalize(stmt);

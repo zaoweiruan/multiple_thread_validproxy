@@ -1,8 +1,15 @@
+// winsock2.h MUST precede <windows.h> (pulled in by Utils.h / gtest).
+#include <winsock2.h>
+#include <ws2tcpip.h>
+
 #include <gtest/gtest.h>
 #include <cstdio>
 #include <string>
+#include <atomic>
+#include <thread>
 
 #include "Utils.h"
+
 
 TEST(JoinUrlTest, BothWithoutSlash) {
     EXPECT_EQ(utils::joinUrl("https://acc.com/path", "https://sub.com/v2?t=1"),
@@ -596,4 +603,172 @@ TEST(GetCurrentTimestampFormattedTest, CompatibleWithDurationMsBetweenParser) {
     int y = 0, mo = 0, d = 0, h = 0, mi = 0, se = 0;
     ASSERT_EQ(std::sscanf(now.c_str(), "%d-%d-%d %d:%d:%d",
                           &y, &mo, &d, &h, &mi, &se), 6);
+}
+
+// ---------------------------------------------------------------
+// SOCKS5 greeting probe (utils::respondsToSocks5Greeting)
+// ---------------------------------------------------------------
+namespace {
+
+// Winsock must be initialised before any socket call.
+bool ensureWinsockForTest() {
+    static const bool started = []() -> bool {
+        WSADATA wsa;
+        return WSAStartup(MAKEWORD(2, 2), &wsa) == 0;
+    }();
+    return started;
+}
+
+// A minimal loopback listener used as a test double for a proxy inbound.
+// `reply` is sent back to the first accepted connection (may be empty).
+class FakeListener {
+public:
+    FakeListener() : listenSocket_(INVALID_SOCKET), port_(0) {
+        if (!ensureWinsockForTest()) {
+            return;
+        }
+        listenSocket_ = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+
+        if (listenSocket_ == INVALID_SOCKET) {
+            return;
+        }
+        struct sockaddr_in addr;
+        ZeroMemory(&addr, sizeof(addr));
+        addr.sin_family = AF_INET;
+        addr.sin_port = 0; // ephemeral
+        addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        if (bind(listenSocket_, reinterpret_cast<struct sockaddr*>(&addr),
+                 sizeof(addr)) != 0) {
+            closesocket(listenSocket_);
+            listenSocket_ = INVALID_SOCKET;
+            return;
+        }
+        if (listen(listenSocket_, 4) != 0) {
+            closesocket(listenSocket_);
+            listenSocket_ = INVALID_SOCKET;
+            return;
+        }
+        struct sockaddr_in bound;
+        int boundLen = sizeof(bound);
+        if (getsockname(listenSocket_,
+                        reinterpret_cast<struct sockaddr*>(&bound),
+                        &boundLen) == 0) {
+            port_ = ntohs(bound.sin_port);
+        }
+    }
+
+    ~FakeListener() {
+        stop();
+        if (listenSocket_ != INVALID_SOCKET) {
+            closesocket(listenSocket_);
+            listenSocket_ = INVALID_SOCKET;
+        }
+    }
+
+    int port() const { return port_; }
+    bool valid() const { return listenSocket_ != INVALID_SOCKET && port_ > 0; }
+
+    // Serves `reply` (may be empty) to every accepted connection.
+    void serve(const std::string& reply) {
+        stop();
+        running_ = true;
+        worker_ = std::thread([this, reply]() {
+            while (running_) {
+                struct sockaddr_in peer;
+                int peerLen = sizeof(peer);
+                SOCKET client = accept(listenSocket_,
+                                       reinterpret_cast<struct sockaddr*>(&peer),
+                                       &peerLen);
+                if (client == INVALID_SOCKET) {
+                    if (!running_) {
+                        break;
+                    }
+                    continue;
+                }
+                if (!reply.empty()) {
+                    send(client, reply.c_str(), static_cast<int>(reply.size()), 0);
+                }
+                closesocket(client);
+            }
+        });
+    }
+
+    void stop() {
+        running_ = false;
+        if (worker_.joinable()) {
+            // Unblock accept() by connecting once.
+            struct sockaddr_in addr;
+            ZeroMemory(&addr, sizeof(addr));
+            addr.sin_family = AF_INET;
+            addr.sin_port = htons(static_cast<unsigned short>(port_));
+            addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+            SOCKET poke = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+            if (poke != INVALID_SOCKET) {
+                connect(poke, reinterpret_cast<struct sockaddr*>(&addr),
+                        sizeof(addr));
+                closesocket(poke);
+            }
+            worker_.join();
+        }
+    }
+
+private:
+    SOCKET listenSocket_;
+    int port_;
+    std::atomic<bool> running_{false};
+
+    std::thread worker_;
+};
+
+} // namespace
+
+TEST(Socks5GreetingTest, DetectsSocks5Server) {
+    FakeListener listener;
+    ASSERT_TRUE(listener.valid());
+    listener.serve(std::string("\x05\x00", 2));
+    EXPECT_TRUE(utils::respondsToSocks5Greeting(listener.port(), 500));
+}
+
+TEST(Socks5GreetingTest, RejectsNonSocksListener) {
+    // A listener that answers with something else (e.g. an HTTP api inbound)
+    // must not be mistaken for a SOCKS port.
+    FakeListener listener;
+    ASSERT_TRUE(listener.valid());
+    listener.serve(std::string("HTTP/1.1 200 OK\r\n", 17));
+    EXPECT_FALSE(utils::respondsToSocks5Greeting(listener.port(), 500));
+}
+
+TEST(Socks5GreetingTest, RejectsSilentListener) {
+    FakeListener listener;
+    ASSERT_TRUE(listener.valid());
+    listener.serve(std::string());
+    EXPECT_FALSE(utils::respondsToSocks5Greeting(listener.port(), 300));
+}
+
+TEST(Socks5GreetingTest, ClosedPortIsNotSocks) {
+    // Bind and immediately close to obtain a port nobody listens on.
+    ASSERT_TRUE(ensureWinsockForTest());
+    SOCKET s = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+
+    ASSERT_NE(s, INVALID_SOCKET);
+    struct sockaddr_in addr;
+    ZeroMemory(&addr, sizeof(addr));
+    addr.sin_family = AF_INET;
+    addr.sin_port = 0;
+    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    ASSERT_EQ(bind(s, reinterpret_cast<struct sockaddr*>(&addr),
+                   sizeof(addr)), 0);
+    struct sockaddr_in bound;
+    int boundLen = sizeof(bound);
+    ASSERT_EQ(getsockname(s, reinterpret_cast<struct sockaddr*>(&bound),
+                          &boundLen), 0);
+    const int deadPort = ntohs(bound.sin_port);
+    closesocket(s);
+    EXPECT_FALSE(utils::respondsToSocks5Greeting(deadPort, 300));
+}
+
+TEST(Socks5GreetingTest, RejectsInvalidPortNumbers) {
+    EXPECT_FALSE(utils::respondsToSocks5Greeting(0));
+    EXPECT_FALSE(utils::respondsToSocks5Greeting(-1));
+    EXPECT_FALSE(utils::respondsToSocks5Greeting(70000));
 }

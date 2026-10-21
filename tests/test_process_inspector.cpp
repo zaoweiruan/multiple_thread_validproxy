@@ -3,11 +3,18 @@
 // used to resolve the listening port of proxies launched by external programs
 // from a non-standard config directory.
 
+// winsock2.h MUST precede <windows.h> (pulled in by ProcessInspector.h).
+#include <winsock2.h>
+#include <ws2tcpip.h>
+
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <string>
+#include <vector>
 
 #include "ProcessInspector.h"
+
 
 using proc::ProcessInspector;
 
@@ -72,4 +79,73 @@ TEST(ProcessInspectorTest, ExtractConfigFullPath_BareNameReturnsEmpty) {
 TEST(ProcessInspectorTest, ExtractConfigFullPath_None) {
     std::wstring cmd = L"xray.exe run";
     EXPECT_EQ(ProcessInspector::extractConfigFullPath(cmd), "");
+}
+
+// ---------------------------------------------------------------
+// listeningTcpPorts: OS TCP table lookup by owning pid
+// ---------------------------------------------------------------
+namespace {
+
+// Winsock must be initialised before any socket call.
+bool ensureWinsockForTest() {
+    static const bool started = []() -> bool {
+        WSADATA wsa;
+        return WSAStartup(MAKEWORD(2, 2), &wsa) == 0;
+    }();
+    return started;
+}
+
+// Opens a loopback listening socket on an ephemeral port and returns it.
+SOCKET openLoopbackListener(int& outPort) {
+    outPort = 0;
+    if (!ensureWinsockForTest()) {
+        return INVALID_SOCKET;
+    }
+    SOCKET s = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+
+    if (s == INVALID_SOCKET) {
+        outPort = 0;
+        return s;
+    }
+    struct sockaddr_in addr;
+    ZeroMemory(&addr, sizeof(addr));
+    addr.sin_family = AF_INET;
+    addr.sin_port = 0; // ephemeral
+    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    if (bind(s, reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr)) != 0 ||
+        listen(s, 4) != 0) {
+        closesocket(s);
+        outPort = 0;
+        return INVALID_SOCKET;
+    }
+    struct sockaddr_in bound;
+    int boundLen = sizeof(bound);
+    if (getsockname(s, reinterpret_cast<struct sockaddr*>(&bound),
+                    &boundLen) != 0) {
+        closesocket(s);
+        outPort = 0;
+        return INVALID_SOCKET;
+    }
+    outPort = ntohs(bound.sin_port);
+    return s;
+}
+
+} // namespace
+
+TEST(ProcessInspectorTest, ListeningTcpPorts_FindsOwnListeningSocket) {
+    int port = 0;
+    SOCKET listener = openLoopbackListener(port);
+    ASSERT_NE(listener, INVALID_SOCKET);
+    ASSERT_GT(port, 0);
+
+    const std::vector<int> ports =
+        ProcessInspector::listeningTcpPorts(GetCurrentProcessId());
+    closesocket(listener);
+
+    EXPECT_TRUE(std::find(ports.begin(), ports.end(), port) != ports.end())
+        << "own listening port " << port << " not found in OS TCP table";
+}
+
+TEST(ProcessInspectorTest, ListeningTcpPorts_InvalidPidYieldsEmpty) {
+    EXPECT_TRUE(ProcessInspector::listeningTcpPorts(0).empty());
 }

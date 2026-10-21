@@ -1,5 +1,10 @@
+// winsock2.h MUST come before windows.h (pulled in by ProcessInspector.h),
+// otherwise windows.h includes the legacy winsock.h and warns.
+#include <winsock2.h>
+
 #include "ProcessInspector.h"
 
+#include <iphlpapi.h>
 #include <tlhelp32.h>
 
 #include <algorithm>
@@ -10,6 +15,16 @@
 namespace proc {
 
 namespace {
+
+// dwLocalPort holds the 16-bit port in NETWORK byte order. Windows is
+// always little-endian, so the two bytes have to be swapped to get the
+// host-order port — this is what ntohs() does, done inline to avoid
+// dragging the ws2_32 import into every target that links this file.
+int localPortToHost(unsigned int networkOrderPort) {
+    const unsigned int low = networkOrderPort & 0xFFu;
+    const unsigned int high = (networkOrderPort >> 8) & 0xFFu;
+    return static_cast<int>((low << 8) | high);
+}
 
 // UTF-8 → UTF-16 (config file names are ASCII; used only for matching).
 std::wstring utf8ToWide(const std::string& s) {
@@ -288,6 +303,66 @@ std::string ProcessInspector::extractConfigFullPath(const std::wstring& commandL
     WideCharToMultiByte(CP_UTF8, 0, fullToken.c_str(), -1, &out[0], len,
                         nullptr, nullptr);
     return out;
+}
+
+std::vector<int> ProcessInspector::listeningTcpPorts(DWORD pid) {
+    std::vector<int> ports;
+    if (pid == 0) {
+        return ports;
+    }
+
+    // IPv4: TCP_TABLE_OWNER_PID_ALL gives one row per endpoint, including the
+    // owning pid, so a single pass collects every LISTEN port of the process.
+    DWORD size = 0;
+    if (GetExtendedTcpTable(nullptr, &size, FALSE, AF_INET,
+                            TCP_TABLE_OWNER_PID_ALL, 0) ==
+        ERROR_INSUFFICIENT_BUFFER) {
+        std::vector<unsigned char> buffer(size);
+        PMIB_TCPTABLE_OWNER_PID table =
+            reinterpret_cast<PMIB_TCPTABLE_OWNER_PID>(&buffer[0]);
+        if (GetExtendedTcpTable(table, &size, FALSE, AF_INET,
+                                TCP_TABLE_OWNER_PID_ALL, 0) == NO_ERROR) {
+            for (DWORD i = 0; i < table->dwNumEntries; ++i) {
+                const MIB_TCPROW_OWNER_PID& row = table->table[i];
+                if (row.dwOwningPid != pid) {
+                    continue;
+                }
+                if (row.dwState != MIB_TCP_STATE_LISTEN) {
+                    continue;
+                }
+                ports.push_back(static_cast<int>(
+                    localPortToHost(row.dwLocalPort)));
+            }
+        }
+    }
+
+    // IPv6: same table shape, separate enumeration.
+    size = 0;
+    if (GetExtendedTcpTable(nullptr, &size, FALSE, AF_INET6,
+                            TCP_TABLE_OWNER_PID_ALL, 0) ==
+        ERROR_INSUFFICIENT_BUFFER) {
+        std::vector<unsigned char> buffer(size);
+        PMIB_TCP6TABLE_OWNER_PID table =
+            reinterpret_cast<PMIB_TCP6TABLE_OWNER_PID>(&buffer[0]);
+        if (GetExtendedTcpTable(table, &size, FALSE, AF_INET6,
+                                TCP_TABLE_OWNER_PID_ALL, 0) == NO_ERROR) {
+            for (DWORD i = 0; i < table->dwNumEntries; ++i) {
+                const MIB_TCP6ROW_OWNER_PID& row = table->table[i];
+                if (row.dwOwningPid != pid) {
+                    continue;
+                }
+                if (row.dwState != MIB_TCP_STATE_LISTEN) {
+                    continue;
+                }
+                ports.push_back(static_cast<int>(
+                    localPortToHost(row.dwLocalPort)));
+            }
+        }
+    }
+
+    std::sort(ports.begin(), ports.end());
+    ports.erase(std::unique(ports.begin(), ports.end()), ports.end());
+    return ports;
 }
 
 std::string ProcessInspector::nowTimestamp() {

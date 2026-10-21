@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 #include <unordered_map>
+#include <unordered_set>
 #include <tuple>
 #include <atomic>
 #include <thread>
@@ -43,6 +44,21 @@ struct StandaloneProxyInfo {
     int64_t runtimeHistoryId = -1;
     proc::ProcessExitListener::WatchKey watchKey = 0;
     std::string startedAt;
+    // True when this process instance was launched by this application during
+    // the current session (startStandaloneProxy). Adopted orphans keep it
+    // false: their port must be resolved from live facts, whereas a session
+    // started proxy already knows its own SOCKS port and only needs its
+    // history row back-filled (spec v1.6 "bypass detection" route).
+    bool startedByThisSession = false;
+};
+
+// A standalone proxy launched by THIS application during the current session.
+// `creationTime` is the process creation time captured at launch: it proves
+// that the pid still refers to the very instance we started (a recycled pid
+// would otherwise be mistaken for one of ours).
+struct SessionStartedProxy {
+    int socksPort = 0;
+    std::string creationTime;  // empty when the creation time was unreadable
 };
 
 // One row of the standalone-proxy monitor dialog: a watched process joined
@@ -299,6 +315,21 @@ std::thread workerThread_;
   db::models::ProfileExItemDAO exDao_{db_};             // for startup-time message writeback
   std::optional<int64_t> runtimeHistoryId_{std::nullopt};
   std::unordered_map<std::string, proc::ProcessExitListener::WatchKey> proxyWatchKeys_;
+  // Pids already reported as discarded during dangling adoption. Adoption runs
+  // every checkIntervalMs, so without this the same pid would log a WARN each
+  // cycle. Guarded by standaloneMutex_.
+  std::unordered_set<DWORD> discardedStandalonePids_;
+  // Pids of standalone proxies launched by THIS application during the
+  // current session, mapped to the SOCKS port we configured them with.
+  // The dangling-adoption scan uses this to recognise our own processes and
+  // take the "bypass detection" route: skip the live OS probe (we already
+  // know the port) and only make sure the history table has a row for them.
+  // Keyed by pid because the command line of a session started proxy carries
+  // no marker that survives a config file rewrite; the recorded creation time
+  // proves that the pid still refers to the very instance we launched (a
+  // recycled pid would otherwise be mistaken for one of ours).
+  // Guarded by standaloneMutex_.
+  std::unordered_map<DWORD, SessionStartedProxy> sessionStartedProxies_;
 
   // Flag: set to true before destructors to signal watchers to stop.
   std::atomic<bool> shutdownRequested_{false};

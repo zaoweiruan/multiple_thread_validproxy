@@ -1423,6 +1423,19 @@ set_target_properties(test_runtime_history_dao PROPERTIES
 )
 add_test(NAME RuntimeHistoryDAOTest COMMAND test_runtime_history_dao)
 
+# -- Standalone adoption port policy unit tests (header-only, no deps) --------
+add_executable(test_standalone_adoption_policy
+    tests/test_standalone_adoption_policy.cpp)
+target_include_directories(test_standalone_adoption_policy
+    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(test_standalone_adoption_policy PRIVATE gtest_main gtest)
+set_target_properties(test_standalone_adoption_policy PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+)
+add_test(NAME StandaloneAdoptionPolicyTest COMMAND test_standalone_adoption_policy)
+
 # -- ProcessExitListener / ProcessInspector unit tests ------------------------
 add_executable(test_process_exit_listener tests/test_process_exit_listener.cpp
     src/ProcessExitListener.cpp src/ProcessInspector.cpp
@@ -1446,11 +1459,13 @@ add_test(NAME ProcessExitListenerTest COMMAND test_process_exit_listener)
 add_executable(test_process_inspector tests/test_process_inspector.cpp
     src/ProcessInspector.cpp)
 target_include_directories(test_process_inspector PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_link_libraries(test_process_inspector PRIVATE
-    gtest_main gtest
-    -lpsapi
-    -lntdll
-)
+   target_link_libraries(test_process_inspector PRIVATE
+   gtest_main gtest
+   -lpsapi
+   -lntdll
+   -lws2_32
+   )
+
 set_target_properties(test_process_inspector PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
     RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
