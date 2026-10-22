@@ -1436,6 +1436,19 @@ set_target_properties(test_standalone_adoption_policy PROPERTIES
 )
 add_test(NAME StandaloneAdoptionPolicyTest COMMAND test_standalone_adoption_policy)
 
+# -- Database switch policy unit tests (header-only, no deps) -----------------
+add_executable(test_database_switch_policy
+    tests/test_database_switch_policy.cpp)
+target_include_directories(test_database_switch_policy
+    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(test_database_switch_policy PRIVATE gtest_main gtest)
+set_target_properties(test_database_switch_policy PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+)
+add_test(NAME DatabaseSwitchPolicyTest COMMAND test_database_switch_policy)
+
 # -- ProcessExitListener / ProcessInspector unit tests ------------------------
 add_executable(test_process_exit_listener tests/test_process_exit_listener.cpp
     src/ProcessExitListener.cpp src/ProcessInspector.cpp

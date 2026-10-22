@@ -14,6 +14,7 @@
 #include "RefreshCommands.h"
 #include "ToolbarIcons.h"
 #include "NetworkMonitor.h"
+#include "DatabaseSwitchPolicy.h"
 #include "version.h"
 #include "config/ConfigPathResolver.h"
 
@@ -1187,13 +1188,25 @@ void MainFrame::onMenuConfig(wxCommandEvent&) {
             return;
         }
         bool dbPathChanged = !cfg.database_path.empty() && cfg.database_path != config_.database_path;
-        // Switching the live database requires FULL idle (user op OR probe):
-        // switchDatabase() swaps db_ that both use — the probe's exDao_ holds
-        // the old db_ pointer, so letting the probe run across a switch would
-        // be use-after-free.
-        if ((controller_->isRunning() || controller_->isOnlineProbeRunning()) && dbPathChanged) {
-            wxMessageBox(L"操作进行中，无法切换数据库", L"操作进行中", wxOK | wxICON_WARNING);
-            return;
+        // Switching the live database replaces the sqlite3* handle that the
+        // periodic silent probe also uses. The probe is a BACKGROUND task that
+        // CAN be stopped, so it must be quiesced instead of blocking the
+        // switch: with a probe interval as short as the probe duration
+        // (production: check_interval_ms = 5000) the "probe is running" flag
+        // is almost permanently true, and refusing the switch made switching
+        // the database practically impossible.
+        // A USER-INITIATED operation, however, may be mutating the old
+        // handle and cannot be cancelled from here: that case is refused.
+        db_switch_policy::Decision dbSwitchDecision =
+            db_switch_policy::Decision::Allow;
+        if (dbPathChanged) {
+            dbSwitchDecision = db_switch_policy::decide(
+                controller_->isRunning(), controller_->isOnlineProbeRunning());
+            if (dbSwitchDecision ==
+                db_switch_policy::Decision::RefuseUserOperation) {
+                wxMessageBox(L"操作进行中，无法切换数据库", L"操作进行中", wxOK | wxICON_WARNING);
+                return;
+            }
         }
         std::string oldDbPath = config_.database_path;
         // Capture old network monitor settings BEFORE saveConfig updates config_
@@ -1271,9 +1284,30 @@ void MainFrame::onMenuConfig(wxCommandEvent&) {
 
         // If database path changed, switch to the new database at runtime
         if (cfg.database_path != oldDbPath && !cfg.database_path.empty()) {
-            sqlite3* newDb = controller_->switchDatabase(cfg.database_path);
+            // The periodic silent probe keeps the current sqlite3* handle for
+            // the whole round, so it MUST be stopped before the handle is
+            // swapped (otherwise the switch would be a use-after-free).
+            // The UI thread is blocked here, so the monitor timer cannot
+            // start a new probe round in between.
+            bool probeQuiesced = true;
+            if (dbSwitchDecision == db_switch_policy::Decision::QuiesceProbe) {
+                probeQuiesced = controller_->quiesceOnlineProbe();
+            }
+            sqlite3* newDb = nullptr;
+            if (probeQuiesced) {
+                newDb = controller_->switchDatabase(cfg.database_path);
+            }
 
-            if (newDb) {
+            if (!probeQuiesced) {
+                // The probe thread could not be stopped: keep the current
+                // database and restore the saved path.
+                cfg.database_path = oldDbPath;
+                controller_->saveConfig(cfg);
+                wxMessageBox("The periodic probe could not be stopped, so the "
+                             "database was not switched.\n"
+                             "The previous database path has been restored.",
+                             "Database Error", wxOK | wxICON_ERROR);
+            } else if (newDb) {
                 db_ = newDb;
 
                 // Notify UIApp so main.cpp can close the correct handle on exit

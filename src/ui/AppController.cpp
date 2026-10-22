@@ -132,6 +132,22 @@ AppController::~AppController() {
 
     // Now it is safe to shut down XrayManager — no thread still holds a ref
     XrayManager::release();
+
+    // Close the database handles. The AppController owns them: the handle it
+    // received from the caller plus every handle a database switch replaced.
+    // The caller (main_gui) therefore must NOT close them again - doing so
+    // would close an already-closed handle after a switch.
+    // Retired handles that were still busy earlier are retried here.
+    closeRetiredDbHandles();
+    if (db_) {
+        const int closeRc = sqlite3_close(db_);
+        if (closeRc != SQLITE_OK) {
+            Logger::write("[AppController] Destructor: current database handle is "
+                          "still busy (" + std::string(sqlite3_errstr(closeRc)) +
+                          "); leaking it to avoid a crash", LogLevel::WARN);
+        }
+        db_ = nullptr;
+    }
 }
 
 // ---------------------------------------------------------------
@@ -159,6 +175,9 @@ bool AppController::saveConfig(const config::AppConfig& cfg) {
 // Database switching
 // ---------------------------------------------------------------
 sqlite3* AppController::switchDatabase(const std::string& newPath) {
+    // Close the handles of earlier switches that could not be closed yet.
+    closeRetiredDbHandles();
+
     // Save the old handle; only close it after the new one opens successfully
     sqlite3* oldDb = db_;
     db_ = nullptr;
@@ -174,9 +193,18 @@ sqlite3* AppController::switchDatabase(const std::string& newPath) {
         return nullptr;
     }
 
-    // Open succeeded — now it is safe to close the old handle
+    // Open succeeded — now it is safe to close the old handle.
+    // sqlite3_close() returns SQLITE_BUSY when a statement is still running
+    // on the connection; in that case the handle stays valid and MUST be
+    // closed later, otherwise the old database file stays locked on Windows.
     if (oldDb) {
-        sqlite3_close(oldDb);
+        const int closeRc = sqlite3_close(oldDb);
+        if (closeRc != SQLITE_OK) {
+            Logger::write("[AppController] Old database handle is still busy ("
+                          + std::string(sqlite3_errstr(closeRc))
+                          + "); deferring its close", LogLevel::WARN);
+            retiredDbHandles_.push_back(oldDb);
+        }
     }
     db_ = newDb;
 
@@ -214,6 +242,48 @@ sqlite3* AppController::switchDatabase(const std::string& newPath) {
 
     Logger::write("[AppController] Database switched to: " + newPath, LogLevel::INFO);
     return db_;
+}
+
+bool AppController::quiesceOnlineProbe() {
+    // The periodic silent probe runs on probeThread_ and keeps the current
+    // sqlite3* handle alive for the whole round (exDao_ holds it). It checks
+    // cancelRequested_ at the top of every monitor iteration, so setting the
+    // flag makes it stop at the next iteration; the join waits for that
+    // (bounded by one curl timeout, test.timeout_ms).
+    if (!probeThread_.joinable()) {
+        // Nothing to join: the flag may still be set when the previous round
+        // finished between its exit and the flag reset, so clear it.
+        onlineProbeRunning_ = false;
+        return true;
+    }
+    cancelRequested_ = true;
+    probeThread_.join();
+    cancelRequested_ = false;
+    // The probe thread resets onlineProbeRunning_ through its ScopeGuard on
+    // every exit path; clear it again in case the thread was already gone.
+    onlineProbeRunning_ = false;
+    Logger::write("[AppController] Periodic silent probe quiesced before "
+                  "switching the database", LogLevel::DEBUG);
+    return true;
+}
+
+void AppController::closeRetiredDbHandles() {
+    if (retiredDbHandles_.empty()) {
+        return;
+    }
+    std::vector<sqlite3*> stillBusy;
+    for (std::vector<sqlite3*>::const_iterator it = retiredDbHandles_.begin();
+         it != retiredDbHandles_.end(); ++it) {
+        sqlite3* handle = *it;
+        if (!handle) {
+            continue;
+        }
+        const int rc = sqlite3_close(handle);
+        if (rc != SQLITE_OK) {
+            stillBusy.push_back(handle);
+        }
+    }
+    retiredDbHandles_.swap(stillBusy);
 }
 
 // ---------------------------------------------------------------

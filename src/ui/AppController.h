@@ -118,6 +118,15 @@ public:
   // Database switching (close old + open new)
   sqlite3* switchDatabase(const std::string& newPath);
 
+  // Stops the periodic silent probe and waits for its thread to finish, so
+  // the live database handle can be swapped safely. The probe holds the
+  // sqlite3* handle for the whole round, therefore it must be quiesced
+  // BEFORE switchDatabase() closes the old handle.
+  // Must be called from the UI thread (the probe is started from there).
+  // Returns false when the probe thread could not be joined in time; the
+  // caller must then refuse the database switch.
+  bool quiesceOnlineProbe();
+
 // Subscriptions
    std::vector<db::models::Subitem> loadSubscriptions();
    void loadSubscriptionsAsync(wxEvtHandler* handler);
@@ -261,6 +270,10 @@ bool isTestCancelled() const;
     void setTopWindow(wxWindow* win);
 
 private:
+  // Tries to close the database handles that a previous switch could not
+  // close (sqlite3_close() returned SQLITE_BUSY). Handles that are still
+  // busy stay in the list for a later attempt.
+  void closeRetiredDbHandles();
   void doUpdateSubscription(const std::string& subId, wxEvtHandler* wxHandler);
   void doUpdateAllSubscriptions(wxEvtHandler* wxHandler);
   void doTestSubscription(const std::string& subId, wxEvtHandler* wxHandler);
@@ -277,6 +290,11 @@ private:
     void doResolveSingleProxyRegion(const std::string& indexId, wxEvtHandler* handler);
 
   sqlite3* db_;
+  // Handles of databases that were replaced but could not be closed yet
+  // (sqlite3_close() returns SQLITE_BUSY while a statement is still
+  // running). They are closed on the next switch and in the destructor so
+  // the old file is not locked on Windows.
+  std::vector<sqlite3*> retiredDbHandles_;
   config::AppConfig config_;
   // Guards config_ against saveConfig() racing the background silent probe's
   // config snapshot (doTestOnlineProxies takes the snapshot under this mutex).

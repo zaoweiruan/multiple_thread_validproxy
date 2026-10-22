@@ -116,8 +116,9 @@ int UIApp::OnExit()
 {
     // MainFrame owns the AppController which does not need
     // explicit cleanup here — wxWidgets child window deletion
-    // handles it. The caller (main.cpp) is responsible for
-    // closing the sqlite3 handle.
+    // handles it. The sqlite3 handle is owned by the AppController
+    // (it closes the current handle and every handle a database
+    // switch replaced), so nobody else may close it.
     return wxApp::OnExit();
 }
 

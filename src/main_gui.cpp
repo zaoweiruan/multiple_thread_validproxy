@@ -156,7 +156,10 @@ int main(int argc, char* argv[]) {
 
     // Cleanup after GUI exits
     XrayManager::release();
-    sqlite3_close(db);
+    // The sqlite3 handle is owned by the AppController (it closes the current
+    // handle and every handle a database switch replaced, see
+    // AppController::~AppController). Closing it here would close an
+    // already-closed handle after a database switch.
     Logger::close();
 
     return ret;
