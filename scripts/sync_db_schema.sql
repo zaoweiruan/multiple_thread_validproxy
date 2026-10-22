@@ -6,10 +6,15 @@
 -- 目标库:
 --   bin\worker\guiNDB.db
 --
+-- 同构副库（2026-10-22 已按目标库结构对齐，列结构逐列一致）:
+--   bin\guiNDB.db   ← config.json 的 sync.source_db
+--   对齐内容: proxy_runtime_history 补 socks_port 列；
+--             FullConfigTemplateItem.ParentId 声明文本对齐为 `varchar`。
+--
 -- ★ 执行方式：必须经 run_sync_db_schema.ps1（自动忽略「列/表已存在」等错误）。
 --   裸跑本 .sql 时 ALTER TABLE ADD COLUMN 遇列已存在会直接报错中断。
 --
--- 差异总览（2026-10-14 全量比对，基准库 8 表 → 项目库 10 表）:
+-- 差异总览（2026-10-22 全量比对，基准库 8 表 → 项目库 10 表）:
 --   A. 同名表新增列（9 个）
 --      ProfileItem            + Region
 --      ProfileExItem          + consecutive_failures / start_count
@@ -21,10 +26,30 @@
 --   C. 新增专有表（2 张）
 --      ComponentBundle          组件包（组件链功能核心）
 --      proxy_runtime_history   独立代理运行会话历史
+--   C3. 专有表增列（1 个，2026-10-22 补入）
+--      proxy_runtime_history   + socks_port
+--           独立代理纳管时解析出的 SOCKS5 监听端口（会话级运行参数）。
+--           运行时由 ProxyRuntimeHistoryDAO::migrateTable() 幂等 ALTER 补齐；
+--           按 DEV-PROCESS.md 规则 3，脚本须同步覆盖（见 C2b）。
 --
 --   不纳入本脚本：视图 no_tls_view
 --      系遗留调试产物（硬编码单个 SubId、表名小写、全仓零引用），
 --      不属于应同步的标准结构。
+--
+--   已知良性偏差（不改动、仅备案）：
+--     1) FullConfigTemplateItem.ParentId 的声明文本：
+--        v2rayN 原生库为 `varchar(50) DEFAULT ''`，本脚本的 ALTER 产出 `varchar`。
+--        注意：A3 的 ALTER 仅在列「缺失」时生效；若上游原生库已带该列
+--        （声明为 varchar(50) DEFAULT ''），脚本不会改写其声明 ⇒ 脚本产出
+--        与项目库在该列的声明文本存在差异（仅文本，列语义等价）。
+--        两者同属 TEXT 亲和、均可空，且 FullConfigTemplateDAO 的 INSERT 显式
+--        列出 ParentId ⇒ DEFAULT 从不生效、实际取值全为空串（已实测 8/8 行）。
+--        故不重建表（避免对上游原生库做无收益的破坏性操作）。
+--        2026-10-22 已将 bin\guiNDB.db 该列重建为 `varchar`，与项目库一致。
+--     2) ComponentBundle 的 DDL 文本：本脚本为 `PRIMARY KEY, Name ...`（逗号后
+--        带空格），而 bin\worker\guiNDB.db 内该表由 C++ DAO 的
+--        createTableIfNotExists() 先行创建（逗号后无空格）。仅空白差异，
+--        列定义完全一致；本脚本用 CREATE TABLE IF NOT EXISTS，不会覆盖既有表。
 --
 -- 规范见 docs/DEV-PROCESS.md「核心规则 · 规则 3：库表 Schema 变更后，
 -- 必须同步 scripts/sync_db_schema.sql」
@@ -70,8 +95,20 @@ CREATE TABLE IF NOT EXISTS "ComponentBundle" (Id varchar PRIMARY KEY, Name varch
 -- C2. proxy_runtime_history: 独立代理运行会话历史
 --     列义: index_id=代理 IndexId / started_at、ended_at=起止时间
 --           duration_ms=运行时长 / source=来源，默认 standalone
+--           pid=进程 ID / socks_port=SOCKS5 监听端口
 -- ============================================================
-CREATE TABLE IF NOT EXISTS proxy_runtime_history (id INTEGER PRIMARY KEY AUTOINCREMENT, index_id TEXT NOT NULL, started_at TEXT NOT NULL, ended_at TEXT NULL, exit_code INTEGER, duration_ms INTEGER, source TEXT DEFAULT 'standalone', pid INTEGER);
+CREATE TABLE IF NOT EXISTS proxy_runtime_history (id INTEGER PRIMARY KEY AUTOINCREMENT, index_id TEXT NOT NULL, started_at TEXT NOT NULL, ended_at TEXT NULL, exit_code INTEGER, duration_ms INTEGER, source TEXT DEFAULT 'standalone', pid INTEGER, socks_port INTEGER);
+
+-- ============================================================
+-- C2b. proxy_runtime_history: 增加 socks_port 列
+--     独立代理纳管时解析出的 SOCKS5 监听端口（会话级运行参数）。
+--     运行时由 ProxyRuntimeHistoryDAO::migrateTable() 幂等 ALTER 补齐；
+--     按 DEV-PROCESS.md 规则 3（库表 Schema 变更后必须同步本脚本），
+--     此处补齐同样内容，保证「新建库」与「存量库」两条路径结构一致。
+--     注：新建库走上面的 CREATE TABLE（已含 socks_port），此 ALTER 会报
+--         duplicate column，由 run_sync_db_schema.ps1 自动跳过 ⇒ 幂等安全。
+-- ============================================================
+ALTER TABLE proxy_runtime_history ADD COLUMN socks_port INTEGER;
 
 CREATE INDEX IF NOT EXISTS idx_runtime_history_index
     ON proxy_runtime_history(index_id, started_at);
@@ -138,6 +175,10 @@ ORDER BY cid;
 SELECT '--- 专有表 ---' AS info;
 SELECT name FROM sqlite_master
 WHERE type = 'table' AND name IN ('ComponentBundle','proxy_runtime_history');
+
+SELECT '--- proxy_runtime_history 新增 socks_port ---' AS info;
+SELECT name, type, [notnull] AS nn, dflt_value AS dflt
+FROM pragma_table_info('proxy_runtime_history') WHERE name = 'socks_port';
 
 SELECT '--- 新增索引 ---' AS info;
 SELECT name, tbl_name FROM sqlite_master
