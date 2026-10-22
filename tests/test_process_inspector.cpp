@@ -149,3 +149,40 @@ TEST(ProcessInspectorTest, ListeningTcpPorts_FindsOwnListeningSocket) {
 TEST(ProcessInspectorTest, ListeningTcpPorts_InvalidPidYieldsEmpty) {
     EXPECT_TRUE(ProcessInspector::listeningTcpPorts(0).empty());
 }
+
+// ---------------------------------------------------------------------------
+// v1.7 / D-C: the scan additionally reports whether the OS TCP table could be
+// enumerated at all, so that "table unreadable" and "pid owns no LISTEN port"
+// can be told apart.
+// ---------------------------------------------------------------------------
+TEST(ProcessInspectorTest, ScanListeningTcpPorts_ReportsReadOkForLiveSocket) {
+    int port = 0;
+    SOCKET listener = openLoopbackListener(port);
+    ASSERT_NE(listener, INVALID_SOCKET);
+    ASSERT_GT(port, 0);
+
+    const ProcessInspector::TcpPortScan scan =
+        ProcessInspector::scanListeningTcpPorts(GetCurrentProcessId());
+    closesocket(listener);
+
+    EXPECT_TRUE(scan.readOk) << "the OS TCP table must be readable here";
+    EXPECT_TRUE(std::find(scan.ports.begin(), scan.ports.end(), port) !=
+                scan.ports.end())
+        << "own listening port " << port << " not found in OS TCP table";
+}
+
+TEST(ProcessInspectorTest, ScanListeningTcpPorts_ReportsReadOkAndEmptyForUnusedPid) {
+    // 0xFFFFFFFC is far outside the Windows pid range, so this pid cannot own
+    // any LISTEN endpoint. The table itself must still be readable.
+    const ProcessInspector::TcpPortScan scan =
+        ProcessInspector::scanListeningTcpPorts(0xFFFFFFFCu);
+    EXPECT_TRUE(scan.readOk);
+    EXPECT_TRUE(scan.ports.empty());
+}
+
+TEST(ProcessInspectorTest, ScanListeningTcpPorts_ReportsNotReadableForZeroPid) {
+    const ProcessInspector::TcpPortScan scan =
+        ProcessInspector::scanListeningTcpPorts(0);
+    EXPECT_FALSE(scan.readOk);
+    EXPECT_TRUE(scan.ports.empty());
+}

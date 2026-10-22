@@ -116,6 +116,14 @@ public:
                       const std::string& startedAt,
                       sqlite3* db = nullptr);
 
+  // Reads back the started_at value stored on a history row. Used by the
+  // adoption path when it reuses an existing session row: the duration must be
+  // measured against the timestamp that row was created with, not against the
+  // timestamp the current scan happened to compute (which may be a "now"
+  // fallback). Returns an empty string when the row does not exist.
+  // Does NOT open a transaction.
+  std::string getStartedAt(int64_t historyId, sqlite3* db = nullptr);
+
   // Returns all in-progress (ended_at IS NULL) sessions ordered by started_at.
   // Populates id/indexId/startedAt/pid/socksPort on each item; used by the
   // standalone monitor dialog to join live watched processes with their

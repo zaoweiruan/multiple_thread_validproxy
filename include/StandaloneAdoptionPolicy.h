@@ -33,6 +33,7 @@
 // the process instead of adopting it.
 
 #include <algorithm>
+#include <atomic>
 #include <string>
 #include <vector>
 
@@ -76,30 +77,49 @@ inline bool containsPort(const std::vector<int>& ports, int port) {
 // Classifies one candidate against the live facts.
 //
 //   candidate     - the port to validate
-//   osPorts       - every LISTEN port owned by the pid (empty = no live facts)
+//   osPorts       - every LISTEN port owned by the pid (may be empty even
+//                   when osFactsReadable is true: the pid may simply not
+//                   listen on anything)
 //   socksPorts    - subset of osPorts that replied 0x05 to a SOCKS5 greeting
 //   excludedPort  - the xray/sing-box api inbound port (0 = nothing excluded)
+//   osFactsReadable - true when the OS TCP table could be ENUMERATED for
+//                   this pid (at least one address family was read). False
+//                   means "no evidence at all": nothing can be disproven.
 //
 // Rules:
 //   - out of range or equal to the api port        -> Disproven
-//   - no live facts (osPorts empty)                -> Unknown (accept)
+//   - facts unreadable                              -> Unknown (accept)
+//   - facts readable but the pid owns no LISTEN port -> Disproven
 //   - not owned by this pid                         -> Disproven
 //   - owned by this pid and SOCKS5 confirmed        -> Verified
 //   - owned by this pid, handshake inconclusive     -> Unverified
+//
+// The "facts readable but no LISTEN port" rule is the D-C fix. It MUST only
+// be enabled by callers that know the port chain is meant for a proxy that
+// is supposed to be listening (the dangling-adoption sweep). The R6 takeover
+// path deliberately passes osFactsReadable = false when the port set is
+// empty, because a freshly spawned replacement process has not bound its
+// SOCKS inbound yet - disproving the config port there would zero it out.
 // Pure/unit-testable.
 inline PortVerdict classifyPortCandidate(int candidate,
                                          const std::vector<int>& osPorts,
                                          const std::vector<int>& socksPorts,
-                                         int excludedPort) {
+                                         int excludedPort,
+                                         bool osFactsReadable) {
     if (candidate <= 0 || candidate > 65535) {
         return PortVerdict::Disproven;
     }
     if (excludedPort > 0 && candidate == excludedPort) {
         return PortVerdict::Disproven;
     }
-    if (osPorts.empty()) {
-        // No live evidence at all: nothing can be disproven.
+    if (!osFactsReadable) {
+        // The TCP table could not be enumerated: nothing can be disproven.
         return PortVerdict::Unknown;
+    }
+    if (osPorts.empty()) {
+        // The table WAS readable and this pid owns no LISTEN port at all:
+        // the candidate is contradicted by live evidence.
+        return PortVerdict::Disproven;
     }
     if (!containsPort(osPorts, candidate)) {
         // The pid does not listen on this port -> the value is stale.
@@ -163,6 +183,7 @@ inline std::vector<int> orderOsCandidatesBySocks(
 //   osPorts       - every LISTEN port owned by the pid
 //   socksPorts    - subset that answered a SOCKS5 greeting
 //   excludedPort  - the api inbound port to ignore
+//   osFactsReadable - whether the OS TCP table could be enumerated at all
 //
 // A Disproven candidate is skipped and the chain falls through to the next
 // source (this is what corrects a stale recorded port). Unknown / Unverified
@@ -172,7 +193,8 @@ inline PortResolution resolveChainPort(
     const std::vector<PortCandidate>& candidates,
     const std::vector<int>& osPorts,
     const std::vector<int>& socksPorts,
-    int excludedPort) {
+    int excludedPort,
+    bool osFactsReadable) {
     PortResolution result;
     for (std::vector<PortCandidate>::const_iterator it = candidates.begin();
          it != candidates.end(); ++it) {
@@ -180,8 +202,8 @@ inline PortResolution resolveChainPort(
         if (port <= 0) {
             continue;
         }
-        const PortVerdict verdict =
-            classifyPortCandidate(port, osPorts, socksPorts, excludedPort);
+        const PortVerdict verdict = classifyPortCandidate(
+            port, osPorts, socksPorts, excludedPort, osFactsReadable);
         if (verdict == PortVerdict::Disproven) {
             continue;
         }
@@ -352,6 +374,134 @@ inline const char* adoptionRouteLabel(AdoptionRoute route) {
         default:
             return "unknown";
     }
+}
+
+// ---------------------------------------------------------------
+// v1.7 concurrency guard (D-A).
+//
+// The dangling-adoption sweep registers watchers and appends runtime
+// history rows. Two concurrent sweeps would duplicate both, and the
+// second one overwrites proxyWatchKeys_[indexId] which leaks the first
+// watcher. The flag lives on the caller's side so this helper stays a
+// pure, unit-testable function.
+// ---------------------------------------------------------------
+
+// Tries to acquire the adoption in-flight flag.
+// Returns true when THIS caller acquired it (and must release it exactly
+// once), false when another sweep already holds it.
+// Pure/unit-testable.
+inline bool tryBeginAdoption(std::atomic<bool>& flag) {
+    return !flag.exchange(true);
+}
+
+// ---------------------------------------------------------------
+// v1.7 discard fingerprint (D-B).
+//
+// The discard log is de-duplicated per pid so that the 30s sweep does
+// not spam the log file. De-duplicating by pid alone is wrong: the OS
+// may hand the very same pid to a NEW process later, and that new
+// process must be reported again (otherwise a genuine "process alive
+// but not monitored" situation stays invisible in the log file).
+//
+// NOTE: the empty-string convention here is the OPPOSITE of
+// checkInstanceIdentity: an empty fingerprint means "no evidence" and is
+// treated as the SAME instance (so the log level does not flap), while
+// checkInstanceIdentity treats an empty timestamp as Unverifiable
+// (identity cannot be proven). Pure/unit-testable.
+// ---------------------------------------------------------------
+inline bool isSameProcessFingerprint(const std::string& recorded,
+                                     const std::string& current) {
+    if (recorded.empty() || current.empty()) {
+        return true;
+    }
+    return recorded == current;
+}
+
+// ---------------------------------------------------------------
+// v1.8 config / database record cross-check.
+//
+// The live OS facts (TCP table + SOCKS5 greeting) can only arbitrate
+// the LOCAL port. They say nothing about WHICH node the running
+// process actually serves. Only a comparison between the on-disk
+// standalone configuration and the ProfileItem row of the same indexId
+// can reveal that the process is running a STALE node definition.
+//
+// The verdict is DIAGNOSTIC: a mismatch is reported but never blocks
+// the adoption. A live proxy that serves an outdated node is still a
+// live proxy - dropping it would hide it from the monitor.
+//
+// NOTE: the port compared here is the REMOTE server port carried by the
+// proxy outbound. It has nothing to do with the local SOCKS port, which
+// is produced by the standalone template (inbounds[0].port) and is not
+// stored in ProfileItem at all.
+// ---------------------------------------------------------------
+enum class RecordVerdict { Match = 0, Mismatch, Unverifiable };
+
+// The subset of a proxy node definition that can be compared between the
+// on-disk configuration and the ProfileItem row.
+struct ProxyRecordSnapshot {
+    std::string protocol;     // vless / vmess / trojan / ...
+    std::string address;      // server address
+    std::string port;         // server port
+    std::string userId;       // uuid (vless/vmess) or password (trojan)
+    std::string requestHost;  // ws / xhttp request host (optional)
+    std::string publicKey;    // reality public key (optional)
+};
+
+struct RecordCompareResult {
+    RecordVerdict verdict = RecordVerdict::Unverifiable;
+    std::vector<std::string> mismatchedFields;  // empty unless Mismatch
+};
+
+// Compares the configuration side with the database side.
+// A required field missing on either side means the comparison cannot be
+// made (Unverifiable) - that is NOT a mismatch.
+// Optional fields are only compared when BOTH sides carry a value.
+// Pure/unit-testable.
+inline RecordCompareResult compareProxyRecord(const ProxyRecordSnapshot& fromConfig,
+                                              const ProxyRecordSnapshot& fromDb) {
+    RecordCompareResult result;
+    if (fromConfig.protocol.empty() || fromConfig.address.empty() ||
+        fromConfig.port.empty() || fromConfig.userId.empty() ||
+        fromDb.protocol.empty() || fromDb.address.empty() ||
+        fromDb.port.empty() || fromDb.userId.empty()) {
+        result.verdict = RecordVerdict::Unverifiable;
+        return result;
+    }
+    if (fromConfig.protocol != fromDb.protocol) {
+        result.mismatchedFields.push_back("protocol");
+    }
+    if (fromConfig.address != fromDb.address) {
+        result.mismatchedFields.push_back("address");
+    }
+    if (fromConfig.port != fromDb.port) {
+        result.mismatchedFields.push_back("port");
+    }
+    if (fromConfig.userId != fromDb.userId) {
+        result.mismatchedFields.push_back("userId");
+    }
+    if (!fromConfig.requestHost.empty() && !fromDb.requestHost.empty() &&
+        fromConfig.requestHost != fromDb.requestHost) {
+        result.mismatchedFields.push_back("requestHost");
+    }
+    if (!fromConfig.publicKey.empty() && !fromDb.publicKey.empty() &&
+        fromConfig.publicKey != fromDb.publicKey) {
+        result.mismatchedFields.push_back("publicKey");
+    }
+    result.verdict = result.mismatchedFields.empty() ? RecordVerdict::Match
+                                                      : RecordVerdict::Mismatch;
+    return result;
+}
+
+// Human readable label for a record verdict.
+// Pure/unit-testable.
+inline const char* recordVerdictLabel(RecordVerdict verdict) {
+    switch (verdict) {
+        case RecordVerdict::Match: return "match";
+        case RecordVerdict::Mismatch: return "mismatch";
+        case RecordVerdict::Unverifiable: return "unverifiable";
+    }
+    return "unverifiable";
 }
 
 } // namespace standalone_adoption

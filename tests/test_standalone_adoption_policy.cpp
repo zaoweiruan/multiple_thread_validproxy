@@ -8,6 +8,7 @@
 
 #include <gtest/gtest.h>
 
+#include <atomic>
 #include <string>
 #include <vector>
 
@@ -26,6 +27,11 @@ using standalone_adoption::orderOsCandidatesBySocks;
 using standalone_adoption::portSourceLabel;
 using standalone_adoption::portVerdictLabel;
 using standalone_adoption::resolveChainPort;
+using standalone_adoption::RecordVerdict;
+using standalone_adoption::ProxyRecordSnapshot;
+using standalone_adoption::RecordCompareResult;
+using standalone_adoption::compareProxyRecord;
+using standalone_adoption::recordVerdictLabel;
 
 const int kApiPort = 10085;
 
@@ -50,9 +56,9 @@ TEST(StandaloneAdoptionPolicyTest, ContainsPort_FindsExistingPort) {
 TEST(StandaloneAdoptionPolicyTest, Classify_RejectsOutOfRange) {
     std::vector<int> osPorts;
     osPorts.push_back(10808);
-    EXPECT_EQ(PortVerdict::Disproven, classifyPortCandidate(0, osPorts, osPorts, kApiPort));
-    EXPECT_EQ(PortVerdict::Disproven, classifyPortCandidate(-1, osPorts, osPorts, kApiPort));
-    EXPECT_EQ(PortVerdict::Disproven, classifyPortCandidate(70000, osPorts, osPorts, kApiPort));
+    EXPECT_EQ(PortVerdict::Disproven, classifyPortCandidate(0, osPorts, osPorts, kApiPort, true));
+    EXPECT_EQ(PortVerdict::Disproven, classifyPortCandidate(-1, osPorts, osPorts, kApiPort, true));
+    EXPECT_EQ(PortVerdict::Disproven, classifyPortCandidate(70000, osPorts, osPorts, kApiPort, true));
 }
 
 TEST(StandaloneAdoptionPolicyTest, Classify_RejectsApiPort) {
@@ -61,7 +67,7 @@ TEST(StandaloneAdoptionPolicyTest, Classify_RejectsApiPort) {
     std::vector<int> socksPorts;
     // The api inbound answers nothing, but even if it did it must never be
     // adopted as the SOCKS port.
-    EXPECT_EQ(PortVerdict::Disproven, classifyPortCandidate(kApiPort, osPorts, socksPorts, kApiPort));
+    EXPECT_EQ(PortVerdict::Disproven, classifyPortCandidate(kApiPort, osPorts, socksPorts, kApiPort, true));
 }
 
 TEST(StandaloneAdoptionPolicyTest, Classify_UnknownWhenNoLiveFacts) {
@@ -69,7 +75,7 @@ TEST(StandaloneAdoptionPolicyTest, Classify_UnknownWhenNoLiveFacts) {
     // disproven -> Unknown (accept, do not drop a healthy proxy).
     const std::vector<int> emptyOs;
     const std::vector<int> emptySocks;
-    EXPECT_EQ(PortVerdict::Unknown, classifyPortCandidate(10808, emptyOs, emptySocks, kApiPort));
+    EXPECT_EQ(PortVerdict::Unknown, classifyPortCandidate(10808, emptyOs, emptySocks, kApiPort, false));
 }
 
 TEST(StandaloneAdoptionPolicyTest, Classify_DisprovenWhenPortNotOwnedByPid) {
@@ -78,7 +84,7 @@ TEST(StandaloneAdoptionPolicyTest, Classify_DisprovenWhenPortNotOwnedByPid) {
     std::vector<int> socksPorts;
     socksPorts.push_back(10809);
     // 10810 is the stale recorded port; the pid listens on 10809 only.
-    EXPECT_EQ(PortVerdict::Disproven, classifyPortCandidate(10810, osPorts, socksPorts, kApiPort));
+    EXPECT_EQ(PortVerdict::Disproven, classifyPortCandidate(10810, osPorts, socksPorts, kApiPort, true));
 }
 
 TEST(StandaloneAdoptionPolicyTest, Classify_VerifiedWhenSocksAnswered) {
@@ -86,14 +92,14 @@ TEST(StandaloneAdoptionPolicyTest, Classify_VerifiedWhenSocksAnswered) {
     osPorts.push_back(10808);
     std::vector<int> socksPorts;
     socksPorts.push_back(10808);
-    EXPECT_EQ(PortVerdict::Verified, classifyPortCandidate(10808, osPorts, socksPorts, kApiPort));
+    EXPECT_EQ(PortVerdict::Verified, classifyPortCandidate(10808, osPorts, socksPorts, kApiPort, true));
 }
 
 TEST(StandaloneAdoptionPolicyTest, Classify_UnverifiedWhenListeningButHandshakeInconclusive) {
     std::vector<int> osPorts;
     osPorts.push_back(10808);
     std::vector<int> socksPorts;
-    EXPECT_EQ(PortVerdict::Unverified, classifyPortCandidate(10808, osPorts, socksPorts, kApiPort));
+    EXPECT_EQ(PortVerdict::Unverified, classifyPortCandidate(10808, osPorts, socksPorts, kApiPort, true));
 }
 
 // ---------------------------------------------------------------------------
@@ -176,7 +182,7 @@ TEST(StandaloneAdoptionPolicyTest, ResolveChain_TakesFirstCandidate) {
     osPorts.push_back(10809);
     std::vector<int> socksPorts;
     socksPorts.push_back(10809);
-    const PortResolution result = resolveChainPort(chain, osPorts, socksPorts, kApiPort);
+    const PortResolution result = resolveChainPort(chain, osPorts, socksPorts, kApiPort, true);
     EXPECT_EQ(10809, result.port);
     EXPECT_EQ(PortSource::RuntimeHistory, result.source);
     EXPECT_EQ(PortVerdict::Verified, result.verdict);
@@ -201,7 +207,7 @@ TEST(StandaloneAdoptionPolicyTest, ResolveChain_SkipsDisprovenAndFallsThrough) {
     std::vector<int> socksPorts;
     socksPorts.push_back(10809);
 
-    const PortResolution result = resolveChainPort(chain, osPorts, socksPorts, kApiPort);
+    const PortResolution result = resolveChainPort(chain, osPorts, socksPorts, kApiPort, true);
     EXPECT_EQ(10809, result.port);
     EXPECT_EQ(PortSource::OsTcpTable, result.source);
     EXPECT_EQ(PortVerdict::Verified, result.verdict);
@@ -220,7 +226,7 @@ TEST(StandaloneAdoptionPolicyTest, ResolveChain_SkipsZeroCandidates) {
 
     std::vector<int> osPorts;
     osPorts.push_back(10809);
-    const PortResolution result = resolveChainPort(chain, osPorts, osPorts, kApiPort);
+    const PortResolution result = resolveChainPort(chain, osPorts, osPorts, kApiPort, true);
     EXPECT_EQ(10809, result.port);
     EXPECT_EQ(PortSource::OsTcpTable, result.source);
 }
@@ -232,7 +238,7 @@ TEST(StandaloneAdoptionPolicyTest, ResolveChain_AllZeroYieldsNoCandidate) {
     empty.source = PortSource::DirProbe;
     chain.push_back(empty);
     const std::vector<int> noFacts;
-    const PortResolution result = resolveChainPort(chain, noFacts, noFacts, kApiPort);
+    const PortResolution result = resolveChainPort(chain, noFacts, noFacts, kApiPort, false);
     EXPECT_EQ(0, result.port);
     EXPECT_EQ(PortSource::None, result.source);
 }
@@ -253,7 +259,7 @@ TEST(StandaloneAdoptionPolicyTest, ResolveChain_AllDisprovenYieldsNoCandidate) {
     std::vector<int> socksPorts;
     socksPorts.push_back(10809);
 
-    const PortResolution result = resolveChainPort(chain, osPorts, socksPorts, kApiPort);
+    const PortResolution result = resolveChainPort(chain, osPorts, socksPorts, kApiPort, true);
     EXPECT_EQ(0, result.port);
     EXPECT_EQ(PortSource::None, result.source);
 }
@@ -267,7 +273,7 @@ TEST(StandaloneAdoptionPolicyTest, ResolveChain_PassesThroughWhenNoLiveFacts) {
     history.source = PortSource::RuntimeHistory;
     chain.push_back(history);
     const std::vector<int> noFacts;
-    const PortResolution result = resolveChainPort(chain, noFacts, noFacts, kApiPort);
+    const PortResolution result = resolveChainPort(chain, noFacts, noFacts, kApiPort, false);
     EXPECT_EQ(10809, result.port);
     EXPECT_EQ(PortSource::RuntimeHistory, result.source);
     EXPECT_EQ(PortVerdict::Unknown, result.verdict);
@@ -281,7 +287,7 @@ TEST(StandaloneAdoptionPolicyTest, ResolveChain_RejectsApiPortCandidate) {
     chain.push_back(api);
     std::vector<int> osPorts;
     osPorts.push_back(kApiPort);
-    const PortResolution result = resolveChainPort(chain, osPorts, osPorts, kApiPort);
+    const PortResolution result = resolveChainPort(chain, osPorts, osPorts, kApiPort, true);
     EXPECT_EQ(0, result.port);
     EXPECT_EQ(PortSource::None, result.source);
 }
@@ -297,7 +303,7 @@ TEST(StandaloneAdoptionPolicyTest, ResolveChain_AcceptsUnverifiedCandidate) {
     std::vector<int> osPorts;
     osPorts.push_back(10808);
     const std::vector<int> noSocks;
-    const PortResolution result = resolveChainPort(chain, osPorts, noSocks, kApiPort);
+    const PortResolution result = resolveChainPort(chain, osPorts, noSocks, kApiPort, true);
     EXPECT_EQ(10808, result.port);
     EXPECT_EQ(PortVerdict::Unverified, result.verdict);
 }
@@ -306,7 +312,7 @@ TEST(StandaloneAdoptionPolicyTest, ResolveChain_EmptyChainYieldsNoCandidate) {
     const std::vector<PortCandidate> chain;
     std::vector<int> osPorts;
     osPorts.push_back(10808);
-    const PortResolution result = resolveChainPort(chain, osPorts, osPorts, kApiPort);
+    const PortResolution result = resolveChainPort(chain, osPorts, osPorts, kApiPort, true);
     EXPECT_EQ(0, result.port);
     EXPECT_EQ(PortSource::None, result.source);
 }
@@ -421,6 +427,226 @@ TEST(StandaloneAdoptionPolicyTest, AdoptionRouteLabel_AllValues) {
                  standalone_adoption::adoptionRouteLabel(standalone_adoption::AdoptionRoute::BypassDetect));
     EXPECT_STREQ("full-detect",
                  standalone_adoption::adoptionRouteLabel(standalone_adoption::AdoptionRoute::FullDetect));
+}
+
+// ---------------------------------------------------------------------------
+// v1.7: D-C — the OS facts carry their own readability.
+//
+// "the TCP table could not be enumerated" and "the pid owns no LISTEN port"
+// are two different situations and must not lead to the same verdict.
+// ---------------------------------------------------------------------------
+TEST(StandaloneAdoptionPolicyTest, Classify_UnknownWhenFactsUnreadable) {
+    const std::vector<int> osPorts(1, 10808);
+    const std::vector<int> socksPorts(1, 10808);
+    EXPECT_EQ(PortVerdict::Unknown,
+              classifyPortCandidate(10808, osPorts, socksPorts, kApiPort, false));
+}
+
+TEST(StandaloneAdoptionPolicyTest, Classify_DisprovenWhenTableReadableAndPidHasNoListener) {
+    const std::vector<int> emptyOs;
+    const std::vector<int> emptySocks;
+    EXPECT_EQ(PortVerdict::Disproven,
+              classifyPortCandidate(10808, emptyOs, emptySocks, kApiPort, true));
+}
+
+TEST(StandaloneAdoptionPolicyTest, Classify_UnknownWhenFactsUnreadableAndOsPortsEmpty) {
+    const std::vector<int> emptyOs;
+    const std::vector<int> emptySocks;
+    EXPECT_EQ(PortVerdict::Unknown,
+              classifyPortCandidate(10808, emptyOs, emptySocks, kApiPort, false));
+}
+
+TEST(StandaloneAdoptionPolicyTest, ResolveChain_DisprovesAllWhenTableReadableAndPidHasNoListener) {
+    std::vector<PortCandidate> chain;
+    PortCandidate cand;
+    cand.port = 10808;
+    cand.source = PortSource::RuntimeHistory;
+    chain.push_back(cand);
+    const std::vector<int> emptyOs;
+    const std::vector<int> emptySocks;
+    const PortResolution result =
+        resolveChainPort(chain, emptyOs, emptySocks, kApiPort, true);
+    EXPECT_EQ(0, result.port);
+    EXPECT_EQ(PortSource::None, result.source);
+}
+
+TEST(StandaloneAdoptionPolicyTest, ResolveChain_PassesThroughWhenTableUnreadable) {
+    std::vector<PortCandidate> chain;
+    PortCandidate cand;
+    cand.port = 10808;
+    cand.source = PortSource::RuntimeHistory;
+    chain.push_back(cand);
+    const std::vector<int> emptyOs;
+    const std::vector<int> emptySocks;
+    const PortResolution result =
+        resolveChainPort(chain, emptyOs, emptySocks, kApiPort, false);
+    EXPECT_EQ(10808, result.port);
+    EXPECT_EQ(PortSource::RuntimeHistory, result.source);
+    EXPECT_EQ(PortVerdict::Unknown, result.verdict);
+}
+
+// ---------------------------------------------------------------------------
+// v1.7: D-B — the discard fingerprint.
+//
+// The empty-string convention is the opposite of checkInstanceIdentity: an
+// empty fingerprint means "no evidence" and counts as the SAME instance so
+// the log level does not flap.
+// ---------------------------------------------------------------------------
+TEST(StandaloneAdoptionPolicyTest, Instance_SameFingerprint_IsSame) {
+    EXPECT_TRUE(standalone_adoption::isSameProcessFingerprint(
+        "2026-10-21 08:39:08", "2026-10-21 08:39:08"));
+}
+
+TEST(StandaloneAdoptionPolicyTest, Instance_DifferentFingerprint_IsNotSame) {
+    EXPECT_FALSE(standalone_adoption::isSameProcessFingerprint(
+        "2026-10-21 08:39:08", "2026-10-21 09:12:44"));
+}
+
+TEST(StandaloneAdoptionPolicyTest, Instance_EmptyFingerprint_IsSame) {
+    EXPECT_TRUE(standalone_adoption::isSameProcessFingerprint("", "2026-10-21 08:39:08"));
+    EXPECT_TRUE(standalone_adoption::isSameProcessFingerprint("2026-10-21 08:39:08", ""));
+    EXPECT_TRUE(standalone_adoption::isSameProcessFingerprint("", ""));
+}
+
+// ---------------------------------------------------------------------------
+// v1.7: D-A1 — the adoption in-flight guard.
+//
+// The flag lives on the caller's side so this stays a pure function.
+// ---------------------------------------------------------------------------
+TEST(StandaloneAdoptionPolicyTest, AdoptionGate_AcquiresWhenFree) {
+    std::atomic<bool> flag(false);
+    EXPECT_TRUE(standalone_adoption::tryBeginAdoption(flag));
+    EXPECT_TRUE(flag.load());
+}
+
+TEST(StandaloneAdoptionPolicyTest, AdoptionGate_RejectsWhenHeld) {
+    std::atomic<bool> flag(false);
+    EXPECT_TRUE(standalone_adoption::tryBeginAdoption(flag));
+    EXPECT_FALSE(standalone_adoption::tryBeginAdoption(flag));
+}
+
+TEST(StandaloneAdoptionPolicyTest, AdoptionGate_ReleasesThenAcquires) {
+    std::atomic<bool> flag(false);
+    EXPECT_TRUE(standalone_adoption::tryBeginAdoption(flag));
+    flag.store(false);
+    EXPECT_TRUE(standalone_adoption::tryBeginAdoption(flag));
+}
+
+// ---------------------------------------------------------------------------
+// v1.8: config / database record cross-check.
+//
+// The comparison is diagnostic only: a mismatch must never block the
+// adoption, it only makes a stale configuration visible.
+// ---------------------------------------------------------------------------
+namespace {
+
+ProxyRecordSnapshot makeSnapshot(const std::string& protocol,
+                                 const std::string& address,
+                                 const std::string& port,
+                                 const std::string& userId) {
+    ProxyRecordSnapshot snapshot;
+    snapshot.protocol = protocol;
+    snapshot.address = address;
+    snapshot.port = port;
+    snapshot.userId = userId;
+    return snapshot;
+}
+
+} // namespace
+
+TEST(StandaloneAdoptionPolicyTest, RecordCheck_MatchWhenAllRequiredEqual) {
+    const ProxyRecordSnapshot cfg =
+        makeSnapshot("vless", "example.com", "443", "uuid-1");
+    const ProxyRecordSnapshot db =
+        makeSnapshot("vless", "example.com", "443", "uuid-1");
+    const RecordCompareResult result = compareProxyRecord(cfg, db);
+    EXPECT_EQ(RecordVerdict::Match, result.verdict);
+    EXPECT_TRUE(result.mismatchedFields.empty());
+}
+
+TEST(StandaloneAdoptionPolicyTest, RecordCheck_MismatchWhenProtocolDiffers) {
+    const ProxyRecordSnapshot cfg =
+        makeSnapshot("vless", "example.com", "443", "uuid-1");
+    const ProxyRecordSnapshot db =
+        makeSnapshot("vmess", "example.com", "443", "uuid-1");
+    const RecordCompareResult result = compareProxyRecord(cfg, db);
+    EXPECT_EQ(RecordVerdict::Mismatch, result.verdict);
+    ASSERT_EQ(1u, result.mismatchedFields.size());
+    EXPECT_EQ("protocol", result.mismatchedFields[0]);
+}
+
+TEST(StandaloneAdoptionPolicyTest, RecordCheck_MismatchWhenAddressDiffers) {
+    const ProxyRecordSnapshot cfg =
+        makeSnapshot("trojan", "old.example.com", "443", "pw-1");
+    const ProxyRecordSnapshot db =
+        makeSnapshot("trojan", "new.example.com", "443", "pw-1");
+    const RecordCompareResult result = compareProxyRecord(cfg, db);
+    EXPECT_EQ(RecordVerdict::Mismatch, result.verdict);
+    ASSERT_EQ(1u, result.mismatchedFields.size());
+    EXPECT_EQ("address", result.mismatchedFields[0]);
+}
+
+TEST(StandaloneAdoptionPolicyTest, RecordCheck_MismatchWhenPortDiffers) {
+    const ProxyRecordSnapshot cfg =
+        makeSnapshot("vless", "example.com", "443", "uuid-1");
+    const ProxyRecordSnapshot db =
+        makeSnapshot("vless", "example.com", "8443", "uuid-1");
+    const RecordCompareResult result = compareProxyRecord(cfg, db);
+    EXPECT_EQ(RecordVerdict::Mismatch, result.verdict);
+    ASSERT_EQ(1u, result.mismatchedFields.size());
+    EXPECT_EQ("port", result.mismatchedFields[0]);
+}
+
+TEST(StandaloneAdoptionPolicyTest, RecordCheck_MismatchWhenUserIdDiffers) {
+    const ProxyRecordSnapshot cfg =
+        makeSnapshot("vless", "example.com", "443", "uuid-old");
+    const ProxyRecordSnapshot db =
+        makeSnapshot("vless", "example.com", "443", "uuid-new");
+    const RecordCompareResult result = compareProxyRecord(cfg, db);
+    EXPECT_EQ(RecordVerdict::Mismatch, result.verdict);
+    ASSERT_EQ(1u, result.mismatchedFields.size());
+    EXPECT_EQ("userId", result.mismatchedFields[0]);
+}
+
+TEST(StandaloneAdoptionPolicyTest, RecordCheck_MismatchWhenRealityPublicKeyDiffers) {
+    ProxyRecordSnapshot cfg =
+        makeSnapshot("vless", "example.com", "443", "uuid-1");
+    ProxyRecordSnapshot db =
+        makeSnapshot("vless", "example.com", "443", "uuid-1");
+    cfg.publicKey = "pbk-old";
+    db.publicKey = "pbk-new";
+    const RecordCompareResult result = compareProxyRecord(cfg, db);
+    EXPECT_EQ(RecordVerdict::Mismatch, result.verdict);
+    ASSERT_EQ(1u, result.mismatchedFields.size());
+    EXPECT_EQ("publicKey", result.mismatchedFields[0]);
+}
+
+TEST(StandaloneAdoptionPolicyTest, RecordCheck_IgnoresOptionalFieldMissingOnOneSide) {
+    ProxyRecordSnapshot cfg =
+        makeSnapshot("vless", "example.com", "443", "uuid-1");
+    const ProxyRecordSnapshot db =
+        makeSnapshot("vless", "example.com", "443", "uuid-1");
+    cfg.requestHost = "cdn.example.com";
+    cfg.publicKey = "pbk-1";
+    const RecordCompareResult result = compareProxyRecord(cfg, db);
+    EXPECT_EQ(RecordVerdict::Match, result.verdict);
+    EXPECT_TRUE(result.mismatchedFields.empty());
+}
+
+TEST(StandaloneAdoptionPolicyTest, RecordCheck_UnverifiableWhenRequiredFieldEmpty) {
+    const ProxyRecordSnapshot cfg =
+        makeSnapshot("vless", "example.com", "443", "uuid-1");
+    const ProxyRecordSnapshot db =
+        makeSnapshot("vless", "", "443", "uuid-1");
+    const RecordCompareResult result = compareProxyRecord(cfg, db);
+    EXPECT_EQ(RecordVerdict::Unverifiable, result.verdict);
+    EXPECT_TRUE(result.mismatchedFields.empty());
+}
+
+TEST(StandaloneAdoptionPolicyTest, RecordVerdictLabel_AllValues) {
+    EXPECT_STREQ("match", recordVerdictLabel(RecordVerdict::Match));
+    EXPECT_STREQ("mismatch", recordVerdictLabel(RecordVerdict::Mismatch));
+    EXPECT_STREQ("unverifiable", recordVerdictLabel(RecordVerdict::Unverifiable));
 }
 
 } // namespace

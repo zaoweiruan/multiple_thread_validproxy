@@ -55,12 +55,35 @@ public:
     // is covered by extractConfigFileName plus the caller's directory probe.
     static std::string extractConfigFullPath(const std::wstring& commandLine);
 
+    // Result of a live TCP scan of one pid.
+    //   readOk - the OS TCP table could be ENUMERATED for this pid (at least
+    //             one of the IPv4 / IPv6 families was read successfully).
+    //             When false the scan carries NO evidence at all and nothing
+    //             can be disproven, so callers must not reject a candidate.
+    //   ports  - every LISTEN port owned by the pid. May legitimately be
+    //             empty even when readOk is true: the pid may simply not be
+    //             listening on anything.
+    struct TcpPortScan {
+        bool readOk = false;
+        std::vector<int> ports;
+    };
+
+    // Scans the OS TCP table for the given pid and additionally reports
+    // whether the table could be read at all (per address family: the
+    // sizing probe only sizes the buffer, the buffered call must succeed
+    // for the family to count as readable; a table that grew between the
+    // two calls is retried once). This distinction matters for the D2
+    // gate: "the table was unreadable" and "the pid owns no LISTEN port"
+    // must not lead to the same verdict.
+    static TcpPortScan scanListeningTcpPorts(DWORD pid);
+
     // Lists the TCP ports the given process is LISTENing on (IPv4 + IPv6),
     // read straight from the OS TCP table (GetExtendedTcpTable) filtered by
     // owning pid. This is the only source that describes the process that is
     // running RIGHT NOW, so it is used as the primary port source when
     // adopting a dangling standalone proxy whose config file is gone.
-    // Returns an empty vector when the table cannot be read.
+    // Returns an empty vector when the table cannot be read (use
+    // scanListeningTcpPorts when the readability matters).
     static std::vector<int> listeningTcpPorts(DWORD pid);
 
     // Local time as "yyyy-MM-dd HH:mm:ss" (used for runtime-history sessions).

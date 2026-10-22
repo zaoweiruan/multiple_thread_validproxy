@@ -638,4 +638,17 @@ TEST_F(RuntimeHistoryDAOTest, InsertStart_StillStoresNullSocksPort) {
   EXPECT_EQ(dao.lookupSocksPort(A1, 1001, T0), 0);
 }
 
+TEST_F(RuntimeHistoryDAOTest, GetStartedAt_ReturnsStoredValue) {
+  insertProxy(A1);
+  db::models::ProxyRuntimeHistoryDAO dao(db_);
+  int64_t id = dao.insertStart(A1, T0, 1001);
+  ASSERT_GT(id, 0);
+  EXPECT_EQ(dao.getStartedAt(id), T0);
+}
+
+TEST_F(RuntimeHistoryDAOTest, GetStartedAt_UnknownIdReturnsEmpty) {
+  db::models::ProxyRuntimeHistoryDAO dao(db_);
+  EXPECT_TRUE(dao.getStartedAt(987654321).empty());
+}
+
 }  // namespace

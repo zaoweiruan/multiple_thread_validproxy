@@ -305,64 +305,140 @@ std::string ProcessInspector::extractConfigFullPath(const std::wstring& commandL
     return out;
 }
 
-std::vector<int> ProcessInspector::listeningTcpPorts(DWORD pid) {
-    std::vector<int> ports;
-    if (pid == 0) {
-        return ports;
+namespace {
+
+// Outcome of one attempt to read one address family of the extended TCP
+// table.
+enum class TcpFamilyRead {
+    Ok,     // the family was enumerated (it may legitimately hold 0 rows)
+    Retry,  // the table grew between the sizing probe and the buffered read
+    Failed  // the family could not be enumerated at all
+};
+
+// Reads one address family of the extended TCP table into `buffer`.
+//
+// The sizing probe only tells us how large the buffer must be; the
+// buffered call is the one that actually proves the table could be read.
+// A table that grows between the two calls makes the buffered call fail
+// with ERROR_INSUFFICIENT_BUFFER, which the caller retries once.
+//
+// No logging here on purpose: this translation unit is linked into the
+// ProcessInspectorTest target which does NOT link the Logger sources.
+TcpFamilyRead readTcpTableFamily(int family,
+                                  std::vector<unsigned char>& buffer) {
+    DWORD size = 0;
+    const DWORD probe = GetExtendedTcpTable(nullptr, &size, FALSE, family,
+                                           TCP_TABLE_OWNER_PID_ALL, 0);
+    if (probe == NO_ERROR || probe == ERROR_NO_DATA) {
+        // The family was queried successfully and holds no rows.
+        buffer.clear();
+        return TcpFamilyRead::Ok;
     }
+    if (probe != ERROR_INSUFFICIENT_BUFFER) {
+        // The family could not be queried at all.
+        return TcpFamilyRead::Failed;
+    }
+    if (size == 0) {
+        buffer.clear();
+        return TcpFamilyRead::Ok;
+    }
+    buffer.assign(size, 0);
+    DWORD bufferSize = size;
+    const DWORD fill = GetExtendedTcpTable(&buffer[0], &bufferSize, FALSE,
+                                           family, TCP_TABLE_OWNER_PID_ALL, 0);
+    if (fill == NO_ERROR) {
+        return TcpFamilyRead::Ok;
+    }
+    if (fill == ERROR_INSUFFICIENT_BUFFER) {
+        return TcpFamilyRead::Retry;
+    }
+    return TcpFamilyRead::Failed;
+}
+
+} // namespace
+
+ProcessInspector::TcpPortScan ProcessInspector::scanListeningTcpPorts(DWORD pid) {
+    TcpPortScan scan;
+    if (pid == 0) {
+        // No pid -> no evidence at all.
+        return scan;
+    }
+
+    std::vector<int> ports;
+    bool anyFamilyReadable = false;
 
     // IPv4: TCP_TABLE_OWNER_PID_ALL gives one row per endpoint, including the
     // owning pid, so a single pass collects every LISTEN port of the process.
-    DWORD size = 0;
-    if (GetExtendedTcpTable(nullptr, &size, FALSE, AF_INET,
-                            TCP_TABLE_OWNER_PID_ALL, 0) ==
-        ERROR_INSUFFICIENT_BUFFER) {
-        std::vector<unsigned char> buffer(size);
-        PMIB_TCPTABLE_OWNER_PID table =
-            reinterpret_cast<PMIB_TCPTABLE_OWNER_PID>(&buffer[0]);
-        if (GetExtendedTcpTable(table, &size, FALSE, AF_INET,
-                                TCP_TABLE_OWNER_PID_ALL, 0) == NO_ERROR) {
-            for (DWORD i = 0; i < table->dwNumEntries; ++i) {
-                const MIB_TCPROW_OWNER_PID& row = table->table[i];
-                if (row.dwOwningPid != pid) {
-                    continue;
+    {
+        std::vector<unsigned char> buffer;
+        TcpFamilyRead result = TcpFamilyRead::Failed;
+        for (int attempt = 0; attempt < 2; ++attempt) {
+            result = readTcpTableFamily(AF_INET, buffer);
+            if (result != TcpFamilyRead::Retry) {
+                break;
+            }
+        }
+        if (result == TcpFamilyRead::Ok) {
+            anyFamilyReadable = true;
+            if (!buffer.empty()) {
+                PMIB_TCPTABLE_OWNER_PID table =
+                    reinterpret_cast<PMIB_TCPTABLE_OWNER_PID>(&buffer[0]);
+                for (DWORD i = 0; i < table->dwNumEntries; ++i) {
+                    const MIB_TCPROW_OWNER_PID& row = table->table[i];
+                    if (row.dwOwningPid != pid) {
+                        continue;
+                    }
+                    if (row.dwState != MIB_TCP_STATE_LISTEN) {
+                        continue;
+                    }
+                    ports.push_back(static_cast<int>(
+                        localPortToHost(row.dwLocalPort)));
                 }
-                if (row.dwState != MIB_TCP_STATE_LISTEN) {
-                    continue;
-                }
-                ports.push_back(static_cast<int>(
-                    localPortToHost(row.dwLocalPort)));
             }
         }
     }
 
-    // IPv6: same table shape, separate enumeration.
-    size = 0;
-    if (GetExtendedTcpTable(nullptr, &size, FALSE, AF_INET6,
-                            TCP_TABLE_OWNER_PID_ALL, 0) ==
-        ERROR_INSUFFICIENT_BUFFER) {
-        std::vector<unsigned char> buffer(size);
-        PMIB_TCP6TABLE_OWNER_PID table =
-            reinterpret_cast<PMIB_TCP6TABLE_OWNER_PID>(&buffer[0]);
-        if (GetExtendedTcpTable(table, &size, FALSE, AF_INET6,
-                                TCP_TABLE_OWNER_PID_ALL, 0) == NO_ERROR) {
-            for (DWORD i = 0; i < table->dwNumEntries; ++i) {
-                const MIB_TCP6ROW_OWNER_PID& row = table->table[i];
-                if (row.dwOwningPid != pid) {
-                    continue;
+    // IPv6: same table shape, separate enumeration. A failure here does NOT
+    // invalidate the IPv4 result: one readable family is enough to know
+    // that the table could be enumerated.
+    {
+        std::vector<unsigned char> buffer;
+        TcpFamilyRead result = TcpFamilyRead::Failed;
+        for (int attempt = 0; attempt < 2; ++attempt) {
+            result = readTcpTableFamily(AF_INET6, buffer);
+            if (result != TcpFamilyRead::Retry) {
+                break;
+            }
+        }
+        if (result == TcpFamilyRead::Ok) {
+            anyFamilyReadable = true;
+            if (!buffer.empty()) {
+                PMIB_TCP6TABLE_OWNER_PID table =
+                    reinterpret_cast<PMIB_TCP6TABLE_OWNER_PID>(&buffer[0]);
+                for (DWORD i = 0; i < table->dwNumEntries; ++i) {
+                    const MIB_TCP6ROW_OWNER_PID& row = table->table[i];
+                    if (row.dwOwningPid != pid) {
+                        continue;
+                    }
+                    if (row.dwState != MIB_TCP_STATE_LISTEN) {
+                        continue;
+                    }
+                    ports.push_back(static_cast<int>(
+                        localPortToHost(row.dwLocalPort)));
                 }
-                if (row.dwState != MIB_TCP_STATE_LISTEN) {
-                    continue;
-                }
-                ports.push_back(static_cast<int>(
-                    localPortToHost(row.dwLocalPort)));
             }
         }
     }
 
     std::sort(ports.begin(), ports.end());
     ports.erase(std::unique(ports.begin(), ports.end()), ports.end());
-    return ports;
+    scan.readOk = anyFamilyReadable;
+    scan.ports = ports;
+    return scan;
+}
+
+std::vector<int> ProcessInspector::listeningTcpPorts(DWORD pid) {
+    return scanListeningTcpPorts(pid).ports;
 }
 
 std::string ProcessInspector::nowTimestamp() {

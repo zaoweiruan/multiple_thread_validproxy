@@ -314,11 +314,28 @@ std::thread workerThread_;
   db::models::ProxyRuntimeHistoryDAO historyDao_{db_};  // for standalone proxy runtime tracking
   db::models::ProfileExItemDAO exDao_{db_};             // for startup-time message writeback
   std::optional<int64_t> runtimeHistoryId_{std::nullopt};
-  std::unordered_map<std::string, proc::ProcessExitListener::WatchKey> proxyWatchKeys_;
-  // Pids already reported as discarded during dangling adoption. Adoption runs
-  // every checkIntervalMs, so without this the same pid would log a WARN each
-  // cycle. Guarded by standaloneMutex_.
-  std::unordered_set<DWORD> discardedStandalonePids_;
+  std::unordered_map<std::string, proc::ProcessExitListener::WatchKey> proxyWatchKeys_;  // Guarded by standaloneMutex_
+  // Pids already reported as discarded during dangling adoption, mapped to the
+  // creation-time fingerprint of the process instance that was discarded.
+  // Adoption runs every checkIntervalMs, so without this the same pid would log
+  // a WARN each cycle. The fingerprint makes a RECYCLED pid count as a new
+  // instance: the OS may hand the same pid to a different process later, and
+  // that process must be reported again (otherwise a genuine "process alive
+  // but not monitored" situation stays invisible in the log file).
+  // Guarded by standaloneMutex_.
+  std::unordered_map<DWORD, std::string> discardedStandalonePids_;
+  // In-flight guard for the dangling-adoption sweep. The sweep registers
+  // watchers and appends history rows, so two concurrent sweeps would
+  // duplicate both and overwrite each other's watcher key.
+  // Released through ui::ScopeGuard so every exit path resets it.
+  std::atomic<bool> adoptInFlight_{false};
+  // Mismatching configuration records already reported by the adoption sweep,
+  // keyed by indexId and holding the mismatched field list that was reported.
+  // The sweep runs every checkIntervalMs, so without this the very same
+  // mismatch would be logged at WARN on every cycle. A NEW field list (or a
+  // new indexId) is reported again. Guarded by staleConfigMutex_.
+  std::unordered_map<std::string, std::string> staleConfigWarned_;
+  std::mutex staleConfigMutex_;
   // Pids of standalone proxies launched by THIS application during the
   // current session, mapped to the SOCKS port we configured them with.
   // The dangling-adoption scan uses this to recognise our own processes and

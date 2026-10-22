@@ -378,6 +378,33 @@ bool ProxyRuntimeHistoryDAO::updateSocksPort(int64_t historyId, int socksPort,
     return sqlite3_changes(execDb) > 0;
 }
 
+std::string ProxyRuntimeHistoryDAO::getStartedAt(int64_t historyId, sqlite3* db) {
+    sqlite3* execDb = db ? db : db_;
+    // Read-only lookup: a single SELECT, no transaction needed.
+    const char* sql = "SELECT started_at FROM proxy_runtime_history WHERE id = ?";
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(execDb, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        Logger::write("ProxyRuntimeHistoryDAO::getStartedAt: prepare failed: "
+                      + std::string(sqlite3_errmsg(execDb)), LogLevel::ERR);
+        sqlite3_finalize(stmt);
+        return std::string();
+    }
+    sqlite3_bind_int64(stmt, 1, historyId);
+    std::string startedAt;
+    int rc = sqlite3_step(stmt);
+    if (rc == SQLITE_ROW) {
+        const unsigned char* text = sqlite3_column_text(stmt, 0);
+        if (text != nullptr) {
+            startedAt = reinterpret_cast<const char*>(text);
+        }
+    } else if (rc != SQLITE_DONE) {
+        Logger::write("ProxyRuntimeHistoryDAO::getStartedAt: step failed: "
+                      + std::string(sqlite3_errmsg(execDb)), LogLevel::ERR);
+    }
+    sqlite3_finalize(stmt);
+    return startedAt;
+}
+
 int ProxyRuntimeHistoryDAO::lookupSocksPort(const std::string& indexId,
                                             int64_t pid,
                                             const std::string& startedAt,
