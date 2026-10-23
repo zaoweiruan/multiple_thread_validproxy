@@ -1,10 +1,14 @@
 #include <gtest/gtest.h>
 #include "NetworkMonitor.h"
+#include "CurlEasyHandle.h"
 #include "test_utils.h"
 #include <thread>
 #include <chrono>
+#include <cstdlib>
+#include <string>
 #include <winsock2.h>
 #include <ws2tcpip.h>
+#include <windows.h>
 
 static const std::vector<std::string> kBadUrls = {
     "http://127.0.0.1:1"
@@ -100,6 +104,49 @@ private:
     int port_{0};
     bool running_{false};
     std::thread thread_;
+};
+
+/// Temporarily replaces a proxy environment variable and restores it on scope
+/// exit. Both the CRT copy (`_putenv`, what libcurl's getenv reads) and the
+/// Win32 block (`SetEnvironmentVariableA`) are updated.
+class ScopedEnvVar {
+public:
+    ScopedEnvVar(const char* name, const std::string& value) : name_(name) {
+        const char* current = std::getenv(name);
+        hadValue_ = (current != nullptr);
+        if (hadValue_) {
+            saved_ = current;
+        }
+        apply(value);
+    }
+
+    ~ScopedEnvVar() {
+        if (hadValue_) {
+            apply(saved_);
+        } else {
+            remove();
+        }
+    }
+
+    ScopedEnvVar(const ScopedEnvVar&) = delete;
+    ScopedEnvVar& operator=(const ScopedEnvVar&) = delete;
+
+private:
+    void apply(const std::string& value) const {
+        std::string assignment = name_ + "=" + value;
+        _putenv(assignment.c_str());
+        SetEnvironmentVariableA(name_.c_str(), value.c_str());
+    }
+
+    void remove() const {
+        std::string assignment = name_ + "=";
+        _putenv(assignment.c_str());
+        SetEnvironmentVariableA(name_.c_str(), nullptr);
+    }
+
+    std::string name_;
+    std::string saved_;
+    bool hadValue_{false};
 };
 
 }  // namespace
@@ -236,4 +283,53 @@ TEST(NetworkMonitorTest, ConsecutiveFailures_CountsCorrectly) {
     // Should have some consecutive failures recorded
     int failures = nm.getConsecutiveFailures();
     EXPECT_GE(failures, 1);
+}
+
+// --- RCA 2026-10-23: probes must NOT inherit env HTTP_PROXY/HTTPS_PROXY ------
+// A stale session proxy (e.g. http://127.0.0.1:10808 with nothing listening)
+// made every probe fail with curl_error=7 and flipped the app into "network
+// LOST" / "AutoTask aborted - network disconnected" while the link was fine.
+
+TEST(NetworkMonitorTest, DisableProxy_OverridesExplicitProxy) {
+    LoopbackHttpServer server;
+    ASSERT_TRUE(server.start()) << "could not bind a loopback listener";
+
+    CurlEasyHandle curl;
+    ASSERT_TRUE(curl.valid());
+    // The dead proxy would make this fail if disableProxy() did not take effect.
+    curl.setUrl(server.url())
+        .setProxy("http://127.0.0.1:1")
+        .disableProxy()
+        .setNoBody(true)
+        .setTimeoutMs(3000);
+
+    CURLcode res = curl_easy_perform(curl.get());
+    long httpCode = curl.getResponseCode();
+    server.stop();
+
+    EXPECT_EQ(res, CURLE_OK) << "curl_easy_strerror: " << curl_easy_strerror(res);
+    EXPECT_EQ(httpCode, 200L);
+}
+
+TEST(NetworkMonitorTest, EnvProxyIsIgnored_LoopbackStaysConnected) {
+    ScopedEnvVar httpProxy("HTTP_PROXY", "http://127.0.0.1:1");
+    ScopedEnvVar httpsProxy("HTTPS_PROXY", "http://127.0.0.1:1");
+    if (std::getenv("HTTPS_PROXY") == nullptr) {
+        GTEST_SKIP() << "CRT does not observe environment changes; cannot simulate a stale proxy";
+    }
+
+    LoopbackHttpServer server;
+    ASSERT_TRUE(server.start()) << "could not bind a loopback listener";
+
+    NetworkMonitor nm;
+    nm.Start({server.url()}, kShortIntervalMs, 3000);
+    for (int i = 0; i < 40 && !nm.IsConnected(); ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    }
+    bool connected = nm.IsConnected();
+    nm.Stop();
+    server.stop();
+
+    EXPECT_TRUE(connected)
+        << "probe inherited the stale HTTP_PROXY/HTTPS_PROXY and reported the network as down";
 }

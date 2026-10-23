@@ -5,7 +5,26 @@
 #include <curl/curl.h>
 
 #include <chrono>
+#include <cstdlib>
 #include <thread>
+
+namespace {
+
+/// Name of the first proxy environment variable libcurl would pick up, or an
+/// empty string when none is set. Windows environment lookups are
+/// case-insensitive, so a stale "hTTP_PROXY" still matches "HTTP_PROXY".
+std::string detectEnvProxy() {
+    const char* const kNames[] = {"HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY"};
+    for (int i = 0; i < 3; ++i) {
+        const char* value = std::getenv(kNames[i]);
+        if (value != nullptr && value[0] != '\0') {
+            return std::string(kNames[i]) + "=" + value;
+        }
+    }
+    return std::string();
+}
+
+}  // namespace
 
 NetworkMonitor::NetworkMonitor(bool enabled) : enabled_(enabled) {}
 
@@ -21,6 +40,16 @@ bool NetworkMonitor::Start(const std::vector<std::string>& urls,
     checkIntervalMs_ = checkIntervalMs;
     checkTimeoutMs_ = checkTimeoutMs;
     stopRequested_ = false;
+
+    // Probes bypass every proxy (see CheckURLWithDnsFlag). Surface the fact so a
+    // leftover session proxy does not silently look like a working setting.
+    std::string envProxy = detectEnvProxy();
+    if (!envProxy.empty()) {
+        Logger::write("NetworkMonitor: proxy env var detected (" + envProxy +
+                          "); connectivity probes bypass it and go direct",
+                      LogLevel::INFO);
+    }
+
     thread_ = std::thread(&NetworkMonitor::ThreadLoop, this);
     return true;
 }
@@ -67,6 +96,11 @@ NetworkMonitor::ProbeResult NetworkMonitor::CheckURLWithDnsFlag(const std::strin
         if (!curl.valid()) return result;
 
         curl.setUrl(url)
+            // RCA 2026-10-23: a stale env HTTP_PROXY/HTTPS_PROXY pointing at a
+            // dead 127.0.0.1:10808 made every probe fail with curl_error=7 and
+            // flipped the app into "network LOST". Probes must measure DIRECT
+            // connectivity, so ignore every proxy source.
+            .disableProxy()
             .setNoBody(true)
             .setTimeoutMs(static_cast<long>(timeoutMs))
             .setConnectTimeoutMs(static_cast<long>(timeoutMs / 2))

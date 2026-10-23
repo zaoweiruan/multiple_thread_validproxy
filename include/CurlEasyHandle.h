@@ -127,6 +127,19 @@ public:
         return *this;
     }
 
+    /// Bypass every proxy source: an explicit CURLOPT_PROXY and the environment
+    /// variables libcurl picks up on its own (http_proxy / HTTPS_PROXY /
+    /// ALL_PROXY, matched case-insensitively on Windows).
+    /// Use for probes that must measure DIRECT connectivity: inheriting a stale
+    /// local proxy turns "proxy is down" into "the network is down".
+    /// Both options are required — clearing only CURLOPT_PROXY still lets libcurl
+    /// fall back to the environment.
+    CurlEasyHandle& disableProxy() {
+        checkCurlCode(curl_easy_setopt(curl_, CURLOPT_PROXY, ""), "disableProxy");
+        checkCurlCode(curl_easy_setopt(curl_, CURLOPT_NOPROXY, "*"), "disableProxy");
+        return *this;
+    }
+
     CurlEasyHandle& setTimeoutMs(long ms) {
         // E3: CURLOPT_TIMEOUT_MS=0 disables the timeout (unbounded hang).
         // Floor only invalid values (<=0) to 1000ms; keep small positive values
