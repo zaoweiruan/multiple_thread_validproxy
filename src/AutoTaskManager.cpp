@@ -53,6 +53,8 @@ bool AutoTaskManager::run(const std::vector<std::string>& stepNames) {
     state_.steps = createStepList(stepNames);
     state_.completed = false;
     state_.cancelled = false;
+    state_.sql_query_id = config_.sql_query_id;
+    state_.sql_by_subid_id = config_.sql_by_subid_id;
 
     writeState();
     Logger::write("AutoTask: starting with " + std::to_string(stepNames.size()) + " steps", LogLevel::REPORT);
@@ -104,6 +106,8 @@ bool AutoTaskManager::resume() {
 
     state_ = saved;
     state_.cancelled = false;
+    config_.sql_query_id = state_.sql_query_id;
+    config_.sql_by_subid_id = state_.sql_by_subid_id;
 
     if (running_.exchange(true)) {
         Logger::write("AutoTask: already running", LogLevel::WARN);
@@ -229,7 +233,10 @@ bool AutoTaskManager::stepUpdateAll() {
 
 bool AutoTaskManager::stepTestAll() {
     std::atomic<bool>* cancelPtr = externalCancel_ ? externalCancel_ : &cancelRequested_;
-    ProxyBatchTester tester(db_, config_, baseDir_, cancelPtr, netMon_);
+    config::AppConfig cfg = config_;
+    cfg.sql_query_id = state_.sql_query_id;
+    cfg.sql_by_subid_id = state_.sql_by_subid_id;
+    ProxyBatchTester tester(db_, cfg, baseDir_, cancelPtr, netMon_);
     bool result = tester.run();
     if (isCancelled() && !result) {
         Logger::write("AutoTask: test step was cancelled", LogLevel::REPORT);
@@ -445,6 +452,8 @@ bool AutoTaskManager::saveStateFile(const std::string& filePath, const AutoTaskS
         root["current_step_index"] = state.current_step_index;
         root["completed"] = state.completed;
         root["cancelled"] = state.cancelled;
+        root["sql_query_id"] = state.sql_query_id;
+        root["sql_by_subid_id"] = state.sql_by_subid_id;
 
         boost::json::array stepsArr;
         for (const AutoTaskStepInfo& step : state.steps) {
@@ -518,6 +527,10 @@ AutoTaskState AutoTaskManager::loadStateFile(const std::string& filePath) {
             state.completed = root["completed"].as_bool();
         if (root.contains("cancelled") && root["cancelled"].is_bool())
             state.cancelled = root["cancelled"].as_bool();
+        if (root.contains("sql_query_id") && root["sql_query_id"].is_int64())
+            state.sql_query_id = static_cast<int>(root["sql_query_id"].as_int64());
+        if (root.contains("sql_by_subid_id") && root["sql_by_subid_id"].is_int64())
+            state.sql_by_subid_id = static_cast<int>(root["sql_by_subid_id"].as_int64());
 
         if (root.contains("steps") && root["steps"].is_array()) {
             for (const boost::json::value& sv : root["steps"].as_array()) {

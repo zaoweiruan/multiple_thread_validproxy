@@ -32,6 +32,7 @@
 #include "version.h"
 #include "service/DatabaseConnectionService.h"
 #include "FullConfigTemplateDAO.h"
+#include "SqlQuery.h"
 #include "config/TemplateDecomposer.h"
 
 
@@ -77,6 +78,13 @@ static bool openDatabase(const config::AppConfig& config, sqlite3*& db, const st
         db::FullConfigTemplateDAO configTemplateDao(db);
         configTemplateDao.createTableIfNotExists();
         configTemplateDao.seedDefaultTemplates();
+    }
+
+    // Seed default SQL query library entries if table is empty
+    {
+        db::SqlQueryDAO sqlQueryDao(db);
+        sqlQueryDao.createTableIfNotExists();
+        sqlQueryDao.seedDefaults(config.sql_query, config.sql_by_subid);
     }
     
     return true;

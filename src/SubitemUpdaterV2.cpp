@@ -1091,7 +1091,7 @@ bool SubitemUpdaterV2::migrateProxy(sqlite3* srcDb, sqlite3* dstDb,
     
     if (exists) {
         // UPDATE existing proxy
-        std::string updateSql = "UPDATE ProfileItem SET ConfigType = ?, ConfigVersion = ?, Address = ?, Port = ?, Ports = ?, Id = ?, AlterId = ?, Security = ?, Network = ?, Remarks = ?, HeaderType = ?, RequestHost = ?, Path = ?, StreamSecurity = ?, AllowInsecure = ?, SubId = ?, IsSub = ?, Flow = ?, Sni = ?, Alpn = ?, CoreType = ?, PreSocksPort = ?, Fingerprint = ?, DisplayLog = ?, PublicKey = ?, ShortId = ?, SpiderX = ?, Mldsa65Verify = ?, Extra = ?, MuxEnabled = ?, Cert = ?, CertSha = ?, EchConfigList = ?, EchForceQuery = ? WHERE IndexId = ?";
+        std::string updateSql = "UPDATE ProfileItem SET ConfigType = ?, ConfigVersion = ?, Address = ?, Port = ?, Ports = ?, Id = ?, AlterId = ?, Security = ?, Network = ?, Remarks = ?, HeaderType = ?, RequestHost = ?, Path = ?, StreamSecurity = ?, AllowInsecure = ?, SubId = ?, IsSub = ?, Flow = ?, Sni = ?, Alpn = ?, CoreType = ?, PreSocksPort = ?, Fingerprint = ?, DisplayLog = ?, PublicKey = ?, ShortId = ?, SpiderX = ?, Mldsa65Verify = ?, Extra = ?, MuxEnabled = ?, Cert = ?, CertSha = ?, EchConfigList = ?, EchForceQuery = ?, Region = ? WHERE IndexId = ?";
         
         sqlite3_stmt* updateStmt = nullptr;
         if (sqlite3_prepare_v2(dstDb, updateSql.c_str(), -1, &updateStmt, nullptr) != SQLITE_OK) {
@@ -1134,7 +1134,8 @@ bool SubitemUpdaterV2::migrateProxy(sqlite3* srcDb, sqlite3* dstDb,
         bindTextOrNull(updateStmt, 32, proxy.certsha);
         bindTextOrNull(updateStmt, 33, proxy.echconfiglist);
         bindTextOrNull(updateStmt, 34, proxy.echforcequery);
-        sqlite3_bind_text(updateStmt, 35, proxy.indexid.c_str(), -1, SQLITE_TRANSIENT);
+        bindTextOrNull(updateStmt, 35, proxy.region);
+        sqlite3_bind_text(updateStmt, 36, proxy.indexid.c_str(), -1, SQLITE_TRANSIENT);
         
         bool result = (sqlite3_step(updateStmt) == SQLITE_DONE);
         if (!result) {
@@ -1151,7 +1152,7 @@ bool SubitemUpdaterV2::migrateProxy(sqlite3* srcDb, sqlite3* dstDb,
         return result;
     } else {
         // INSERT new proxy
-        std::string insertSql = "INSERT INTO ProfileItem (IndexId, ConfigType, ConfigVersion, Address, Port, Ports, Id, AlterId, Security, Network, Remarks, HeaderType, RequestHost, Path, StreamSecurity, AllowInsecure, SubId, IsSub, Flow, Sni, Alpn, CoreType, PreSocksPort, Fingerprint, DisplayLog, PublicKey, ShortId, SpiderX, Mldsa65Verify, Extra, MuxEnabled, Cert, CertSha, EchConfigList, EchForceQuery) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+        std::string insertSql = "INSERT INTO ProfileItem (IndexId, ConfigType, ConfigVersion, Address, Port, Ports, Id, AlterId, Security, Network, Remarks, HeaderType, RequestHost, Path, StreamSecurity, AllowInsecure, SubId, IsSub, Flow, Sni, Alpn, CoreType, PreSocksPort, Fingerprint, DisplayLog, PublicKey, ShortId, SpiderX, Mldsa65Verify, Extra, MuxEnabled, Cert, CertSha, EchConfigList, EchForceQuery, Region) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
         
         sqlite3_stmt* insertStmt = nullptr;
         if (sqlite3_prepare_v2(dstDb, insertSql.c_str(), -1, &insertStmt, nullptr) != SQLITE_OK) {
@@ -1195,6 +1196,7 @@ bool SubitemUpdaterV2::migrateProxy(sqlite3* srcDb, sqlite3* dstDb,
         bindTextOrNull(insertStmt, 33, proxy.certsha);
         bindTextOrNull(insertStmt, 34, proxy.echconfiglist);
         bindTextOrNull(insertStmt, 35, proxy.echforcequery);
+        bindTextOrNull(insertStmt, 36, proxy.region);
         
         bool result = (sqlite3_step(insertStmt) == SQLITE_DONE);
         sqlite3_finalize(insertStmt);
@@ -1250,7 +1252,7 @@ bool SubitemUpdaterV2::migrateProfileExItem(sqlite3* srcDb, sqlite3* dstDb,
     
     if (exists) {
         // UPDATE
-        std::string updateSql = "UPDATE ProfileExItem SET Delay = ?, Speed = ?, Sort = ?, Message = ?, consecutive_failures = ? WHERE IndexId = ?";
+        std::string updateSql = "UPDATE ProfileExItem SET Delay = ?, Speed = ?, Sort = ?, Message = ?, consecutive_failures = ?, start_count = ?, total_runtime_ms = ?, crash_count = ? WHERE IndexId = ?";
         sqlite3_stmt* updateStmt = nullptr;
         if (sqlite3_prepare_v2(dstDb, updateSql.c_str(), -1, &updateStmt, nullptr) != SQLITE_OK) {
             Logger::write("migrateProfileExItem: Prepare UPDATE failed for " + indexid + ": " + std::string(sqlite3_errmsg(dstDb)), LogLevel::ERR);
@@ -1261,7 +1263,10 @@ bool SubitemUpdaterV2::migrateProfileExItem(sqlite3* srcDb, sqlite3* dstDb,
         bindTextOrNull(updateStmt, 3, exItem.sort);
         bindTextOrNull(updateStmt, 4, exItem.message);
         sqlite3_bind_int(updateStmt, 5, exItem.consecutive_failures);
-        sqlite3_bind_text(updateStmt, 6, indexid.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_int(updateStmt, 6, exItem.start_count);
+        sqlite3_bind_int64(updateStmt, 7, exItem.total_runtime_ms);
+        sqlite3_bind_int(updateStmt, 8, exItem.crash_count);
+        sqlite3_bind_text(updateStmt, 9, indexid.c_str(), -1, SQLITE_TRANSIENT);
         bool result = (sqlite3_step(updateStmt) == SQLITE_DONE);
         sqlite3_finalize(updateStmt);
         if (!result) {
@@ -1270,7 +1275,7 @@ bool SubitemUpdaterV2::migrateProfileExItem(sqlite3* srcDb, sqlite3* dstDb,
         }
     } else {
         // INSERT
-        std::string insertSql = "INSERT INTO ProfileExItem (IndexId, Delay, Speed, Sort, Message, consecutive_failures) VALUES (?, ?, ?, ?, ?, ?)";
+        std::string insertSql = "INSERT INTO ProfileExItem (IndexId, Delay, Speed, Sort, Message, consecutive_failures, start_count, total_runtime_ms, crash_count) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
         sqlite3_stmt* insertStmt = nullptr;
         if (sqlite3_prepare_v2(dstDb, insertSql.c_str(), -1, &insertStmt, nullptr) != SQLITE_OK) {
             Logger::write("migrateProfileExItem: Prepare INSERT failed for " + indexid + ": " + std::string(sqlite3_errmsg(dstDb)), LogLevel::ERR);
@@ -1282,6 +1287,9 @@ bool SubitemUpdaterV2::migrateProfileExItem(sqlite3* srcDb, sqlite3* dstDb,
         bindTextOrNull(insertStmt, 4, exItem.sort);
         bindTextOrNull(insertStmt, 5, exItem.message);
         sqlite3_bind_int(insertStmt, 6, exItem.consecutive_failures);
+        sqlite3_bind_int(insertStmt, 7, exItem.start_count);
+        sqlite3_bind_int64(insertStmt, 8, exItem.total_runtime_ms);
+        sqlite3_bind_int(insertStmt, 9, exItem.crash_count);
         bool result = (sqlite3_step(insertStmt) == SQLITE_DONE);
         sqlite3_finalize(insertStmt);
         if (!result) {

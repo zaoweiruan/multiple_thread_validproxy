@@ -13,6 +13,7 @@
 #include "config/ConfigJsonParser.h"
 #include "config/sections/LogConfigParser.h"
 #include "FullConfigTemplateDAO.h"
+#include "SqlQuery.h"
 #include "config/StepRegistry.h"
 
 #include <sqlite3.h>
@@ -132,6 +133,13 @@ int main(int argc, char* argv[]) {
         db::FullConfigTemplateDAO configTemplateDao(db);
         configTemplateDao.createTableIfNotExists();
         configTemplateDao.seedDefaultTemplates();
+    }
+
+    // Seed default SQL query library entries if table is empty
+    {
+        db::SqlQueryDAO sqlQueryDao(db);
+        sqlQueryDao.createTableIfNotExists();
+        sqlQueryDao.seedDefaults(appConfig->sql_query, appConfig->sql_by_subid);
     }
 
     // Register all ConfigPipeline step handlers

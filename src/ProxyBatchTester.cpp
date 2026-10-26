@@ -1,4 +1,5 @@
 #include "ProxyBatchTester.h"
+#include "SqlQuery.h"
 #include "ConfigGenerator.h"
 #include "Utils.h"
 #include "Logger.h"
@@ -60,12 +61,27 @@ TestResult ProxyBatchTester::getLastResult() const {
     return lastResult_;
 }
 
+std::string ProxyBatchTester::resolveSql(int id, const std::string& fallback) const {
+    if (id > 0 && db_) {
+        db::SqlQueryDAO dao(db_);
+        db::SqlQueryItem item = dao.getById(id);
+        if (item.id > 0 && !item.sql_text.empty()) {
+            return item.sql_text;
+        }
+    }
+    if (!fallback.empty()) return fallback;
+    return "SELECT * FROM ProfileItem;";
+}
+
 std::vector<db::models::Profileitem> ProxyBatchTester::loadProxies(const std::string& subId) {
     config::ConfigGenerator configGen(db_);
     std::string sql;
-    
-    if (!subId.empty() && !config_.sql_by_subid.empty()) {
-        sql = config_.sql_by_subid;
+
+    std::string sqlQueryStr = resolveSql(config_.sql_query_id, config_.sql_query);
+    std::string sqlBySubidStr = resolveSql(config_.sql_by_subid_id, config_.sql_by_subid);
+
+    if (!subId.empty() && !sqlBySubidStr.empty()) {
+        sql = sqlBySubidStr;
         // Replace ALL occurrences of {subid} in the SQL template
         size_t pos = 0;
         while ((pos = sql.find("{subid}", pos)) != std::string::npos) {
@@ -73,7 +89,7 @@ std::vector<db::models::Profileitem> ProxyBatchTester::loadProxies(const std::st
             pos += subId.length();
         }
     } else {
-        sql = config_.sql_query;
+        sql = sqlQueryStr;
     }
     
     // Replace ALL occurrences of {blacklist_threshold} in the SQL template (both queries)

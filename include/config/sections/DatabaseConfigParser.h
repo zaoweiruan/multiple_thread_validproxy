@@ -49,6 +49,16 @@ inline void DatabaseConfigParser::parse(const boost::json::value& root, AppConfi
             } else if (db.contains("sql_by_subid")) {
                 Logger::write("WARNING: config.database.sql_by_subid has wrong type (expected string), using default", LogLevel::WARN);
             }
+            if (db.contains("sql_query_id") && db.at("sql_query_id").is_int64()) {
+                config.sql_query_id = static_cast<int>(db.at("sql_query_id").as_int64());
+            } else if (db.contains("sql_query_id")) {
+                Logger::write("WARNING: config.database.sql_query_id has wrong type (expected int), using default", LogLevel::WARN);
+            }
+            if (db.contains("sql_by_subid_id") && db.at("sql_by_subid_id").is_int64()) {
+                config.sql_by_subid_id = static_cast<int>(db.at("sql_by_subid_id").as_int64());
+            } else if (db.contains("sql_by_subid_id")) {
+                Logger::write("WARNING: config.database.sql_by_subid_id has wrong type (expected int), using default", LogLevel::WARN);
+            }
         } else {
             Logger::write("WARNING: config.database has wrong type (expected string|object), using default", LogLevel::WARN);
         }

@@ -38,6 +38,8 @@ struct AppConfig {
     std::string database_path;
     std::string sql_query;
     std::string sql_by_subid;
+    int sql_query_id{0};          // references SqlQuery.id (0 = use string)
+    int sql_by_subid_id{0};       // references SqlQuery.id (0 = use string)
     int xray_workers = 1;
     int xray_start_port = 1083;
     int xray_api_port = 0;

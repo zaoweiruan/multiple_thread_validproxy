@@ -43,6 +43,8 @@ struct AutoTaskState {
     std::vector<AutoTaskStepInfo> steps;
     bool completed;
     bool cancelled;
+    int sql_query_id{0};       // SQL scheme id for sql_query (0 = use config string)
+    int sql_by_subid_id{0};    // SQL scheme id for sql_by_subid (0 = use config string)
 };
 
 struct AutoTaskProgress {

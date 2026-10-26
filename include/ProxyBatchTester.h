@@ -30,6 +30,7 @@ public:
     bool run();
     bool runWithSubId(const std::string& subId);
     bool runWithIndexId(const std::string& indexId);
+    std::string resolveSql(int id, const std::string& fallback) const;
     XrayManager* getXrayManager() { return xrayManager_; }
     TestResult getLastResult() const;
 

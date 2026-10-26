@@ -7,6 +7,7 @@
 #include <wx/display.h>
 #include <wx/propgrid/propgrid.h>
 #include <wx/propgrid/advprops.h>
+#include <wx/propgrid/editors.h>
 #include <wx/msgdlg.h>
 #include <wx/stdpaths.h>
 #include <wx/notebook.h>
@@ -25,6 +26,8 @@
 
 #include "BundleChainEditor.h"
 #include "ComponentListPanel.h"
+#include "SqlQuery.h"
+#include "SqlQueryManageDialog.h"
 #include "config/TemplateDecomposer.h"
 #include "config/SchemaValidator.h"
 #include "config/BundleChainResolver.h"
@@ -111,6 +114,25 @@ std::string prettyJsonOrRaw(const std::string& json) {
     return prettyJson(parsed, 0);
 }
 
+/// 配置网格中展示的 SQL 方案名称：ID 有效时显示库中名称，
+/// ID 为空时提示可点击选择，避免把整段 SQL 挤进单行。
+wxString sqlSchemeDisplayValue(sqlite3* db, int id, const std::string& rawSql) {
+    if (id > 0) {
+        if (!db) {
+            return wxString::Format(L"（方案 #%d，数据库未连接）", id);
+        }
+        const db::SqlQueryItem item = db::SqlQueryDAO::getById(db, id);
+        if (item.id > 0) {
+            return wxString::FromUTF8(item.name.c_str());
+        }
+        return wxString::Format(L"（方案 #%d 不存在，点击重新选择）", id);
+    }
+    if (!rawSql.empty()) {
+        return L"（自定义 SQL，点击选择方案）";
+    }
+    return L"（未选择方案，点击选择）";
+}
+
 } // namespace
 
 // -------------------------------------------------------------------
@@ -156,8 +178,14 @@ ConfigDialog::ConfigDialog(wxWindow* parent, const config::AppConfig& cfg, sqlit
     // wxWidgets 3.3.3 bug: wxPGPropertyFlags_ShowFullFileName maps to Reserved_1,
     // but ValueToString checks wxPGFlags::ShowFullFileName — set the correct flag directly.
     dbPathProp->ChangeFlag(wxPGFlags::ShowFullFileName, true);
-    propGrid_->Append(new wxStringProperty(L"SQL 查询", "sql_query", cfg.sql_query));
-    propGrid_->Append(new wxStringProperty(L"按 SubId 查询", "sql_by_subid", cfg.sql_by_subid));
+    propGrid_->Append(new wxStringProperty(L"SQL 查询", "sql_query", L""));
+    propGrid_->Append(new wxStringProperty(L"按 SubId 查询", "sql_by_subid", L""));
+    // 方案 ID 不再单独显示：配置值显示 SQL 方案库中的方案名称，
+    // 点击值区域即可打开 SQL 方案库进行新增 / 编辑 / 保存 / 选择。
+    propGrid_->SetPropertyReadOnly("sql_query");
+    propGrid_->SetPropertyReadOnly("sql_by_subid");
+    propGrid_->Bind(wxEVT_LEFT_UP, &ConfigDialog::onSqlPropertyMouseUp, this);
+    propGrid_->Bind(wxEVT_PG_SELECTED, &ConfigDialog::onSqlPropertySelected, this);
 
     // --- 工作线程配置 (原 Xray) ---
     propGrid_->Append(new wxPropertyCategory(L"工作线程配置"));
@@ -440,6 +468,9 @@ ConfigDialog::ConfigDialog(wxWindow* parent, const config::AppConfig& cfg, sqlit
 // -------------------------------------------------------------------
 void ConfigDialog::loadConfig(const config::AppConfig& cfg) {
     editedConfig_ = cfg;
+    sqlQueryId_ = cfg.sql_query_id;
+    sqlBySubidId_ = cfg.sql_by_subid_id;
+    refreshSqlSchemeDisplay();
     propGrid_->SetPropertyValue("log_console_level", wxString(cfg.log_console_level));
     propGrid_->SetPropertyValue("log_file_level", wxString(cfg.log_file_level));
     // Network monitor fields
@@ -528,8 +559,9 @@ void ConfigDialog::loadConfig(const config::AppConfig& cfg) {
 bool ConfigDialog::saveConfig() {
     // Database fields
     editedConfig_.database_path = propGrid_->GetPropertyValueAsString("database_path").ToStdString();
-    editedConfig_.sql_query = propGrid_->GetPropertyValueAsString("sql_query").ToStdString();
-    editedConfig_.sql_by_subid = propGrid_->GetPropertyValueAsString("sql_by_subid").ToStdString();
+    // SQL 行显示的是方案名称，不能回写为 SQL 文本；真实 ID 与 SQL 文本由选择逻辑维护。
+    editedConfig_.sql_query_id = sqlQueryId_;
+    editedConfig_.sql_by_subid_id = sqlBySubidId_;
 
     // Xray (worker thread) fields - executable moved to proxy section
     editedConfig_.xray_workers = propGrid_->GetPropertyValueAsInt("xray_workers");
@@ -881,6 +913,114 @@ void ConfigDialog::onPropertyChanged(wxPropertyGridEvent& event) {
         }
         refreshAutoTaskChainDisplay();
     }
+}
+
+namespace {
+
+bool isSqlSchemeProperty(const wxString& propertyName) {
+    return propertyName == "sql_query" || propertyName == "sql_by_subid";
+}
+
+} // namespace
+
+void ConfigDialog::onSqlPropertyMouseUp(wxMouseEvent& event) {
+    const wxPropertyGridHitTestResult hit = propGrid_->HitTest(event.GetPosition());
+    const wxPGProperty* property = hit.GetProperty();
+    if (property && hit.GetColumn() == 1) {
+        const wxString propertyName = property->GetName();
+        if (isSqlSchemeProperty(propertyName)) {
+            scheduleSqlLibraryOpen(propertyName);
+        }
+    }
+    event.Skip();
+}
+
+void ConfigDialog::onSqlPropertySelected(wxPropertyGridEvent& event) {
+    const wxString propertyName = event.GetPropertyName();
+    if (isSqlSchemeProperty(propertyName)) {
+        bindSqlEditorClick();
+    }
+}
+
+void ConfigDialog::onSqlEditorMouseUp(wxMouseEvent& event) {
+    const wxPGProperty* property = propGrid_->GetSelectedProperty();
+    if (property) {
+        const wxString propertyName = property->GetName();
+        if (isSqlSchemeProperty(propertyName)) {
+            scheduleSqlLibraryOpen(propertyName);
+        }
+    }
+    event.Skip();
+}
+
+void ConfigDialog::bindSqlEditorClick() {
+    wxWindow* editor = propGrid_->GetEditorControl();
+    if (!editor) {
+        return;
+    }
+    // PropertyGrid 会复用编辑器控件；每次选中 SQL 行时重新绑定，
+    // 确保点击已选中行的值区域同样能打开方案库。
+    editor->Unbind(wxEVT_LEFT_UP, &ConfigDialog::onSqlEditorMouseUp, this);
+    editor->Bind(wxEVT_LEFT_UP, &ConfigDialog::onSqlEditorMouseUp, this);
+}
+
+void ConfigDialog::scheduleSqlLibraryOpen(const wxString& propertyName) {
+    if (sqlDialogPending_ || sqlDialogOpen_) {
+        return;
+    }
+    sqlDialogPending_ = true;
+    const wxString capturedName = propertyName;
+    CallAfter([this, capturedName]() {
+        sqlDialogPending_ = false;
+        openSqlLibraryForProperty(capturedName);
+    });
+}
+
+void ConfigDialog::openSqlLibraryForProperty(const wxString& propertyName) {
+    if (sqlDialogOpen_) {
+        return;
+    }
+    if (!db_) {
+        wxMessageBox(L"数据库未连接，无法打开 SQL 方案库。", L"SQL 方案库",
+                     wxOK | wxICON_ERROR, this);
+        return;
+    }
+
+    const bool bySubId = propertyName == "sql_by_subid";
+    const std::string scope = bySubId ? "by_subid" : "all";
+    const int currentId = bySubId ? sqlBySubidId_ : sqlQueryId_;
+
+    sqlDialogOpen_ = true;
+    const int selectedId = SqlQueryManageDialog::SelectSqlQuery(this, db_, scope, currentId);
+    sqlDialogOpen_ = false;
+
+    if (selectedId <= 0) {
+        return;
+    }
+
+    const db::SqlQueryItem item = db::SqlQueryDAO::getById(db_, selectedId);
+    if (item.id <= 0) {
+        wxMessageBox(L"所选 SQL 方案已不存在，请刷新后重试。", L"SQL 方案库",
+                     wxOK | wxICON_WARNING, this);
+        return;
+    }
+
+    if (bySubId) {
+        sqlBySubidId_ = item.id;
+        editedConfig_.sql_by_subid = item.sql_text;
+    } else {
+        sqlQueryId_ = item.id;
+        editedConfig_.sql_query = item.sql_text;
+    }
+    refreshSqlSchemeDisplay();
+    modified_ = true;
+}
+
+void ConfigDialog::refreshSqlSchemeDisplay() {
+    propGrid_->SetPropertyValue(
+        "sql_query", sqlSchemeDisplayValue(db_, sqlQueryId_, editedConfig_.sql_query));
+    propGrid_->SetPropertyValue(
+        "sql_by_subid", sqlSchemeDisplayValue(db_, sqlBySubidId_, editedConfig_.sql_by_subid));
 }
 
 // ================================================================

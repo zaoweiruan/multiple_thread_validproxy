@@ -135,6 +135,7 @@ set(CORE_SOURCES
     src/SubitemDAO.cpp
     src/ProfileExItemDAO.cpp
     src/FullConfigTemplateDAO.cpp
+    src/SqlQuery.cpp
     src/ProxyBatchTester.cpp
     src/ProxyFinder.cpp
     src/ProxyTester.cpp
@@ -303,6 +304,8 @@ if(wxWidgets_FOUND)
         src/ui/BundleChainEditor.cpp
         src/ui/BundleSelectorDialog.h
         src/ui/BundleSelectorDialog.cpp
+        src/ui/SqlQueryManageDialog.h
+        src/ui/SqlQueryManageDialog.cpp
         src/ui/StandaloneFloatingWidget.h
         src/ui/StandaloneFloatingWidget.cpp
         src/ui/AddPoolMemberDialog.h
@@ -576,6 +579,21 @@ set_target_properties(test_profile_ex_item_dao PROPERTIES
 )
 add_test(NAME ProfileExItemDAOTest COMMAND test_profile_ex_item_dao)
 
+add_executable(test_sql_query tests/test_sql_query.cpp src/SqlQuery.cpp src/Logger.cpp src/LoggerInstance.cpp src/Utils.cpp)
+target_include_directories(test_sql_query PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(test_sql_query PRIVATE
+    gtest_main
+    gtest
+    ${VCPKG_ROOT}/installed/x64-mingw-static/lib/libsqlite3.a
+    ws2_32
+)
+set_target_properties(test_sql_query PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+)
+add_test(NAME SqlQueryDAOTest COMMAND test_sql_query)
+
 # -- Profileitem model tests - DISABLED until test_model.cpp is created
 # add_executable(test_model tests/test_model.cpp)
 # target_include_directories(test_model PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
@@ -633,8 +651,9 @@ set_target_properties(test_uri_codec PROPERTIES
 add_test(NAME UriCodecTest COMMAND test_uri_codec)
 
 # -- AutoTaskManager unit tests --
-add_executable(test_autotask tests/test_autotask.cpp src/AutoTaskManager.cpp ${CORE_SOURCES})
+add_executable(test_autotask tests/test_autotask.cpp tests/test_sync_region.cpp src/AutoTaskManager.cpp ${CORE_SOURCES})
 target_include_directories(test_autotask PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_compile_definitions(test_autotask PRIVATE TEST_DB_EMPTY_PATH="${CMAKE_SOURCE_DIR}/test/guiNDB_empty.db")
 if(USE_GRPC_API)
     target_compile_definitions(test_autotask PRIVATE USE_GRPC_API=1)
 endif()
@@ -751,6 +770,7 @@ add_executable(test_config_generator
     src/config/StreamSettingsBuilder.cpp
     src/ConfigReader.cpp
     src/FullConfigTemplateDAO.cpp
+    src/SqlQuery.cpp
     src/ProfileitemDAO.cpp
 
     src/utils/DnsCache.cpp
@@ -813,6 +833,7 @@ add_executable(test_standalone_proxy_pool
     src/ProfileitemDAO.cpp
     src/ProfileExItemDAO.cpp
     src/FullConfigTemplateDAO.cpp
+    src/SqlQuery.cpp
     src/config/ConfigBuilder.cpp
     src/config/StepRegistry.cpp
     src/config/ConfigPipeline.cpp
@@ -883,6 +904,7 @@ add_executable(test_proxy_probe_pool
     src/PortManager.cpp
     src/ConfigReader.cpp
     src/FullConfigTemplateDAO.cpp
+    src/SqlQuery.cpp
     src/config/ConfigBuilder.cpp
     src/config/StepRegistry.cpp
     src/config/ConfigPipeline.cpp
@@ -1009,7 +1031,7 @@ add_test(NAME OutboundPayloadTest COMMAND test_outbound_payload)
 # -- ProxyBatchQuery integration tests (uses test DB) --
 add_executable(test_proxy_batch_query tests/test_proxy_batch_query.cpp src/test/ProxyBatchQuery.cpp
     src/ConfigGenerator.cpp src/ProfileitemDAO.cpp src/utils/DnsCache.cpp src/ProfileExItemDAO.cpp
-    src/ConfigReader.cpp src/FullConfigTemplateDAO.cpp src/config/ConfigBuilder.cpp
+    src/ConfigReader.cpp src/FullConfigTemplateDAO.cpp src/SqlQuery.cpp src/config/ConfigBuilder.cpp
     src/config/StepRegistry.cpp src/config/ConfigPipeline.cpp src/config/StepHandlers.cpp
     src/config/ConfigFileStore.cpp src/config/ConfigPathResolver.cpp
     src/config/ConfigJsonParser.cpp src/config/ConfigJsonSerializer.cpp src/config/ConfigValidator.cpp
@@ -1232,6 +1254,7 @@ add_executable(test_xray_instance_stderr
     src/XrayInstance.cpp
     src/ConfigReader.cpp
     src/FullConfigTemplateDAO.cpp
+    src/SqlQuery.cpp
     src/config/ConfigBuilder.cpp
     src/config/StepRegistry.cpp
     src/config/ConfigPipeline.cpp
@@ -1313,6 +1336,7 @@ add_executable(test_xray_manager_startup
     src/PortManager.cpp
     src/ConfigReader.cpp
     src/FullConfigTemplateDAO.cpp
+    src/SqlQuery.cpp
     src/config/ConfigBuilder.cpp
     src/config/StepRegistry.cpp
     src/config/ConfigPipeline.cpp
@@ -1489,7 +1513,7 @@ add_test(NAME ProcessInspectorTest COMMAND test_process_inspector)
 # -- RegionBatchResolver unit tests (ip-api.com region resolution) --------------------
 add_executable(test_region_batch_resolver tests/test_region_batch_resolver.cpp
     src/RegionBatchResolver.cpp src/ConfigGenerator.cpp src/ProfileitemDAO.cpp
-    src/ConfigReader.cpp src/FullConfigTemplateDAO.cpp src/config/ConfigBuilder.cpp
+    src/ConfigReader.cpp src/FullConfigTemplateDAO.cpp src/SqlQuery.cpp src/config/ConfigBuilder.cpp
     src/config/StepRegistry.cpp src/config/ConfigPipeline.cpp src/config/StepHandlers.cpp
     # ConfigPipeline.cpp 调用的 StepToComponentMapper::convertAll 实现在此文件
     src/config/StepToComponentMapper.cpp

@@ -10,6 +10,8 @@ boost::json::object ConfigJsonSerializer::serialize(const AppConfig& config) con
     dbObj["path"] = config.database_path;
     if (!config.sql_query.empty()) dbObj["sql"] = config.sql_query;
     if (!config.sql_by_subid.empty()) dbObj["sql_by_subid"] = config.sql_by_subid;
+    if (config.sql_query_id > 0) dbObj["sql_query_id"] = config.sql_query_id;
+    if (config.sql_by_subid_id > 0) dbObj["sql_by_subid_id"] = config.sql_by_subid_id;
     root["database"] = dbObj;
 
     // xray (worker thread config - executable moved to proxy section)

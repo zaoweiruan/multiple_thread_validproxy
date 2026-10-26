@@ -44,6 +44,13 @@ private:
     void onOk(wxCommandEvent& event);
     void onCancel(wxCommandEvent& event);
     void onPropertyChanged(wxPropertyGridEvent& event);
+    void onSqlPropertyMouseUp(wxMouseEvent& event);
+    void onSqlPropertySelected(wxPropertyGridEvent& event);
+    void onSqlEditorMouseUp(wxMouseEvent& event);
+    void bindSqlEditorClick();
+    void scheduleSqlLibraryOpen(const wxString& propertyName);
+    void openSqlLibraryForProperty(const wxString& propertyName);
+    void refreshSqlSchemeDisplay();
     bool validateConfig();
     void refreshUpdateMethodDisplay();
     void refreshAutoTaskChainDisplay();
@@ -90,6 +97,12 @@ private:
 
     wxNotebook* notebook_{nullptr};
     wxPropertyGrid* propGrid_;
+
+    // SQL 方案选择：PropertyGrid 只显示方案名称，真实 ID 保存在下面两个成员中。
+    int sqlQueryId_{0};
+    int sqlBySubidId_{0};
+    bool sqlDialogPending_{false};
+    bool sqlDialogOpen_{false};
 
     // 模板配置 tab 控件
     wxNotebook* templateSubNotebook_{nullptr};
