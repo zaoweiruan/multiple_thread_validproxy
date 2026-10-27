@@ -180,13 +180,16 @@ supersedes: (可选) ["被替代的文档名"]
 
 | 等级 | 用途 | 示例 |
 |------|------|------|
+| `TRACE` | 深挖定位：临时诊断、热路径可恢复异常、二分定位锚点 | "GetValueByRow: row=... >= size=..."、"AUI panes registered, calling Update()" |
 | `INFO` | 常规流程、生命周期事件 | "Started successfully", "SQL returned N profiles" |
-| `WARN` | 边界条件、可恢复异常 | "No proxies to test", "Using default network" |
+| `WARN` | 边界条件、可恢复异常；**不变量破坏**（即使位于热路径） | "No proxies to test", "Using default network", "getDataIndex: GetItem returned INVALID item!" |
 | `ERR` | 错误路径、失败操作 | "Failed to create process", "Sync failed: N proxy(es)" |
 | `REPORT` | 统计汇总、性能指标 | "Migration Result — Total: 703, Succeeded: 703" |
 | `DEBUG` | 调试信息、详细追踪 | "Source database opened" |
 
 **所有 `Logger::write` 调用必须包含显式的 `LogLevel` 参数。**
+
+**临时诊断日志红线：** 为排查问题临时加入的诊断日志必须带 `[TEMP]` 前缀，并在同一 PR 内删除；禁止把 `step N` 式启动叙事日志、`[DIAG]` 式前缀、`@ <ms>` 计时探针留在提交里。需要长期保留的定位锚点一律定级 `TRACE` 并在代码旁写明用途。
 
 ---
 
