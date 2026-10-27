@@ -142,7 +142,9 @@ unsigned int SubscriptionListModel::getDataIndex(unsigned int viewRow) const {
     unsigned int id = static_cast<unsigned int>(
         reinterpret_cast<wxUIntPtr>(item.GetID()));
     if (!item.IsOk()) {
-        Logger::write("[DIAG] SubscriptionListModel::getDataIndex("
+        // Invariant violation (1-based idOffset_ regression), not a recoverable
+        // call-order anomaly: stays WARN so the regression remains visible.
+        Logger::write("[SubscriptionListModel] getDataIndex("
                       + std::to_string(viewRow)
                       + "): GetItem returned INVALID item!",
                       LogLevel::WARN);

@@ -665,9 +665,8 @@ void AppController::testOnlineProxiesAsync(wxEvtHandler* wxHandler, bool silent)
 
 void AppController::cancelTest() {
     cancelRequested_ = true;
-    long long ts = std::chrono::duration_cast<std::chrono::milliseconds>(
-        std::chrono::steady_clock::now().time_since_epoch()).count();
-    Logger::write("[AppController] cancelTest() called @ " + std::to_string(ts) + " ms (steady), cancelRequested_ set to true", LogLevel::DEBUG);
+    Logger::write("[AppController] cancelTest() called, cancelRequested_ set to true",
+                  LogLevel::TRACE);
 }
 
 bool AppController::isTestCancelled() const {

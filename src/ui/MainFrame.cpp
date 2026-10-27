@@ -134,8 +134,6 @@ MainFrame::MainFrame(const config::AppConfig& cfg, sqlite3* db)
 
     
 
-    Logger::write("[MainFrame] After controller creation, initializing icon", LogLevel::DEBUG);
-
     // Set application icon from embedded resource (icon.ico → resource "icon_ico")
     #ifdef __WXMSW__
     wxIcon appIcon("icon_ico", wxBITMAP_TYPE_ICO_RESOURCE);
@@ -296,12 +294,9 @@ MainFrame::MainFrame(const config::AppConfig& cfg, sqlite3* db)
     // Calling it here (after AUI panes are registered and Update() called)
     // avoids the hang and ensures AUI computes sizes against the correct
     // client area (menu bar changes client geometry).
-    Logger::write("[MainFrame] calling delayed SetMenuBar", LogLevel::DEBUG);
     if (menuBar_) {
         SetMenuBar(menuBar_);
-        Logger::write("[MainFrame] SetMenuBar done, updating AUI", LogLevel::DEBUG);
         auiManager_->Update();
-        Logger::write("[MainFrame] AUI re-layout after SetMenuBar done", LogLevel::DEBUG);
     }
     // Force a WM_SIZE on the status bar so its part widths are recomputed.
     // With the default equal-width path the parts can be laid out at width 0
@@ -728,19 +723,15 @@ void MainFrame::UpdateMenuStates() {
 //  Initialization steps
 // -------------------------------------------------------------------
 void MainFrame::initMenuBar() {
-    Logger::write("[MainFrame] initMenuBar step 1: creating wxMenuBar", LogLevel::DEBUG);
     wxMenuBar* bar = new wxMenuBar;
-    Logger::write("[MainFrame] initMenuBar step 2: wxMenuBar created", LogLevel::DEBUG);
 
     wxMenu* fileMenu = new wxMenu;
-    Logger::write("[MainFrame] initMenuBar step 3: fileMenu created", LogLevel::DEBUG);
     fileMenu->Append(ID_MENU_IMPORT_SUB,  L"导入订阅链接…\tCtrl+I");
     fileMenu->Append(ID_MENU_UPDATE_ALL,  L"更新全部订阅\tCtrl+U");
     fileMenu->Append(ID_MENU_SYNC_DB,     L"同步数据库…");
     fileMenu->AppendSeparator();
     fileMenu->Append(ID_MENU_EXIT,        L"退出\tAlt+X");
     bar->Append(fileMenu, L"&文件");
-    Logger::write("[MainFrame] initMenuBar step 4: fileMenu appended", LogLevel::DEBUG);
 
     proxyMenu_ = new wxMenu;
     proxyMenu_->Append(ID_MENU_FIND_PROXY, L"查找首个可用代理\tCtrl+F");
@@ -768,29 +759,22 @@ void MainFrame::initMenuBar() {
     wxMenu* helpMenu = new wxMenu;
     helpMenu->Append(ID_MENU_ABOUT, L"关于");
     bar->Append(helpMenu, L"&帮助");
-    Logger::write("[MainFrame] initMenuBar step 5: helpMenu appended", LogLevel::DEBUG);
 
-    Logger::write("[MainFrame] initMenuBar step 6: storing menuBar", LogLevel::DEBUG);
     // Keep menuBar_ for later SetMenuBar call (after AUI init + Update()).
     // Direct SetMenuBar inside initMenuBar causes intermittent hang on wxMSW 3.2.5/MinGW.
     menuBar_ = bar;
-    Logger::write("[MainFrame] initMenuBar step 7: menuBar stored", LogLevel::DEBUG);
 }
 
 void MainFrame::initToolBar() {
-    Logger::write("[MainFrame] initToolBar step 1: creating wxAuiToolBar", LogLevel::DEBUG);
     // Use wxAuiToolBar for better resize handling
     // wxAuiToolBar automatically handles control layout on window resize
     m_toolbar = new wxAuiToolBar(this, wxID_ANY, wxDefaultPosition, wxDefaultSize,
                                  wxAUI_TB_HORIZONTAL | wxAUI_TB_TEXT);
-    Logger::write("[MainFrame] initToolBar step 2: wxAuiToolBar created", LogLevel::DEBUG);
     m_toolbar->SetToolBitmapSize(wxSize(24, 24));
 
     // Note: wxAuiToolBar::AddTool uses different signature than wxToolBar
     // format: AddTool(id, label, bitmap, shortHelp)
-    Logger::write("[MainFrame] initToolBar step 3: adding tools", LogLevel::DEBUG);
     m_toolbar->AddTool(ID_TOOL_UPDATE_ALL, "更新", ToolbarIcons::load("tool_update1"), "更新");
-    Logger::write("[MainFrame] initToolBar step 3a: tool_update1 added", LogLevel::DEBUG);
     m_toolbar->AddTool(ID_TOOL_TEST, "批量测试", ToolbarIcons::load("tool_test"), "测试全部代理");
     m_toolbar->AddTool(ID_TOOL_CANCEL, "终止当前测试", ToolbarIcons::load("tool_cancel"), "取消测试");
     m_toolbar->EnableTool(ID_TOOL_CANCEL, false);  // disabled until operation starts
@@ -911,9 +895,11 @@ void MainFrame::initPanels() {
         .Hide()
     );
 
-    Logger::write("[MainFrame] AUI panes registered, calling Update()", LogLevel::DEBUG);
+    // Bracket auiManager_->Update(): it is the single historical GUI-startup
+    // hang point, so this enter/return pair is kept (TRACE) for bisection.
+    Logger::write("[MainFrame] AUI panes registered, calling Update()", LogLevel::TRACE);
     auiManager_->Update();
-    Logger::write("[MainFrame] auiManager_->Update() returned", LogLevel::DEBUG);
+    Logger::write("[MainFrame] auiManager_->Update() returned", LogLevel::TRACE);
 
     // ── Async initial data load (non-blocking UI) ──────────────────
     // The synchronous loadSubscriptions()/loadProxies() calls blocked the
@@ -922,7 +908,6 @@ void MainFrame::initPanels() {
     // auto-selects the first subscription and triggers proxy loading.
     setStatusText(0, "Loading data...");
     controller_->loadSubscriptionsAsync(this);
-    Logger::write("[MainFrame] initPanels done (async load started)", LogLevel::DEBUG);
 }
 
 void MainFrame::initTrayIcon() {

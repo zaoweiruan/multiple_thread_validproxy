@@ -329,12 +329,13 @@ void ProxyListModel::GetValueByRow(wxVariant& variant, unsigned int row,
     // Guard against invalid state
     if (!proxies_ || row >= proxies_->size()) {
         if (proxies_) {
-            Logger::write("[DIAG] GetValueByRow: row=" + std::to_string(row)
+            // Recoverable call-order anomaly on a per-cell hot path: TRACE only.
+            Logger::write("[ProxyListModel] GetValueByRow: row=" + std::to_string(row)
                           + " >= proxies_->size()=" + std::to_string(proxies_->size())
-                          + " col=" + std::to_string(col), LogLevel::WARN);
+                          + " col=" + std::to_string(col), LogLevel::TRACE);
         } else {
-            Logger::write("[DIAG] GetValueByRow: proxies_ is NULL, row="
-                          + std::to_string(row) + " col=" + std::to_string(col), LogLevel::WARN);
+            Logger::write("[ProxyListModel] GetValueByRow: proxies_ is NULL, row="
+                          + std::to_string(row) + " col=" + std::to_string(col), LogLevel::TRACE);
         }
         variant = wxVariant("");
         return;
@@ -344,9 +345,9 @@ void ProxyListModel::GetValueByRow(wxVariant& variant, unsigned int row,
     // Convert to the data index via the model's internal mapping.
     unsigned int dataIdx = getDataIndex(row);
     if (dataIdx >= proxies_->size()) {
-        Logger::write("[DIAG] GetValueByRow: dataIdx=" + std::to_string(dataIdx)
+        Logger::write("[ProxyListModel] GetValueByRow: dataIdx=" + std::to_string(dataIdx)
                       + " >= proxies_->size()=" + std::to_string(proxies_->size())
-                      + " row=" + std::to_string(row) + " col=" + std::to_string(col), LogLevel::WARN);
+                      + " row=" + std::to_string(row) + " col=" + std::to_string(col), LogLevel::TRACE);
         variant = wxVariant("");
         return;
     }
@@ -579,7 +580,9 @@ unsigned int ProxyListModel::getDataIndex(unsigned int viewRow) const {
     unsigned int id = static_cast<unsigned int>(
         reinterpret_cast<wxUIntPtr>(item.GetID()));
     if (!item.IsOk()) {
-        Logger::write("[DIAG] getDataIndex(" + std::to_string(viewRow) + "): GetItem returned INVALID item!",
+        // Invariant violation (1-based idOffset_ regression), not a recoverable
+        // call-order anomaly: stays WARN so the regression remains visible.
+        Logger::write("[ProxyListModel] getDataIndex(" + std::to_string(viewRow) + "): GetItem returned INVALID item!",
                       LogLevel::WARN);
         return id;
     }
