@@ -156,17 +156,7 @@ bool SubitemUpdaterV2::run() {
     db::models::SubitemDAO subDao(db_);
     std::vector<db::models::Subitem> enabledSubs = subDao.getEnabledSubscriptions();
 
-    // Subscriptions previously marked as "upstream gone" (remarks carry the
-    // 404- prefix and Enabled was forced to 0). They no longer provide nodes,
-    // but the upstream may have been recreated, so each run still probes them
-    // exactly once: a successful parse clears the marker.
-    std::vector<db::models::Subitem> goneSubs = getSourceGoneSubscriptions();
-    if (!goneSubs.empty()) {
-        Logger::write("Probing " + std::to_string(goneSubs.size())
-                      + " subscription(s) previously marked 404", LogLevel::INFO);
-    }
-
-    if (enabledSubs.empty() && goneSubs.empty()) {
+    if (enabledSubs.empty()) {
         Logger::write("No enabled subscriptions found", LogLevel::WARN);
         return true;
     }
@@ -341,22 +331,6 @@ bool SubitemUpdaterV2::run() {
                 }
                 Logger::write("[" + std::to_string(i + 1) + "/" + std::to_string(enabledSubs.size()) + "] " + methodName + ": " + sub.url, LogLevel::REPORT);
                 attemptedCount++;
-                if (!processSub(sub.id, sub.remarks, sub.url)) break;
-            }
-            // Probe the subscriptions previously marked 404. Deliberately NOT
-            // gated by shouldSkipUpdate(): these rows carry Enabled=0 and would
-            // otherwise fall outside the interval logic, and the whole point of
-            // probing is to notice an upstream that came back. One request per
-            // marked subscription per run is cheap, and processSub() already keeps
-            // a still-404 source out of stillFailed so there is no cross-phase retry.
-            for (size_t i = 0; i < goneSubs.size(); ++i) {
-                if (isCancelled()) {
-                    Logger::write("INFO: Update cancelled by user during " + methodName + " probe", LogLevel::REPORT);
-                    break;
-                }
-                const db::models::Subitem& sub = goneSubs[i];
-                Logger::write("[probe " + std::to_string(i + 1) + "/" + std::to_string(goneSubs.size()) + "] "
-                              + methodName + ": " + sub.url, LogLevel::REPORT);
                 if (!processSub(sub.id, sub.remarks, sub.url)) break;
             }
         } else {

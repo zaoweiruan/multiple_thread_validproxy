@@ -43,6 +43,12 @@ boost::json::object StreamSettingsBuilder::build(const db::models::Profileitem& 
             tlsSettings["allowInsecure"] = (p.allowinsecure == "1");
             if (!p.sni.empty()) {
                 tlsSettings["serverName"] = p.sni;
+            } else if (!p.requesthost.empty()) {
+                // v2rayN 约定：sni 缺失时，host(RequestHost) 兼作 TLS serverName（SNI）。
+                // 订阅源常把真实主机名编码进 host 而 sni 为空；若 serverName 为空，
+                // Xray 会回退用 outbound 地址作 SNI，导致证书 SAN 不匹配 → TLS 握手失败
+                // （表现为 curl "SSL connect error" / Timeout was reached）。
+                tlsSettings["serverName"] = p.requesthost;
             }
             if (!p.alpn.empty()) {
                 std::vector<std::string> alpnList;

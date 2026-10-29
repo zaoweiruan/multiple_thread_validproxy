@@ -52,6 +52,7 @@ class LocateProxyEvent;
 class PoolMembersUpdatedEvent;
 class SubscriptionRefreshEvent;
 class TestOnlineProxiesEvent;
+class ProxyRowsUpdatedEvent;
 
 wxDECLARE_EVENT(wxEVT_PROXY_TEST_PROGRESS, ProxyTestProgressEvent);
 wxDECLARE_EVENT(wxEVT_LOG_MESSAGE, LogMessageEvent);
@@ -69,6 +70,7 @@ wxDECLARE_EVENT(wxEVT_LOCATE_PROXY, LocateProxyEvent);
 wxDECLARE_EVENT(wxEVT_POOL_MEMBERS_UPDATED, PoolMembersUpdatedEvent);
 wxDECLARE_EVENT(wxEVT_SUBSCRIPTION_REFRESH, SubscriptionRefreshEvent);
 wxDECLARE_EVENT(wxEVT_TEST_ONLINE_PROXIES, TestOnlineProxiesEvent);
+wxDECLARE_EVENT(wxEVT_PROXY_ROWS_UPDATED, ProxyRowsUpdatedEvent);
 
 // ---------------------------------------------------------------
 // ProxyTestProgressEvent — sent during batch testing
@@ -101,6 +103,23 @@ private:
     int current_, total_;
     std::string proxyId_, remarks_, delay_, message_;
     bool isCompleted_;
+};
+
+// ---------------------------------------------------------------
+// ProxyRowsUpdatedEvent — batch testing flushed rows to the DB;
+// carries the indexIds so the list panel can refresh only those rows.
+// ---------------------------------------------------------------
+class ProxyRowsUpdatedEvent : public wxEvent {
+public:
+    explicit ProxyRowsUpdatedEvent(const std::vector<std::string>& indexIds = std::vector<std::string>())
+        : wxEvent(0, wxEVT_PROXY_ROWS_UPDATED), indexIds_(indexIds) {}
+
+    wxEvent* Clone() const override { return new ProxyRowsUpdatedEvent(*this); }
+
+    const std::vector<std::string>& getIndexIds() const { return indexIds_; }
+
+private:
+    std::vector<std::string> indexIds_;
 };
 
 // ---------------------------------------------------------------

@@ -415,3 +415,31 @@ updated: 2026-10-27
 - **`src/ProxyFinder.cpp:348/:354` 既有缺陷**：`removeOutboundDirect`/`addOutboundDirect` 调用无 `#ifdef USE_GRPC_API` 配对守卫，而这些符号只在 ifdef 内 ⇒ `USE_GRPC_API=OFF` 配置在仓库基线上本就编译不过。与本 Spec 无关（本轮 `setInstanceHealthHook`/`instanceHealthHook_` 均刻意放在 ifdef 之外）。
 - `CMakeLists.txt` 的 `test_region_batch_resolver` target 源列表漏 `src/config/StepToComponentMapper.cpp` 等 ⇒ 全量 `cmake --build build` 停在该 target（既有断裂，已 git stash 实证无关）。
 - `src/Utils.cpp:107/:120/:412/:433` 既有 partial-init 警告 48 条（重编译时浮现）。
+
+---
+
+## 2026-10-28 · BatchTaskQueue 模块拆分与队列优化 实施完成记录（Phase 0-5 + Scheme B）
+
+**Spec**：`docs/specs/2026-10-27-Spec-BatchTaskQueue-Optimization-v1.0.md`（含 §7 as-built 修订记录）
+**评审**：`docs/reviews/2026-10-27-Review-BatchTaskQueue-Optimization-v1.1.md`（CONDITIONAL PASS，阻断项已修订）
+**分支**：`Module-splitting-and-optimization-of-batch-task-queues`
+
+| 阶段 | 内容 | 验证 |
+| --- | --- | --- |
+| Phase 0 | `include/task/TaskType.h`（TaskType/TaskStatus/TaskHandle/TaskContext/TaskCallbacks）；`include/task/MutexPolicy.h` + `src/task/MutexPolicy.cpp`（ConcurrencyDecision: Allow/Reject/Queue + 冲突矩阵） | `MutexPolicyTest` 4/4 |
+| Phase 1 | `include/task/TaskQueue.h` + `src/task/TaskQueue.cpp`（单 worker、优先级队列、submit(type,lambda,priority,callbacks)、isBusy()） | `TaskQueueTest` 2/2 |
+| Phase 2 | `AppController::doTestSingleProxy` / `doTestAllProxies` 委托 `src/service/ProxyTestService.cpp` | 构建通过 |
+| Phase 3 | 全部异步用户操作迁移至 `taskQueue_`（testSingleProxy p2、testAllProxies p1、test/updateSubscription p1、updateAll p1、resolveRegions/singleRegion p1、syncDatabases p1、runAutoTask/resume p1、findFirst/findBest p2、testOnline p1），ScopeGuard 守护 isRunning_/currentTaskType_，`onQueued` 入队提示 | 构建通过 |
+| Phase 4 | `MutexPolicy` 接入所有异步入口；`isRunning()` 改为 `isRunning_ \|\| taskQueue_.isBusy()`（修复"队列常忙"误判） | 构建通过 |
+| Phase 5 | 全量构建 + 测试 | `build-and-test.bat` 12/12 |
+| Scheme B | 批量测试池内插入：`ProxyBatchTester::insertProxy` + `insertedProxies_/insertedConfigs_/insertedQueue_` + 插入优先 worker + watcher 宽限期随插入重置；覆盖批量测试/订阅测试/AutoTask 测试步骤三条路径 | 构建通过；GUI 行为待用户确认 |
+| 实时刷新 | `RowsUpdatedCallback` + `wxEVT_PROXY_ROWS_UPDATED` + `ProxyListPanel::onProxyRowsUpdated` → `refreshResultsFor(ids)` | 构建通过 |
+
+### 关键修复
+- **`pbt=null` 根因**：`doTestSubscription` 使用栈上 tester 且未注册到 `proxyBatchTester_`，而 `runWithSubId` 与 `run()` 打印同一条 "Testing N proxies total" 日志，导致误判为批量测试；已改为 run 前后注册/清空。
+- **插入代理误用批次配置**：worker 原统一取 `preGenConfigs_[profileIdx]`，对插入代理会注入别的代理配置；已引入 `insertedConfigs_` 并按来源分支取值。
+- **队列忙误判**：`TaskQueue::isRunning()` 反映"worker 线程存活"而非"任务执行中"，新增 `isBusy()` 并修正 `AppController::isRunning()`。
+
+### 遗留
+- GUI 端到端确认：批量测试运行中点击单代理测试，应出现 `Inserted high-priority proxy: <indexId>` 日志且该行结果先于整批完成刷新（需人工验证）。
+- 方案 A（`TEST_BATCH` 容器 + 子任务）未实施，已被 §7 方案 B 取代。

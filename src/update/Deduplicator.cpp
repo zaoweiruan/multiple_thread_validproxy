@@ -273,45 +273,64 @@ int Deduplicator::deduplicateBlacklistPhase() {
 }
 
 int Deduplicator::deduplicateConfigErrorPhase() {
-    db::models::ProfileitemDAO dao(db_);
-    std::vector<db::models::Profileitem> all = dao.getAll("SELECT * FROM ProfileItem;");
+    // Stream rows instead of loading them all into a vector. A full ProfileItem
+    // load of ~330k rows (each ~50 std::string members, ~1.6KB + heap) can
+    // exhaust memory (bad_alloc -> std::terminate with no dump/log). Process
+    // row-by-row so peak memory is one row; collect only the invalid index ids.
+    const char* sql = "SELECT * FROM ProfileItem;";
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        Logger::write(std::string("ERROR: ConfigError phase prepare failed - ") +
+                      sqlite3_errmsg(db_), LogLevel::ERR);
+        return 0;
+    }
     std::vector<std::string> failedIds;
-    failedIds.reserve(all.size() / 10);
     size_t garbageCount = 0;
-
-    for (const db::models::Profileitem& p : all) {
+    int rc = SQLITE_ROW;
+    while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
+        db::models::Profileitem p;
         bool bad = false;
         try {
+            p = db::models::Profileitem::fromStmt(stmt);
             p.checkRequired();
+            if (!utils::isPrintableAscii(p.security) || !utils::isPrintableAscii(p.id)) {
+                // Non-printable Security/Id = binary garbage that xray can never
+                // accept (e.g. base64 of a URL-encoded username). Counted in bulk,
+                // no per-row log — there can be tens of thousands of such rows.
+                garbageCount++;
+                bad = true;
+            }
+            if (!bad && !utils::isPublicAddress(p.address)) {
+                Logger::write("CONFIG_ERROR: " + p.indexid + " - " + p.address + ":" + p.port + " - private/invalid address", LogLevel::WARN);
+                bad = true;
+            }
+            if (!bad && (p.configtype == "1" || p.configtype == "5") && !utils::isValidUuid(p.id)) {
+                Logger::write("CONFIG_ERROR: " + p.indexid + " - " + p.address + ":" + p.port + " - invalid UUID format", LogLevel::WARN);
+                bad = true;
+            }
+            if (!bad && p.configtype == "3" && !utils::isSupportedSsCipher(p.security)) {
+                Logger::write("CONFIG_ERROR: " + p.indexid + " - " + p.address + ":" + p.port + " - unsupported SS cipher: '" + p.security + "'", LogLevel::WARN);
+                bad = true;
+            }
         } catch (const std::exception& e) {
+            // Any per-row validation failure marks the row invalid. The row is
+            // skipped rather than propagating (a malformed field must never
+            // crash the whole dedup pass).
             bad = true;
             Logger::write("CONFIG_ERROR: " + p.indexid + " - " + p.address + ":" + p.port + " - " + e.what(), LogLevel::WARN);
-        }
-        if (!bad && (!utils::isPrintableAscii(p.security) || !utils::isPrintableAscii(p.id))) {
-            // Non-printable Security/Id = binary garbage that xray can never
-            // accept (e.g. base64 of a URL-encoded username). Counted in bulk,
-            // no per-row log — there can be tens of thousands of such rows.
-            garbageCount++;
-            bad = true;
-        }
-        if (!bad && !utils::isPublicAddress(p.address)) {
-            Logger::write("CONFIG_ERROR: " + p.indexid + " - " + p.address + ":" + p.port + " - private/invalid address", LogLevel::WARN);
-            bad = true;
-        }
-        if (!bad && (p.configtype == "1" || p.configtype == "5") && !utils::isValidUuid(p.id)) {
-            Logger::write("CONFIG_ERROR: " + p.indexid + " - " + p.address + ":" + p.port + " - invalid UUID format", LogLevel::WARN);
-            bad = true;
-        }
-        if (!bad && p.configtype == "3" && !utils::isSupportedSsCipher(p.security)) {
-            Logger::write("CONFIG_ERROR: " + p.indexid + " - " + p.address + ":" + p.port + " - unsupported SS cipher: '" + p.security + "'", LogLevel::WARN);
-            bad = true;
         }
         if (bad) {
             failedIds.push_back(p.indexid);
         }
     }
+    sqlite3_finalize(stmt);
+    if (rc != SQLITE_DONE) {
+        Logger::write(std::string("ERROR: ConfigError phase step failed - ") +
+                      sqlite3_errmsg(db_), LogLevel::ERR);
+    }
 
     if (!failedIds.empty()) {
+        db::models::ProfileitemDAO dao(db_);
         dao.deleteByIndexIdsNoTx(failedIds);
     }
 

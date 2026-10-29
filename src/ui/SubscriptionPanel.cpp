@@ -433,10 +433,6 @@ void SubscriptionPanel::onUpdateSubscription(wxCommandEvent&) {
             static_cast<MainFrame*>(topLevel)->syncToolbarState();
         }
     }
-    if (controller_ && controller_->isRunning()) {
-        wxMessageBox(L"操作进行中，请等待完成后再试", L"操作进行中", wxOK | wxICON_WARNING);
-        return;
-    }
     std::string subId = getSelectedSubId();
     if (!subId.empty()) {
         // Pass top-level frame as event sink (parent is now centerPanel, not MainFrame)
@@ -451,10 +447,6 @@ void SubscriptionPanel::onTestSubscription(wxCommandEvent&) {
         if (topLevel && topLevel != this) {
             static_cast<MainFrame*>(topLevel)->syncToolbarState();
         }
-    }
-    if (controller_ && controller_->isRunning()) {
-        wxMessageBox(L"操作进行中，请等待完成后再试", L"操作进行中", wxOK | wxICON_WARNING);
-        return;
     }
     std::string subId = getSelectedSubId();
     if (!subId.empty()) {

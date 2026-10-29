@@ -1931,11 +1931,11 @@ int XrayApi::grpcConnect(const std::string& host, int port) {
         sock = socket(ap->ai_family, ap->ai_socktype, ap->ai_protocol);
         if (sock == INVALID_SOCKET) continue;
 
-        DWORD rcvTimeout = 10000;
+        DWORD rcvTimeout = 5000;
         setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO,
                    reinterpret_cast<const char*>(&rcvTimeout), sizeof(rcvTimeout));
 
-        DWORD sndTimeout = 10000;
+        DWORD sndTimeout = 5000;
         setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO,
                    reinterpret_cast<const char*>(&sndTimeout), sizeof(sndTimeout));
 

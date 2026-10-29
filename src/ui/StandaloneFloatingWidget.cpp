@@ -860,11 +860,10 @@ void StandaloneFloatingWidget::onMenuTestOnline(wxCommandEvent&) {
     if (!controller_) {
         return;
     }
-    if (controller_->isRunning()) {
-        wxMessageBox(L"操作进行中，请等待完成后再试", L"操作进行中",
-                     wxOK | wxICON_WARNING, this);
-        return;
-    }
+    // Online-proxy test runs on its own thread (probeThread_) via
+    // testOnlineProxiesAsync and does not use the shared Xray instance pool or
+    // the TaskQueue worker, so it may run concurrently with a batch test.
+    // Concurrent probes are mutually excluded inside testOnlineProxiesAsync.
     controller_->testOnlineProxiesAsync(this);
 }
 

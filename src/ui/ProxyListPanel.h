@@ -69,6 +69,7 @@ private:
     void onStartProxy(wxCommandEvent& event);
     void onAddToPool(wxCommandEvent& event);
     void onProxyTestProgress(ProxyTestProgressEvent& event);
+    void onProxyRowsUpdated(ProxyRowsUpdatedEvent& event);
     void onColumnHeaderClick(wxDataViewEvent& event);
     // Resolve a model column index (as returned by wxDataViewEvent::GetColumn)
     // to the actual wxDataViewColumn*, scanning visual positions.  This is

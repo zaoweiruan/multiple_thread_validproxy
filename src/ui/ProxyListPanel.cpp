@@ -62,7 +62,7 @@ ProxyListPanel::ProxyListPanel(wxWindow* parent, AppController* controller,
 
     listCtrl_ = new wxDataViewCtrl(this, wxID_ANY,
                                     wxDefaultPosition, wxDefaultSize,
-                                    wxDV_ROW_LINES | wxDV_SINGLE);
+                                    wxDV_ROW_LINES | wxDV_MULTIPLE);
 
     model_ = new ProxyListModel();
     listCtrl_->AssociateModel(model_);
@@ -100,6 +100,8 @@ ProxyListPanel::ProxyListPanel(wxWindow* parent, AppController* controller,
     Bind(wxEVT_RUNNING_DURATIONS_LOADED, &ProxyListPanel::onRunningDurationsLoaded, this);
     Bind(wxEVT_DATAVIEW_COLUMN_HEADER_CLICK, &ProxyListPanel::onColumnHeaderClick, this);
     Bind(wxEVT_TEST_ONLINE_PROXIES, &ProxyListPanel::onTestOnlineProxiesEvent, this);
+    // Batch-test progress: rows were flushed to the DB -> refresh only those rows.
+    Bind(wxEVT_PROXY_ROWS_UPDATED, &ProxyListPanel::onProxyRowsUpdated, this);
 
     // Double-click to start proxy
     listCtrl_->Bind(wxEVT_DATAVIEW_ITEM_ACTIVATED, [this](wxDataViewEvent&) {
@@ -448,19 +450,14 @@ void ProxyListPanel::onContextMenu(wxDataViewEvent& event) {
         return;
     }
 
-    // Determine if selected proxy already has a standalone instance running
-    wxDataViewItem selItem = listCtrl_->GetSelection();
-    std::string selIndexId;
-    if (selItem.IsOk()) {
-        unsigned int viewRow = model_->GetRow(selItem);
-        if (viewRow != static_cast<unsigned int>(-1)) {
-            selIndexId = model_->getIndexIdAtRow(viewRow);
-        }
+    // Determine the right-clicked proxy (works for both single and multi-select).
+    wxDataViewItem selItem = event.GetItem();
+    if (!selItem.IsOk()) {
+        selItem = listCtrl_->GetSelection();
     }
 
     wxMenu menu;
-    menu.Append(ID_CONTEXT_TEST_PROXY, "测试此代理");
-    menu.Append(ID_CONTEXT_TEST_ONLINE_PROXIES, "测试在线代理");
+    menu.Append(ID_CONTEXT_TEST_PROXY, "测试选中代理");
     menu.Append(ID_CONTEXT_EXPORT_SHARE, "有效代理分享");
     menu.AppendSeparator();
     menu.Append(ID_CONTEXT_RESOLVE_REGION, "解析地区");
@@ -468,6 +465,8 @@ void ProxyListPanel::onContextMenu(wxDataViewEvent& event) {
     menu.AppendSeparator();
     menu.Append(ID_CONTEXT_REFRESH, "刷新");
     menu.AppendSeparator();
+    // Move "测试在线代理" to immediately before "开启独立代理".
+    menu.Append(ID_CONTEXT_TEST_ONLINE_PROXIES, "测试在线代理");
     // Standalone (single-process) proxy start — always launches an independent
     // xray process regardless of whether the proxy pool is running. Pool
     // injection is a separate menu item (ID_CONTEXT_ADD_TO_POOL).
@@ -488,28 +487,40 @@ void ProxyListPanel::onTestProxy(wxCommandEvent& event) {
             static_cast<MainFrame*>(topLevel)->syncToolbarState();
         }
     }
-    // Prevent testing during active operations
-    if (controller_ && controller_->isRunning()) {
-        wxMessageBox(L"操作进行中，请等待完成后再试", L"操作进行中", wxOK | wxICON_WARNING);
-        return;
+    // Multi-select: test ALL currently selected proxies. Testing is now queued
+    // by TaskQueue; do not block on isRunning().
+    wxDataViewItemArray selItems;
+    listCtrl_->GetSelections(selItems);
+    if (selItems.IsEmpty()) {
+        // Fall back to the single right-clicked item if no multi-selection.
+        wxDataViewItem single = listCtrl_->GetSelection();
+        if (single.IsOk()) selItems.Add(single);
     }
+    if (selItems.IsEmpty()) return;
 
-    wxDataViewItem item = listCtrl_->GetSelection();
-    if (!item.IsOk()) return;
-
-    unsigned int viewRow = model_->GetRow(item);
-    if (viewRow == static_cast<unsigned int>(-1)) return;
-
-    std::string indexId = model_->getIndexIdAtRow(viewRow);
-    if (indexId.empty()) return;
-
-    // Send initial "Testing..." event to MainFrame for Delay column refresh
     wxWindow* topLevel = wxGetTopLevelParent(this);
+
+    // Collect all selected indexIds.
+    std::vector<std::string> indexIds;
+    for (const wxDataViewItem& item : selItems) {
+        if (!item.IsOk()) continue;
+        unsigned int viewRow = model_->GetRow(item);
+        if (viewRow == static_cast<unsigned int>(-1)) continue;
+        std::string indexId = model_->getIndexIdAtRow(viewRow);
+        if (indexId.empty()) continue;
+        indexIds.push_back(indexId);
+    }
+    if (indexIds.empty()) return;
+
+    // Send initial "Testing..." events for Delay column refresh.
     if (topLevel && topLevel != this) {
-        wxQueueEvent(topLevel, new ProxyTestProgressEvent(0, 1, indexId, "", "", "Testing…", false));
+        for (std::size_t i = 0; i < indexIds.size(); ++i) {
+            wxQueueEvent(topLevel, new ProxyTestProgressEvent(0, 1, indexIds[i], "", "", "Testing…", false));
+        }
     }
 
-    controller_->testSingleProxyAsync(indexId, this);
+    // Phase A: single pooled test instead of N count=1 pools.
+    controller_->testSelectedProxiesAsync(indexIds, this);
     (void)event; // id dispatched in menu
 }
 
@@ -525,12 +536,11 @@ void ProxyListPanel::onTestOnlineProxies(wxCommandEvent& WXUNUSED(event)) {
         }
     }
 
-    if (controller_->isRunning()) {
-        wxMessageBox(L"操作进行中，请等待完成后再试", L"操作进行中", wxOK | wxICON_WARNING);
-        return;
-    }
-
-    // Test connectivity of all currently-running standalone proxy processes.
+    // Online-proxy test runs on its own thread (probeThread_) via
+    // testOnlineProxiesAsync and does not use the shared Xray instance pool or
+    // the TaskQueue worker, so it may run concurrently with a batch test.
+    // Concurrent probes are mutually excluded inside testOnlineProxiesAsync
+    // (onlineProbeRunning_); do NOT block here on isRunning().
     controller_->testOnlineProxiesAsync(this);
 }
 
@@ -762,6 +772,13 @@ void ProxyListPanel::onProxyTestProgress(ProxyTestProgressEvent& event) {
     if (event.isCompleted()) {
         refreshResults();
     }
+    event.Skip();
+}
+
+// -------------------------------------------------------------------
+void ProxyListPanel::onProxyRowsUpdated(ProxyRowsUpdatedEvent& event) {
+    // Mid-batch incremental refresh: only the rows just flushed to the DB.
+    refreshResultsFor(event.getIndexIds());
     event.Skip();
 }
 

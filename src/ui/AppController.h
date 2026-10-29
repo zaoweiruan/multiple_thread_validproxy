@@ -22,6 +22,10 @@
 #include "ProfileExItem.h"
 #include "ProxyFinder.h"
 #include "NetworkMonitor.h"
+#include "ProxyBatchTester.h"
+#include "task/TaskType.h"
+#include "task/MutexPolicy.h"
+#include "task/TaskQueue.h"
 #include "ProcessExitListener.h"
 #include "ProxyRuntimeHistory.h"
 #include "StandaloneProxyPool.h"
@@ -108,7 +112,7 @@ public:
 // Config
    config::AppConfig getConfig() const { return config_; }
    bool saveConfig(const config::AppConfig& cfg);
-   bool isRunning() const { return isRunning_.load(); }
+   bool isRunning() const { return isRunning_.load() || taskQueue_.isBusy(); }
     // True while the periodic SILENT probe (background task) is running.
     // The config dialog uses this to allow ordinary config saves during the
     // probe (it snapshots config_ under configMutex_) while still blocking
@@ -183,6 +187,7 @@ std::vector<UnifiedMonitorRow> getUnifiedMonitorRows();
 void testSubscriptionAsync(const std::string& subId, wxEvtHandler* wxHandler);
 void testSingleProxyAsync(const std::string& indexId, wxEvtHandler* wxHandler);
 void testAllProxiesAsync(wxEvtHandler* wxHandler);
+void testSelectedProxiesAsync(const std::vector<std::string>& indexIds, wxEvtHandler* wxHandler);
 void testOnlineProxiesAsync(wxEvtHandler* wxHandler, bool silent = false);
 void cancelTest();
 bool isTestCancelled() const;
@@ -277,8 +282,9 @@ private:
   void doUpdateSubscription(const std::string& subId, wxEvtHandler* wxHandler);
   void doUpdateAllSubscriptions(wxEvtHandler* wxHandler);
   void doTestSubscription(const std::string& subId, wxEvtHandler* wxHandler);
-  void doTestSingleProxy(const std::string& indexId, wxEvtHandler* wxHandler);
-  void doTestAllProxies(wxEvtHandler* wxHandler);
+  void doTestSingleProxy(const std::string& indexId, wxEvtHandler* wxHandler, bool manageRunning = true);
+  void doTestSingleProxySubtask(const std::string& indexId, wxEvtHandler* wxHandler);
+  void doTestAllProxies(wxEvtHandler* wxHandler, ProxyBatchTester* tester = nullptr);
   void doTestOnlineProxies(wxEvtHandler* wxHandler, bool silent);
   void doFindFirstProxy(wxEvtHandler* wxHandler);
   void doFindBestProxy(wxEvtHandler* wxHandler);
@@ -301,6 +307,12 @@ private:
   mutable std::mutex configMutex_;
   std::atomic<bool> cancelRequested_{false};
   std::atomic<bool> isRunning_{false};
+  std::atomic<int> currentTaskType_{0}; // task::TaskType as int
+  // Running batch tester instance (for priority insertion)
+  std::atomic<ProxyBatchTester*> proxyBatchTester_{nullptr};
+  // Batch subtask tracking (Scheme A fine-grained splitting)
+  std::atomic<int> batchRemaining_{0};
+  wxEvtHandler* batchWxHandler_{nullptr};
   // Set while the periodic silent probe runs (cleared by ScopeGuard in
   // doTestOnlineProxies). Distinct from isRunning_ so the config dialog can
   // allow saves during this background task.
@@ -310,6 +322,7 @@ private:
   std::thread probeThread_;
   // Worker thread (single at a time)
 std::thread workerThread_;
+task::TaskQueue taskQueue_;
    TestResult lastFindResult_;
    NetworkMonitor netMon_;
    bool netMonEnabled_{false};  // Cache for MainFrame to query
