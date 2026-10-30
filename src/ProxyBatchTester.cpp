@@ -265,7 +265,7 @@ std::string xrayApiAddr = "127.0.0.1:" + std::to_string(apiPort);
                               + " picked up inserted proxy idx=" + std::to_string(profileIdx)
                               + " (insertedQueue remaining=" + std::to_string(insertedQueue_.size())
                               + ", isCancelled=" + (isCancelled() ? "true" : "false") + ")",
-                              LogLevel::INFO);
+                              LogLevel::REPORT);
             } else {
                 Logger::write("[ProxyBatchTester] worker " + std::to_string(workerId)
                               + " insertedQueue empty after wait (running=" + (running_.load() ? "true" : "false") + ")",
