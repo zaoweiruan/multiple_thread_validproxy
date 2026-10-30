@@ -1007,10 +1007,11 @@ bool ProxyBatchTester::runWithIndexId(const std::string& indexId) {
     }
 
     db::models::ProfileitemDAO dao(db_);
-    std::vector<db::models::Profileitem> profiles = dao.getAll();
+    auto profileOpt = dao.getByIndexId(indexId);
     std::vector<db::models::Profileitem> filtered;
-    std::copy_if(profiles.begin(), profiles.end(), std::back_inserter(filtered),
-        [&indexId](const db::models::Profileitem& p) { return p.indexid == indexId; });
+    if (profileOpt.has_value()) {
+        filtered.push_back(*profileOpt);
+    }
 
     proxies_ = std::move(filtered);
     totalProxies_ = static_cast<int>(proxies_.size());
@@ -1060,16 +1061,11 @@ bool ProxyBatchTester::loadProxies(const std::vector<std::string>& indexIds) {
     // into proxies_ so a multi-select test can create one count=N pool instead
     // of N count=1 pools.
     db::models::ProfileitemDAO dao(db_);
-    std::vector<db::models::Profileitem> profiles = dao.getAll();
     std::vector<db::models::Profileitem> filtered;
     for (std::size_t i = 0; i < indexIds.size(); ++i) {
-        const std::string& id = indexIds[i];
-        for (std::size_t j = 0; j < profiles.size(); ++j) {
-            const db::models::Profileitem& p = profiles[j];
-            if (p.indexid == id) {
-                filtered.push_back(p);
-                break;
-            }
+        auto profileOpt = dao.getByIndexId(indexIds[i]);
+        if (profileOpt.has_value()) {
+            filtered.push_back(*profileOpt);
         }
     }
     proxies_ = std::move(filtered);
