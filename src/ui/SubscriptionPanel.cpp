@@ -369,14 +369,11 @@ void SubscriptionPanel::onRefreshSubscription(wxCommandEvent&) {
             static_cast<MainFrame*>(topLevel)->syncToolbarState();
         }
     }
-    // Refresh must not touch the main (writer) connection while a batch test
-    // is running (that would race with the worker thread). Use the async
-    // reader path in that case; otherwise the synchronous path is fine.
     if (controller_ && controller_->isRunning()) {
-        controller_->loadSubscriptionsAsync(wxGetTopLevelParent(this));
-    } else {
-        loadSubscriptions();
+        wxMessageBox(L"操作进行中，请等待完成后再试", L"操作进行中", wxOK | wxICON_WARNING);
+        return;
     }
+    loadSubscriptions();
     // Notify MainFrame so it reloads the full proxy list (all proxies)
     {
         wxWindow* topLevel = wxGetTopLevelParent(this);

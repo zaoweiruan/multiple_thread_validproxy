@@ -319,10 +319,13 @@ MainFrame::MainFrame(const config::AppConfig& cfg, sqlite3* db)
 
 // Reload full proxy list (all proxies) after the subscription list refreshes
 Bind(wxEVT_SUBSCRIPTION_REFRESH, [this](SubscriptionRefreshEvent&) {
-    // Only refresh test results in place; do not reload/reset the proxy
-    // list, otherwise the cached full table and current view can be lost.
-    if (proxyPanel_) {
-        proxyPanel_->refreshResults();
+    if (proxyPanel_ && controller_) {
+        controller_->loadProxiesAsync("", this);
+    }
+    if (statusTextProtected_.exchange(false)) {
+        rewriteRefreshStatusText();
+    } else {
+        setStatusText(0, "Refresh: loaded all proxies");
     }
     if (statusTextProtected_.exchange(false)) {
         rewriteRefreshStatusText();

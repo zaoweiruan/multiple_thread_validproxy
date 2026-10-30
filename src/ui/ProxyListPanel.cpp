@@ -282,9 +282,8 @@ void ProxyListPanel::reloadFromDatabase() {
 // vectors before resetting the view.
 // -------------------------------------------------------------------
 void ProxyListPanel::applySubscriptionFilter(const std::string& subId) {
-    if (!cacheReady_ || allProxies_.empty()) {
-        // Cache not populated yet (startup) or unexpectedly empty
-        // (e.g. during a batch test) — fall back to async DB reload.
+    if (!cacheReady_) {
+        // Cache not populated yet (startup) — fall back to async DB reload.
         reloadFromDatabase();
         return;
     }
@@ -500,13 +499,6 @@ void ProxyListPanel::onTestProxy(wxCommandEvent& event) {
     if (selItems.IsEmpty()) return;
 
     wxWindow* topLevel = wxGetTopLevelParent(this);
-
-    // Keep toolbar/UI state in sync so multi-select test is cancellable
-    // (mirrors onToolTest) instead of leaving the UI in a blocked state.
-    if (topLevel && topLevel != this) {
-        static_cast<MainFrame*>(topLevel)->setOperationState(OperationType::TEST);
-        static_cast<MainFrame*>(topLevel)->syncToolbarState();
-    }
 
     // Collect all selected indexIds.
     std::vector<std::string> indexIds;
