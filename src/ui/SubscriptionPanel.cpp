@@ -114,10 +114,13 @@ SubscriptionPanel::SubscriptionPanel(wxWindow* parent, AppController* controller
 static const std::string ALL_SUBSCRIPTION_ID = "";
 
 void SubscriptionPanel::updateSubscriptionList(const std::vector<db::models::Subitem>& subs,
-                                                 const std::unordered_map<std::string, int>& proxyCounts) {
+                                                  const std::unordered_map<std::string, int>& proxyCounts,
+                                                  const std::unordered_map<std::string, int>* validProxyCounts) {
     subs_ = subs;
     proxyCounts_ = proxyCounts;
-    validProxyCounts_ = validProxyCounts_;
+    if (validProxyCounts) {
+        validProxyCounts_ = *validProxyCounts;
+    }
     // Save unfiltered originals for search reset
     allSubs_ = subs;
     allProxyCounts_ = proxyCounts;
@@ -236,14 +239,19 @@ void SubscriptionPanel::loadSubscriptions() {
     std::unordered_map<std::string, int> proxyCounts = controller_->countProxiesBySubId();
     validProxyCounts_ = controller_->countValidProxiesBySubId();
 
-    updateSubscriptionList(subs, proxyCounts);
+    updateSubscriptionList(subs, proxyCounts, &validProxyCounts_);
  }
 
 void SubscriptionPanel::loadSubscriptions(const std::vector<db::models::Subitem>& subs,
-                                           const std::unordered_map<std::string, int>& proxyCounts) {
+                                           const std::unordered_map<std::string, int>& proxyCounts,
+                                           const std::unordered_map<std::string, int>* validProxyCounts) {
     // Load valid proxy counts in the async path (quick GROUP BY JOIN query)
-    validProxyCounts_ = controller_->countValidProxiesBySubId();
-    updateSubscriptionList(subs, proxyCounts);
+    if (validProxyCounts) {
+        validProxyCounts_ = *validProxyCounts;
+    } else {
+        validProxyCounts_ = controller_->countValidProxiesBySubId();
+    }
+    updateSubscriptionList(subs, proxyCounts, &validProxyCounts_);
  }
 
  std::string SubscriptionPanel::formatUpdateTime(const std::string& updatetime) {
@@ -361,11 +369,14 @@ void SubscriptionPanel::onRefreshSubscription(wxCommandEvent&) {
             static_cast<MainFrame*>(topLevel)->syncToolbarState();
         }
     }
+    // Refresh must not touch the main (writer) connection while a batch test
+    // is running (that would race with the worker thread). Use the async
+    // reader path in that case; otherwise the synchronous path is fine.
     if (controller_ && controller_->isRunning()) {
-        wxMessageBox(L"操作进行中，请等待完成后再试", L"操作进行中", wxOK | wxICON_WARNING);
-        return;
+        controller_->loadSubscriptionsAsync(wxGetTopLevelParent(this));
+    } else {
+        loadSubscriptions();
     }
-    loadSubscriptions();
     // Notify MainFrame so it reloads the full proxy list (all proxies)
     {
         wxWindow* topLevel = wxGetTopLevelParent(this);
