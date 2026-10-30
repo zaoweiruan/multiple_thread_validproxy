@@ -731,7 +731,7 @@ void AppController::testSelectedProxiesAsync(const std::vector<std::string>& ind
         if (injected > 0) {
             Logger::write("Multi-select: injected " + std::to_string(injected) + " of "
                           + std::to_string(indexIds.size()) + " proxies into running pool",
-                          LogLevel::REPORT);
+                          LogLevel::DEBUG);
             if (injected < static_cast<int>(indexIds.size())) {
                 Logger::write("Multi-select: " + std::to_string(indexIds.size() - injected)
                               + " proxies could not be injected (not found in DB?)",
