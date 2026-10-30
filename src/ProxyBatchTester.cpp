@@ -1127,6 +1127,6 @@ bool ProxyBatchTester::insertProxy(const std::string& indexId) {
     totalProxies_.fetch_add(1, std::memory_order_relaxed);
     insertedCv_.notify_all();
 
-    Logger::write("Inserted high-priority proxy: " + indexId, LogLevel::REPORT);
+    Logger::write("Inserted high-priority proxy: " + indexId, LogLevel::DEBUG);
     return true;
 }
