@@ -283,8 +283,11 @@ void ProxyListPanel::reloadFromDatabase() {
 // -------------------------------------------------------------------
 void ProxyListPanel::applySubscriptionFilter(const std::string& subId) {
     if (!cacheReady_) {
-        // Cache not populated yet (startup) — fall back to async DB reload.
-        reloadFromDatabase();
+        // Cache not populated yet (startup) — fall back to async DB reload,
+        // but only when no batch test is running (avoid racing the writer).
+        if (!(controller_ && controller_->isRunning())) {
+            reloadFromDatabase();
+        }
         return;
     }
 
