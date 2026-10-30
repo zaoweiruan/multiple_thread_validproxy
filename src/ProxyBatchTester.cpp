@@ -1088,15 +1088,13 @@ bool ProxyBatchTester::insertProxy(const std::string& indexId) {
         return false;
     }
     db::models::ProfileitemDAO dao(db_);
-    std::vector<db::models::Profileitem> profiles = dao.getAll();
-    std::vector<db::models::Profileitem> filtered;
-    std::copy_if(profiles.begin(), profiles.end(), std::back_inserter(filtered),
-        [&indexId](const db::models::Profileitem& p) { return p.indexid == indexId; });
-
-    if (filtered.empty()) {
+    auto profileOpt = dao.getByIndexId(indexId);
+    if (!profileOpt.has_value()) {
         Logger::write("insertProxy: proxy not found: " + indexId, LogLevel::WARN);
         return false;
     }
+    std::vector<db::models::Profileitem> filtered;
+    filtered.push_back(*profileOpt);
 
     // Scheme B correctness: the inserted proxy needs its OWN pre-generated
     // Xray config. Without this the worker would fall back to a batch config
