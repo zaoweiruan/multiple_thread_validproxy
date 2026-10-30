@@ -269,7 +269,7 @@ std::string xrayApiAddr = "127.0.0.1:" + std::to_string(apiPort);
             } else {
                 Logger::write("[ProxyBatchTester] worker " + std::to_string(workerId)
                               + " insertedQueue empty after wait (running=" + (running_.load() ? "true" : "false") + ")",
-                              LogLevel::INFO);
+                              LogLevel::DEBUG);
             }
         }
         if (!isInserted) {
@@ -501,7 +501,7 @@ std::string xrayApiAddr = "127.0.0.1:" + std::to_string(apiPort);
             Logger::write("[ProxyBatchTester] worker " + std::to_string(workerId)
                           + " about to test " + (isInserted ? "INSERTED" : "batch")
                           + " proxy " + profile.address + ":" + profile.port,
-                          LogLevel::INFO);
+                          LogLevel::DEBUG);
             TestResult result = proxyTester_->test(socksPort, &cancelRequested_, externalCancel_);
             
             int currentNum;
