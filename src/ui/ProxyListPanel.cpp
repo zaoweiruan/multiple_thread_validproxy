@@ -282,8 +282,9 @@ void ProxyListPanel::reloadFromDatabase() {
 // vectors before resetting the view.
 // -------------------------------------------------------------------
 void ProxyListPanel::applySubscriptionFilter(const std::string& subId) {
-    if (!cacheReady_) {
-        // Cache not populated yet (startup) — fall back to async DB reload.
+    if (!cacheReady_ || allProxies_.empty()) {
+        // Cache not populated yet (startup) or unexpectedly empty
+        // (e.g. during a batch test) — fall back to async DB reload.
         reloadFromDatabase();
         return;
     }
