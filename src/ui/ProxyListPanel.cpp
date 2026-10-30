@@ -501,6 +501,13 @@ void ProxyListPanel::onTestProxy(wxCommandEvent& event) {
 
     wxWindow* topLevel = wxGetTopLevelParent(this);
 
+    // Keep toolbar/UI state in sync so multi-select test is cancellable
+    // (mirrors onToolTest) instead of leaving the UI in a blocked state.
+    if (topLevel && topLevel != this) {
+        static_cast<MainFrame*>(topLevel)->setOperationState(OperationType::TEST);
+        static_cast<MainFrame*>(topLevel)->syncToolbarState();
+    }
+
     // Collect all selected indexIds.
     std::vector<std::string> indexIds;
     for (const wxDataViewItem& item : selItems) {
