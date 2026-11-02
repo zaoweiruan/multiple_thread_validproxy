@@ -243,40 +243,73 @@ void ProxyListPanel::refreshResultsFor(const std::vector<std::string>& indexIds)
     }
     std::vector<db::models::ProfileExItem> rows =
         controller_->loadProxyResultsFor(indexIds);
+    if (rows.empty()) {
+        return;
+    }
+
+    const std::uint64_t t0 = GetTickCount64();
+    // Index exItems_ once (O(N)) instead of scanning it once per incoming row
+    // (O(B * N), N ~ 4920 -- the O(n^2) hot path behind the "All" subscription
+    // click freeze under a batch test: B rows x 3 full-cache scans each).
+    std::unordered_map<std::string, std::size_t> exPos;
+    exPos.reserve(exItems_.size() * 2);
+    for (std::size_t i = 0; i < exItems_.size(); ++i) {
+        exPos[exItems_[i].indexid] = i;
+    }
+    // Index the displayed rows once (O(V)) so notifyTestResultChangedFor doesn't
+    // do a linear GetItem scan per row (findRowByIndexId was O(V) per row).
+    std::unordered_map<std::string, int> rowPos;
+    rowPos.reserve(proxies_.size() * 2);
+    for (unsigned vr = 0; vr < model_->GetCount(); ++vr) {
+        const db::models::Profileitem* p = model_->getProfileAtRow(vr);
+        if (p) rowPos[p->indexid] = static_cast<int>(vr);
+    }
 
     bool anyChanged = false;
     for (std::vector<db::models::ProfileExItem>::const_iterator rit = rows.begin();
          rit != rows.end(); ++rit) {
-        bool rowFound = false;
-        for (std::vector<db::models::ProfileExItem>::iterator it = exItems_.begin();
-             it != exItems_.end(); ++it) {
-            if (it->indexid != rit->indexid) continue;
-            rowFound = true;
-            // delay 格式化与 refreshResults()/rebuildMaps() 一致：
-            // ProfileExItem.delay 是 DB 原生显示字符串（GetValueByRow 直接渲染）。
-            const std::string delay = rit->delay;
-            const bool rowChanged = model_->updateResultFor(
-                rit->indexid, delay, rit->message, rit->consecutive_failures);
-            *it = *rit;   // 同步源数据（model 只读非拥有指针）
-            // 探活失败会重置 start_count / total_runtime_ms / crash_count = 0，
-            // 增量刷新必须重算 history maps，否则死代理的 Health/Starts/Runtime
-            // 列会一直显示上一轮的值（与全量 refreshResults 的全库重建不一致）。
-            const bool historyChanged = model_->syncHistoryForIndexId(rit->indexid);
-            if (rowChanged || historyChanged) {
-                anyChanged = true;
-                // ItemChanged(item) 通知整行（含 history 列）重绘。
-                model_->notifyTestResultChangedFor(rit->indexid);
-            }
-            break;
-        }
-        if (!rowFound) {
+        auto pit = exPos.find(rit->indexid);
+        if (pit == exPos.end()) {
             // 受测行不在当前过滤/列表中（如筛选后隐藏）——查找失败不通知。
             Logger::write("[ProxyListPanel] refreshResultsFor: indexId not in list: "
                           + rit->indexid, LogLevel::DEBUG);
+            continue;
+        }
+        // delay 格式化与 refreshResults()/rebuildMaps() 一致：
+        // ProfileExItem.delay 是 DB 原生显示字符串（GetValueByRow 直接渲染）。
+        const std::string delay = rit->delay;
+        const bool rowChanged = model_->updateResultFor(
+            rit->indexid, delay, rit->message, rit->consecutive_failures);
+        // 同步源数据（model 只读非拥有指针）
+        db::models::ProfileExItem& cached = exItems_[pit->second];
+        const db::models::ProfileExItem before = cached;
+        cached = *rit;
+        // 探活失败会重置 start_count / total_runtime_ms / crash_count = 0，
+        // 增量刷新必须重算 history maps，否则死代理的 Health/Starts/Runtime
+        // 列会一直显示上一轮的值（与全量 refreshResults 的全库重建不一致）。
+        // 用已找到的 before 引用避免 syncHistoryForIndexId 重扫 exItems_。
+        const bool historyChanged = model_->syncHistoryFor(before);
+        if (rowChanged || historyChanged) {
+            anyChanged = true;
+            // ItemChanged(item) 通知整行（含 history 列）重绘。
+            auto rit2 = rowPos.find(rit->indexid);
+            if (rit2 != rowPos.end()) {
+                model_->notifyTestResultChangedAtRow(rit2->second);
+            }
         }
     }
     if (anyChanged) {
         listCtrl_->Refresh();
+    }
+    const std::uint64_t elapsed = GetTickCount64() - t0;
+    if (elapsed >= 100) {
+        Logger::write("[ProxyListPanel] refreshResultsFor: rows=" + std::to_string(rows.size())
+                      + " exN=" + std::to_string(exItems_.size())
+                      + " viewN=" + std::to_string(proxies_.size())
+                      + " elapsed=" + std::to_string(elapsed) + "ms", LogLevel::INFO);
+    } else {
+        Logger::write("[ProxyListPanel] refreshResultsFor: rows=" + std::to_string(rows.size())
+                      + " elapsed=" + std::to_string(elapsed) + "ms", LogLevel::TRACE);
     }
 }
 
@@ -308,6 +341,7 @@ void ProxyListPanel::reloadFromDatabase() {
 // vectors before resetting the view.
 // -------------------------------------------------------------------
 void ProxyListPanel::applySubscriptionFilter(const std::string& subId) {
+    const std::uint64_t t0 = GetTickCount64();
     if (!cacheReady_) {
         // Cache never populated (startup read failed / returned empty) — retry
         // the async reload. Safe during a batch test: the async reader uses its
@@ -315,6 +349,11 @@ void ProxyListPanel::applySubscriptionFilter(const std::string& subId) {
         // Skipping while a task ran left the list permanently blank after a
         // refresh (repro: refresh a subscription, then switch subscription).
         reloadFromDatabase();
+        const std::uint64_t elapsed = GetTickCount64() - t0;
+        if (elapsed >= 100) {
+            Logger::write("[ProxyListPanel] applySubscriptionFilter: !cacheReady reload async, elapsed="
+                          + std::to_string(elapsed) + "ms", LogLevel::INFO);
+        }
         return;
     }
 
@@ -345,6 +384,16 @@ void ProxyListPanel::applySubscriptionFilter(const std::string& subId) {
             selectFirstProxy();
         }
     }
+    const std::uint64_t elapsed = GetTickCount64() - t0;
+    if (elapsed >= 100) {
+        Logger::write("[ProxyListPanel] applySubscriptionFilter: subId=" + subId
+                      + " rows=" + std::to_string(proxies_.size())
+                      + " elapsed=" + std::to_string(elapsed) + "ms", LogLevel::INFO);
+    } else {
+        Logger::write("[ProxyListPanel] applySubscriptionFilter: subId=" + subId
+                      + " rows=" + std::to_string(proxies_.size())
+                      + " elapsed=" + std::to_string(elapsed) + "ms", LogLevel::TRACE);
+    }
 }
 
 // -------------------------------------------------------------------
@@ -363,6 +412,9 @@ void ProxyListPanel::markDirty(const std::vector<std::string>& indexIds) {
     for (std::vector<std::string>::const_iterator it = indexIds.begin();
          it != indexIds.end(); ++it) {
         if (!it->empty()) dirtyIndexIds_.insert(*it);
+    }
+    if (dirtyTimer_ && !dirtyTimer_->IsRunning()) {
+        dirtyTimer_->Start(1000);
     }
 }
 
@@ -839,10 +891,15 @@ void ProxyListPanel::onProxyTestProgress(ProxyTestProgressEvent& event) {
 
 // -------------------------------------------------------------------
 void ProxyListPanel::onProxyRowsUpdated(ProxyRowsUpdatedEvent& event) {
-    // Mid-batch incremental refresh: only the rows just flushed to the DB.
-    const std::vector<std::string> ids = event.getIndexIds();
-    markDirty(ids);
-    refreshResultsFor(ids);
+    // Coalesced path (Spec Sec 3.6): only mark dirty (O(k) std::set insert);
+    // the 1-second dirty timer performs the actual refresh once per second,
+    // merging all events within the window into a single flush.  Calling
+    // refreshResultsFor synchronously here (as the previous version did)
+    // turned every batch flush into an O(B x 53k) UI-thread scan and blocked
+    // the message loop while a test was running (the "All" subscription click
+    // freeze reported at 15:22).  Events may still arrive directly at the
+    // panel (probe path): markDirty is idempotent, no double processing.
+    markDirty(event.getIndexIds());
     event.Skip();
 }
 

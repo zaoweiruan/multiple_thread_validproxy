@@ -543,14 +543,42 @@ std::vector<db::models::ProfileExItem> AppController::loadProxyResults() {
 std::vector<db::models::ProfileExItem> AppController::loadProxyResultsFor(
         const std::vector<std::string>& indexIds) {
     std::vector<db::models::ProfileExItem> rows;
+    if (indexIds.empty()) {
+        return rows;
+    }
+    // Read on a DEDICATED WAL connection (mirrors loadProxiesAsync's reader)
+    // instead of the shared db_ handle: the batch-test writer thread holds
+    // db_ under dbMutex_ while flushing, and a UI-thread read on the SAME
+    // connection during a flush produces "SQL error: bad parameter or other
+    // API misuse" (observed in production logs) and can stall the UI thread
+    // inside sqlite3_step. A separate reader avoids the contention entirely.
+    std::string dbPath = config_.database_path;
+    sqlite3* readerDb = nullptr;
+    if (sqlite3_open(dbPath.c_str(), &readerDb) != SQLITE_OK) {
+        if (readerDb) sqlite3_close(readerDb);
+        Logger::write("loadProxyResultsFor: sqlite3_open failed: " + dbPath, LogLevel::ERR);
+        return rows;
+    }
+    sqlite3_busy_timeout(readerDb, 5000);
+    sqlite3_exec(readerDb, "PRAGMA journal_mode=WAL;", nullptr, nullptr, nullptr);
+    sqlite3_exec(readerDb, "PRAGMA cache_size=-8000;", nullptr, nullptr, nullptr);
+    sqlite3_exec(readerDb, "PRAGMA synchronous=NORMAL;", nullptr, nullptr, nullptr);
+    sqlite3_exec(readerDb, "PRAGMA temp_store=MEMORY;", nullptr, nullptr, nullptr);
+    sqlite3_exec(readerDb, "PRAGMA mmap_size=268435456;", nullptr, nullptr, nullptr);
+    sqlite3_exec(readerDb, "PRAGMA journal_size_LIMIT=1073741824;", nullptr, nullptr, nullptr);
+
     rows.reserve(indexIds.size());
-    db::models::ProfileExItemDAO dao(db_);
-    for (std::vector<std::string>::const_iterator it = indexIds.begin(); it != indexIds.end(); ++it) {
-        std::optional<db::models::ProfileExItem> ex = dao.getByIndexId(*it);
-        if (ex.has_value()) {
-            rows.push_back(std::move(*ex));
+    {
+        db::models::ProfileExItemDAO dao(readerDb);
+        for (std::vector<std::string>::const_iterator it = indexIds.begin();
+             it != indexIds.end(); ++it) {
+            std::optional<db::models::ProfileExItem> ex = dao.getByIndexId(*it);
+            if (ex.has_value()) {
+                rows.push_back(std::move(*ex));
+            }
         }
     }
+    sqlite3_close(readerDb);
     return rows;
 }
 

@@ -334,10 +334,10 @@ Bind(wxEVT_SUBSCRIPTION_REFRESH, [this](SubscriptionRefreshEvent&) {
     }
 });
 
-// ── Batch-test row updates -> forward to proxy panel ──────────
+// ── Batch-test row updates -> mark dirty (coalesced 1s flush) ─
 Bind(wxEVT_PROXY_ROWS_UPDATED, [this](ProxyRowsUpdatedEvent& evt) {
     if (proxyPanel_) {
-        proxyPanel_->refreshResultsFor(evt.getIndexIds());
+        proxyPanel_->markDirty(evt.getIndexIds());
     }
     evt.Skip();
 });

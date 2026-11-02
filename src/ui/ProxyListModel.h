@@ -92,9 +92,21 @@ public:
     // No-op (returns false) when the indexId is not present in exItems_.
     bool syncHistoryForIndexId(const std::string& indexId);
 
+    // Recompute ONE row's history maps from a caller-supplied ProfileExItem
+    // (probe/batch incremental path).  Avoids the O(N) exItems_ linear scan
+    // that syncHistoryForIndexId() performs, when the caller already holds the
+    // matching element (e.g. after updating it in place).
+    bool syncHistoryFor(const db::models::ProfileExItem& ex);
+
     // Notify the view that ONE row's test-result cells changed.  No-op when
     // the indexId is not currently visible (filtered out / not present).
     void notifyTestResultChangedFor(const std::string& indexId);
+
+    // Notify the view that the row at the given VIEW row changed.  The caller
+    // is responsible for resolving indexId -> view row (once per flush, O(V))
+    // so the per-row linear scan of findRowByIndexId() is avoided during
+    // high-frequency batch-test updates.
+    void notifyTestResultChangedAtRow(int viewRow);
 
     // Detect the internal ID offset.
     // Some wxWidgets builds of wxDataViewIndexListModel::Reset(N) populate
