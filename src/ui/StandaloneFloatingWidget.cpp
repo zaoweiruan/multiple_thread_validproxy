@@ -1213,6 +1213,31 @@ void StandaloneFloatingWidget::onPaint(wxPaintEvent&) {
             }
         }
 
+        // 产品意图（见 MSWWindowProc WM_NCHITTEST 注释「让整颗悬浮球均可命中
+        // 测试」）：整球可悬停/可拖动/可点击。但 Win32 对 UpdateLayeredWindow
+        // 逐像素 alpha 窗口的命中测试会直接跳过 alpha=0 的像素（事件穿透到
+        // 下层窗口，WM_NCHITTEST 根本不会被询问）。球图标 PNG 中心镂空 + 数字
+        // 字腔正是 alpha=0，导致球心十字区不可命中（UI 自动化 WindowFromPoint
+        // 实测：中心 5 个探测点穿透到下层窗口）。把圆内 alpha 钳到 >=1：视觉上
+        // 仍不可见（1/255），但整球恢复可命中；圆外角落保持 alpha=0，球外点击
+        // 照常穿透（球视觉为圆形，不应拦截角落）。
+        if (unsigned char* const a = canvas.GetAlpha()) {
+            const double cxf = sz.x / 2.0;
+            const double cyf = sz.y / 2.0;
+            const double ring = (sz.x < sz.y ? sz.x : sz.y) / 2.0 - 0.5;
+            const double ringSq = ring * ring;
+            for (int y = 0; y < sz.y; ++y) {
+                for (int x = 0; x < sz.x; ++x) {
+                    const double dx = x + 0.5 - cxf;
+                    const double dy = y + 0.5 - cyf;
+                    if (dx * dx + dy * dy <= ringSq) {
+                        unsigned char& px = a[static_cast<std::size_t>(y) * sz.x + x];
+                        if (px == 0) px = 1;
+                    }
+                }
+            }
+        }
+
         updateLayeredWindow(canvas);
     } else {
         // === Panel 模式：WS_EX_LAYERED 已关闭，正常 DC 绘制 ===
