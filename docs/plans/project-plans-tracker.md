@@ -3,7 +3,7 @@ title: "docs: Project Plans Tracker — global plan index and progress tracker"
 type: docs
 status: maintained
 date: 2026-05-11
-updated: 2026-10-27
+updated: 2026-10-30
 ---
 
 # Project Plans Tracker
@@ -17,6 +17,10 @@ updated: 2026-10-27
 
 | 日期 | 类型 | 文档路径 | 说明 |
 |------|------|----------|------|
+| 2026-10-30 | spec | docs/specs/2026-10-30-Spec-TaskQueueMonitorAndLogTabs-v1.0.md | **任务与队列监控面板 + 日志多标签页方案 v1.0** — 3 功能：①暴露当前执行任务与待执行任务列表，支持手工终止（TaskQueue::snapshot() + TaskMonitorPanel）②暴露批量测试双队列（proxiesQueue_/insertedQueue_）剩余数与百分比（ProxyBatchTester::getQueueStats() + BatchQueuePanel）③底部日志区改为 wxNotebook 标签页（日志/任务/测试队列）；新增 taskTypeToString、AppController 薄包装；评审结论 CONDITIONAL PASS → B1-B4/I1-I6/D1-D3 待修订 | 🟡 reviewed |
+| 2026-10-30 | review | docs/reviews/2026-10-30-Review-TaskQueueMonitorAndLogTabs-v1.0.md | **任务与队列监控面板 + 日志多标签页方案 v1.0 独立评审（三视角）** — 评审对象同上；结论 CONDITIONAL PASS；4 阻断（B1 priority_queue 遍历 / B2 tester 生命周期 use-after-free / B3 notebook 成员变量 / B4 取消排队回调语义）+ 6 重要 + 3 一致性；评分=技术 7.5、可实施 6.5、文档 7.0、验收 6.5，综合 7.0/10 | 🟡 draft |
+| 2026-10-30 | spec | docs/specs/2026-10-30-Spec-TaskQueueMonitorAndLogTabs-v1.1.md | **任务与队列监控面板 + 日志多标签页方案 v1.1（修订版）** — 修订 v1.0 的 B1–B4/I1–I6/D1–D3：shared_ptr+mutex 生命周期、snapshot 成员访问 priority_queue、notebook 成员统一、取消回调语义、timer 激活门控、控件 ID 枚举、UI 测试用例；状态 🟡 reviewed | 🟡 reviewed |
+| 2026-10-30 | review | docs/reviews/2026-10-30-Review-TaskQueueMonitorAndLogTabs-v1.1.md | **任务与队列监控面板 + 日志多标签页方案 v1.1 独立评审（三视角）** — 评审对象 v1.1 spec；结论 CONDITIONAL PASS（0 blockers, 2 important, 1 consistency）；v1.0 4 阻断全部解决；代码事实核对修正 B4（onComplete）+ snapshot 排序（Entry time_point）；评分=技术 8.5、可实施 8.0、文档 8.5、验收 8.0，综合 8.3/10 | 🟡 draft |
 | 2026-10-27 | review | docs/reviews/2026-10-27-Review-DiagnosticLogCleanup-v1.0.md | **诊断日志桩清理方案 v1.0 独立评审（三视角）** — 评审对象 `docs/plans/2026-10-27-Plan-DiagnosticLogCleanup-v1.0.md`；结论 **APPROVE WITH CHANGES**；7 项通过（分组正确 / A1-A3 与 A4-A5 分级判断成立 / 保留 `auiManager_->Update()` 进入返回锚点正确 / 非目标干净 / 回滚可行 / 命名合规 / 无 `auto` 与逻辑改动）；**4 条阻断**：B1 计数自相矛盾（§0.1「22 条」vs 枚举 5+18=23；§1.2「17 条删 15 留 2」而删除清单实为 16 → 真实 18 条删 16 留 2）/ B2 A4-A5 同为行映射热路径却保 WARN 未给判定标准（须补「调用序异常 vs 不变量破坏」通则）/ B3 S8 临时改 `log.file_level=TRACE` 会污染**已跟踪**的 `bin/config.json`（commit `bbca222` 强制入库），须改用 `bin/config.trace.json` + `git status` 为空验收 / B4 V2 的 `rg "step [0-9]"` 无鉴别力且漏检 `Constructor begin` 类叙事，须改逐条锚定式并写死命中数；**6 条重要问题** + 3 条遗漏项；评分 技术 8.5 / 可实施性 6.5 / 文档一致性 6 / 验收效力 6 = 综合 7.0/10，修订 B1-B4 后可执行 | ✅ completed |
 | 2026-10-27 | plan | docs/plans/2026-10-27-Plan-DiagnosticLogCleanup-v1.0.md | **诊断日志桩清理方案** — 全量筛查确认 3 组 23 条桩：A 组 5 条 `[DIAG]`（`ProxyListModel.cpp:332/336/347/582`、`SubscriptionListModel.cpp:145`；A1-A3 在 `GetValueByRow()` 热路径 → `TRACE`+改前缀，A4-A5 为 `GetItem()` 返回 `INVALID` 的不变量破坏 → 保 `WARN` 去 `[DIAG]`）；B 组 18 条 `MainFrame` 启动叙事（删 16 条步骤级，保留 `auiManager_->Update()` 进入/返回 2 条降 `TRACE`，因该处是 GUI 启动 hang 唯一定位锚点）；C 组 `AppController.cpp:670` `cancelTest` 去计时片段降 `TRACE`；非目标=88 处业务 DEBUG/CLI 输出/3 个 TODO/`Logger` 等级/`bin/config.json`；执行 S0 基线→S1-S3→S4 静态零残留→S5 构建→S6 `ctest`→S7 `build-and-test.bat`→S8 TRACE 抓取→S9 登记，验收 V1-V7，工时 ≈2.5h | ✅ completed |
 | 2026-10-26 | bugfix | docs/bugfix/2026-10-26-Bugfix-DbSync-MissingFields-v1.0.md | **库表同步丢失 Region 与运行时聚合字段** — 用户反馈“删除记录后重新同步仍无 Region”。排查确认：① `bin\validproxy.exe` 为 11:50 旧二进制，未包含 14:52 的 Region 修复，15:17 已重新链接；② `SubitemUpdaterV2::migrateProxy` 的 UPDATE/INSERT 均遗漏 `Region`；③ `migrateProfileExItem` 遗漏 `start_count/total_runtime_ms/crash_count`。修复 Region（UPDATE 绑定 35、`IndexId` 后移 36；INSERT 第 36 列）；ProfileExItem UPDATE 追加三列并绑定 6/7/8、`IndexId` 9，INSERT 9 列/9 占位符。`tests/test_sync_region.cpp` 覆盖 INSERT 与 UPDATE 两条路径，断言 Region 及 7/123456/2、9/654321/3；`SyncRegionTest` 1/1、`test_autotask` 10/10 通过，validproxy/CLI/test 均构建成功 | ✅ completed |
@@ -443,3 +447,25 @@ updated: 2026-10-27
 ### 遗留
 - GUI 端到端确认：批量测试运行中点击单代理测试，应出现 `Inserted high-priority proxy: <indexId>` 日志且该行结果先于整批完成刷新（需人工验证）。
 - 方案 A（`TEST_BATCH` 容器 + 子任务）未实施，已被 §7 方案 B 取代。
+
+---
+
+## 2026-11-02 · 订阅刷新后列表空白修复 + 悬浮球 ULW 命中修复（UI 门禁 12/12）
+
+**Bugfix**：`docs/bugfix/2026-10-30-Bugfix-ProxyListPanel-BlankListAfterSubRefresh-v1.0.md`（登记 INDEX #109）
+**Bugfix**：`docs/bugfix/2026-11-02-Bugfix-FloatingWidget-AlphaHitTest-v1.0.md`（登记 INDEX #110）
+**Spec**：`docs/specs/2026-10-30-Spec-IncrementalProxyCacheRefresh-v1.0.md`（评审 PASS，§3.6 增量缓存已随本次落地）
+
+| 项 | 内容 | 验证 |
+| --- | --- | --- |
+| 空白列表四修复 | `ProxyListPanel.cpp`：空结果绝不安装缓存；`reloadFromDatabase` 事件改投顶层窗口；`applySubscriptionFilter` 去 isRunning 守卫无条件异步重试；右键刷新同步改异步 | 构建通过；门禁全绿 |
+| 增量缓存刷新 | `dirtyIndexIds_` 脏集合 + 1s `ID_DIRTY_TIMER` 串行 `flushDirty()`；`onProxyRowsUpdated` 标脏；`MainFrame` 转发 `wxEVT_PROXY_ROWS_UPDATED`（修复面板未绑定导致批量测试实时刷新丢失） | 门禁全绿 |
+| 性能 | `insertProxy`/`runWithIndexId`/`loadProxies` 全表 `getAll()` 改单条/批量按 IndexId 查询 | 已单独提交 |
+| 悬浮球 alpha 命中 | `StandaloneFloatingWidget.cpp` onPaint Orb 分支：圆内 alpha==0 钳 ≥1（ULW alpha=0 像素命中穿透，球心镂空区不可点违背设计意图） | 探测 25/25 |
+| 门禁稳定化 | `TestStandaloneFloatingWidget.cpp`：parkMainWindowAway / setOrbTopmost（用毕恢复）/ driveCollapse 周期重布防 / waitForStableRect / snapCursorVerified，逐项对应 `[FWTrace]` 轨迹实证的干扰源 | `[floatingwidget]` 连跑 4 次 6/6 |
+| 诊断清理 | 产品代码 8 处 `[FWTrace]` 临时日志全部删除 | grep 无残留 |
+
+**门禁**：`scripts/build-and-test.bat` → `100% tests passed, 0 tests failed out of 12`（含 #52 UI_FLOATINGWIDGET 15.69s，此前 11/12 卡该项）。
+
+### 遗留
+- 用户按「批量测试 → 刷新订阅 → 切换订阅」在 `bin/` 生产环境手工复验列表不空白（待人工确认）。
