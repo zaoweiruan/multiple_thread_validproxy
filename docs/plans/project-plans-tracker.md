@@ -469,3 +469,20 @@ updated: 2026-10-30
 
 ### 遗留
 - 用户按「批量测试 → 刷新订阅 → 切换订阅」在 `bin/` 生产环境手工复验列表不空白（待人工确认）。
+
+---
+
+## 2026-11-02 · UI 阻塞二次修复（批量测试中点「全部」订阅）
+
+**Bugfix**：`docs/bugfix/2026-11-02-Bugfix-ProxyListPanel-RefreshPerf-v1.0.md`（登记 INDEX #111）
+
+| 项 | 内容 | 验证 |
+| --- | --- | --- |
+| 主线程同步刷新 | MainFrame 转发从 proxyPanel_->refreshResultsFor(...) 改为 proxyPanel_->markDirty(...)，Spec Sec 3.6 dirty set + 1s 串行定时器真正起效 | 门禁 12/12 |
+| O(B x N) 线性扫描 | `refreshResultsFor` 单遍 exItems_/proxies_ 建索引 -> O(N+B)；`syncHistoryForIndexId`->`syncHistoryFor(ex)`；`findRowByIndexId`->`notifyTestResultChangedAtRow` | 编译通过 |
+| UI 线程 SQLite 共享连接 | loadProxyResultsFor 改用独立 WAL 连接（参考 loadProxiesAsync reader），消除 SQLITE_MISUSE | 门禁 12/12 |
+| 诊断日志 | pplySubscriptionFilter / 
+efreshResultsFor 耗时日志（>=100ms 记 INFO） | 门禁 12/12 |
+
+### 遗留
+- 用户按「批量测试 -> 切换订阅」在 in/ 生产环境手工复验列表不空白（待人工确认）。

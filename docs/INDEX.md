@@ -30,7 +30,7 @@ status: maintained
 | [规范化设计](#75-规范化设计) | 87 | `docs/specs/` |
 | [实施计划](#8-实施计划) | 108 | `docs/plans/` |
 | [分析报告](#9-分析报告) | 28 | `docs/reports/` |
-| [Bug 修复记录](#91-bug-修复记录) | 138 | `docs/bugfix/` |
+| [Bug 修复记录](#91-bug-修复记录) | 140 | `docs/bugfix/` |
 | [测试报告](#10-测试报告) | 1 | `docs/test/` |
 | [长期记忆](#13-长期记忆) | 1 | `docs/project-knowledge.md` (6.2 KB) |
 
@@ -504,6 +504,7 @@ esolveChainPort 链式取用第一个非零值，erdict=NotChecked；D2 判定�
 | 108 | [docs/bugfix/2026-10-26-Bugfix-DbSync-MissingFields-v1.0.md](./bugfix/2026-10-26-Bugfix-DbSync-MissingFields-v1.0.md) | **库表同步丢失 `Region` 与运行时聚合字段** — 用户反馈删除后重新同步仍无 Region：GUI 二进制陈旧（未含 Region 修复，已重链）叠加 `migrateProxy` UPDATE/INSERT 漏 Region；同时 `migrateProfileExItem` 漏 `start_count/total_runtime_ms/crash_count`。修复 Region（绑定 35/36）与三列运行时字段（UPDATE 绑定 6/7/8、IndexId 9；INSERT 9 列），`tests/test_sync_region.cpp` 覆盖 INSERT+UPDATE，`SyncRegionTest` 1/1、`test_autotask` 10/10 通过 | ✅ completed | — |
 | 109 | [docs/bugfix/2026-10-30-Bugfix-ProxyListPanel-BlankListAfterSubRefresh-v1.0.md](./bugfix/2026-10-30-Bugfix-ProxyListPanel-BlankListAfterSubRefresh-v1.0.md) | **代理列表订阅刷新后切换空白** — 事件路由到无处理器目标/空结果安装为缓存/同步读 SQL 忙 三连根因+四修复 | ✅ completed | — |
 | 110 | [docs/bugfix/2026-11-02-Bugfix-FloatingWidget-AlphaHitTest-v1.0.md](./bugfix/2026-11-02-Bugfix-FloatingWidget-AlphaHitTest-v1.0.md) | **悬浮球中心镂空区无法悬停/点击** — ULW 逐像素 alpha=0 命中穿透；圆内 alpha 钳 ≥1 修复，`UI_FLOATINGWIDGET` 门禁 12/12 全绿 | ✅ completed | — |
+| 111 | [docs/bugfix/2026-11-02-Bugfix-ProxyListPanel-RefreshPerf-v1.0.md](./bugfix/2026-11-02-Bugfix-ProxyListPanel-RefreshPerf-v1.0.md) | **批量测试中点击「全部」订阅 UI 阻塞** — 转发直接同步 refresh → markDirty（Spec §3.6）+ refreshResultsFor O(B×N)→O(N+B)（exItems_/view-row 单遍索引）+ loadProxyResultsFor 独立 WAL 连接，消除 SQLITE_MISUSE | ✅ completed | — |
 
 | # | 文件 | 说明 | 状态 | 大小 |
 |------|------|------|------|------|
