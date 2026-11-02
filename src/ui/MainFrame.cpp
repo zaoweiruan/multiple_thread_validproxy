@@ -334,11 +334,25 @@ Bind(wxEVT_SUBSCRIPTION_REFRESH, [this](SubscriptionRefreshEvent&) {
     }
 });
 
+// ── Batch-test row updates -> forward to proxy panel ──────────
+Bind(wxEVT_PROXY_ROWS_UPDATED, [this](ProxyRowsUpdatedEvent& evt) {
+    if (proxyPanel_) {
+        proxyPanel_->refreshResultsFor(evt.getIndexIds());
+    }
+    evt.Skip();
+});
+
 // ── Async proxy list loaded ───────────────────────────────────
 Bind(wxEVT_PROXY_LIST_LOADED, [this](ProxyListLoadedEvent& evt) {
-    if (proxyPanel_) {
-        proxyPanel_->loadProxies(evt.takeProxies(), evt.takeExItems(),
-                                 evt.takeMaps(), evt.getSubId());
+    auto proxies = evt.takeProxies();
+    auto exItems = evt.takeExItems();
+    auto maps = evt.takeMaps();
+    std::string subId = evt.getSubId();
+    if (proxyPanel_ && !proxies.empty()) {
+        proxyPanel_->loadProxies(std::move(proxies), std::move(exItems),
+                                 std::move(maps), subId);
+    } else if (proxyPanel_) {
+        Logger::write("[MainFrame] ProxyListLoaded empty - preserving cache", LogLevel::WARN);
     }
     if (statusTextProtected_.exchange(false)) {
         rewriteRefreshStatusText();

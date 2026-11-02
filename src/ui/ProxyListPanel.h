@@ -6,6 +6,7 @@
 
 #include <string>
 #include <vector>
+#include <set>
 #include <atomic>
 
 #include "Profileitem.h"
@@ -45,6 +46,11 @@ public:
     // columns).  Probe-triggered, see OnlineProbeFinishedEvent: no full-table
     // re-read and no map rebuild, so 53k-row reloads stay off the UI thread.
     void refreshResultsFor(const std::vector<std::string>& indexIds);
+    // Mark the given indexIds as dirty so the periodic dirty-flush timer
+    // re-reads only those rows (incremental cache refresh per Spec).
+    void markDirty(const std::vector<std::string>& indexIds);
+    // Flush all pending dirty rows now (incremental, serialized).
+    void flushDirty();
     void reloadFromDatabase();
     // Instant in-memory subscription switch (no DB access, same filter
     // pattern as filterBySearch).  Falls back to reloadFromDatabase()
@@ -80,6 +86,7 @@ private:
     void onSelectionChanged(wxDataViewEvent& event);
     void onStandaloneProxyEvent(StandaloneProxyEvent& event);
     void onHistoryTimer(wxTimerEvent& event);
+    void onDirtyTimer(wxTimerEvent& event);
     void onRunningDurationsLoaded(RunningDurationsLoadedEvent& event);
 
     void selectFirstProxy();
@@ -106,6 +113,12 @@ private:
     // read from being spawned while the previous one is still in flight.
     wxTimer* historyTimer_ = nullptr;
     std::atomic<bool> refreshInFlight_{false};
+
+    // Periodic dirty-flush timer (1s): incrementally re-reads only the
+    // rows marked dirty by batch-test row updates. Serialized via the flag.
+    wxTimer* dirtyTimer_ = nullptr;
+    std::atomic<bool> dirtyFlushInFlight_{false};
+    std::set<std::string> dirtyIndexIds_;
 
     std::vector<db::models::Profileitem> proxies_;
     std::vector<db::models::ProfileExItem> exItems_;

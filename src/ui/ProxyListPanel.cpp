@@ -32,6 +32,7 @@ enum {
     ID_HISTORY_TIMER          = wxID_HIGHEST + 406,
     ID_CONTEXT_ADD_TO_POOL    = wxID_HIGHEST + 407,
     ID_CONTEXT_TEST_ONLINE_PROXIES = wxID_HIGHEST + 408,
+    ID_DIRTY_TIMER            = wxID_HIGHEST + 409,
 };
 
 // -------------------------------------------------------------------
@@ -75,6 +76,10 @@ ProxyListPanel::ProxyListPanel(wxWindow* parent, AppController* controller,
     historyTimer_ = new wxTimer(this, ID_HISTORY_TIMER);
     historyTimer_->Start(3000);
 
+    dirtyTimer_ = new wxTimer(this, ID_DIRTY_TIMER);
+    dirtyTimer_->Start(1000);
+    Bind(wxEVT_TIMER, &ProxyListPanel::onDirtyTimer, this, ID_DIRTY_TIMER);
+
     // Columns: Region | Latency ↕ | Health ↕ | Type | Host ↕ | Port | Message ↕ |
     // Starts ↕ | Runtime(ms) ↕ | # | IndexId | Failures ↕ | Remarks
     listCtrl_->AppendTextColumn("Region",   COL_REGION,   wxDATAVIEW_CELL_INERT,  90);
@@ -115,6 +120,11 @@ ProxyListPanel::~ProxyListPanel() {
         historyTimer_->Stop();
         delete historyTimer_;
         historyTimer_ = nullptr;
+    }
+    if (dirtyTimer_) {
+        dirtyTimer_->Stop();
+        delete dirtyTimer_;
+        dirtyTimer_ = nullptr;
     }
 }
 
@@ -176,6 +186,17 @@ void ProxyListPanel::loadProxies(std::vector<db::models::Profileitem> proxies,
                                   std::vector<db::models::ProfileExItem> exItems,
                                   utils::ProxyListMaps maps,
                                   const std::string& subId) {
+    // Never install an empty cache: an async read can transiently return 0 rows
+    // (SQL busy/misuse during batch test or subscription update — both observed
+    // in production logs). Installing it would either wipe a good cache or mark
+    // a not-ready panel as ready-with-zero-rows, making every later filter show
+    // a permanently blank list with no retry path.
+    if (proxies.empty()) {
+        Logger::write(std::string("[ProxyListPanel] loadProxies(async): empty result - preserving ")
+                      + (cacheReady_ ? "cache" : "not-ready state (will retry on next action)"),
+                      LogLevel::WARN);
+        return;
+    }
     currentSubId_ = subId;
     allProxies_ = std::move(proxies);
     exItems_ = std::move(exItems);
@@ -268,9 +289,14 @@ void ProxyListPanel::refreshResultsFor(const std::vector<std::string>& indexIds)
 // blocking the UI thread on 50k+ row databases.
 // -------------------------------------------------------------------
 void ProxyListPanel::reloadFromDatabase() {
-    if (controller_) {
-        controller_->loadProxiesAsync(currentSubId_, this);
+    if (!controller_) {
+        return;
     }
+    // wxEVT_PROXY_LIST_LOADED is bound on MainFrame only — posting the result
+    // to the panel itself silently dropped every reload (blank list never
+    // recovered). Route it to the top-level window that owns the handler.
+    wxWindow* target = wxGetTopLevelParent(this);
+    controller_->loadProxiesAsync(currentSubId_, target ? target : this);
 }
 
 // -------------------------------------------------------------------
@@ -283,11 +309,12 @@ void ProxyListPanel::reloadFromDatabase() {
 // -------------------------------------------------------------------
 void ProxyListPanel::applySubscriptionFilter(const std::string& subId) {
     if (!cacheReady_) {
-        // Cache not populated yet (startup) — fall back to async DB reload,
-        // but only when no batch test is running (avoid racing the writer).
-        if (!(controller_ && controller_->isRunning())) {
-            reloadFromDatabase();
-        }
+        // Cache never populated (startup read failed / returned empty) — retry
+        // the async reload. Safe during a batch test: the async reader uses its
+        // own WAL connection with a busy timeout, so it never races the writer.
+        // Skipping while a task ran left the list permanently blank after a
+        // refresh (repro: refresh a subscription, then switch subscription).
+        reloadFromDatabase();
         return;
     }
 
@@ -323,6 +350,34 @@ void ProxyListPanel::applySubscriptionFilter(const std::string& subId) {
 // -------------------------------------------------------------------
 void ProxyListPanel::onHistoryTimer(wxTimerEvent& event) {
     refreshHistoryPeriodic();
+}
+
+// -------------------------------------------------------------------
+void ProxyListPanel::onDirtyTimer(wxTimerEvent& event) {
+    flushDirty();
+    (void)event;
+}
+
+// -------------------------------------------------------------------
+void ProxyListPanel::markDirty(const std::vector<std::string>& indexIds) {
+    for (std::vector<std::string>::const_iterator it = indexIds.begin();
+         it != indexIds.end(); ++it) {
+        if (!it->empty()) dirtyIndexIds_.insert(*it);
+    }
+}
+
+// -------------------------------------------------------------------
+void ProxyListPanel::flushDirty() {
+    if (dirtyIndexIds_.empty() || !model_ || !controller_) {
+        return;
+    }
+    if (dirtyFlushInFlight_.exchange(true)) {
+        return;
+    }
+    std::vector<std::string> ids(dirtyIndexIds_.begin(), dirtyIndexIds_.end());
+    dirtyIndexIds_.clear();
+    refreshResultsFor(ids);
+    dirtyFlushInFlight_ = false;
 }
 
 // -------------------------------------------------------------------
@@ -577,8 +632,12 @@ void ProxyListPanel::onTestOnlineProxiesEvent(TestOnlineProxiesEvent& event) {
 
 // -------------------------------------------------------------------
 void ProxyListPanel::onRefreshProxyList(wxCommandEvent& event) {
-    // Refresh proxy list from database, preserving current subscription filter
-    loadProxies(currentSubId_);
+    // Async reload preserving the current subscription filter.  The old
+    // synchronous loadProxies() read the shared DB connection on the UI
+    // thread; during batch test that hit "SQL busy/misuse", returned 0 rows,
+    // and updateProxyList() installed the empty result as a ready cache —
+    // a permanently blank list.
+    reloadFromDatabase();
     (void)event;
 }
 
@@ -781,7 +840,9 @@ void ProxyListPanel::onProxyTestProgress(ProxyTestProgressEvent& event) {
 // -------------------------------------------------------------------
 void ProxyListPanel::onProxyRowsUpdated(ProxyRowsUpdatedEvent& event) {
     // Mid-batch incremental refresh: only the rows just flushed to the DB.
-    refreshResultsFor(event.getIndexIds());
+    const std::vector<std::string> ids = event.getIndexIds();
+    markDirty(ids);
+    refreshResultsFor(ids);
     event.Skip();
 }
 
