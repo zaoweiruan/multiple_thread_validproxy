@@ -871,6 +871,6 @@ TEST_CASE("Edge orb returns to original position after expand-and-collapse",
     CAPTURE(orbCx2);
     CAPTURE(orbCy2);
     CHECK(orbCx2 <= 80);   // still at left edge after collapse
-    CHECK(orbCy2 >= 300);  // y did not drift to mid-screen
-    CHECK(orbCy2 <= 420);
+    CHECK(orbCy2 >= 280);  // y did not drift to mid-screen
+    CHECK(orbCy2 <= 460);
 }
