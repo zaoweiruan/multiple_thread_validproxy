@@ -32,6 +32,7 @@ enum {
     ID_HISTORY_TIMER          = wxID_HIGHEST + 406,
     ID_CONTEXT_ADD_TO_POOL    = wxID_HIGHEST + 407,
     ID_CONTEXT_TEST_ONLINE_PROXIES = wxID_HIGHEST + 408,
+    ID_DIRTY_TIMER            = wxID_HIGHEST + 409,
 };
 
 // -------------------------------------------------------------------
@@ -62,7 +63,7 @@ ProxyListPanel::ProxyListPanel(wxWindow* parent, AppController* controller,
 
     listCtrl_ = new wxDataViewCtrl(this, wxID_ANY,
                                     wxDefaultPosition, wxDefaultSize,
-                                    wxDV_ROW_LINES | wxDV_SINGLE);
+                                    wxDV_ROW_LINES | wxDV_MULTIPLE);
 
     model_ = new ProxyListModel();
     listCtrl_->AssociateModel(model_);
@@ -74,6 +75,10 @@ ProxyListPanel::ProxyListPanel(wxWindow* parent, AppController* controller,
     // blocking the UI.
     historyTimer_ = new wxTimer(this, ID_HISTORY_TIMER);
     historyTimer_->Start(3000);
+
+    dirtyTimer_ = new wxTimer(this, ID_DIRTY_TIMER);
+    dirtyTimer_->Start(1000);
+    Bind(wxEVT_TIMER, &ProxyListPanel::onDirtyTimer, this, ID_DIRTY_TIMER);
 
     // Columns: Region | Latency ↕ | Health ↕ | Type | Host ↕ | Port | Message ↕ |
     // Starts ↕ | Runtime(ms) ↕ | # | IndexId | Failures ↕ | Remarks
@@ -100,6 +105,8 @@ ProxyListPanel::ProxyListPanel(wxWindow* parent, AppController* controller,
     Bind(wxEVT_RUNNING_DURATIONS_LOADED, &ProxyListPanel::onRunningDurationsLoaded, this);
     Bind(wxEVT_DATAVIEW_COLUMN_HEADER_CLICK, &ProxyListPanel::onColumnHeaderClick, this);
     Bind(wxEVT_TEST_ONLINE_PROXIES, &ProxyListPanel::onTestOnlineProxiesEvent, this);
+    // Batch-test progress: rows were flushed to the DB -> refresh only those rows.
+    Bind(wxEVT_PROXY_ROWS_UPDATED, &ProxyListPanel::onProxyRowsUpdated, this);
 
     // Double-click to start proxy
     listCtrl_->Bind(wxEVT_DATAVIEW_ITEM_ACTIVATED, [this](wxDataViewEvent&) {
@@ -114,6 +121,11 @@ ProxyListPanel::~ProxyListPanel() {
         delete historyTimer_;
         historyTimer_ = nullptr;
     }
+    if (dirtyTimer_) {
+        dirtyTimer_->Stop();
+        delete dirtyTimer_;
+        dirtyTimer_ = nullptr;
+    }
 }
 
 // -------------------------------------------------------------------
@@ -125,12 +137,21 @@ void ProxyListPanel::updateProxyList(const std::vector<db::models::Profileitem>&
                                       const std::string& subId) {
     currentSubId_ = subId;
     allProxies_ = proxies;
+    ++allProxiesGen_;
     cacheReady_ = true;
 
     sortState_.column = -1;
     sortState_.direction = SortDirection::None;
     proxies_ = proxies;
     exItems_ = exItems;
+
+    exPos_.clear();
+    exPos_.reserve(exItems_.size() * 2);
+    for (std::size_t i = 0; i < exItems_.size(); ++i) {
+        exPos_[exItems_[i].indexid] = i;
+    }
+    rowPos_.clear();
+    proxiesGen_ = allProxiesGen_;
 
     model_->setData(&proxies_, &exItems_);
     model_->Reset(0);
@@ -174,11 +195,29 @@ void ProxyListPanel::loadProxies(std::vector<db::models::Profileitem> proxies,
                                   std::vector<db::models::ProfileExItem> exItems,
                                   utils::ProxyListMaps maps,
                                   const std::string& subId) {
+    // Never install an empty cache: an async read can transiently return 0 rows
+    // (SQL busy/misuse during batch test or subscription update — both observed
+    // in production logs). Installing it would either wipe a good cache or mark
+    // a not-ready panel as ready-with-zero-rows, making every later filter show
+    // a permanently blank list with no retry path.
+    if (proxies.empty()) {
+        Logger::write(std::string("[ProxyListPanel] loadProxies(async): empty result - preserving ")
+                      + (cacheReady_ ? "cache" : "not-ready state (will retry on next action)"),
+                      LogLevel::WARN);
+        return;
+    }
     currentSubId_ = subId;
     allProxies_ = std::move(proxies);
     exItems_ = std::move(exItems);
     model_->setMaps(std::move(maps));
     cacheReady_ = true;
+    // Rebuild the O(1) exItems_ index (vector identity changed).
+    exPos_.clear();
+    exPos_.reserve(exItems_.size() * 2);
+    for (std::size_t i = 0; i < exItems_.size(); ++i) {
+        exPos_[exItems_[i].indexid] = i;
+    }
+    ++allProxiesGen_;
 
     applySubscriptionFilter(subId);
 }
@@ -192,6 +231,13 @@ void ProxyListPanel::refreshResults() {
     Logger::write("[ProxyListPanel] refreshResults called", LogLevel::TRACE);
 
     exItems_ = controller_->loadProxyResults();
+
+    // Rebuild exItems_ index (vector identity changed).
+    exPos_.clear();
+    exPos_.reserve(exItems_.size() * 2);
+    for (std::size_t i = 0; i < exItems_.size(); ++i) {
+        exPos_[exItems_[i].indexid] = i;
+    }
 
     model_->rebuildMaps();
 
@@ -220,36 +266,58 @@ void ProxyListPanel::refreshResultsFor(const std::vector<std::string>& indexIds)
     }
     std::vector<db::models::ProfileExItem> rows =
         controller_->loadProxyResultsFor(indexIds);
+    if (rows.empty()) {
+        return;
+    }
+
+    // Index exItems_ once (O(N)) instead of scanning it once per incoming row
+    // (O(B * N), N ~ 4920 -- the O(n^2) hot path behind the "All" subscription
+    // click freeze under a batch test: B rows x 3 full-cache scans each).
+    std::unordered_map<std::string, std::size_t> exPos;
+    exPos.reserve(exItems_.size() * 2);
+    for (std::size_t i = 0; i < exItems_.size(); ++i) {
+        exPos[exItems_[i].indexid] = i;
+    }
+    // Index the displayed rows once (O(V)) so notifyTestResultChangedFor doesn't
+    // do a linear GetItem scan per row (findRowByIndexId was O(V) per row).
+    std::unordered_map<std::string, int> rowPos;
+    rowPos.reserve(proxies_.size() * 2);
+    for (unsigned vr = 0; vr < model_->GetCount(); ++vr) {
+        const db::models::Profileitem* p = model_->getProfileAtRow(vr);
+        if (p) rowPos[p->indexid] = static_cast<int>(vr);
+    }
 
     bool anyChanged = false;
     for (std::vector<db::models::ProfileExItem>::const_iterator rit = rows.begin();
          rit != rows.end(); ++rit) {
-        bool rowFound = false;
-        for (std::vector<db::models::ProfileExItem>::iterator it = exItems_.begin();
-             it != exItems_.end(); ++it) {
-            if (it->indexid != rit->indexid) continue;
-            rowFound = true;
-            // delay 格式化与 refreshResults()/rebuildMaps() 一致：
-            // ProfileExItem.delay 是 DB 原生显示字符串（GetValueByRow 直接渲染）。
-            const std::string delay = rit->delay;
-            const bool rowChanged = model_->updateResultFor(
-                rit->indexid, delay, rit->message, rit->consecutive_failures);
-            *it = *rit;   // 同步源数据（model 只读非拥有指针）
-            // 探活失败会重置 start_count / total_runtime_ms / crash_count = 0，
-            // 增量刷新必须重算 history maps，否则死代理的 Health/Starts/Runtime
-            // 列会一直显示上一轮的值（与全量 refreshResults 的全库重建不一致）。
-            const bool historyChanged = model_->syncHistoryForIndexId(rit->indexid);
-            if (rowChanged || historyChanged) {
-                anyChanged = true;
-                // ItemChanged(item) 通知整行（含 history 列）重绘。
-                model_->notifyTestResultChangedFor(rit->indexid);
-            }
-            break;
-        }
-        if (!rowFound) {
+        auto pit = exPos.find(rit->indexid);
+        if (pit == exPos.end()) {
             // 受测行不在当前过滤/列表中（如筛选后隐藏）——查找失败不通知。
             Logger::write("[ProxyListPanel] refreshResultsFor: indexId not in list: "
                           + rit->indexid, LogLevel::DEBUG);
+            continue;
+        }
+        // delay 格式化与 refreshResults()/rebuildMaps() 一致：
+        // ProfileExItem.delay 是 DB 原生显示字符串（GetValueByRow 直接渲染）。
+        const std::string delay = rit->delay;
+        const bool rowChanged = model_->updateResultFor(
+            rit->indexid, delay, rit->message, rit->consecutive_failures);
+        // 同步源数据（model 只读非拥有指针）
+        db::models::ProfileExItem& cached = exItems_[pit->second];
+        const db::models::ProfileExItem before = cached;
+        cached = *rit;
+        // 探活失败会重置 start_count / total_runtime_ms / crash_count = 0，
+        // 增量刷新必须重算 history maps，否则死代理的 Health/Starts/Runtime
+        // 列会一直显示上一轮的值（与全量 refreshResults 的全库重建不一致）。
+        // 用已找到的 before 引用避免 syncHistoryForIndexId 重扫 exItems_。
+        const bool historyChanged = model_->syncHistoryFor(before);
+        if (rowChanged || historyChanged) {
+            anyChanged = true;
+            // ItemChanged(item) 通知整行（含 history 列）重绘。
+            auto rit2 = rowPos.find(rit->indexid);
+            if (rit2 != rowPos.end()) {
+                model_->notifyTestResultChangedAtRow(rit2->second);
+            }
         }
     }
     if (anyChanged) {
@@ -266,9 +334,14 @@ void ProxyListPanel::refreshResultsFor(const std::vector<std::string>& indexIds)
 // blocking the UI thread on 50k+ row databases.
 // -------------------------------------------------------------------
 void ProxyListPanel::reloadFromDatabase() {
-    if (controller_) {
-        controller_->loadProxiesAsync(currentSubId_, this);
+    if (!controller_) {
+        return;
     }
+    // wxEVT_PROXY_LIST_LOADED is bound on MainFrame only — posting the result
+    // to the panel itself silently dropped every reload (blank list never
+    // recovered). Route it to the top-level window that owns the handler.
+    wxWindow* target = wxGetTopLevelParent(this);
+    controller_->loadProxiesAsync(currentSubId_, target ? target : this);
 }
 
 // -------------------------------------------------------------------
@@ -281,14 +354,26 @@ void ProxyListPanel::reloadFromDatabase() {
 // -------------------------------------------------------------------
 void ProxyListPanel::applySubscriptionFilter(const std::string& subId) {
     if (!cacheReady_) {
-        // Cache not populated yet (startup) — fall back to async DB reload.
+        // Cache never populated (startup read failed / returned empty) — retry
+        // the async reload. Safe during a batch test: the async reader uses its
+        // own WAL connection with a busy timeout, so it never races the writer.
+        // Skipping while a task ran left the list permanently blank after a
+        // refresh (repro: refresh a subscription, then switch subscription).
         reloadFromDatabase();
         return;
     }
 
     currentSubId_ = subId;
     if (subId.empty()) {
-        proxies_ = allProxies_;  // Restore unfiltered list
+        // Avoid a 53k-Profileitem deep copy when the displayed list already
+        // holds the unfiltered cache (common during batch-test row updates
+        // that switch back to "All" repeatedly). The generation check makes
+        // the skip safe: allProxies_ only changes on a full reload, which
+        // increments allProxiesGen_.
+        if (proxiesGen_ != allProxiesGen_) {
+            proxies_ = allProxies_;
+            proxiesGen_ = allProxiesGen_;
+        }
     } else {
         proxies_.clear();
         for (const db::models::Profileitem& p : allProxies_) {
@@ -296,6 +381,7 @@ void ProxyListPanel::applySubscriptionFilter(const std::string& subId) {
                 proxies_.push_back(p);
             }
         }
+        proxiesGen_ = allProxiesGen_;  // proxies_ is a filtered subset of this generation
     }
 
     sortState_.column = -1;
@@ -308,6 +394,15 @@ void ProxyListPanel::applySubscriptionFilter(const std::string& subId) {
     model_->Reset(static_cast<unsigned int>(proxies_.size()));
     model_->detectIdOffset();
 
+    // Rebuild the displayed-row index map (O(V)) so refreshResultsFor can
+    // notify changed rows in O(1).
+    rowPos_.clear();
+    rowPos_.reserve(proxies_.size() * 2);
+    for (unsigned vr = 0; vr < model_->GetCount(); ++vr) {
+        const db::models::Profileitem* p = model_->getProfileAtRow(vr);
+        if (p) rowPos_[p->indexid] = static_cast<int>(vr);
+    }
+
     if (!proxies_.empty()) {
         if (!listCtrl_->GetSelection().IsOk()) {
             selectFirstProxy();
@@ -318,6 +413,37 @@ void ProxyListPanel::applySubscriptionFilter(const std::string& subId) {
 // -------------------------------------------------------------------
 void ProxyListPanel::onHistoryTimer(wxTimerEvent& event) {
     refreshHistoryPeriodic();
+}
+
+// -------------------------------------------------------------------
+void ProxyListPanel::onDirtyTimer(wxTimerEvent& event) {
+    flushDirty();
+    (void)event;
+}
+
+// -------------------------------------------------------------------
+void ProxyListPanel::markDirty(const std::vector<std::string>& indexIds) {
+    for (std::vector<std::string>::const_iterator it = indexIds.begin();
+         it != indexIds.end(); ++it) {
+        if (!it->empty()) dirtyIndexIds_.insert(*it);
+    }
+    if (dirtyTimer_ && !dirtyTimer_->IsRunning()) {
+        dirtyTimer_->Start(1000);
+    }
+}
+
+// -------------------------------------------------------------------
+void ProxyListPanel::flushDirty() {
+    if (dirtyIndexIds_.empty() || !model_ || !controller_) {
+        return;
+    }
+    if (dirtyFlushInFlight_.exchange(true)) {
+        return;
+    }
+    std::vector<std::string> ids(dirtyIndexIds_.begin(), dirtyIndexIds_.end());
+    dirtyIndexIds_.clear();
+    refreshResultsFor(ids);
+    dirtyFlushInFlight_ = false;
 }
 
 // -------------------------------------------------------------------
@@ -448,19 +574,14 @@ void ProxyListPanel::onContextMenu(wxDataViewEvent& event) {
         return;
     }
 
-    // Determine if selected proxy already has a standalone instance running
-    wxDataViewItem selItem = listCtrl_->GetSelection();
-    std::string selIndexId;
-    if (selItem.IsOk()) {
-        unsigned int viewRow = model_->GetRow(selItem);
-        if (viewRow != static_cast<unsigned int>(-1)) {
-            selIndexId = model_->getIndexIdAtRow(viewRow);
-        }
+    // Determine the right-clicked proxy (works for both single and multi-select).
+    wxDataViewItem selItem = event.GetItem();
+    if (!selItem.IsOk()) {
+        selItem = listCtrl_->GetSelection();
     }
 
     wxMenu menu;
-    menu.Append(ID_CONTEXT_TEST_PROXY, "测试此代理");
-    menu.Append(ID_CONTEXT_TEST_ONLINE_PROXIES, "测试在线代理");
+    menu.Append(ID_CONTEXT_TEST_PROXY, "测试选中代理");
     menu.Append(ID_CONTEXT_EXPORT_SHARE, "有效代理分享");
     menu.AppendSeparator();
     menu.Append(ID_CONTEXT_RESOLVE_REGION, "解析地区");
@@ -468,6 +589,8 @@ void ProxyListPanel::onContextMenu(wxDataViewEvent& event) {
     menu.AppendSeparator();
     menu.Append(ID_CONTEXT_REFRESH, "刷新");
     menu.AppendSeparator();
+    // Move "测试在线代理" to immediately before "开启独立代理".
+    menu.Append(ID_CONTEXT_TEST_ONLINE_PROXIES, "测试在线代理");
     // Standalone (single-process) proxy start — always launches an independent
     // xray process regardless of whether the proxy pool is running. Pool
     // injection is a separate menu item (ID_CONTEXT_ADD_TO_POOL).
@@ -488,28 +611,40 @@ void ProxyListPanel::onTestProxy(wxCommandEvent& event) {
             static_cast<MainFrame*>(topLevel)->syncToolbarState();
         }
     }
-    // Prevent testing during active operations
-    if (controller_ && controller_->isRunning()) {
-        wxMessageBox(L"操作进行中，请等待完成后再试", L"操作进行中", wxOK | wxICON_WARNING);
-        return;
+    // Multi-select: test ALL currently selected proxies. Testing is now queued
+    // by TaskQueue; do not block on isRunning().
+    wxDataViewItemArray selItems;
+    listCtrl_->GetSelections(selItems);
+    if (selItems.IsEmpty()) {
+        // Fall back to the single right-clicked item if no multi-selection.
+        wxDataViewItem single = listCtrl_->GetSelection();
+        if (single.IsOk()) selItems.Add(single);
     }
+    if (selItems.IsEmpty()) return;
 
-    wxDataViewItem item = listCtrl_->GetSelection();
-    if (!item.IsOk()) return;
-
-    unsigned int viewRow = model_->GetRow(item);
-    if (viewRow == static_cast<unsigned int>(-1)) return;
-
-    std::string indexId = model_->getIndexIdAtRow(viewRow);
-    if (indexId.empty()) return;
-
-    // Send initial "Testing..." event to MainFrame for Delay column refresh
     wxWindow* topLevel = wxGetTopLevelParent(this);
+
+    // Collect all selected indexIds.
+    std::vector<std::string> indexIds;
+    for (const wxDataViewItem& item : selItems) {
+        if (!item.IsOk()) continue;
+        unsigned int viewRow = model_->GetRow(item);
+        if (viewRow == static_cast<unsigned int>(-1)) continue;
+        std::string indexId = model_->getIndexIdAtRow(viewRow);
+        if (indexId.empty()) continue;
+        indexIds.push_back(indexId);
+    }
+    if (indexIds.empty()) return;
+
+    // Send initial "Testing..." events for Delay column refresh.
     if (topLevel && topLevel != this) {
-        wxQueueEvent(topLevel, new ProxyTestProgressEvent(0, 1, indexId, "", "", "Testing…", false));
+        for (std::size_t i = 0; i < indexIds.size(); ++i) {
+            wxQueueEvent(topLevel, new ProxyTestProgressEvent(0, 1, indexIds[i], "", "", "Testing…", false));
+        }
     }
 
-    controller_->testSingleProxyAsync(indexId, this);
+    // Phase A: single pooled test instead of N count=1 pools.
+    controller_->testSelectedProxiesAsync(indexIds, this);
     (void)event; // id dispatched in menu
 }
 
@@ -525,12 +660,11 @@ void ProxyListPanel::onTestOnlineProxies(wxCommandEvent& WXUNUSED(event)) {
         }
     }
 
-    if (controller_->isRunning()) {
-        wxMessageBox(L"操作进行中，请等待完成后再试", L"操作进行中", wxOK | wxICON_WARNING);
-        return;
-    }
-
-    // Test connectivity of all currently-running standalone proxy processes.
+    // Online-proxy test runs on its own thread (probeThread_) via
+    // testOnlineProxiesAsync and does not use the shared Xray instance pool or
+    // the TaskQueue worker, so it may run concurrently with a batch test.
+    // Concurrent probes are mutually excluded inside testOnlineProxiesAsync
+    // (onlineProbeRunning_); do NOT block here on isRunning().
     controller_->testOnlineProxiesAsync(this);
 }
 
@@ -564,8 +698,12 @@ void ProxyListPanel::onTestOnlineProxiesEvent(TestOnlineProxiesEvent& event) {
 
 // -------------------------------------------------------------------
 void ProxyListPanel::onRefreshProxyList(wxCommandEvent& event) {
-    // Refresh proxy list from database, preserving current subscription filter
-    loadProxies(currentSubId_);
+    // Async reload preserving the current subscription filter.  The old
+    // synchronous loadProxies() read the shared DB connection on the UI
+    // thread; during batch test that hit "SQL busy/misuse", returned 0 rows,
+    // and updateProxyList() installed the empty result as a ready cache —
+    // a permanently blank list.
+    reloadFromDatabase();
     (void)event;
 }
 
@@ -762,6 +900,20 @@ void ProxyListPanel::onProxyTestProgress(ProxyTestProgressEvent& event) {
     if (event.isCompleted()) {
         refreshResults();
     }
+    event.Skip();
+}
+
+// -------------------------------------------------------------------
+void ProxyListPanel::onProxyRowsUpdated(ProxyRowsUpdatedEvent& event) {
+    // Coalesced path (Spec Sec 3.6): only mark dirty (O(k) std::set insert);
+    // the 1-second dirty timer performs the actual refresh once per second,
+    // merging all events within the window into a single flush.  Calling
+    // refreshResultsFor synchronously here (as the previous version did)
+    // turned every batch flush into an O(B x 53k) UI-thread scan and blocked
+    // the message loop while a test was running (the "All" subscription click
+    // freeze reported at 15:22).  Events may still arrive directly at the
+    // panel (probe path): markDirty is idempotent, no double processing.
+    markDirty(event.getIndexIds());
     event.Skip();
 }
 

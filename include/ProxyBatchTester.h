@@ -10,6 +10,7 @@
 #include <thread>
 #include <condition_variable>
 #include <memory>
+#include <functional>
 #include "Profileitem.h"
 #include "ProfileExItem.h"
 #include "ConfigReader.h"
@@ -30,11 +31,25 @@ public:
     bool run();
     bool runWithSubId(const std::string& subId);
     bool runWithIndexId(const std::string& indexId);
+
+    // Phase A (ProxyTestUnified): load a specific set of proxies (by indexId)
+    // into proxies_ so a multi-select test can create one count=N pool instead
+    // of N count=1 pools. Returns true if at least one proxy was loaded.
+    bool loadProxies(const std::vector<std::string>& indexIds);
+
+    // Insert a high-priority proxy into the running pool (Scheme B).
+    // Can be called while run()/runWithSubId() is executing.
+    bool insertProxy(const std::string& indexId);
     std::string resolveSql(int id, const std::string& fallback) const;
     XrayManager* getXrayManager() { return xrayManager_; }
     TestResult getLastResult() const;
 
-    int getTotalProxies() const { return totalProxies_; }
+    int getTotalProxies() const { return totalProxies_.load(); }
+
+    // Real-time progress: invoked (on the flush thread) with the indexIds of
+    // rows that were just written to the DB, so the UI can refresh only them.
+    using RowsUpdatedCallback = std::function<void(const std::vector<std::string>&)>;
+    void setRowsUpdatedCallback(RowsUpdatedCallback cb) { rowsUpdatedCb_ = std::move(cb); }
 
     // Cancel support
     void cancel() {
@@ -46,13 +61,16 @@ public:
         return cancelRequested_.load();
     }
 
- private:
-
+ public:
     std::vector<db::models::Profileitem> loadProxies(const std::string& subId = "");
+
+ private:
     int calculateXrayInstanceCount(int proxyCount);
     bool startXrayInstances(int count);
     void testProxiesMultiThreaded();
-    void printSummary();
+    // Phase C (ProxyTestUnified): unified completion summary exit reason.
+    enum class ExitReason { Normal, Cancelled, Crash, Shutdown };
+    void printSummary(ExitReason reason = ExitReason::Normal);
 
     void workerThreadFunc(int workerId, int socksPort, int apiPort);
     void logToConsole(const std::string& msg);
@@ -97,14 +115,36 @@ public:
     config::AppConfig config_;
     XrayManager* xrayManager_;
     std::shared_ptr<ProxyTester> proxyTester_;
-    int totalProxies_;
+    std::atomic<int> totalProxies_;   // grows when proxies are inserted mid-run
     std::atomic<int> processedCount_{0};
     std::atomic<int> successCount_{0};
     std::atomic<int> failedCount_{0};
     std::vector<db::models::Profileitem> proxies_;
     std::queue<int> proxiesQueue_;
     std::mutex queueMutex_;
+    // High-priority insertion queue (Scheme B: pool as infrastructure)
+    std::vector<db::models::Profileitem> insertedProxies_;
+    // Per-inserted-proxy pre-generated config, indexed in lockstep with
+    // insertedProxies_ (guarded by insertedMutex_).
+    std::vector<config::XrayConfig> insertedConfigs_;
+    std::vector<bool> insertedConfigFailed_;
+    std::queue<int> insertedQueue_;
+    std::mutex insertedMutex_;
+    std::condition_variable insertedCv_;
+    // Real-time UI refresh hook (set before a run starts; invoked from the
+    // result-flush thread with the indexIds just written to the DB).
+    RowsUpdatedCallback rowsUpdatedCb_;
+    // Protects proxies_ and pregenFailedFlags_ during concurrent insertion
+    std::mutex proxiesMutex_;
     std::atomic<bool> cancelRequested_{false};
+    std::atomic<bool> running_{false};
+    // Phase C: whether printSummary() has already been called for this run,
+    // so the destructor doesn't double-print on early-exit paths.
+    std::atomic<bool> summaryPrinted_{false};
+    // When true, testProxiesMultiThreaded() keeps the Xray instance alive
+    // (does not stopAll on teardown) so consecutive single-proxy tests can
+    // reuse it instead of restarting the Xray process each time.
+    bool keepXrayAlive_ = false;
     // D1: each worker runs its own 30s network-wait timer, so several of them can
     // exhaust it within microseconds of each other. This latch keeps the
     // "whole batch is stopping" report to a single line.
@@ -115,6 +155,12 @@ public:
     std::atomic<bool>* externalCancel_{nullptr};
     std::vector<std::thread> workerThreads_;
     std::vector<int> workerCurrentProxyIndex_;
+    // One flag per worker; cleared by the worker wrapper when workerThreadFunc()
+    // returns. The teardown uses it to bound the join (a worker stuck in a hung
+    // gRPC addOutboundDirect never returns, so an unconditional join would hang
+    // the whole batch task forever). shared_ptr (not vector<atomic<bool>>, which
+    // is non-movable) so the worker wrapper can own its flag by value copy.
+    std::vector<std::shared_ptr<std::atomic<bool>>> workerAlive_;
     // Protects lastResult_, lastIndexId_ and workerCurrentProxyIndex_
     mutable std::mutex workerStateMutex_;
     // Cooperative cancellation: cancelCv_ pairs with cancelRequested_, notified by

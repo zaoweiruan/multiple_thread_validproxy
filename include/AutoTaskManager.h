@@ -9,6 +9,7 @@
 #include "ConfigReader.h"
 
 class NetworkMonitor;
+class ProxyBatchTester;
 
 enum class AutoTaskStepType {
     UPDATE_ALL,
@@ -89,6 +90,12 @@ public:
 
     void setProgressCallback(ProgressCallback cb);
 
+    /// Observe the ProxyBatchTester used by the auto-task "test" step, so the
+    /// UI can register it as the live pool and insert high-priority proxies.
+    /// Called with the tester before the step runs and with nullptr after.
+    using PoolObserver = std::function<void(ProxyBatchTester*)>;
+    void setPoolObserver(PoolObserver cb);
+
 private:
     bool runSteps();
     bool executeStep(const AutoTaskStepInfo& step, int stepIndex);
@@ -111,6 +118,7 @@ private:
 
     AutoTaskState state_;
     ProgressCallback progressCb_;
+    PoolObserver poolObserver_;
 
     std::string stateFilePath_;
     const NetworkMonitor* netMon_{nullptr};

@@ -218,6 +218,7 @@ MainFrame::MainFrame(const config::AppConfig& cfg, sqlite3* db)
             }
             setOperationState(OperationType::NONE);
             setStatusText(0, "Test completed");
+            syncToolbarState();
         } else {
             // Show per-proxy progress in status bar (e.g. region resolution)
             setStatusText(0, evt.getMessage());
@@ -263,6 +264,23 @@ MainFrame::MainFrame(const config::AppConfig& cfg, sqlite3* db)
         if (proxyPanel_) {
             proxyPanel_->selectProxyByIndexId(evt.getIndexId());
         }
+        // Collapse the floating widget to Orb mode so the main window (which is
+        // behind the topmost floating widget) becomes visible and the user can
+        // see the located subscription/proxy row. Without this the selection
+        // happens invisibly behind the topmost floating widget.
+        if (floatingWidget_) {
+            floatingWidget_->collapseToOrb();
+        }
+        if (!IsShown()) {
+            Show(true);
+            Raise();
+        }
+        if (IsIconized()) {
+            Restore();
+        }
+        Maximize(true);
+        Raise();
+        SetFocus();
         // Locate the owning subscription row in the Subscription panel too,
         // so the user sees which subscription the failed proxy belongs to.
         if (subPanel_ && !subId.empty()) {
@@ -326,13 +344,32 @@ Bind(wxEVT_SUBSCRIPTION_REFRESH, [this](SubscriptionRefreshEvent&) {
     } else {
         setStatusText(0, "Refresh: loaded all proxies");
     }
+    if (statusTextProtected_.exchange(false)) {
+        rewriteRefreshStatusText();
+    } else {
+        setStatusText(0, "Refresh: loaded all proxies");
+    }
+});
+
+// ── Batch-test row updates -> mark dirty (coalesced 1s flush) ─
+Bind(wxEVT_PROXY_ROWS_UPDATED, [this](ProxyRowsUpdatedEvent& evt) {
+    if (proxyPanel_) {
+        proxyPanel_->markDirty(evt.getIndexIds());
+    }
+    evt.Skip();
 });
 
 // ── Async proxy list loaded ───────────────────────────────────
 Bind(wxEVT_PROXY_LIST_LOADED, [this](ProxyListLoadedEvent& evt) {
-    if (proxyPanel_) {
-        proxyPanel_->loadProxies(evt.takeProxies(), evt.takeExItems(),
-                                 evt.takeMaps(), evt.getSubId());
+    auto proxies = evt.takeProxies();
+    auto exItems = evt.takeExItems();
+    auto maps = evt.takeMaps();
+    std::string subId = evt.getSubId();
+    if (proxyPanel_ && !proxies.empty()) {
+        proxyPanel_->loadProxies(std::move(proxies), std::move(exItems),
+                                 std::move(maps), subId);
+    } else if (proxyPanel_) {
+        Logger::write("[MainFrame] ProxyListLoaded empty - preserving cache", LogLevel::WARN);
     }
     if (statusTextProtected_.exchange(false)) {
         rewriteRefreshStatusText();
@@ -1073,10 +1110,6 @@ void MainFrame::onMenuExit(wxCommandEvent&) {
 
 void MainFrame::onMenuUpdateAll(wxCommandEvent&) {
     syncToolbarState();
-    if (controller_ && controller_->isRunning()) {
-        wxMessageBox(L"操作进行中，请等待完成后再试", L"操作进行中", wxOK | wxICON_WARNING, this);
-        return;
-    }
     setOperationState(OperationType::UPDATE);
     controller_->updateAllSubscriptionsAsync(this);
 }
@@ -1343,22 +1376,26 @@ void MainFrame::onMenuConfig(wxCommandEvent&) {
 }
 
 void MainFrame::onMenuAutoTask(wxCommandEvent&) {
-    syncToolbarState();
-    if (controller_ && controller_->isRunning()) {
-        wxMessageBox(L"操作进行中，请等待完成后再试", L"操作进行中", wxOK | wxICON_WARNING, this);
+    // AUTO_TASK is mutually exclusive with any running worker task (batch test,
+    // subscription update, dedup, sync, etc.). Guard at the UI entry so clicking
+    // "自动任务" during a batch test is rejected instead of silently queueing.
+    if (controller_->isRunning()) {
+        wxMessageBox(L"操作进行中，请等待完成后再试", L"操作进行中", wxOK | wxICON_WARNING);
         return;
     }
+    syncToolbarState();
     setOperationState(OperationType::AUTOTASK);
     setStatusText(0, L"自动任务开始…");
     controller_->runAutoTaskAsync(this);
 }
 
 void MainFrame::onMenuAutoTaskResume(wxCommandEvent&) {
-    syncToolbarState();
-    if (controller_ && controller_->isRunning()) {
-        wxMessageBox(L"操作进行中，请等待完成后再试", L"操作进行中", wxOK | wxICON_WARNING, this);
+    // Same mutual-exclusion guard as onMenuAutoTask.
+    if (controller_->isRunning()) {
+        wxMessageBox(L"操作进行中，请等待完成后再试", L"操作进行中", wxOK | wxICON_WARNING);
         return;
     }
+    syncToolbarState();
     setOperationState(OperationType::AUTOTASK);
     setStatusText(0, L"恢复自动任务…");
     controller_->resumeAutoTaskAsync(this);
@@ -1400,10 +1437,6 @@ void MainFrame::onToolUpdateAll(wxCommandEvent& event) {
 
 void MainFrame::onTestSubscription(SubscriptionTestEvent& evt) {
     syncToolbarState();
-    if (controller_ && controller_->isRunning()) {
-        wxMessageBox(L"操作进行中，请等待完成后再试", L"操作进行中", wxOK | wxICON_WARNING, this);
-        return;
-    }
     setOperationState(OperationType::TEST);
     controller_->testSubscriptionAsync(evt.getSubId(), this);
     setStatusText(0, "Testing subscription…");
@@ -1411,8 +1444,13 @@ void MainFrame::onTestSubscription(SubscriptionTestEvent& evt) {
 
 void MainFrame::onToolTest(wxCommandEvent& event) {
     syncToolbarState();
+    // Auto-task (AUTO_TASK) and batch test (TEST_ALL) are mutually exclusive
+    // worker tasks (MutexPolicy: worker vs worker → REJECT). Block the batch
+    // test button while any operation (including an auto-task) is running so
+    // the user cannot queue a conflicting batch test.
     if (controller_ && controller_->isRunning()) {
-        wxMessageBox(L"操作进行中，请等待完成后再试", L"操作进行中", wxOK | wxICON_WARNING, this);
+        wxMessageBox(L"操作进行中，请等待完成后再试", L"操作进行中",
+                     wxOK | wxICON_WARNING);
         return;
     }
     // Test ALL proxies (not just the selected subscription)

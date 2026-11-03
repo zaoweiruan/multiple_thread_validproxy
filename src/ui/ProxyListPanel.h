@@ -6,7 +6,9 @@
 
 #include <string>
 #include <vector>
+#include <set>
 #include <atomic>
+#include <unordered_map>
 
 #include "Profileitem.h"
 #include "ProfileExItem.h"
@@ -45,6 +47,11 @@ public:
     // columns).  Probe-triggered, see OnlineProbeFinishedEvent: no full-table
     // re-read and no map rebuild, so 53k-row reloads stay off the UI thread.
     void refreshResultsFor(const std::vector<std::string>& indexIds);
+    // Mark the given indexIds as dirty so the periodic dirty-flush timer
+    // re-reads only those rows (incremental cache refresh per Spec).
+    void markDirty(const std::vector<std::string>& indexIds);
+    // Flush all pending dirty rows now (incremental, serialized).
+    void flushDirty();
     void reloadFromDatabase();
     // Instant in-memory subscription switch (no DB access, same filter
     // pattern as filterBySearch).  Falls back to reloadFromDatabase()
@@ -69,6 +76,7 @@ private:
     void onStartProxy(wxCommandEvent& event);
     void onAddToPool(wxCommandEvent& event);
     void onProxyTestProgress(ProxyTestProgressEvent& event);
+    void onProxyRowsUpdated(ProxyRowsUpdatedEvent& event);
     void onColumnHeaderClick(wxDataViewEvent& event);
     // Resolve a model column index (as returned by wxDataViewEvent::GetColumn)
     // to the actual wxDataViewColumn*, scanning visual positions.  This is
@@ -79,6 +87,7 @@ private:
     void onSelectionChanged(wxDataViewEvent& event);
     void onStandaloneProxyEvent(StandaloneProxyEvent& event);
     void onHistoryTimer(wxTimerEvent& event);
+    void onDirtyTimer(wxTimerEvent& event);
     void onRunningDurationsLoaded(RunningDurationsLoadedEvent& event);
 
     void selectFirstProxy();
@@ -106,9 +115,25 @@ private:
     wxTimer* historyTimer_ = nullptr;
     std::atomic<bool> refreshInFlight_{false};
 
+    // Periodic dirty-flush timer (1s): incrementally re-reads only the
+    // rows marked dirty by batch-test row updates. Serialized via the flag.
+    wxTimer* dirtyTimer_ = nullptr;
+    std::atomic<bool> dirtyFlushInFlight_{false};
+    std::set<std::string> dirtyIndexIds_;
+
     std::vector<db::models::Profileitem> proxies_;
     std::vector<db::models::ProfileExItem> exItems_;
     std::vector<db::models::Profileitem> allProxies_;  // Unfiltered list for search
+    // Cached O(1) index for exItems_ by indexId; rebuilt only when exItems_
+    // is replaced (full reload), not per-row (incremental update keeps indexids
+    // stable, so the map stays valid across refreshResultsFor flushes).
+    std::unordered_map<std::string, std::size_t> exPos_;
+    // Cached O(1) index for the displayed proxies_ by indexId; rebuilt when
+    // the displayed subset changes (applySubscriptionFilter / filterBySearch /
+    // loadProxies). Invalidated by Reset()/sort via setDataWithoutRebuild.
+    std::unordered_map<std::string, int> rowPos_;
+    uint64_t allProxiesGen_ = 0;  // incremented when allProxies_ is replaced
+    uint64_t proxiesGen_ = 0;      // generation that proxies_ currently holds
     std::string currentSubId_;  // Track current subscription filter for reload
     // True once a load path has populated allProxies_/exItems_/model maps;
     // gates the in-memory fast path of applySubscriptionFilter().

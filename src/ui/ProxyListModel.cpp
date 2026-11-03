@@ -201,40 +201,35 @@ bool ProxyListModel::updateResultFor(const std::string& indexId,
 //           : double(stable + 1) / double(ex.start_count + 2);
 // -------------------------------------------------------------------
 bool ProxyListModel::syncHistoryForIndexId(const std::string& indexId) {
-    if (!exItems_) {
-        return false;
-    }
-    const db::models::ProfileExItem* ex = nullptr;
+    if (!exItems_) return false;
     for (std::vector<db::models::ProfileExItem>::const_iterator it = exItems_->begin();
          it != exItems_->end(); ++it) {
         if (it->indexid == indexId) {
-            ex = &(*it);
-            break;
+            return syncHistoryFor(*it);
         }
     }
-    if (!ex) {
-        return false;   // not present in current data — nothing to sync
-    }
+    return false;
+}
 
+bool ProxyListModel::syncHistoryFor(const db::models::ProfileExItem& ex) {
+    const std::string& indexId = ex.indexid;
+    if (indexId.empty()) return false;
     bool changed = false;
-
     // start_count
     std::unordered_map<std::string, int>::iterator scIt = startCountMap_.find(indexId);
     const bool scKnown = scIt != startCountMap_.end();
-    if (!scKnown || scIt->second != ex->start_count) {
-        startCountMap_[indexId] = ex->start_count;
+    if (!scKnown || scIt->second != ex.start_count) {
+        startCountMap_[indexId] = ex.start_count;
         changed = true;
     }
-
-    // total_runtime_ms — preserve non-zero historical base when the
-    // running session has not been committed back to ProfileExItem yet.
+    // total_runtime_ms
     std::unordered_map<std::string, long long>::iterator rtIt = runtimeMap_.find(indexId);
     const bool rtKnown = rtIt != runtimeMap_.end();
     long long newRuntime = 0;
-    if (ex->total_runtime_ms > 0) {
-        newRuntime = ex->total_runtime_ms;
+    if (ex.total_runtime_ms > 0) {
+        newRuntime = ex.total_runtime_ms;
     } else if (rtKnown) {
-        newRuntime = rtIt->second;   // keep previous base (may be 0)
+        newRuntime = rtIt->second;
     } else {
         newRuntime = 0;
     }
@@ -242,16 +237,15 @@ bool ProxyListModel::syncHistoryForIndexId(const std::string& indexId) {
         runtimeMap_[indexId] = newRuntime;
         changed = true;
     }
-
-    // health — Bayesian-smoothed base score, cold start forced to 0.0
-    int stable = ex->start_count - ex->crash_count;
+    // health
+    int stable = ex.start_count - ex.crash_count;
     if (stable < 0) stable = 0;
     double newHealth;
-    if (ex->start_count == 0) {
+    if (ex.start_count == 0) {
         newHealth = 0.0;
     } else {
         newHealth = static_cast<double>(stable + 1) /
-                    static_cast<double>(ex->start_count + 2);
+                    static_cast<double>(ex.start_count + 2);
     }
     std::unordered_map<std::string, double>::iterator hIt = healthMap_.find(indexId);
     const bool hKnown = hIt != healthMap_.end();
@@ -259,8 +253,17 @@ bool ProxyListModel::syncHistoryForIndexId(const std::string& indexId) {
         healthMap_[indexId] = newHealth;
         changed = true;
     }
-
     return changed;
+}
+
+void ProxyListModel::notifyTestResultChangedAtRow(int viewRow) {
+    if (viewRow < 0 || viewRow >= static_cast<int>(GetCount())) return;
+    wxDataViewItem item = wxDataViewItem(
+        reinterpret_cast<void*>(static_cast<wxUIntPtr>(
+            static_cast<unsigned int>(viewRow) + idOffset_)));
+    if (item.IsOk()) {
+        ItemChanged(item);
+    }
 }
 
 // -------------------------------------------------------------------

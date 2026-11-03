@@ -61,6 +61,10 @@ public:
     // consistent with the visible pill). When on && enabled -> show.
     void setActive(bool on);
 
+    // Collapse the expanded panel back to the orb (used after locating a
+    // proxy so the main window behind the topmost widget becomes visible).
+    void collapseToOrb();
+
     bool isActive() const { return active_; }
 
 private:

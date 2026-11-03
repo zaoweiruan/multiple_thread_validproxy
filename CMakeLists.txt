@@ -210,6 +210,8 @@ set(CORE_SOURCES
     src/test/ProxyTestCounters.cpp
     src/test/ProxyTestResultSink.cpp
     src/service/DatabaseConnectionService.cpp
+    src/task/MutexPolicy.cpp
+    src/task/TaskQueue.cpp
     src/service/ConfigService.cpp
     src/service/SubscriptionService.cpp
     src/service/ProxyListService.cpp
@@ -487,6 +489,16 @@ enable_testing()
 add_subdirectory(${GTEST_ROOT} ${CMAKE_BINARY_DIR}/googletest)
 
 add_executable(test_curl_easy_handle tests/test_curl_easy_handle.cpp)
+
+add_executable(test_mutex_policy tests/test_mutex_policy.cpp src/task/MutexPolicy.cpp)
+target_include_directories(test_mutex_policy PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(test_mutex_policy PRIVATE gtest_main gtest)
+add_test(NAME MutexPolicyTest COMMAND test_mutex_policy)
+
+add_executable(test_task_queue tests/test_task_queue.cpp src/task/TaskQueue.cpp)
+target_include_directories(test_task_queue PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(test_task_queue PRIVATE gtest_main gtest)
+add_test(NAME TaskQueueTest COMMAND test_task_queue)
 target_include_directories(test_curl_easy_handle PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(test_curl_easy_handle PRIVATE CURL::libcurl)
 set_target_properties(test_curl_easy_handle PROPERTIES

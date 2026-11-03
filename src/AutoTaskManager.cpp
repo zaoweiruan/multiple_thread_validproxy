@@ -174,8 +174,13 @@ bool AutoTaskManager::runSteps() {
 
         Logger::write("AutoTask: executing step " + std::to_string(state_.current_step_index + 1)
             + "/" + std::to_string(state_.steps.size()) + " [" + step.name + "]", LogLevel::REPORT);
+        Logger::write("AutoTask: enter step [" + step.name + "] at index "
+            + std::to_string(state_.current_step_index), LogLevel::TRACE);
 
         bool ok = executeStep(step, state_.current_step_index);
+
+        Logger::write("AutoTask: step [" + step.name + "] returned ok=" + (ok ? "true" : "false"),
+            LogLevel::TRACE);
 
         step.completed_at = getCurrentTimestamp();
         if (isCancelled()) {
@@ -237,7 +242,21 @@ bool AutoTaskManager::stepTestAll() {
     cfg.sql_query_id = state_.sql_query_id;
     cfg.sql_by_subid_id = state_.sql_by_subid_id;
     ProxyBatchTester tester(db_, cfg, baseDir_, cancelPtr, netMon_);
-    bool result = tester.run();
+    bool result = false;
+    if (poolObserver_) {
+        poolObserver_(&tester);
+    }
+    try {
+        result = tester.run();
+    } catch (...) {
+        if (poolObserver_) {
+            poolObserver_(nullptr);
+        }
+        throw;
+    }
+    if (poolObserver_) {
+        poolObserver_(nullptr);
+    }
     if (isCancelled() && !result) {
         Logger::write("AutoTask: test step was cancelled", LogLevel::REPORT);
     }
@@ -377,6 +396,10 @@ std::string AutoTaskManager::getStateFilePath() const {
 
 void AutoTaskManager::setProgressCallback(ProgressCallback cb) {
     progressCb_ = std::move(cb);
+}
+
+void AutoTaskManager::setPoolObserver(PoolObserver cb) {
+    poolObserver_ = std::move(cb);
 }
 
 // ---- static utility methods ----

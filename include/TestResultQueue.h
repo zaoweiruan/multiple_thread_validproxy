@@ -24,6 +24,7 @@ public:
     static constexpr int FLUSH_INTERVAL_MS = 5000;
     static constexpr int MAX_FLUSH_RETRIES = 3;
     static constexpr int INITIAL_BACKOFF_MS = 100;
+    static constexpr int FLUSH_STOP_TIMEOUT_SEC = 10;
 
     explicit TestResultQueue(FlushCallback callback)
         : callback_(std::move(callback)), running_(false) {}
@@ -43,10 +44,14 @@ public:
         std::lock_guard<std::mutex> lock(mutex_);
         if (running_) return;
         running_ = true;
+        flushFinished_.store(false);
         flushThread_ = std::thread(&TestResultQueue::flushLoop, this);
     }
 
-    /// Stop the flush thread. Drains remaining items. Blocks until done.
+    /// Stop the flush thread. Drains remaining items.
+    /// Bounded: if the flush thread is stuck in a blocking DB write (callback_),
+    /// wait up to FLUSH_STOP_TIMEOUT_SEC then detach so the batch teardown never
+    /// hangs forever (the detached thread finishes its write and exits on its own).
     void stop() {
         {
             std::lock_guard<std::mutex> lock(mutex_);
@@ -55,7 +60,18 @@ public:
         }
         cv_.notify_one();
         if (flushThread_.joinable()) {
-            flushThread_.join();
+            std::unique_lock<std::mutex> lock(stopMutex_);
+            if (stopCv_.wait_for(lock, std::chrono::seconds(FLUSH_STOP_TIMEOUT_SEC),
+                                 [this]() { return flushFinished_.load(); })) {
+                lock.unlock();
+                flushThread_.join();
+            } else {
+                Logger::write("TestResultQueue: flush thread did not stop within "
+                              + std::to_string(FLUSH_STOP_TIMEOUT_SEC)
+                              + "s; detaching to unblock batch teardown (orphan may still write DB)",
+                              LogLevel::WARN);
+                flushThread_.detach();
+            }
         }
         // Final drain after thread stops
         flushBatch();
@@ -158,6 +174,8 @@ private:
                 if (!drainBatch.empty()) {
                     flushWithRetry(drainBatch);
                 }
+                flushFinished_.store(true);
+                stopCv_.notify_one();
                 return;
             }
         }
@@ -180,6 +198,9 @@ private:
     std::condition_variable cv_;
     std::thread flushThread_;
     std::atomic<bool> running_;
+    std::mutex stopMutex_;
+    std::condition_variable stopCv_;
+    std::atomic<bool> flushFinished_{false};
 };
 
 #endif // TEST_RESULT_QUEUE_H

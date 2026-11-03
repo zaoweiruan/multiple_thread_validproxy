@@ -23,7 +23,8 @@ public:
 
     void loadSubscriptions();
     void loadSubscriptions(const std::vector<db::models::Subitem>& subs,
-                           const std::unordered_map<std::string, int>& proxyCounts);
+                           const std::unordered_map<std::string, int>& proxyCounts,
+                           const std::unordered_map<std::string, int>* validProxyCounts = nullptr);
     std::string getSelectedSubId() const;
     void selectSubBySubId(const std::string& subId);
     const std::vector<db::models::Subitem>& getSubscriptions() const { return subs_; }
@@ -51,7 +52,8 @@ private:
     static std::string formatUpdateTime(const std::string& updatetime);
 
     void updateSubscriptionList(const std::vector<db::models::Subitem>& subs,
-                                const std::unordered_map<std::string, int>& proxyCounts);
+                                const std::unordered_map<std::string, int>& proxyCounts,
+                                const std::unordered_map<std::string, int>* validProxyCounts = nullptr);
 
     AppController* controller_;
     wxDataViewCtrl* listCtrl_;
