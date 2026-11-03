@@ -270,7 +270,6 @@ void ProxyListPanel::refreshResultsFor(const std::vector<std::string>& indexIds)
         return;
     }
 
-    const std::uint64_t t0 = GetTickCount64();
     // Index exItems_ once (O(N)) instead of scanning it once per incoming row
     // (O(B * N), N ~ 4920 -- the O(n^2) hot path behind the "All" subscription
     // click freeze under a batch test: B rows x 3 full-cache scans each).
@@ -324,16 +323,6 @@ void ProxyListPanel::refreshResultsFor(const std::vector<std::string>& indexIds)
     if (anyChanged) {
         listCtrl_->Refresh();
     }
-    const std::uint64_t elapsed = GetTickCount64() - t0;
-    if (elapsed >= 100) {
-        Logger::write("[ProxyListPanel] refreshResultsFor: rows=" + std::to_string(rows.size())
-                      + " exN=" + std::to_string(exItems_.size())
-                      + " viewN=" + std::to_string(proxies_.size())
-                      + " elapsed=" + std::to_string(elapsed) + "ms", LogLevel::INFO);
-    } else {
-        Logger::write("[ProxyListPanel] refreshResultsFor: rows=" + std::to_string(rows.size())
-                      + " elapsed=" + std::to_string(elapsed) + "ms", LogLevel::TRACE);
-    }
 }
 
 // -------------------------------------------------------------------
@@ -364,7 +353,6 @@ void ProxyListPanel::reloadFromDatabase() {
 // vectors before resetting the view.
 // -------------------------------------------------------------------
 void ProxyListPanel::applySubscriptionFilter(const std::string& subId) {
-    const std::uint64_t t0 = GetTickCount64();
     if (!cacheReady_) {
         // Cache never populated (startup read failed / returned empty) — retry
         // the async reload. Safe during a batch test: the async reader uses its
@@ -372,11 +360,6 @@ void ProxyListPanel::applySubscriptionFilter(const std::string& subId) {
         // Skipping while a task ran left the list permanently blank after a
         // refresh (repro: refresh a subscription, then switch subscription).
         reloadFromDatabase();
-        const std::uint64_t elapsed = GetTickCount64() - t0;
-        if (elapsed >= 100) {
-            Logger::write("[ProxyListPanel] applySubscriptionFilter: !cacheReady reload async, elapsed="
-                          + std::to_string(elapsed) + "ms", LogLevel::INFO);
-        }
         return;
     }
 
@@ -424,16 +407,6 @@ void ProxyListPanel::applySubscriptionFilter(const std::string& subId) {
         if (!listCtrl_->GetSelection().IsOk()) {
             selectFirstProxy();
         }
-    }
-    const std::uint64_t elapsed = GetTickCount64() - t0;
-    if (elapsed >= 100) {
-        Logger::write("[ProxyListPanel] applySubscriptionFilter: subId=" + subId
-                      + " rows=" + std::to_string(proxies_.size())
-                      + " elapsed=" + std::to_string(elapsed) + "ms", LogLevel::INFO);
-    } else {
-        Logger::write("[ProxyListPanel] applySubscriptionFilter: subId=" + subId
-                      + " rows=" + std::to_string(proxies_.size())
-                      + " elapsed=" + std::to_string(elapsed) + "ms", LogLevel::TRACE);
     }
 }
 
