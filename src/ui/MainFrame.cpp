@@ -271,9 +271,12 @@ MainFrame::MainFrame(const config::AppConfig& cfg, sqlite3* db)
         if (floatingWidget_) {
             floatingWidget_->collapseToOrb();
         }
-        Iconize(false);
-        Maximize();
+        if (IsIconized()) {
+            Iconize(false);
+        }
+        Maximize(true);
         Raise();
+        SetFocus();
         // Locate the owning subscription row in the Subscription panel too,
         // so the user sees which subscription the failed proxy belongs to.
         if (subPanel_ && !subId.empty()) {
