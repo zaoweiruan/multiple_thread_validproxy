@@ -271,8 +271,12 @@ MainFrame::MainFrame(const config::AppConfig& cfg, sqlite3* db)
         if (floatingWidget_) {
             floatingWidget_->collapseToOrb();
         }
+        if (!IsShown()) {
+            Show(true);
+            Raise();
+        }
         if (IsIconized()) {
-            Iconize(false);
+            Restore();
         }
         Maximize(true);
         Raise();
