@@ -137,12 +137,21 @@ void ProxyListPanel::updateProxyList(const std::vector<db::models::Profileitem>&
                                       const std::string& subId) {
     currentSubId_ = subId;
     allProxies_ = proxies;
+    ++allProxiesGen_;
     cacheReady_ = true;
 
     sortState_.column = -1;
     sortState_.direction = SortDirection::None;
     proxies_ = proxies;
     exItems_ = exItems;
+
+    exPos_.clear();
+    exPos_.reserve(exItems_.size() * 2);
+    for (std::size_t i = 0; i < exItems_.size(); ++i) {
+        exPos_[exItems_[i].indexid] = i;
+    }
+    rowPos_.clear();
+    proxiesGen_ = allProxiesGen_;
 
     model_->setData(&proxies_, &exItems_);
     model_->Reset(0);
@@ -202,6 +211,13 @@ void ProxyListPanel::loadProxies(std::vector<db::models::Profileitem> proxies,
     exItems_ = std::move(exItems);
     model_->setMaps(std::move(maps));
     cacheReady_ = true;
+    // Rebuild the O(1) exItems_ index (vector identity changed).
+    exPos_.clear();
+    exPos_.reserve(exItems_.size() * 2);
+    for (std::size_t i = 0; i < exItems_.size(); ++i) {
+        exPos_[exItems_[i].indexid] = i;
+    }
+    ++allProxiesGen_;
 
     applySubscriptionFilter(subId);
 }
@@ -215,6 +231,13 @@ void ProxyListPanel::refreshResults() {
     Logger::write("[ProxyListPanel] refreshResults called", LogLevel::TRACE);
 
     exItems_ = controller_->loadProxyResults();
+
+    // Rebuild exItems_ index (vector identity changed).
+    exPos_.clear();
+    exPos_.reserve(exItems_.size() * 2);
+    for (std::size_t i = 0; i < exItems_.size(); ++i) {
+        exPos_[exItems_[i].indexid] = i;
+    }
 
     model_->rebuildMaps();
 
@@ -359,7 +382,15 @@ void ProxyListPanel::applySubscriptionFilter(const std::string& subId) {
 
     currentSubId_ = subId;
     if (subId.empty()) {
-        proxies_ = allProxies_;  // Restore unfiltered list
+        // Avoid a 53k-Profileitem deep copy when the displayed list already
+        // holds the unfiltered cache (common during batch-test row updates
+        // that switch back to "All" repeatedly). The generation check makes
+        // the skip safe: allProxies_ only changes on a full reload, which
+        // increments allProxiesGen_.
+        if (proxiesGen_ != allProxiesGen_) {
+            proxies_ = allProxies_;
+            proxiesGen_ = allProxiesGen_;
+        }
     } else {
         proxies_.clear();
         for (const db::models::Profileitem& p : allProxies_) {
@@ -367,6 +398,7 @@ void ProxyListPanel::applySubscriptionFilter(const std::string& subId) {
                 proxies_.push_back(p);
             }
         }
+        proxiesGen_ = allProxiesGen_;  // proxies_ is a filtered subset of this generation
     }
 
     sortState_.column = -1;
@@ -378,6 +410,15 @@ void ProxyListPanel::applySubscriptionFilter(const std::string& subId) {
     model_->Reset(0);
     model_->Reset(static_cast<unsigned int>(proxies_.size()));
     model_->detectIdOffset();
+
+    // Rebuild the displayed-row index map (O(V)) so refreshResultsFor can
+    // notify changed rows in O(1).
+    rowPos_.clear();
+    rowPos_.reserve(proxies_.size() * 2);
+    for (unsigned vr = 0; vr < model_->GetCount(); ++vr) {
+        const db::models::Profileitem* p = model_->getProfileAtRow(vr);
+        if (p) rowPos_[p->indexid] = static_cast<int>(vr);
+    }
 
     if (!proxies_.empty()) {
         if (!listCtrl_->GetSelection().IsOk()) {

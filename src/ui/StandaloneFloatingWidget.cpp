@@ -423,6 +423,12 @@ void StandaloneFloatingWidget::setActive(bool on) {
     Show(active_ && cfg_.proxy_process_monitor.enabled);
 }
 
+void StandaloneFloatingWidget::collapseToOrb() {
+    if (mode_ == Mode::Panel) {
+        setMode(Mode::Orb);
+    }
+}
+
 void StandaloneFloatingWidget::onClose(wxCloseEvent&) {
     // 仅隐藏，保留对象存活；整体退出由主窗口 / ~MainFrame 掌控。
     // 不调用 Destroy()/event.Skip()：避免进入 wxPendingDelete 延迟删除链

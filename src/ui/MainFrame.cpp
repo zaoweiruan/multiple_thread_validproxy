@@ -264,6 +264,14 @@ MainFrame::MainFrame(const config::AppConfig& cfg, sqlite3* db)
         if (proxyPanel_) {
             proxyPanel_->selectProxyByIndexId(evt.getIndexId());
         }
+        // Collapse the floating widget to Orb mode so the main window (which is
+        // behind the topmost floating widget) becomes visible and the user can
+        // see the located subscription/proxy row. Without this the selection
+        // happens invisibly behind the topmost floating widget.
+        if (floatingWidget_) {
+            floatingWidget_->collapseToOrb();
+        }
+        Raise();
         // Locate the owning subscription row in the Subscription panel too,
         // so the user sees which subscription the failed proxy belongs to.
         if (subPanel_ && !subId.empty()) {

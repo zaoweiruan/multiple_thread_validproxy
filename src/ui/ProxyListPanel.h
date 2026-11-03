@@ -8,6 +8,7 @@
 #include <vector>
 #include <set>
 #include <atomic>
+#include <unordered_map>
 
 #include "Profileitem.h"
 #include "ProfileExItem.h"
@@ -123,6 +124,16 @@ private:
     std::vector<db::models::Profileitem> proxies_;
     std::vector<db::models::ProfileExItem> exItems_;
     std::vector<db::models::Profileitem> allProxies_;  // Unfiltered list for search
+    // Cached O(1) index for exItems_ by indexId; rebuilt only when exItems_
+    // is replaced (full reload), not per-row (incremental update keeps indexids
+    // stable, so the map stays valid across refreshResultsFor flushes).
+    std::unordered_map<std::string, std::size_t> exPos_;
+    // Cached O(1) index for the displayed proxies_ by indexId; rebuilt when
+    // the displayed subset changes (applySubscriptionFilter / filterBySearch /
+    // loadProxies). Invalidated by Reset()/sort via setDataWithoutRebuild.
+    std::unordered_map<std::string, int> rowPos_;
+    uint64_t allProxiesGen_ = 0;  // incremented when allProxies_ is replaced
+    uint64_t proxiesGen_ = 0;      // generation that proxies_ currently holds
     std::string currentSubId_;  // Track current subscription filter for reload
     // True once a load path has populated allProxies_/exItems_/model maps;
     // gates the in-memory fast path of applySubscriptionFilter().
