@@ -30,7 +30,7 @@ status: maintained
 | [规范化设计](#75-规范化设计) | 87 | `docs/specs/` |
 | [实施计划](#8-实施计划) | 108 | `docs/plans/` |
 | [分析报告](#9-分析报告) | 28 | `docs/reports/` |
-| [Bug 修复记录](#91-bug-修复记录) | 141 | `docs/bugfix/` |
+| [Bug 修复记录](#91-bug-修复记录) | 142 | `docs/bugfix/` |
 | [测试报告](#10-测试报告) | 1 | `docs/test/` |
 | [长期记忆](#13-长期记忆) | 1 | `docs/project-knowledge.md` (6.2 KB) |
 
@@ -506,6 +506,7 @@ esolveChainPort 链式取用第一个非零值，erdict=NotChecked；D2 判定�
 | 110 | [docs/bugfix/2026-11-02-Bugfix-FloatingWidget-AlphaHitTest-v1.0.md](./bugfix/2026-11-02-Bugfix-FloatingWidget-AlphaHitTest-v1.0.md) | **悬浮球中心镂空区无法悬停/点击** — ULW 逐像素 alpha=0 命中穿透；圆内 alpha 钳 ≥1 修复，`UI_FLOATINGWIDGET` 门禁 12/12 全绿 | ✅ completed | — |
 | 111 | [docs/bugfix/2026-11-02-Bugfix-ProxyListPanel-RefreshPerf-v1.0.md](./bugfix/2026-11-02-Bugfix-ProxyListPanel-RefreshPerf-v1.0.md) | **批量测试中点击「全部」订阅 UI 阻塞** — 转发直接同步 refresh → markDirty（Spec §3.6）+ refreshResultsFor O(B×N)→O(N+B)（exItems_/view-row 单遍索引）+ loadProxyResultsFor 独立 WAL 连接，消除 SQLITE_MISUSE | ✅ completed | — |
 | 112 | [docs/bugfix/2026-11-02-Bugfix-ConfigDialog-UIDeadlock-v1.0.md](./bugfix/2026-11-02-Bugfix-ConfigDialog-UIDeadlock-v1.0.md) | **AutoTask 执行中打开配置对话框阻塞、无法退出** — ConfigDialog 用共享 db_ 连接在 UI 线程同步读 DB，与 AutoTask writer 线程并发使用 → SQLITE_MISUSE/Busy 阻塞模态循环；改为独立 WAL reader 连接 + ownsDb_ 析构 | ✅ completed | — |
+| 113 | [docs/bugfix/2026-11-03-Bugfix-FloatingWidget-LocateProxy-v1.0.md](./bugfix/2026-11-03-Bugfix-FloatingWidget-LocateProxy-v1.0.md) | **悬浮窗弹窗点击代理无法定位到主窗口** — 代码链路执行正确但主窗口被 topmost 悬浮窗遮挡；定位后 collapseToOrb + Iconize(false)+Maximize()+Raise() 使结果可见 | ✅ completed | — |
 
 | # | 文件 | 说明 | 状态 | 大小 |
 |------|------|------|------|------|
