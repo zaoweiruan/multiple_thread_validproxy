@@ -154,9 +154,36 @@ ConfigDialog::ConfigDialog(wxWindow* parent, const config::AppConfig& cfg, sqlit
     : wxDialog(parent, wxID_ANY, L"配置编辑器",
                 wxDefaultPosition, wxSize(1500, 950),
                 wxDEFAULT_DIALOG_STYLE | wxRESIZE_BORDER)
-    , db_(db)
+    , db_(nullptr)
     , configPath_(configPath)
 {
+    // Use a DEDICATED SQLite connection (WAL reader) instead of the shared
+    // db_ handle passed in.  The shared handle is also used by batch-test
+    // worker threads (under dbMutex_), and reading it from the UI thread during
+    // an AutoTask caused SQLITE_MISUSE ("bad parameter or other API misuse")
+    // and a frozen modal dialog that could not be closed.  A separate
+    // connection on the same DB file, in WAL mode with a busy timeout, lets
+    // UI-thread reads proceed concurrently with the writer (no lock wait)
+    // and never touches the writer's handle.
+    sqlite3* dedicatedDb = nullptr;
+    std::string dbPath = cfg.database_path;
+    if (!dbPath.empty() && sqlite3_open_v2(dbPath.c_str(), &dedicatedDb,
+                                           SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE,
+                                           nullptr) == SQLITE_OK) {
+        sqlite3_busy_timeout(dedicatedDb, 5000);
+        sqlite3_exec(dedicatedDb, "PRAGMA journal_mode=WAL;", nullptr, nullptr, nullptr);
+        sqlite3_exec(dedicatedDb, "PRAGMA cache_size=-8000;", nullptr, nullptr, nullptr);
+        sqlite3_exec(dedicatedDb, "PRAGMA synchronous=NORMAL;", nullptr, nullptr, nullptr);
+        sqlite3_exec(dedicatedDb, "PRAGMA temp_store=MEMORY;", nullptr, nullptr, nullptr);
+        sqlite3_exec(dedicatedDb, "PRAGMA mmap_size=268435456;", nullptr, nullptr, nullptr);
+        db_ = dedicatedDb;
+        ownsDb_ = true;
+    } else {
+        // Fallback to the shared handle if the dedicated open fails.
+        if (dedicatedDb) sqlite3_close(dedicatedDb);
+        db_ = db;
+    }
+
     wxBoxSizer* topSizer = new wxBoxSizer(wxVERTICAL);
 
     // Notebook with tabs
@@ -874,6 +901,21 @@ bool ConfigDialog::validateConfig() {
         }
     }
     return true;
+}
+
+// -------------------------------------------------------------------
+ConfigDialog::~ConfigDialog() {
+    // Close the dedicated reader connection opened in the constructor.
+    // db_ may be the shared handle passed in (fallback) — only close if
+    // we opened it ourselves (tracked via a separate flag would be cleaner,
+    // but the shared handle is owned by AppController and must NOT be closed
+    // here). Use the dedicated handle only.
+    // Heuristic: if db_ is non-null and was opened by us, close it. We track
+    // this via a member flag set in the constructor.
+    if (ownsDb_ && db_) {
+        sqlite3_close(db_);
+        db_ = nullptr;
+    }
 }
 
 // -------------------------------------------------------------------

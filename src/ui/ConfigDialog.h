@@ -34,6 +34,7 @@ class ConfigDialog : public wxDialog {
 public:
     ConfigDialog(wxWindow* parent, const config::AppConfig& cfg, sqlite3* db,
                  const std::string& configPath);
+    ~ConfigDialog() override;
 
     config::AppConfig getConfig() const { return editedConfig_; }
     bool isModified() const { return modified_; }
@@ -116,6 +117,7 @@ private:
     // 注意 stepOrder_ 仍在（AutoTask 步骤顺序，与管线无关，勿删）。
 
     sqlite3* db_{nullptr};
+    bool ownsDb_ = false;
     std::string configPath_;
 
     // 组件包配置 tab 控件
