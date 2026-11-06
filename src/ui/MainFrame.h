@@ -25,6 +25,8 @@ class wxChoice;
 class ConfigDialog;
 class TrayIcon;
 class StandaloneFloatingWidget;
+class TaskMonitorPanel;
+class BatchQueuePanel;
 
 enum class OperationType {
     NONE,
@@ -108,6 +110,9 @@ private:
     void onFirstShow(wxShowEvent& event);
     void repositionNetMonPanel();
     void onProxyMonTimer(wxTimerEvent& event);
+    void onBottomViewSelected(wxCommandEvent& event);
+    void onBottomViewTimer(wxTimerEvent& event);
+    void switchBottomView(int index);
     void repositionProxyMonPanel();
     void updateProxyMonStatus(bool enabled, int aliveCount);
     void startProxyMonitor(int intervalMs);
@@ -145,6 +150,16 @@ private:
     wxPanel* proxyMonPanel_{nullptr};
     bool proxyMonEnabled_{false};
     int proxyAliveCount_{0};
+
+    // Bottom shared view (spec 2026-11-03 v1.2 §3.8, v1.2.5 §13): ONE window
+    // area, the visible page chosen by the 监控 radio; hidden pages take no
+    // sizer space (wxBoxSizer CalcMin/DoLayout skip hidden windows).
+    wxPanel* bottomPanel_{nullptr};
+    wxRadioBox* bottomViewRadio_{nullptr};
+    TaskMonitorPanel* taskMonitorPanel_{nullptr};
+    BatchQueuePanel* batchQueuePanel_{nullptr};
+    wxTimer* bottomViewTimer_{nullptr};
+    int bottomViewIndex_{0};   // 0=任务 1=任务进度 2=日志 (default 任务, owner 2026-11-05)
 
     // Refresh command status-bar protection (see Step 2b)
     std::atomic<bool> statusTextProtected_{false};

@@ -7,6 +7,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "framework/BottomView.h"
 #include "framework/Fixtures.h"
 #include "framework/Layout.h"
 #include "framework/Text.h"
@@ -45,6 +46,11 @@ TEST_CASE("Layout of the main window is inside the window bounds",
     AppFixture fx;
     REQUIRE(fx.ready());
 
+    // The log page is not the default bottom page since v1.2.5 — switch to it
+    // so the log anchors below are really measurable.
+    if (!showLogPage(fx.mainWindow(), fx.pid()))
+        INFO("log page not reachable; log anchors may report missing");
+
     // Depth/budget come from the framework defaults: the walk prunes grid
 // containers and honours a node budget, so it finishes in seconds instead of
 // walking every rendered cell.
@@ -68,6 +74,10 @@ TEST_CASE("Layout search box and log controls do not overlap",
           "[layout][validation]") {
     AppFixture fx;
     REQUIRE(fx.ready());
+
+    // Same as above: the clear button lives on the (non-default) log page.
+    if (!showLogPage(fx.mainWindow(), fx.pid()))
+        INFO("log page not reachable; clear anchor may report missing");
 
     // Depth/budget come from the framework defaults: the walk prunes grid
 // containers and honours a node budget, so it finishes in seconds instead of
@@ -110,6 +120,10 @@ TEST_CASE("Layout resizing the window grows the client area and can be restored"
     CHECK(rectHeight(grown) > originalHeight);
 
     // Controls must survive the relayout: still present, still inside bounds.
+    // The log page must be shown first (not the default since v1.2.5) so its
+    // open-log button anchor below is really measurable.
+    if (!showLogPage(fx.mainWindow(), fx.pid()))
+        INFO("log page not reachable; open-log anchor may report missing");
     // Depth/budget come from the framework defaults: the walk prunes grid
 // containers and honours a node budget, so it finishes in seconds instead of
 // walking every rendered cell.

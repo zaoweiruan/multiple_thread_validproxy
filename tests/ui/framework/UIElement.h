@@ -42,6 +42,7 @@ public:
 
     // ---- introspection additions (window-type / layout sensing) ----
     int controlType() const;               // UIA_ControlTypePropertyId; 0 when unknown
+    bool isSelected() const;               // UIA_SelectionItemIsSelectedPropertyId
     bool boundingRect(RECT* out) const;    // screen-pixel bounds; false when unavailable
     UiElement parent() const;              // ControlViewWalker parent; invalid at root
 

@@ -136,10 +136,40 @@ SubitemUpdaterV2::SubitemUpdaterV2(sqlite3* db,
       externalCancel_(externalCancel), netMon_(netMon) {
 }
 
+// ── batch-update breakdown helpers (owner request 2026-11-05) ──────────
+int SubitemUpdaterV2::findUpdateStep(const std::string& subId) const {
+    for (std::size_t i = 0; i < updateSteps_.size(); ++i) {
+        if (updateSteps_[i].subId == subId) return static_cast<int>(i);
+    }
+    return -1;
+}
+
+void SubitemUpdaterV2::setUpdateStepStatus(const std::string& subId, UpdateStepStatus status) {
+    const int idx = findUpdateStep(subId);
+    if (idx < 0) return;
+    UpdateStepStatus& cur = updateSteps_[static_cast<std::size_t>(idx)].status;
+    // SUCCESS is sticky: a later retry-phase bookkeeping must not downgrade a
+    // subscription that already updated this run (FAILED→SUCCESS upgrade IS
+    // allowed when a retry succeeds, handled by the caller setting SUCCESS).
+    if (cur == UpdateStepStatus::SUCCESS && status != UpdateStepStatus::SUCCESS) return;
+    cur = status;
+    publishUpdateSteps();
+}
+
+void SubitemUpdaterV2::publishUpdateSteps() {
+    if (stepObserver_) {
+        try { stepObserver_(updateSteps_); } catch (...) {}
+    }
+}
+
 bool SubitemUpdaterV2::run() {
     Logger::write("========================================", LogLevel::INFO);
     Logger::write("INFO: Starting SubitemUpdaterV2", LogLevel::INFO);
     Logger::write("========================================", LogLevel::INFO);
+
+    // Fresh breakdown per run (the object may run only once, but be safe).
+    updateSteps_.clear();
+    dedupStepTracked_ = false;
 
     std::vector<UpdateMethod> methods = parseUpdateMethods(config_.update_methods);
     std::string methodsLog;
@@ -162,6 +192,25 @@ bool SubitemUpdaterV2::run() {
     }
 
     Logger::write("INFO: Found " + std::to_string(enabledSubs.size()) + " enabled subscriptions", LogLevel::INFO);
+
+    // Task-monitor breakdown: one row per enabled subscription, plus the
+    // trailing 清洗 row when post-update dedup will run (owner 2026-11-05).
+    for (const db::models::Subitem& sub : enabledSubs) {
+        UpdateStepInfo info;
+        info.subId = sub.id;
+        info.remarks = sub.remarks;
+        info.status = UpdateStepStatus::PENDING;
+        updateSteps_.push_back(info);
+    }
+    if (config_.dedup_after_update && config_.dedup_enabled) {
+        UpdateStepInfo dedupRow;
+        dedupRow.subId = kDedupStepId;
+        dedupRow.remarks = kDedupStepName;
+        dedupRow.status = UpdateStepStatus::PENDING;
+        dedupStepTracked_ = true;
+        updateSteps_.push_back(dedupRow);
+    }
+    publishUpdateSteps();
 
     bool needProxy = false;
     for (const UpdateMethod& m : methods) {
@@ -227,6 +276,9 @@ bool SubitemUpdaterV2::run() {
             }
 
             Logger::write("INFO: " + methodName + ": " + subUrl, LogLevel::REPORT);
+            // Task-monitor: this subscription is being fetched right now
+            // (retry phases re-enter RUNNING; SUCCESS is sticky).
+            setUpdateStepStatus(subId, UpdateStepStatus::RUNNING);
 
             std::string content;
             long httpStatus = 0;
@@ -275,6 +327,7 @@ bool SubitemUpdaterV2::run() {
                     updateProfileItems(subId, profiles);
                     successCount++;
                     phaseSuccess++;
+                    setUpdateStepStatus(subId, UpdateStepStatus::SUCCESS);
                     // Upstream produced nodes again -> drop the 404- marker if any.
                     clearSourceGoneMarker(subId, subRemarks);
                     Logger::write("INFO: Updated successfully: " + subId, LogLevel::INFO);
@@ -294,6 +347,7 @@ bool SubitemUpdaterV2::run() {
                     if (httpStatus == 404 && httpStatusIsAboutOrigin) {
                         phaseFail++;
                         markSourceGone(subId, subRemarks);
+                        setUpdateStepStatus(subId, UpdateStepStatus::FAILED);
                         Logger::write("ERROR: Subscription source gone (HTTP 404): " + subId
                                       + " remarks=" + subRemarks + " url=" + subUrl
                                       + " - upstream removed/renamed; marked and disabled",
@@ -301,6 +355,9 @@ bool SubitemUpdaterV2::run() {
                     } else {
                         phaseFail++;
                         stillFailed.push_back({subId, subRemarks, subUrl});
+                        // Still recoverable in a later phase → FAILED for now;
+                        // the retry loop re-enters RUNNING and may upgrade it.
+                        setUpdateStepStatus(subId, UpdateStepStatus::FAILED);
                         Logger::write("ERROR: Parse failed: " + subId + " (http=" + std::to_string(httpStatus)
                                       + ", content=" + std::to_string(content.size()) + " bytes)", LogLevel::ERR);
                     }
@@ -309,6 +366,7 @@ bool SubitemUpdaterV2::run() {
                 Logger::write(methodName + " connection failed", LogLevel::ERR);
                 phaseFail++;
                 stillFailed.push_back({subId, subRemarks, subUrl});
+                setUpdateStepStatus(subId, UpdateStepStatus::FAILED);
                 Logger::write("ERROR: Failed to update: " + subId, LogLevel::ERR);
             }
             return true;
@@ -327,6 +385,7 @@ bool SubitemUpdaterV2::run() {
                 const db::models::Subitem& sub = enabledSubs[i];
                 if (shouldSkipUpdate(sub)) {
                     Logger::write("INFO: Skipping sub " + sub.id + " (within update interval)", LogLevel::INFO);
+                    setUpdateStepStatus(sub.id, UpdateStepStatus::SKIPPED);
                     continue;
                 }
                 Logger::write("[" + std::to_string(i + 1) + "/" + std::to_string(enabledSubs.size()) + "] " + methodName + ": " + sub.url, LogLevel::REPORT);
@@ -375,9 +434,28 @@ bool SubitemUpdaterV2::run() {
     }
     Logger::write("========================================", LogLevel::REPORT);
 
+    // Final breakdown pass: rows still PENDING/RUNNING were never reached
+    // (user cancel or network abort mid-loop) — show them as CANCELLED so the
+    // monitor never freezes on RUNNING. FAILED rows stay FAILED: they were
+    // genuinely attempted and every configured method was exhausted. The
+    // dedup row is excluded — it runs right below (or was gated off).
+    for (UpdateStepInfo& row : updateSteps_) {
+        if (row.subId == kDedupStepId) continue;
+        if (row.status == UpdateStepStatus::PENDING || row.status == UpdateStepStatus::RUNNING) {
+            row.status = UpdateStepStatus::CANCELLED;
+        }
+    }
+    publishUpdateSteps();
+
     if (config_.dedup_after_update && config_.dedup_enabled) {
         Logger::write("INFO: Running dedup after subscription update...", LogLevel::INFO);
-        deduplicate();
+        setUpdateStepStatus(kDedupStepId, UpdateStepStatus::RUNNING);
+        const bool dedupOk = deduplicate();
+        setUpdateStepStatus(kDedupStepId,
+                            dedupOk ? UpdateStepStatus::SUCCESS : UpdateStepStatus::FAILED);
+    } else if (dedupStepTracked_) {
+        // Row was built but the dedup gate flipped meanwhile — be honest.
+        setUpdateStepStatus(kDedupStepId, UpdateStepStatus::SKIPPED);
     }
 
     if (successCount <= 0) {

@@ -56,7 +56,7 @@ bool AutoTaskManager::run(const std::vector<std::string>& stepNames) {
     state_.sql_query_id = config_.sql_query_id;
     state_.sql_by_subid_id = config_.sql_by_subid_id;
 
-    writeState();
+    writeState();   // persists AND publishes the PENDING breakdown
     Logger::write("AutoTask: starting with " + std::to_string(stepNames.size()) + " steps", LogLevel::REPORT);
 
     bool result = runSteps();
@@ -114,6 +114,7 @@ bool AutoTaskManager::resume() {
         return false;
     }
 
+    notifyStepObserver();   // resumed breakdown (earlier steps may be COMPLETED)
     bool result = runSteps();
 
     Logger::write("AutoTask: " + std::string(result ? "resumed and completed" : "resume failed"),
@@ -229,6 +230,13 @@ bool AutoTaskManager::executeStep(const AutoTaskStepInfo& step, int /*stepIndex*
 bool AutoTaskManager::stepUpdateAll() {
     std::atomic<bool>* cancelPtr = externalCancel_ ? externalCancel_ : &cancelRequested_;
     update::SubitemUpdaterV2 updater(db_, config_.proxy.xray_executable, config_, nullptr, baseDir_, cancelPtr, netMon_);
+    // Forward the subscription-level snapshots to AppController, which reduces
+    // them to overall progress (owner 2026-11-06: 更新订阅只显示整体进度).
+    if (updateProgressObserver_) {
+        updater.setStepObserver([this](const std::vector<update::SubitemUpdaterV2::UpdateStepInfo>& steps) {
+            if (updateProgressObserver_) updateProgressObserver_(steps);
+        });
+    }
     bool result = updater.run();
     if (isCancelled() && !result) {
         Logger::write("AutoTask: update step was cancelled", LogLevel::REPORT);
@@ -241,13 +249,17 @@ bool AutoTaskManager::stepTestAll() {
     config::AppConfig cfg = config_;
     cfg.sql_query_id = state_.sql_query_id;
     cfg.sql_by_subid_id = state_.sql_by_subid_id;
-    ProxyBatchTester tester(db_, cfg, baseDir_, cancelPtr, netMon_);
+    // shared_ptr ownership: the observer (AppController) keeps its own copy for
+    // the duration of run(), so a UI-thread poll can never outlive the tester
+    // (spec 2026-11-03 v1.2 §3.6, review B4).
+    std::shared_ptr<ProxyBatchTester> tester =
+        std::make_shared<ProxyBatchTester>(db_, cfg, baseDir_, cancelPtr, netMon_);
     bool result = false;
     if (poolObserver_) {
-        poolObserver_(&tester);
+        poolObserver_(tester);
     }
     try {
-        result = tester.run();
+        result = tester->run();
     } catch (...) {
         if (poolObserver_) {
             poolObserver_(nullptr);
@@ -402,6 +414,23 @@ void AutoTaskManager::setPoolObserver(PoolObserver cb) {
     poolObserver_ = std::move(cb);
 }
 
+void AutoTaskManager::setStepObserver(StepObserver cb) {
+    stepObserver_ = std::move(cb);
+}
+
+void AutoTaskManager::setUpdateProgressObserver(UpdateProgressObserver cb) {
+    updateProgressObserver_ = std::move(cb);
+}
+
+// Publish the step breakdown to the task monitor. Called from the worker
+// thread at every transition; the observer (AppController lambda) copies the
+// list into the thread-safe TaskQueue child rows.
+void AutoTaskManager::notifyStepObserver() {
+    if (stepObserver_) {
+        try { stepObserver_(state_.steps); } catch (...) {}
+    }
+}
+
 // ---- static utility methods ----
 
 AutoTaskStepType AutoTaskManager::stepNameToType(const std::string& name) {
@@ -464,6 +493,10 @@ static StepStatus stringToStepStatus(const std::string& s) {
 
 void AutoTaskManager::writeState() {
     saveStateFile(stateFilePath_, state_);
+    // Every persisted state transition is also a monitoring refresh point:
+    // the step breakdown published here (PENDING → RUNNING → final status)
+    // drives the task monitor's sub-task rows.
+    notifyStepObserver();
 }
 
 bool AutoTaskManager::saveStateFile(const std::string& filePath, const AutoTaskState& state) {

@@ -6,6 +6,7 @@
 #include "XrayApi.h"
 #include "NetworkMonitor.h"
 #include "BatchWorkerPolicy.h"
+#include "test/BatchPendingView.h"
 #include <fstream>
 #include <filesystem>
 #include <algorithm>
@@ -102,6 +103,69 @@ std::string ProxyBatchTester::resolveSql(int id, const std::string& fallback) co
     }
     if (!fallback.empty()) return fallback;
     return "SELECT * FROM ProfileItem;";
+}
+
+ProxyBatchTester::BatchQueueStats ProxyBatchTester::getQueueStats() {
+    BatchQueueStats s;
+    s.total = totalProxies_.load();
+    s.processed = processedCount_.load();
+    s.success = successCount_.load();
+    s.failed = failedCount_.load();
+    s.remaining = s.total - s.processed;
+    if (s.remaining < 0) s.remaining = 0;
+    // Read each queue under its own lock; never nest queueMutex_/insertedMutex_
+    // (worker paths take them individually and nesting would invert lock order).
+    {
+        std::lock_guard<std::mutex> lock(queueMutex_);
+        s.batchQueueSize = static_cast<int>(proxiesQueue_.size());
+    }
+    {
+        std::lock_guard<std::mutex> lock(insertedMutex_);
+        s.insertedQueueSize = static_cast<int>(insertedQueue_.size());
+    }
+    s.running = running_.load();
+    s.percent = s.total > 0 ? s.processed * 100.0 / s.total : 0.0;
+    return s;
+}
+
+std::vector<ProxyBatchTester::PendingProxy> ProxyBatchTester::getPendingProxies(std::size_t limit) {
+    std::vector<PendingProxy> out;
+    // proxies_ is only readable once the run has filled the main queue; before
+    // that the run thread may still be assigning it (see proxiesSealed_).
+    if (!proxiesSealed_.load(std::memory_order_acquire)) return out;
+
+    std::queue<int> insertedCopy;
+    std::vector<db::models::Profileitem> insertedItems;
+    {
+        std::lock_guard<std::mutex> lock(insertedMutex_);
+        insertedCopy = insertedQueue_;
+        insertedItems = insertedProxies_;
+    }
+    std::queue<int> mainCopy;
+    {
+        std::lock_guard<std::mutex> lock(queueMutex_);
+        mainCopy = proxiesQueue_;
+    }
+
+    // Same projection the worker uses (inserted first, then main FIFO, stale
+    // indices dropped) — see include/test/BatchPendingView.h.
+    const std::vector<test::PendingIndexRef> refs = test::drainPendingView(
+        insertedCopy, mainCopy, insertedItems.size(), proxies_.size(), limit);
+
+    out.reserve(refs.size());
+    for (const test::PendingIndexRef& ref : refs) {
+        const db::models::Profileitem& p =
+            ref.inserted ? insertedItems[static_cast<std::size_t>(ref.index)]
+                         : proxies_[static_cast<std::size_t>(ref.index)];
+        PendingProxy item;
+        item.indexId = p.indexid;
+        item.address = p.address;
+        item.port = p.port;
+        item.configType = p.configtype;
+        item.inserted = ref.inserted;
+        out.push_back(item);
+    }
+    return out;
 }
 
 std::vector<db::models::Profileitem> ProxyBatchTester::loadProxies(const std::string& subId) {
@@ -594,6 +658,8 @@ void ProxyBatchTester::testProxiesMultiThreaded() {
     for (int i = 0; i < static_cast<int>(proxies_.size()); ++i) {
         proxiesQueue_.push(i);
     }
+    // proxies_ is now immutable for this run: getPendingProxies() may read it.
+    proxiesSealed_.store(true, std::memory_order_release);
 
     // Phase D: Start flush thread for batched DB writes
     resultQueue_.start();
@@ -902,6 +968,7 @@ bool ProxyBatchTester::runInternal() {
 
 bool ProxyBatchTester::run() {
     // B1: Reset all mutable state at start of each run
+    proxiesSealed_.store(false, std::memory_order_release);
     successCount_.store(0, std::memory_order_relaxed);
     failedCount_.store(0, std::memory_order_relaxed);
     processedCount_.store(0, std::memory_order_relaxed);
@@ -953,6 +1020,7 @@ bool ProxyBatchTester::run() {
 
 bool ProxyBatchTester::runWithSubId(const std::string& subId) {
     // B1: Reset all mutable state at start of each run
+    proxiesSealed_.store(false, std::memory_order_release);
     successCount_.store(0, std::memory_order_relaxed);
     failedCount_.store(0, std::memory_order_relaxed);
     processedCount_.store(0, std::memory_order_relaxed);
@@ -996,6 +1064,7 @@ bool ProxyBatchTester::runWithSubId(const std::string& subId) {
 
 bool ProxyBatchTester::runWithIndexId(const std::string& indexId) {
     // B1: Reset all mutable state at start of each run
+    proxiesSealed_.store(false, std::memory_order_release);
     successCount_.store(0, std::memory_order_relaxed);
     failedCount_.store(0, std::memory_order_relaxed);
     processedCount_.store(0, std::memory_order_relaxed);
@@ -1060,6 +1129,7 @@ bool ProxyBatchTester::loadProxies(const std::vector<std::string>& indexIds) {
     // Phase A (ProxyTestUnified): load a specific set of proxies (by indexId)
     // into proxies_ so a multi-select test can create one count=N pool instead
     // of N count=1 pools.
+    proxiesSealed_.store(false, std::memory_order_release);   // proxies_ is being replaced
     db::models::ProfileitemDAO dao(db_);
     std::vector<db::models::Profileitem> filtered;
     for (std::size_t i = 0; i < indexIds.size(); ++i) {

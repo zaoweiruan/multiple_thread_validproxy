@@ -36,7 +36,14 @@ enum class TaskStatus {
     FAILED,
     CANCELLED,
     REJECTED,
+    SKIPPED,    // monitoring child only: within update interval, not touched
 };
+
+// Human-readable label for a TaskType: "<中文描述> (<TaskType 枚举名>)",
+// e.g. "批量测试 (TEST_ALL)". The English enumerator is embedded on purpose so
+// the monitoring panel, the logs and the code stay readable against each other.
+// Every enumerator must be listed; unlisted values return "未知任务 (UNKNOWN)".
+const char* taskTypeToString(TaskType t);
 
 struct TaskHandle {
     std::string taskId;
@@ -59,6 +66,10 @@ struct TaskHandle {
     int progressCurrent = 0;
     int progressTotal = 0;
     std::string progressMessage;
+
+    // Target identifier for the task (e.g. subscription id for TEST_SUBSCRIPTION).
+    // Empty when the task has no single target (e.g. TEST_ALL, UPDATE_ALL).
+    std::string targetId;
 };
 
 } // namespace task

@@ -15,6 +15,9 @@
 #include "ToolbarIcons.h"
 #include "NetworkMonitor.h"
 #include "DatabaseSwitchPolicy.h"
+#include "TaskMonitorPanel.h"
+#include "BatchQueuePanel.h"
+#include "UiControlIds.h"
 #include "version.h"
 #include "config/ConfigPathResolver.h"
 
@@ -634,6 +637,12 @@ MainFrame::~MainFrame() {
         proxyMonTimer_ = nullptr;
     }
 
+    if (bottomViewTimer_) {
+        bottomViewTimer_->Stop();
+        delete bottomViewTimer_;
+        bottomViewTimer_ = nullptr;
+    }
+
     if (floatingWidget_) {
         delete floatingWidget_;
         floatingWidget_ = nullptr;
@@ -897,17 +906,60 @@ void MainFrame::initPanels() {
     splitter_->SplitVertically(subPanel_, proxyPanel_, 360);
 
     detailPanel_ = new ProxyDetailPanel(this);  // AUI-managed, parent stays as MainFrame
-    logPanel_ = new LogPanel(centerPanel);
+
+    // ── Bottom shared view (spec 2026-11-03 v1.2 §3.8, v1.2.5 §13) ──
+    // ONE window area hosting taskMonitorPanel_ / batchQueuePanel_ / logPanel_;
+    // the 监控 radio picks the visible page, the other two stay hidden (a
+    // hidden window contributes nothing to wxBoxSizer CalcMin/DoLayout, so
+    // hidden pages never inflate the area). Default page: 任务 (owner
+    // 2026-11-05) — tests anchor on log controls must switch pages first.
+    bottomPanel_ = new wxPanel(centerPanel, ID_BOTTOM_VIEW_PANEL, wxDefaultPosition,
+                               wxDefaultSize, wxBORDER_SUNKEN);
+    bottomPanel_->SetMinSize(wxSize(620, 260));   // was on logPanel_ (MainFrame.cpp:908 old)
+    wxBoxSizer* bottomSizer = new wxBoxSizer(wxVERTICAL);
+
+    // Option order == page index (owner request 2026-11-05; 队列页更名
+    // 「任务进度」 2026-11-06): 0=任务 1=任务进度 2=日志, default 任务. The
+    // caption is 「监控」 (was 视图).
+    bottomViewRadio_ = new wxRadioBox(
+        bottomPanel_, ID_BOTTOM_VIEW_RADIO, wxString::FromUTF8(u8"监控"),
+        wxDefaultPosition, wxDefaultSize,
+        { wxString::FromUTF8(u8"任务"), wxString::FromUTF8(u8"任务进度"),
+          wxString::FromUTF8(u8"日志") },
+        3,                       // 1 row x 3 cols (majorDimension, wxRA_SPECIFY_COLS)
+        wxRA_SPECIFY_COLS);
+    bottomViewRadio_->SetSelection(0);
+    bottomSizer->Add(bottomViewRadio_, 0, wxEXPAND | wxLEFT | wxRIGHT | wxTOP, 2);
+
+    logPanel_ = new LogPanel(bottomPanel_);
     logPanel_->setInitialLogLevel(Logger::stringToLevel(config_.log_console_level));
+    taskMonitorPanel_ = new TaskMonitorPanel(bottomPanel_, controller_);
+    batchQueuePanel_ = new BatchQueuePanel(bottomPanel_, controller_);
+
+    bottomSizer->Add(logPanel_, 1, wxEXPAND);
+    bottomSizer->Add(taskMonitorPanel_, 1, wxEXPAND);
+    bottomSizer->Add(batchQueuePanel_, 1, wxEXPAND);
+    bottomPanel_->SetSizer(bottomSizer);
+
+    bottomViewRadio_->Bind(wxEVT_RADIOBOX, &MainFrame::onBottomViewSelected,
+                           this, ID_BOTTOM_VIEW_RADIO);
+    switchBottomView(0);   // default page: 任务 (owner 2026-11-05)
+
     setLogFileLabel(Logger::getFilePath());
 
     centerSizer->Add(splitter_, 1, wxEXPAND);
 
-    // Bottom row: log panel
-    centerSizer->Add(logPanel_, 0, wxEXPAND | wxTOP, 2);
-    logPanel_->SetMinSize(wxSize(620, 260));
+    // Bottom row: shared view area (radio + one visible page)
+    centerSizer->Add(bottomPanel_, 0, wxEXPAND | wxTOP, 2);
 
     centerPanel->SetSizer(centerSizer);
+
+    // Single refresh timer for whichever bottom page is visible (1s). ID-bound
+    // like netMonTimer_ — an unbound wxTimer would collide with the other
+    // timers' handlers (pitfall recorded at MainFrame.cpp:75).
+    bottomViewTimer_ = new wxTimer(this, ID_BOTTOM_VIEW_TIMER);
+    Bind(wxEVT_TIMER, &MainFrame::onBottomViewTimer, this, ID_BOTTOM_VIEW_TIMER);
+    bottomViewTimer_->Start(1000);
 
     // ── AUI Pane Management ──
     // Center: main content area (sub/proxy/log panels)
@@ -1014,6 +1066,42 @@ void MainFrame::onProxyMonTimer(wxTimerEvent&) {
     if (controller_->isIndependentProbeEnabled()) {
         controller_->testOnlineProxiesAsync(this, true);
     }
+}
+
+// ── Bottom shared view (spec 2026-11-03 v1.2 §3.8) ──────────────────
+void MainFrame::onBottomViewSelected(wxCommandEvent& event) {
+    switchBottomView(event.GetSelection());
+}
+
+void MainFrame::onBottomViewTimer(wxTimerEvent&) {
+    // Only the visible page refreshes; hidden pages call no controller API.
+    // Page indices (owner request 2026-11-05): 0=任务 1=任务进度 2=日志.
+    if (bottomViewIndex_ == 0 && taskMonitorPanel_) taskMonitorPanel_->refreshNow();
+    if (bottomViewIndex_ == 1 && batchQueuePanel_)  batchQueuePanel_->refreshNow();
+}
+
+void MainFrame::switchBottomView(int index) {
+    if (index < 0 || index > 2) return;
+    bottomViewIndex_ = index;
+    // Index order matches the 监控 radio options: 0=任务 1=任务进度 2=日志.
+    wxWindow* pages[3] = { static_cast<wxWindow*>(taskMonitorPanel_),
+                           static_cast<wxWindow*>(batchQueuePanel_),
+                           logPanel_ };
+    for (int i = 0; i < 3; ++i) {
+        if (!pages[i]) continue;
+        pages[i]->Show(i == index);   // hidden pages drop out of CalcMin/DoLayout
+    }
+    if (taskMonitorPanel_) taskMonitorPanel_->setActive(index == 0);
+    if (batchQueuePanel_)  batchQueuePanel_->setActive(index == 1);
+    if (bottomViewRadio_ && bottomViewRadio_->GetSelection() != index) {
+        bottomViewRadio_->SetSelection(index);   // keep radio in sync on programmatic switches
+    }
+    if (index == 0 && taskMonitorPanel_) taskMonitorPanel_->refreshNow();
+    if (index == 1 && batchQueuePanel_)  batchQueuePanel_->refreshNow();
+    bottomPanel_->Layout();
+    wxYield();
+    bottomPanel_->Update();
+    bottomPanel_->Refresh();
 }
 
 void MainFrame::updateProxyMonStatus(bool enabled, int aliveCount) {
@@ -1652,4 +1740,3 @@ void MainFrame::onOnlineProbeFinished(OnlineProbeFinishedEvent& event) {
         proxyPanel_->refreshResultsFor(event.getIndexIds());
     }
 }
-

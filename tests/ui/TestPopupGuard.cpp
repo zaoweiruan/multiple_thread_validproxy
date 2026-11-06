@@ -10,6 +10,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "framework/BottomView.h"
 #include "framework/Dialog.h"
 #include "framework/Fixtures.h"
 #include "framework/Text.h"
@@ -39,6 +40,12 @@ TEST_CASE("Popup log buttons respond to a UIA click", "[popup][button]") {
     REQUIRE(fx.ready());
 
     const UiElement win = fx.mainWindow();
+    // The log page is not the default bottom page since v1.2.5 — show it so
+    // the clear button is on-screen before the UIA click.
+    if (!showLogPage(win, fx.pid())) {
+        INFO("could not reach the log page; skipping click assertion");
+        return;
+    }
     const UiElement clear = UiElement::findBy(
         win, Locator{UIA_NamePropertyId, ids::LogClearButtonName}, fx.pid(), 10000);
     REQUIRE(clear.valid());

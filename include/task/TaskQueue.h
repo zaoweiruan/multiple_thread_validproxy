@@ -32,6 +32,27 @@ struct TaskCallbacks {
     std::function<void(const TaskHandle&)> onRejected;
 };
 
+// Point-in-time view of the queue for the monitoring UI.
+struct TaskQueueSnapshot {
+    TaskHandle current;                 // current task; taskId empty = none running
+    std::vector<TaskHandle> pending;    // queued tasks, in actual dequeue order
+                                        // (priority desc -> createdAt asc)
+    // Monitoring rows for the current container task (auto-task steps).
+    // Never executed by the worker; valid only while current is the container.
+    std::vector<TaskHandle> children;
+    // Last FINISHED task kept visible after completion/cancellation so the
+    // user can see the outcome (esp. the breakdown) instead of the rows
+    // vanishing the moment the task ends (owner feedback 2026-11-05:
+    // "批量更新队列没有实现" — a 6s UPDATE_ALL left nothing on screen).
+    // Valid only while NO task is running; replaced on every task end.
+    TaskHandle recentParent;
+    std::vector<TaskHandle> recentChildren;
+    std::size_t queueDepth = 0;
+    bool busy = false;                  // a task is executing (the UI's busy gate)
+    bool workerAlive = false;           // worker thread alive (debug only; true once
+                                        // the loop started, NOT "a task is running")
+};
+
 class TaskQueue {
 public:
     TaskQueue();
@@ -42,10 +63,14 @@ public:
 
     // Submit a task. Returns handle (status may be REJECTED if mutex policy rejects).
     TaskHandle submit(TaskType type, TaskFunc func, int priority = 1,
-                      TaskCallbacks callbacks = {});
+                      TaskCallbacks callbacks = {},
+                      const std::string& targetId = "");
 
     void cancel(const std::string& taskId);
     void cancelCurrent();
+    // Cancel every QUEUED task (current task untouched). Callbacks run after the
+    // lock is released, once per removed task (status=CANCELLED via onComplete).
+    void cancelAllPending();
 
     // Force-release the busy flag even if the worker thread is stuck inside a
     // task lambda. Call after cancelCurrent() when the worker cannot be
@@ -60,6 +85,10 @@ public:
     TaskHandle currentTask() const;
     std::vector<TaskHandle> history(std::size_t n) const;
 
+    // Aggregate read-only view for the monitoring panel. Takes mutex_ once; must
+    // NOT call the other locking getters (non-recursive mutex -> self-deadlock).
+    TaskQueueSnapshot snapshot() const;
+
     // Phase A (ProxyTestUnified): inspect pending (queued, not yet running)
     // tasks so callers can decide whether to inject into a live pool or create
     // a new one. hasPending(type) returns true if any queued task has the given
@@ -69,6 +98,24 @@ public:
 
     bool isRunning() const { return running_.load(); }
     bool isBusy() const { return busy_.load(); }
+
+    // Publish coarse progress of the RUNNING task (called from the task body's
+    // worker thread). The monitoring panel polls snapshot().current and the
+    // batch-queue gauge reuses these counters for update tasks (owner
+    // 2026-11-06: 更新订阅只显示整体进度，不拆解订阅名). No-op when idle.
+    void setCurrentProgress(int current, int total, const std::string& message);
+
+    // ── container/subtask view (Scheme A, auto-task step breakdown) ──
+    // Children are MONITORING rows only: they never enter queue_, so the
+    // worker never executes them and hasPending()/pendingTasks() (the
+    // ProxyTestUnified injection gates) stay untouched. snapshot() returns
+    // them in a dedicated field; the panel renders them under the running
+    // parent. setChildTasks is a full replace (called by AppController on
+    // every auto-task step transition) and refreshes the parent's
+    // childTotal/childCompleted/childFailed counters from the list.
+    void setChildTasks(std::vector<TaskHandle> children);
+    // Drop the current parent's children (auto-task finished/cancelled).
+    void clearChildTasks();
 
     void setProbeRunningQuery(std::function<bool()> q) { probeRunningQuery_ = std::move(q); }
 
@@ -102,6 +149,13 @@ private:
     std::atomic<bool>* currentCancelFlag_ = nullptr;
 
     TaskHandle current_;
+    // Monitoring rows bound to current_ (auto-task steps); never queued,
+    // cleared whenever current_ changes (workerLoop / forceRelease).
+    std::vector<TaskHandle> children_;
+    // Last FINISHED task + its breakdown, shown (snapshot recentParent/
+    // recentChildren) while the queue is idle until the next task starts.
+    TaskHandle recentParent_;
+    std::vector<TaskHandle> recentChildren_;
     std::vector<TaskHandle> history_;
     std::size_t historyLimit_ = 100;
 

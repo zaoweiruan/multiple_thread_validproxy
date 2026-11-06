@@ -8,6 +8,7 @@
 #include <iostream>
 #include <optional>
 #include <atomic>
+#include <functional>
 
 #include "Subitem.h"
 #include "Profileitem.h"
@@ -37,6 +38,23 @@ public:
     ~SubitemUpdaterV2() {
         cleanupXray();
     }
+
+    // ── batch-update breakdown monitoring (owner request 2026-11-05) ──
+    // One row per enabled subscription (+ an optional trailing 清洗 row),
+    // published to the task monitor while run() walks the list.
+    enum class UpdateStepStatus { PENDING, RUNNING, SUCCESS, FAILED, SKIPPED, CANCELLED };
+    struct UpdateStepInfo {
+        std::string subId;
+        std::string remarks;
+        UpdateStepStatus status = UpdateStepStatus::PENDING;
+    };
+    // Synthetic subId/remarks for the trailing post-update dedup row.
+    static constexpr const char* kDedupStepId = "dedup";
+    static constexpr const char* kDedupStepName = "清洗";
+    // Invoked synchronously on the run() thread with the full snapshot after
+    // every transition. The receiver must be thread-safe and non-blocking.
+    using StepObserver = std::function<void(const std::vector<UpdateStepInfo>&)>;
+    void setStepObserver(StepObserver cb) { stepObserver_ = std::move(cb); }
 
     bool run();
     bool runSingle(const std::string& subId);
@@ -132,6 +150,15 @@ private:
     HANDLE xrayJob_;
     std::atomic<bool>* externalCancel_{nullptr};
     const NetworkMonitor* netMon_{nullptr};
+
+    StepObserver stepObserver_;
+    // Breakdown rows for run() only (empty elsewhere). Mutated and published
+    // from the run() thread between subscriptions — never from a worker thread.
+    std::vector<UpdateStepInfo> updateSteps_;
+    bool dedupStepTracked_ = false;
+    int findUpdateStep(const std::string& subId) const;
+    void setUpdateStepStatus(const std::string& subId, UpdateStepStatus status);
+    void publishUpdateSteps();
 };
 
 } // namespace update

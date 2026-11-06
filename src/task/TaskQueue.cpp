@@ -1,9 +1,14 @@
 #include "task/TaskQueue.h"
 
+#include "Logger.h"
+#include "task/TaskType.h"
+
 #include <atomic>
 #include <chrono>
 #include <mutex>
 #include <thread>
+#include <utility>
+#include <vector>
 
 namespace task {
 
@@ -18,6 +23,11 @@ std::string generateId() {
 } // namespace
 
 TaskQueue::TaskQueue() {
+    // Publish "worker alive" BEFORE the thread starts: if the destructor runs
+    // before workerLoop's first iteration, a worker-side `running_.store(true)`
+    // would resurrect the flag and the worker would wait on the cv forever
+    // (destructor's join() then hangs the process).
+    running_.store(true);
     worker_ = std::thread(&TaskQueue::workerLoop, this);
 }
 
@@ -32,12 +42,14 @@ TaskQueue::~TaskQueue() {
     if (worker_.joinable()) worker_.join();
 }
 
-TaskHandle TaskQueue::submit(TaskType type, TaskFunc func, int priority, TaskCallbacks callbacks) {
+TaskHandle TaskQueue::submit(TaskType type, TaskFunc func, int priority, TaskCallbacks callbacks,
+                            const std::string& targetId) {
     Entry entry;
     entry.handle.taskId = generateId();
     entry.handle.type = type;
     entry.handle.status = TaskStatus::QUEUED;
     entry.handle.priority = priority;
+    entry.handle.targetId = targetId;
     entry.handle.createdAt = std::to_string(
         std::chrono::steady_clock::now().time_since_epoch().count());
     entry.func = std::move(func);
@@ -53,6 +65,14 @@ TaskHandle TaskQueue::submit(TaskType type, TaskFunc func, int priority, TaskCal
     // For now, store in a local and capture by value in wrapper.
 
     TaskHandle handle = entry.handle;
+
+    // Unified queue trace: every submitted task logs here, so tasks whose
+    // caller passes no onQueued callback are still visible in the log
+    // (bugfix 2026-11-03 §3.2 — "no Task queued line" made queued work look
+    // like it was never managed).
+    Logger::write(std::string("TaskQueue: queued ") + taskTypeToString(type) +
+                      " id=" + handle.taskId,
+                  LogLevel::INFO);
 
     if (entry.callbacks.onQueued) {
         entry.callbacks.onQueued(handle);
@@ -74,30 +94,59 @@ TaskHandle TaskQueue::submit(TaskType type, TaskFunc func, int priority, TaskCal
 }
 
 void TaskQueue::cancel(const std::string& taskId) {
-    std::lock_guard<std::mutex> lock(mutex_);
-    // If current task, set cancel flag.
-    if (current_.taskId == taskId) {
-        cancelRequested_.store(true);
-        if (currentCancelFlag_) currentCancelFlag_->store(true);
-        return;
+    // Collect under the lock, invoke callbacks AFTER releasing it: onComplete is
+    // UI code and may re-enter the queue (snapshot()/queueDepth()); calling it
+    // under the non-recursive mutex_ would deadlock the UI thread.
+    std::vector<std::pair<TaskHandle, TaskCallbacks>> cancelled;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        // If current task, set cancel flag.
+        if (current_.taskId == taskId) {
+            cancelRequested_.store(true);
+            if (currentCancelFlag_) currentCancelFlag_->store(true);
+            return;
+        }
+        // Remove from queue if present (rebuild queue without it).
+        std::priority_queue<Entry, std::vector<Entry>, EntryCompare> newQueue;
+        while (!queue_.empty()) {
+            Entry e = queue_.top();
+            queue_.pop();
+            if (e.handle.taskId == taskId) {
+                e.handle.status = TaskStatus::CANCELLED;
+                history_.push_back(e.handle);
+                if (history_.size() > historyLimit_) history_.erase(history_.begin());
+                cancelled.emplace_back(e.handle, e.callbacks);
+            } else {
+                newQueue.push(std::move(e));
+            }
+        }
+        queue_ = std::move(newQueue);
     }
-    // Remove from queue if present (rebuild queue without it).
-    std::priority_queue<Entry, std::vector<Entry>, EntryCompare> newQueue;
-    bool found = false;
-    while (!queue_.empty()) {
-        auto e = queue_.top();
-        queue_.pop();
-        if (e.handle.taskId == taskId) {
-            found = true;
-            e.handle.status = TaskStatus::CANCELLED;
-            history_.push_back(e.handle);
-            if (e.callbacks.onComplete) e.callbacks.onComplete(e.handle);
-        } else {
-            newQueue.push(std::move(e));
+    for (const std::pair<TaskHandle, TaskCallbacks>& item : cancelled) {
+        if (item.second.onComplete) {
+            try { item.second.onComplete(item.first); } catch (...) {}
         }
     }
-    queue_ = std::move(newQueue);
-    (void)found;
+}
+
+void TaskQueue::cancelAllPending() {
+    std::vector<std::pair<TaskHandle, TaskCallbacks>> cancelled;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        while (!queue_.empty()) {
+            Entry e = queue_.top();
+            queue_.pop();
+            e.handle.status = TaskStatus::CANCELLED;
+            history_.push_back(e.handle);
+            if (history_.size() > historyLimit_) history_.erase(history_.begin());
+            cancelled.emplace_back(e.handle, e.callbacks);
+        }
+    }
+    for (const std::pair<TaskHandle, TaskCallbacks>& item : cancelled) {
+        if (item.second.onComplete) {
+            try { item.second.onComplete(item.first); } catch (...) {}
+        }
+    }
 }
 
 void TaskQueue::cancelCurrent() {
@@ -117,7 +166,11 @@ void TaskQueue::forceRelease() {
                 history_.push_back(current_);
                 if (history_.size() > historyLimit_) history_.erase(history_.begin());
             }
+            // Same visibility rule as the worker's normal finish path.
+            recentParent_ = current_;
+            recentChildren_ = children_;
             current_ = TaskHandle{};
+            children_.clear();
         }
     }
 }
@@ -138,6 +191,45 @@ std::vector<TaskHandle> TaskQueue::history(std::size_t n) const {
     std::size_t start = history_.size() > n ? history_.size() - n : 0;
     for (std::size_t i = start; i < history_.size(); ++i) out.push_back(history_[i]);
     return out;
+}
+
+void TaskQueue::setChildTasks(std::vector<TaskHandle> children) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    // Bound to the current container task; a container that already finished
+    // (or never started) must not collect rows.
+    if (current_.taskId.empty()) return;
+    for (TaskHandle& child : children) {
+        child.parentTaskId = current_.taskId;
+        // The breakdown is published as part of the parent's lifecycle, so a
+        // fresh child inherits the parent's start stamp for the 提交于 column
+        // (children rebuilt per transition keep it stable through current_).
+        if (child.createdAt.empty()) child.createdAt = current_.startedAt;
+    }
+    int completed = 0, failed = 0;
+    for (const TaskHandle& child : children) {
+        if (child.status == TaskStatus::COMPLETED) ++completed;
+        else if (child.status == TaskStatus::FAILED || child.status == TaskStatus::CANCELLED) ++failed;
+    }
+    current_.childTotal = static_cast<int>(children.size());
+    current_.childCompleted = completed;
+    current_.childFailed = failed;
+    children_ = std::move(children);
+}
+
+void TaskQueue::clearChildTasks() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    children_.clear();
+    current_.childTotal = 0;
+    current_.childCompleted = 0;
+    current_.childFailed = 0;
+}
+
+void TaskQueue::setCurrentProgress(int current, int total, const std::string& message) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (current_.taskId.empty()) return;   // idle: nothing to report on
+    current_.progressCurrent = current;
+    current_.progressTotal = total;
+    current_.progressMessage = message;
 }
 
 bool TaskQueue::hasPending(TaskType type) const {
@@ -162,8 +254,37 @@ std::vector<TaskHandle> TaskQueue::pendingTasks() const {
     return out;
 }
 
+TaskQueueSnapshot TaskQueue::snapshot() const {
+    TaskQueueSnapshot snap;
+    std::lock_guard<std::mutex> lock(mutex_);
+    snap.current = current_;
+    snap.children = children_;
+    if (current_.taskId.empty()) {
+        // Idle: surface the last finished task's breakdown until the next run.
+        snap.recentParent = recentParent_;
+        snap.recentChildren = recentChildren_;
+    }
+    snap.queueDepth = queue_.size();
+    // std::priority_queue's underlying container `c` is protected and NOT
+    // accessible from a non-derived class member; copy the queue and drain it.
+    // Drain order == pop order == the real execution order (priority desc, then
+    // createdAt asc per EntryCompare), so no std::sort is needed and the
+    // TaskHandle::createdAt string never gets compared lexicographically.
+    std::priority_queue<Entry, std::vector<Entry>, EntryCompare> tmp = queue_;
+    snap.pending.reserve(tmp.size());
+    while (!tmp.empty()) {
+        snap.pending.push_back(tmp.top().handle);
+        tmp.pop();
+    }
+    snap.busy = busy_.load(std::memory_order_relaxed);
+    snap.workerAlive = running_.load(std::memory_order_relaxed);
+    return snap;
+}
+
 void TaskQueue::workerLoop() {
-    running_.store(true);
+    // NOTE: running_ is published by the constructor BEFORE this thread starts.
+    // Storing it here would resurrect the flag if ~TaskQueue already observed
+    // "worker alive" and asked the loop to stop (dtor then joins forever).
     while (true) {
         Entry entry;
         {
@@ -190,6 +311,14 @@ void TaskQueue::workerLoop() {
         {
             std::lock_guard<std::mutex> lock(mutex_);
             current_ = entry.handle;
+            // Children belong to the previous container (if any) — drop them
+            // so the panel never shows stale sub-rows under a new task. The
+            // previous run's outcome moves to recent* (see snapshot fields)
+            // only when the next task STARTS, so the finished rows stay on
+            // screen while the queue is idle.
+            children_.clear();
+            recentParent_ = TaskHandle{};
+            recentChildren_.clear();
         }
 
         TaskContext ctx;
@@ -230,7 +359,13 @@ void TaskQueue::workerLoop() {
 
         {
             std::lock_guard<std::mutex> lock(mutex_);
+            // Keep the finished parent + its breakdown visible (snapshot().
+            // recentParent/recentChildren) until the NEXT task starts, so a
+            // short task does not disappear before the user looks over.
+            recentParent_ = entry.handle;
+            recentChildren_ = children_;
             current_ = TaskHandle{};
+            children_.clear();   // container children die with their parent
             history_.push_back(entry.handle);
             if (history_.size() > historyLimit_) history_.erase(history_.begin());
         }

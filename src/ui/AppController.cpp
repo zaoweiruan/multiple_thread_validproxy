@@ -295,6 +295,15 @@ std::vector<db::models::Subitem> AppController::loadSubscriptions() {
     return dao.getAll();
 }
 
+std::string AppController::getSubscriptionRemarks(const std::string& subId) {
+    if (subId.empty()) return std::string();
+    db::models::SubitemDAO dao(db_);
+    for (const db::models::Subitem& sub : dao.getAll()) {
+        if (sub.id == subId) return sub.remarks;
+    }
+    return std::string();
+}
+
 void AppController::loadSubscriptionsAsync(wxEvtHandler* handler) {
     std::string dbPath = config_.database_path;
 
@@ -363,8 +372,9 @@ void AppController::updateSubscriptionAsync(const std::string& subId, wxEvtHandl
     isRunning_ = true;
             ScopeGuard<std::atomic<int>> _taskGuard{currentTaskType_};
             currentTaskType_.store(static_cast<int>(task::TaskType::UPDATE_SUBSCRIPTION));
+            cancelRequested_ = false;   // P2: reset on the worker (bugfix 2026-11-03)
             doUpdateSubscription(subId, wxHandler);
-        }, 1);
+        }, 1, task::TaskCallbacks{}, subId);
 }
 
 void AppController::updateAllSubscriptionsAsync(wxEvtHandler* wxHandler) {
@@ -377,6 +387,7 @@ void AppController::updateAllSubscriptionsAsync(wxEvtHandler* wxHandler) {
             isRunning_ = true;
             ScopeGuard<std::atomic<int>> _taskGuard{currentTaskType_};
             currentTaskType_.store(static_cast<int>(task::TaskType::UPDATE_ALL));
+            cancelRequested_ = false;   // P2: reset on the worker (bugfix 2026-11-03)
             doUpdateAllSubscriptions(wxHandler);
         }, 1, task::TaskCallbacks{
             .onQueued = [wxHandler](const task::TaskHandle& h) {
@@ -662,14 +673,17 @@ void AppController::testSubscriptionAsync(const std::string& subId, wxEvtHandler
     isRunning_ = true;
             ScopeGuard<std::atomic<int>> _taskGuard{currentTaskType_};
             currentTaskType_.store(static_cast<int>(task::TaskType::TEST_SUBSCRIPTION));
+            cancelRequested_ = false;   // P2: reset on the worker (bugfix 2026-11-03)
             doTestSubscription(subId, wxHandler);
-        }, 1);
+        }, 1, task::TaskCallbacks{}, subId);
 }
 
 void AppController::testSingleProxyAsync(const std::string& indexId, wxEvtHandler* wxHandler) {
     // Fast path: a batch/subscription test is running -> insert the proxy into
     // the live Xray pool's high-priority queue so a worker picks it up next.
-    ProxyBatchTester* pbt = proxyBatchTester_.load();
+    // Snapshot copy keeps the tester alive across insertProxy even if the
+    // worker finishes and drops its own reference mid-call.
+    const std::shared_ptr<ProxyBatchTester> pbt = batchTesterSnapshot();
     if (isRunning_ && pbt != nullptr && pbt->insertProxy(indexId)) {
         Logger::write("High-priority proxy inserted into running pool: " + indexId, LogLevel::REPORT);
         if (wxHandler) {
@@ -693,6 +707,7 @@ void AppController::testSingleProxyAsync(const std::string& indexId, wxEvtHandle
             isRunning_ = true;
             ScopeGuard<std::atomic<int>> _taskGuard{currentTaskType_};
             currentTaskType_.store(static_cast<int>(task::TaskType::TEST_SINGLE_PROXY));
+            cancelRequested_ = false;   // P2: reset on the worker (bugfix 2026-11-03)
             doTestSingleProxy(indexId, wxHandler, true);
         }, 2, task::TaskCallbacks{
             .onQueued = [wxHandler](const task::TaskHandle& h) {
@@ -710,7 +725,8 @@ void AppController::testAllProxiesAsync(wxEvtHandler* wxHandler) {
             (void)ctx;
             // Create tester BEFORE setting isRunning_, so testSingleProxyAsync
             // can see proxyBatchTester_ as soon as isRunning_ is true.
-            auto tester = std::make_unique<ProxyBatchTester>(db_, config_, "", &cancelRequested_, &netMon_);
+            std::shared_ptr<ProxyBatchTester> tester =
+                std::make_shared<ProxyBatchTester>(db_, config_, "", &cancelRequested_, &netMon_);
             // Real-time refresh: as results are flushed to the DB, refresh only
             // those rows in the proxy list (also covers inserted proxies).
             tester->setRowsUpdatedCallback([wxHandler](const std::vector<std::string>& ids) {
@@ -718,18 +734,19 @@ void AppController::testAllProxiesAsync(wxEvtHandler* wxHandler) {
                     wxQueueEvent(wxHandler, new ProxyRowsUpdatedEvent(ids));
                 }
             });
-            proxyBatchTester_.store(tester.get());
+            setBatchTester(tester);
             ScopeGuard<std::atomic<bool>> _guard{isRunning_};
             isRunning_ = true;
             ScopeGuard<std::atomic<int>> _taskGuard{currentTaskType_};
             currentTaskType_.store(static_cast<int>(task::TaskType::TEST_ALL));
+            cancelRequested_ = false;   // P2: reset on the worker (bugfix 2026-11-03)
             try {
                 doTestAllProxies(wxHandler, tester.get());
             } catch (...) {
-                proxyBatchTester_.store(nullptr);
+                setBatchTester(nullptr);
                 throw;
             }
-            proxyBatchTester_.store(nullptr);
+            setBatchTester(nullptr);
         }, 1, task::TaskCallbacks{
             .onQueued = [wxHandler](const task::TaskHandle& h) {
                 Logger::write("Task queued: " + h.taskId, LogLevel::INFO);
@@ -745,7 +762,7 @@ void AppController::testSelectedProxiesAsync(const std::vector<std::string>& ind
     // proxies into the running pool as high-priority items instead of queueing
     // a new task (which would wait behind the running batch). This makes
     // multi-select tests not block on an in-flight batch test.
-    ProxyBatchTester* pbt = proxyBatchTester_.load();
+    const std::shared_ptr<ProxyBatchTester> pbt = batchTesterSnapshot();
     if (isRunning_ && pbt != nullptr) {
         int injected = 0;
         for (std::size_t i = 0; i < indexIds.size(); ++i) {
@@ -776,7 +793,8 @@ void AppController::testSelectedProxiesAsync(const std::vector<std::string>& ind
     taskQueue_.submit(task::TaskType::TEST_ALL,
         [this, indexIds, wxHandler](task::TaskContext& ctx) {
             (void)ctx;
-            std::unique_ptr<ProxyBatchTester> tester = std::make_unique<ProxyBatchTester>(db_, config_, "", &cancelRequested_, &netMon_);
+            std::shared_ptr<ProxyBatchTester> tester =
+                std::make_shared<ProxyBatchTester>(db_, config_, "", &cancelRequested_, &netMon_);
             tester->setRowsUpdatedCallback([wxHandler](const std::vector<std::string>& ids) {
                 if (wxHandler) {
                     wxQueueEvent(wxHandler, new ProxyRowsUpdatedEvent(ids));
@@ -786,18 +804,19 @@ void AppController::testSelectedProxiesAsync(const std::vector<std::string>& ind
                 Logger::write("testSelectedProxiesAsync: no matching proxies", LogLevel::WARN);
                 return;
             }
-            proxyBatchTester_.store(tester.get());
+            setBatchTester(tester);
             ScopeGuard<std::atomic<bool>> _guard{isRunning_};
             isRunning_ = true;
             ScopeGuard<std::atomic<int>> _taskGuard{currentTaskType_};
             currentTaskType_.store(static_cast<int>(task::TaskType::TEST_ALL));
+            cancelRequested_ = false;   // P2: reset on the worker (bugfix 2026-11-03)
             try {
                 doTestAllProxies(wxHandler, tester.get());
             } catch (...) {
-                proxyBatchTester_.store(nullptr);
+                setBatchTester(nullptr);
                 throw;
             }
-            proxyBatchTester_.store(nullptr);
+            setBatchTester(nullptr);
         }, 1, task::TaskCallbacks{
             .onQueued = [wxHandler](const task::TaskHandle& h) {
                 Logger::write("Task queued: " + h.taskId, LogLevel::INFO);
@@ -882,6 +901,69 @@ bool AppController::isTestCancelled() const {
     return cancelRequested_.load();
 }
 
+void AppController::setBatchTester(std::shared_ptr<ProxyBatchTester> tester) {
+    std::lock_guard<std::mutex> lock(batchTesterMutex_);
+    proxyBatchTester_ = std::move(tester);
+}
+
+std::shared_ptr<ProxyBatchTester> AppController::batchTesterSnapshot() const {
+    std::lock_guard<std::mutex> lock(batchTesterMutex_);
+    return proxyBatchTester_;
+}
+
+ProxyBatchTester::BatchQueueStats AppController::getBatchQueueStats() {
+    // Snapshot copy under the mutex; the copy keeps the tester alive while the
+    // caller reads fields on the UI thread (worker may clear its own reference
+    // the moment the batch ends).
+    const std::shared_ptr<ProxyBatchTester> tester = batchTesterSnapshot();
+    if (tester != nullptr) {
+        return tester->getQueueStats();
+    }
+
+    // No batch test: an update task may still be running. Reuse the same gauge
+    // for its overall progress instead of the per-subscription rows (owner
+    // 2026-11-06: 更新订阅只显示整体更新进度).
+    ProxyBatchTester::BatchQueueStats updateStats;
+    if (!updateProgressActive_.load()) {
+        return updateStats;
+    }
+    const int total = updateProgressTotal_.load();
+    const int done = updateProgressDone_.load();
+    updateStats.total = total;
+    updateStats.processed = done;
+    updateStats.success = updateProgressOk_.load();
+    updateStats.failed = updateProgressFailed_.load();
+    updateStats.remaining = total > done ? total - done : 0;
+    updateStats.batchQueueSize = updateStats.remaining;
+    updateStats.insertedQueueSize = 0;
+    updateStats.running = done < total;
+    updateStats.percent = total > 0 ? done * 100.0 / total : 0.0;
+    updateStats.updating = true;
+    return updateStats;
+}
+
+std::vector<ProxyBatchTester::PendingProxy> AppController::getPendingBatchProxies(std::size_t limit) {
+    const std::shared_ptr<ProxyBatchTester> tester = batchTesterSnapshot();
+    if (tester == nullptr) {
+        return std::vector<ProxyBatchTester::PendingProxy>();
+    }
+    return tester->getPendingProxies(limit);
+}
+
+void AppController::cancelTask(const std::string& taskId) {
+    // The running task cannot be stopped through TaskQueue's cancel flag —
+    // task bodies never poll ctx.isCancelled(); only cancelRequested_ (wired
+    // into ProxyBatchTester::externalCancel_) actually stops work. Route the
+    // current task through cancelTest(), same semantics as the terminate
+    // button. Queued ids go straight to the queue (removed + onComplete fired).
+    const task::TaskHandle current = taskQueue_.currentTask();
+    if (!current.taskId.empty() && current.taskId == taskId) {
+        cancelTest();
+        return;
+    }
+    taskQueue_.cancel(taskId);
+}
+
 // ---------------------------------------------------------------
 // Find operations  (sync — kept for CLI path in main.cpp)
 // ---------------------------------------------------------------
@@ -918,6 +1000,7 @@ void AppController::findFirstProxyAsync(wxEvtHandler* wxHandler) {
     isRunning_ = true;
             ScopeGuard<std::atomic<int>> _taskGuard{currentTaskType_};
             currentTaskType_.store(static_cast<int>(task::TaskType::FIND_FIRST));
+            cancelRequested_ = false;   // P2: reset on the worker (bugfix 2026-11-03)
             doFindFirstProxy(wxHandler);
         }, 2);
 }
@@ -932,6 +1015,7 @@ void AppController::findBestProxyAsync(wxEvtHandler* wxHandler) {
     isRunning_ = true;
             ScopeGuard<std::atomic<int>> _taskGuard{currentTaskType_};
             currentTaskType_.store(static_cast<int>(task::TaskType::FIND_BEST));
+            cancelRequested_ = false;   // P2: reset on the worker (bugfix 2026-11-03)
             doFindBestProxy(wxHandler);
         }, 2);
 }
@@ -3211,6 +3295,12 @@ update::SubitemUpdaterV2 updater(db_, config_.proxy.xray_executable, config_, nu
     }
 }
 
+// Forward declaration: the reducer is defined with the other update-progress
+// helpers further down, but the direct update-all task body uses it above.
+static void countUpdateProgress(
+    const std::vector<update::SubitemUpdaterV2::UpdateStepInfo>& steps,
+    int& total, int& done, int& ok, int& failed);
+
 void AppController::doUpdateAllSubscriptions(wxEvtHandler* wxHandler) {
     // Scope guard: reset isRunning_ on every exit path (including early returns and exceptions)
     ScopeGuard<std::atomic<bool>> _guard{isRunning_};
@@ -3220,7 +3310,20 @@ void AppController::doUpdateAllSubscriptions(wxEvtHandler* wxHandler) {
 
     try {
 update::SubitemUpdaterV2 updater(db_, config_.proxy.xray_executable, config_, nullptr, "", &cancelRequested_, &netMon_);
-         bool ok = updater.run();
+        // Overall progress only (owner 2026-11-06: 不再拆解订阅名). The
+        // breakdown snapshot is reduced to counters and shown on the shared
+        // queue progress bar (getBatchQueueStats) plus the task 进度 line.
+        // The observer fires on this worker thread; the counters are atomics.
+        resetUpdateProgress();
+        ScopeGuard<std::atomic<bool>> _progressGuard{updateProgressActive_};
+        updater.setStepObserver([this](
+                const std::vector<update::SubitemUpdaterV2::UpdateStepInfo>& steps) {
+            int total = 0, done = 0, ok = 0, failed = 0;
+            countUpdateProgress(steps, total, done, ok, failed);
+            publishUpdateProgress(total, done, ok, failed);
+        });
+        bool ok = updater.run();
+        resetUpdateProgress();
 
         std::string msg = ok ? "All subscriptions updated" : "Update (all) had failures";
         if (wxHandler) {
@@ -3246,7 +3349,8 @@ void AppController::doTestSubscription(const std::string& subId, wxEvtHandler* w
     isRunning_ = true;
 
     try {
-        auto tester = std::make_unique<ProxyBatchTester>(db_, config_, "", &cancelRequested_, &netMon_);
+        std::shared_ptr<ProxyBatchTester> tester =
+            std::make_shared<ProxyBatchTester>(db_, config_, "", &cancelRequested_, &netMon_);
         // Real-time refresh for the subscription test path as well.
         tester->setRowsUpdatedCallback([wxHandler](const std::vector<std::string>& ids) {
             if (wxHandler) {
@@ -3255,9 +3359,9 @@ void AppController::doTestSubscription(const std::string& subId, wxEvtHandler* w
         });
         // Register the running pool so testSingleProxyAsync can insert
         // high-priority proxies while this subscription test is running.
-        proxyBatchTester_.store(tester.get());
+                setBatchTester(tester);
         bool ok = tester->runWithSubId(subId);
-        proxyBatchTester_.store(nullptr);
+        setBatchTester(nullptr);
 
         // Batch resolve regions for valid proxies only when actual tests were performed
         if (tester->getTotalProxies() > 0) {
@@ -3290,13 +3394,13 @@ void AppController::doTestSubscription(const std::string& subId, wxEvtHandler* w
 
         Logger::write(std::string("Batch test ") + (ok ? "succeeded" : "failed"), LogLevel::REPORT);
     } catch (const std::exception& e) {
-        proxyBatchTester_.store(nullptr);
+        setBatchTester(nullptr);
         if (wxHandler) {
             wxQueueEvent(wxHandler, new StatusUpdateEvent(0, std::string("ERR:") + e.what()));
         }
         Logger::write(std::string("Batch test error: ") + e.what(), LogLevel::ERR);
     } catch (...) {
-        proxyBatchTester_.store(nullptr);
+        setBatchTester(nullptr);
         throw;
     }
 }
@@ -3776,6 +3880,7 @@ void AppController::findProxyByIndexIdAsync(const std::string& indexId, wxEvtHan
     isRunning_ = true;
             ScopeGuard<std::atomic<int>> _taskGuard{currentTaskType_};
             currentTaskType_.store(static_cast<int>(task::TaskType::FIND_BY_INDEX));
+        cancelRequested_ = false;   // P2: reset on the worker (bugfix 2026-11-03)
         try {
             std::vector<db::models::Profileitem> proxies = loadProxies();
             // Try exact indexId match first
@@ -3829,6 +3934,7 @@ void AppController::syncDatabasesAsync(wxEvtHandler* wxHandler) {
     isRunning_ = true;
             ScopeGuard<std::atomic<int>> _taskGuard{currentTaskType_};
             currentTaskType_.store(static_cast<int>(task::TaskType::SYNC_DB));
+            cancelRequested_ = false;   // P2: reset on the worker (bugfix 2026-11-03)
             doSyncDatabases(wxHandler);
         }, 1);
 }
@@ -3854,8 +3960,9 @@ void AppController::resolveRegionsBatchAsync(wxEvtHandler* handler, const std::s
     isRunning_ = true;
             ScopeGuard<std::atomic<int>> _taskGuard{currentTaskType_};
             currentTaskType_.store(static_cast<int>(task::TaskType::RESOLVE_REGION));
+            cancelRequested_ = false;   // P2: reset on the worker (bugfix 2026-11-03)
             doResolveRegionsBatch(handler, subId);
-        }, 1);
+        }, 1, task::TaskCallbacks{}, subId);
 }
 
 void AppController::doResolveRegionsBatch(wxEvtHandler* handler, const std::string& subId) {
@@ -3947,6 +4054,7 @@ void AppController::resolveSingleProxyRegionAsync(const std::string& indexId, wx
     isRunning_ = true;
             ScopeGuard<std::atomic<int>> _taskGuard{currentTaskType_};
             currentTaskType_.store(static_cast<int>(task::TaskType::RESOLVE_SINGLE_REGION));
+            cancelRequested_ = false;   // P2: reset on the worker (bugfix 2026-11-03)
             doResolveSingleProxyRegion(indexId, handler);
         }, 1);
 }
@@ -4057,6 +4165,99 @@ void AppController::doResolveSingleProxyRegion(const std::string& indexId, wxEvt
 // ---------------------------------------------------------------
 // AutoTask
 // ---------------------------------------------------------------
+
+// Auto-task step → monitoring row mapping (owner request 2026-11-04:
+// 执行自动任务时，将子任务拆解后纳入任务监控). The step type picks the
+// TaskType label shown in the type column; the Chinese display name goes
+// into targetId so the 名称 column reads like the config dialog's 任务链.
+static task::TaskType autoStepTaskType(AutoTaskStepType type) {
+    switch (type) {
+        case AutoTaskStepType::UPDATE_ALL:     return task::TaskType::UPDATE_ALL;
+        case AutoTaskStepType::TEST_ALL:       return task::TaskType::TEST_ALL;
+        case AutoTaskStepType::DEDUP:          return task::TaskType::DEDUP;
+        case AutoTaskStepType::SYNC:           return task::TaskType::SYNC_DB;
+        case AutoTaskStepType::EXPORT:         return task::TaskType::EXPORT_SHARE_LINKS;
+        case AutoTaskStepType::RESOLVE_REGION: return task::TaskType::RESOLVE_REGION;
+    }
+    return task::TaskType::AUTO_TASK;
+}
+
+static const char* autoStepDisplayName(AutoTaskStepType type) {
+    switch (type) {
+        case AutoTaskStepType::UPDATE_ALL:     return "全部更新";
+        case AutoTaskStepType::TEST_ALL:       return "全部测试";
+        case AutoTaskStepType::DEDUP:          return "清洗";
+        case AutoTaskStepType::SYNC:           return "同步";
+        case AutoTaskStepType::EXPORT:         return "导出";
+        case AutoTaskStepType::RESOLVE_REGION: return "解析地区";
+    }
+    return "";
+}
+
+static task::TaskStatus autoStepTaskStatus(StepStatus status) {
+    switch (status) {
+        case StepStatus::PENDING:   return task::TaskStatus::PENDING;
+        case StepStatus::RUNNING:   return task::TaskStatus::RUNNING;
+        case StepStatus::COMPLETED: return task::TaskStatus::COMPLETED;
+        case StepStatus::FAILED:    return task::TaskStatus::FAILED;
+        case StepStatus::CANCELLED: return task::TaskStatus::CANCELLED;
+    }
+    return task::TaskStatus::PENDING;
+}
+
+// ── update-task overall progress (owner 2026-11-06) ──
+// The update task used to publish one monitoring row per subscription; the
+// owner asked for one overall progress instead, shown on the existing
+// batch-queue gauge. Reduce the SubitemUpdaterV2 breakdown snapshot to
+// counters (worker thread). SKIPPED/CANCELLED rows are already finished.
+static void countUpdateProgress(
+    const std::vector<update::SubitemUpdaterV2::UpdateStepInfo>& steps,
+    int& total, int& done, int& ok, int& failed) {
+    total = static_cast<int>(steps.size());
+    done = 0;
+    ok = 0;
+    failed = 0;
+    for (const update::SubitemUpdaterV2::UpdateStepInfo& step : steps) {
+        switch (step.status) {
+            case update::SubitemUpdaterV2::UpdateStepStatus::SUCCESS:
+                ++ok;
+                ++done;
+                break;
+            case update::SubitemUpdaterV2::UpdateStepStatus::FAILED:
+                ++failed;
+                ++done;
+                break;
+            case update::SubitemUpdaterV2::UpdateStepStatus::SKIPPED:
+            case update::SubitemUpdaterV2::UpdateStepStatus::CANCELLED:
+                ++done;
+                break;
+            case update::SubitemUpdaterV2::UpdateStepStatus::PENDING:
+            case update::SubitemUpdaterV2::UpdateStepStatus::RUNNING:
+                break;
+        }
+    }
+}
+
+void AppController::publishUpdateProgress(int total, int done, int ok, int failed) {
+    updateProgressTotal_.store(total);
+    updateProgressDone_.store(done);
+    updateProgressOk_.store(ok);
+    updateProgressFailed_.store(failed);
+    updateProgressActive_.store(total > 0);
+    // Same numbers on the running task's 进度 line (task monitor page).
+    taskQueue_.setCurrentProgress(done, total,
+        "更新订阅 " + std::to_string(done) + "/" + std::to_string(total));
+}
+
+void AppController::resetUpdateProgress() {
+    updateProgressActive_.store(false);
+    updateProgressTotal_.store(0);
+    updateProgressDone_.store(0);
+    updateProgressOk_.store(0);
+    updateProgressFailed_.store(0);
+    taskQueue_.setCurrentProgress(0, 0, std::string());
+}
+
 void AppController::runAutoTaskAsync(wxEvtHandler* wxHandler) {
     cancelRequested_ = false;
 
@@ -4111,15 +4312,51 @@ void AppController::doAutoTaskImpl(wxEvtHandler* wxHandler, bool resume) {
             }
         });
 
+        // Publish the step breakdown as monitoring rows: every persisted step
+        // transition (PENDING→RUNNING→final) replaces the child-task list of
+        // the running AUTO_TASK row (TaskQueue::setChildTasks is mutex-safe;
+        // the observer runs on the queue worker thread).
+        manager.setStepObserver([this](const std::vector<AutoTaskStepInfo>& steps) {
+            std::vector<task::TaskHandle> children;
+            children.reserve(steps.size());
+            bool updateRunning = false;
+            for (std::size_t i = 0; i < steps.size(); ++i) {
+                const AutoTaskStepInfo& step = steps[i];
+                task::TaskHandle child;
+                child.taskId = "auto-" + std::to_string(i + 1) + "-" + step.name;
+                child.type = autoStepTaskType(step.type);
+                child.status = autoStepTaskStatus(step.status);
+                child.targetId = autoStepDisplayName(step.type);
+                children.push_back(child);
+                if (step.type == AutoTaskStepType::UPDATE_ALL &&
+                    step.status == StepStatus::RUNNING) {
+                    updateRunning = true;
+                }
+            }
+            taskQueue_.setChildTasks(std::move(children));
+            // The update step's overall progress lives on the queue gauge only
+            // while that step runs (owner 2026-11-06: 更新订阅只显示整体进度).
+            if (!updateRunning) resetUpdateProgress();
+        });
+
+        // Subscription-level snapshots inside the update_all step are reduced
+        // to overall progress (no per-subscription rows any more).
+        manager.setUpdateProgressObserver([this](
+                const std::vector<update::SubitemUpdaterV2::UpdateStepInfo>& steps) {
+            int total = 0, done = 0, ok = 0, failed = 0;
+            countUpdateProgress(steps, total, done, ok, failed);
+            publishUpdateProgress(total, done, ok, failed);
+        });
+
         // Register the auto-task test pool so high-priority single-proxy tests
         // can be inserted into the running batch instead of waiting for it.
-        manager.setPoolObserver([this, wxHandler](ProxyBatchTester* tester) {
+        manager.setPoolObserver([this, wxHandler](const std::shared_ptr<ProxyBatchTester>& tester) {
             if (tester != nullptr && wxHandler != nullptr) {
                 tester->setRowsUpdatedCallback([wxHandler](const std::vector<std::string>& ids) {
                     wxQueueEvent(wxHandler, new ProxyRowsUpdatedEvent(ids));
                 });
             }
-            proxyBatchTester_.store(tester);
+            setBatchTester(tester);
         });
 
         bool ok = resume ? manager.resume() : manager.run(config_.auto_task.steps);

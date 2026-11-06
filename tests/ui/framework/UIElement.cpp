@@ -39,6 +39,17 @@ bool UiElement::isOffscreen() const {
     BOOL v = TRUE;
     return !element_.get() || FAILED(element_->get_CurrentIsOffscreen(&v)) || v;
 }
+bool UiElement::isSelected() const {
+    if (!element_.get()) return false;
+    // MinGW's IUIAutomationElement has no typed SelectionItemIsSelected
+    // getter, so read the property generically (same path getText() uses).
+    VARIANT v{};
+    if (FAILED(element_->GetCurrentPropertyValue(UIA_SelectionItemIsSelectedPropertyId, &v)))
+        return false;
+    const bool selected = (v.vt == VT_BOOL && v.boolVal == VARIANT_TRUE);
+    ::VariantClear(&v);
+    return selected;
+}
 DWORD UiElement::processId() const {
     int v = 0;                       // MinGW header declares int*, not DWORD*
     if (element_.get()) element_->get_CurrentProcessId(&v);

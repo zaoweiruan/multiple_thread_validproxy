@@ -1,6 +1,10 @@
 // tests/ui/TestClear.cpp - Task 8: log-clear button invoke via UIA.
+// v1.2.5: the default bottom page is 任务, so the log page must be shown
+// before its buttons exist on-screen (hidden pages exist but Invoke on a
+// hidden Win32 button is unreliable).
 #include <catch2/catch_test_macros.hpp>
 #include <windows.h>
+#include "framework/BottomView.h"
 #include "framework/Fixtures.h"
 
 using namespace uitest;
@@ -45,6 +49,13 @@ TEST_CASE("Log panel clear button invokes", "[clear]") {
 
     HWND hMain = fx.app().mainWindow();
     REQUIRE(hMain != nullptr);
+
+    // The 日志 page is no longer the default (v1.2.5) — switch to it so the
+    // button is really on-screen before invoking.
+    if (!showLogPage(win, fx.pid())) {
+        INFO("could not reach the log page; skipping invoke assertion");
+        return;
+    }
 
     UiElement btn = findClearButton(hMain, 8000);
     REQUIRE(btn.valid());

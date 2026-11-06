@@ -212,6 +212,8 @@ set(CORE_SOURCES
     src/service/DatabaseConnectionService.cpp
     src/task/MutexPolicy.cpp
     src/task/TaskQueue.cpp
+    src/task/TaskType.cpp
+    src/task/TaskFormat.cpp
     src/service/ConfigService.cpp
     src/service/SubscriptionService.cpp
     src/service/ProxyListService.cpp
@@ -298,6 +300,11 @@ if(wxWidgets_FOUND)
         src/ui/ProxyDetailPanel.cpp
         src/ui/LogPanel.h
         src/ui/LogPanel.cpp
+        src/ui/TaskMonitorPanel.h
+        src/ui/TaskMonitorPanel.cpp
+        src/ui/BatchQueuePanel.h
+        src/ui/BatchQueuePanel.cpp
+        src/ui/UiControlIds.h
         src/ui/ConfigDialog.h
         src/ui/ConfigDialog.cpp
         src/ui/ComponentListPanel.h
@@ -495,10 +502,55 @@ target_include_directories(test_mutex_policy PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}
 target_link_libraries(test_mutex_policy PRIVATE gtest_main gtest)
 add_test(NAME MutexPolicyTest COMMAND test_mutex_policy)
 
-add_executable(test_task_queue tests/test_task_queue.cpp src/task/TaskQueue.cpp)
+add_executable(test_task_queue tests/test_task_queue.cpp src/task/TaskQueue.cpp
+    src/task/TaskType.cpp src/Logger.cpp src/LoggerInstance.cpp)
 target_include_directories(test_task_queue PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(test_task_queue PRIVATE gtest_main gtest)
 add_test(NAME TaskQueueTest COMMAND test_task_queue)
+
+# 队列侧契约: 排队任务必须出现在 snapshot().pending 且 targetId 透传 (bugfix 2026-11-04)
+add_executable(test_pending_visibility tests/test_pending_visibility.cpp src/task/TaskQueue.cpp
+    src/task/TaskType.cpp src/Logger.cpp src/LoggerInstance.cpp)
+target_include_directories(test_pending_visibility PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(test_pending_visibility PRIVATE gtest_main gtest)
+add_test(NAME PendingVisibilityTest COMMAND test_pending_visibility)
+
+add_executable(test_task_type tests/test_task_type.cpp src/task/TaskType.cpp)
+target_include_directories(test_task_type PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(test_task_type PRIVATE gtest_main gtest)
+set_target_properties(test_task_type PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+)
+add_test(NAME TaskTypeLabelTest COMMAND test_task_type)
+
+add_executable(test_task_format tests/test_task_format.cpp src/task/TaskFormat.cpp)
+target_include_directories(test_task_format PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(test_task_format PRIVATE gtest_main gtest)
+set_target_properties(test_task_format PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+)
+add_test(NAME TaskFormatTest COMMAND test_task_format)
+
+add_executable(test_batch_pending tests/test_batch_pending.cpp)
+target_include_directories(test_batch_pending PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(test_batch_pending PRIVATE gtest_main gtest)
+set_target_properties(test_batch_pending PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+)
+add_test(NAME BatchPendingViewTest COMMAND test_batch_pending)
+
+add_executable(test_task_cancel_reset tests/test_task_cancel_reset.cpp)
+target_include_directories(test_task_cancel_reset PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_compile_definitions(test_task_cancel_reset PRIVATE
+    VALIDPROXY_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+target_link_libraries(test_task_cancel_reset PRIVATE gtest_main gtest)
+add_test(NAME TaskCancelResetGuardTest COMMAND test_task_cancel_reset)
 target_include_directories(test_curl_easy_handle PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(test_curl_easy_handle PRIVATE CURL::libcurl)
 set_target_properties(test_curl_easy_handle PROPERTIES
@@ -683,6 +735,28 @@ set_target_properties(test_autotask PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
 )
 add_test(NAME AutoTaskTest COMMAND test_autotask)
+
+# -- 批量更新订阅拆解契约（spec 2026-11-03 v1.2.5 §13，owner 2026-11-05）--
+# SubitemUpdaterV2 步骤观测器的发布时序/终态不变量（任务页子行数据源）。
+add_executable(test_update_breakdown tests/test_update_breakdown.cpp ${CORE_SOURCES})
+target_include_directories(test_update_breakdown PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+if(USE_GRPC_API)
+    target_compile_definitions(test_update_breakdown PRIVATE USE_GRPC_API=1)
+endif()
+target_link_libraries(test_update_breakdown PRIVATE gtest_main gtest
+    ${VCPKG_ROOT}/installed/x64-mingw-static/lib/libsqlite3.a
+    ${VCPKG_ROOT}/installed/x64-mingw-static/lib/libboost_json-gcc14-mt-x64-1_91.a
+    Threads::Threads
+    CURL::libcurl
+    -ldbghelp
+    -lws2_32
+)
+set_target_properties(test_update_breakdown PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+)
+add_test(NAME UpdateBreakdownTest COMMAND test_update_breakdown)
 
 # -- Utils unit tests (pure functions, no external deps beyond gtest) --
 add_executable(test_utils tests/test_utils.cpp src/Utils.cpp src/Logger.cpp src/LoggerInstance.cpp)
@@ -1608,6 +1682,7 @@ if(wxWidgets_FOUND AND BUILD_UI_TESTS)
             tests/ui/TestExitAssert.cpp
             tests/ui/TestChainPreview.cpp
             tests/ui/TestWindowSensing.cpp
+            tests/ui/TestBottomViewSwitch.cpp
             tests/ui/TestLayoutSensing.cpp
             tests/ui/TestMenuAction.cpp
             tests/ui/TestPopupGuard.cpp
@@ -1637,6 +1712,7 @@ if(wxWidgets_FOUND AND BUILD_UI_TESTS)
         add_test(NAME UI_CHAINPREVIEW COMMAND UITests "[chainpreview]")
         add_test(NAME UI_WINDOWSENSING COMMAND UITests "[window]")
         add_test(NAME UI_LAYOUTSENSING COMMAND UITests "[layout]")
+add_test(NAME UI_BOTTOMVIEW COMMAND UITests "[bottomview]")
         add_test(NAME UI_MENUACTION COMMAND UITests "[menu]")
         add_test(NAME UI_POPUPGUARD COMMAND UITests "[popup]")
         set_tests_properties(UI_MAINWINDOW UI_SEARCH UI_CLEAR UI_CHAINPREVIEW PROPERTIES

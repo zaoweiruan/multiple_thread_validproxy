@@ -312,9 +312,9 @@ ConfigDialog::ConfigDialog(wxWindow* parent, const config::AppConfig& cfg, sqlit
     propGrid_->Append(new wxIntProperty(L"请求超时(毫秒)", "subscription_timeout_ms",
                                        cfg.subscription_timeout_ms));
 
-    // --- 去重 配置 ---
-    propGrid_->Append(new wxPropertyCategory(L"去重"));
-    propGrid_->Append(new wxBoolProperty(L"更新后去重", "dedup_after_update", cfg.dedup_after_update));
+    // --- 清洗 配置 ---
+    propGrid_->Append(new wxPropertyCategory(L"清洗"));
+    propGrid_->Append(new wxBoolProperty(L"更新后清洗", "dedup_after_update", cfg.dedup_after_update));
     propGrid_->Append(new wxBoolProperty(L"启用黑名单", "blacklist_enabled", cfg.blacklist_enabled));
     propGrid_->Append(new wxStringProperty(L"黑名单订阅ID", "blacklist_subid", cfg.blacklist_subid));
     propGrid_->Append(new wxIntProperty(L"黑名单阈值", "blacklist_threshold",
@@ -345,7 +345,7 @@ ConfigDialog::ConfigDialog(wxWindow* parent, const config::AppConfig& cfg, sqlit
     propGrid_->Append(new wxPropertyCategory(L"自动任务"));
     propGrid_->Append(new wxBoolProperty(L"全部更新", "autotask_step_update_all", false));
     propGrid_->Append(new wxBoolProperty(L"全部测试", "autotask_step_test_all", false));
-    propGrid_->Append(new wxBoolProperty(L"去重", "autotask_step_dedup", false));
+    propGrid_->Append(new wxBoolProperty(L"清洗", "autotask_step_dedup", false));
     propGrid_->Append(new wxBoolProperty(L"同步", "autotask_step_sync", false));
     propGrid_->Append(new wxBoolProperty(L"导出", "autotask_step_export", false));
     propGrid_->Append(new wxBoolProperty(L"解析地区", "autotask_step_resolve_region", false));
@@ -744,7 +744,7 @@ static const char* stepNameForProp(const wxString& propName) {
 static const wchar_t* stepDisplayName(const std::string& step) {
     if (step == "update_all") return L"全部更新";
     if (step == "test_all")   return L"全部测试";
-    if (step == "dedup")      return L"去重";
+    if (step == "dedup")      return L"清洗";
     if (step == "sync")       return L"同步";
     if (step == "export")            return L"导出";
     if (step == "resolve_region")    return L"解析地区";

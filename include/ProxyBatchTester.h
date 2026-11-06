@@ -3,6 +3,7 @@
 
 #include <string>
 #include <vector>
+#include <cstddef>
 #include <sqlite3.h>
 #include <queue>
 #include <mutex>
@@ -45,6 +46,43 @@ public:
     TestResult getLastResult() const;
 
     int getTotalProxies() const { return totalProxies_.load(); }
+
+    // Queue/progress snapshot for the monitoring panel (spec 2026-11-03 v1.2 §3.3).
+    // NOT const: reading the two queue sizes requires holding queueMutex_/
+    // insertedMutex_, which are not mutable. Callers are UI-thread only.
+    struct BatchQueueStats {
+        int total = 0;
+        int processed = 0;
+        int success = 0;
+        int failed = 0;
+        int remaining = 0;          // max(0, total - processed); counts the
+                                    // in-flight proxies, not just queue sizes
+        int batchQueueSize = 0;     // proxiesQueue_.size()
+        int insertedQueueSize = 0;  // insertedQueue_.size()
+        bool running = false;
+        double percent = 0.0;       // processed/total*100, 0 when total==0
+        // True when these numbers describe a subscription-update task rather
+        // than a proxy batch test (owner 2026-11-06: 更新订阅复用队列进度条).
+        bool updating = false;
+    };
+    BatchQueueStats getQueueStats();
+
+    // One proxy still waiting in the batch queues, for the "任务进度" panel
+    // (was labelled "测试队列", owner 2026-11-06 rename).
+    struct PendingProxy {
+        std::string indexId;
+        std::string address;
+        std::string port;
+        std::string configType;
+        bool inserted = false;   // true = high-priority insertion queue
+    };
+
+    // Snapshot of the queued-but-not-yet-tested proxies in WORKER PICKUP ORDER
+    // (high-priority inserted queue first, then proxiesQueue_ FIFO), capped at
+    // `limit`. Empty while the run has not sealed its proxy vector yet, so the
+    // UI never reads proxies_ while a run is still loading it.
+    // NOT const: needs insertedMutex_/queueMutex_ (not mutable). UI thread only.
+    std::vector<PendingProxy> getPendingProxies(std::size_t limit = 500);
 
     // Real-time progress: invoked (on the flush thread) with the indexIds of
     // rows that were just written to the DB, so the UI can refresh only them.
@@ -138,6 +176,11 @@ public:
     std::mutex proxiesMutex_;
     std::atomic<bool> cancelRequested_{false};
     std::atomic<bool> running_{false};
+    // True only while proxies_ is immutable for the current run (set right
+    // after the queue is filled in runInternal(), cleared when a new run
+    // starts loading). Guards getPendingProxies() against reading proxies_
+    // while run()/runWithSubId() is assigning it.
+    std::atomic<bool> proxiesSealed_{false};
     // Phase C: whether printSummary() has already been called for this run,
     // so the destructor doesn't double-print on early-exit paths.
     std::atomic<bool> summaryPrinted_{false};

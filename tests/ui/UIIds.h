@@ -3,7 +3,9 @@
 // All values pinned from the LIVE [dumptree] control-tree dump (Task 6,
 // 2026-08-24, sandbox DB ui-test.db). Layout fact: the main frame has NO
 // notebook tabs - it is a vertical splitter (top = subscription DataView,
-// bottom = proxy-result DataView) with a log area below and a menu bar
+// bottom = proxy-result DataView), a shared bottom view area below (single-
+// choice 监控 radio: 任务 / 任务进度 / 日志, one visible page at a time,
+// the rest hidden; default 任务 since v1.2.5) and a menu bar
 // (文件 / 代理 / 任务 / 设置 / 帮助).
 #pragma once
 
@@ -44,6 +46,34 @@ inline const wchar_t* const ResultHeaderName       = L"Region";
 inline const wchar_t* const LogClearButtonName = L"清空日志窗口";
 inline const wchar_t* const LogStatsButtonName = L"日志统计";
 inline const wchar_t* const LogOpenButtonName  = L"打开日志";
+
+// ---------------------------------------------------------------------------
+// Bottom view switcher (spec 2026-11-03 v1.2 §5.3, v1.2.5 §13): the bottom
+// area is ONE shared window whose visible page is chosen by a wxRadioBox
+// captioned 「监控」 (was 「视图」).
+// wxMSW renders wxRadioBox as a native group box (static caption 「监控」) with
+// one native radio Button child per option, so each option is addressable as a
+// UIA element by Name. NOTE: control *ids* (src/ui/UiControlIds.h) are NOT
+// shared here — UITests must not include wxWidgets headers; assertions match
+// by Name/class only (§5.3).
+// ---------------------------------------------------------------------------
+inline const wchar_t* const BottomViewRadioName    = L"监控";       // group caption (was 视图, owner 2026-11-05)
+// Option order == page index: 0=任务 1=任务进度 2=日志; default 任务.
+inline const wchar_t* const BottomViewLogOptionName = L"日志";
+inline const wchar_t* const BottomViewTaskOptionName = L"任务";     // NB: also the 任务 menu caption; tests must scope lookups to the bottom area
+inline const wchar_t* const BottomViewQueueOptionName = L"任务进度"; // was 测试队列 (owner 2026-11-06)
+
+// TaskMonitorPanel anchors: fixed wxButton labels (UIA Name == label), only
+// present while the 任务 page is shown. NB the toolbar's terminate tool is
+// named 「终止当前测试」 — different Name, no clash with 「终止当前」.
+inline const wchar_t* const TaskCancelCurrentBtnName = L"终止当前";
+inline const wchar_t* const TaskCancelAllBtnName     = L"取消全部排队";
+
+// BatchQueuePanel anchors (测试队列 page).
+inline const wchar_t* const BatchIdleStatusName = L"无运行中的批量测试";
+// The pending-proxy list is a native list view (wxLC_VIRTUAL wxListCtrl).
+inline const wchar_t* const ListViewClassName = L"SysListView32";
+
 
 // Unified monitor panel (StandaloneFloatingWidget Panel mode): pool controls
 // moved from the removed StandalonePoolDialog into the floating widget.

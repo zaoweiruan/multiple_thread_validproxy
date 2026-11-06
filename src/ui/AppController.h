@@ -133,6 +133,8 @@ public:
 
 // Subscriptions
    std::vector<db::models::Subitem> loadSubscriptions();
+   // Subscription remarks (display name) for subId; "" when unknown/empty.
+   std::string getSubscriptionRemarks(const std::string& subId);
    void loadSubscriptionsAsync(wxEvtHandler* handler);
    bool updateSubscriptionEnabled(const std::string& id, bool enabled);
   bool updateSubitem(const db::models::Subitem& sub);
@@ -191,6 +193,23 @@ void testSelectedProxiesAsync(const std::vector<std::string>& indexIds, wxEvtHan
 void testOnlineProxiesAsync(wxEvtHandler* wxHandler, bool silent = false);
 void cancelTest();
 bool isTestCancelled() const;
+
+// Task/queue monitoring (spec 2026-11-03 v1.2 §3.5, Phase 1 backend).
+// Point-in-time view of the task queue for the monitoring panel.
+task::TaskQueueSnapshot getTaskQueueSnapshot() const { return taskQueue_.snapshot(); }
+// Live batch-test progress; zeroed struct (running=false) when no tester is alive.
+ProxyBatchTester::BatchQueueStats getBatchQueueStats();
+// Proxies still waiting in the running batch's queues, in worker pickup order
+// (high-priority insertions first). Empty when no tester is alive or the run
+// has not sealed its proxy list yet. UI thread only.
+std::vector<ProxyBatchTester::PendingProxy> getPendingBatchProxies(std::size_t limit = 500);
+// Cancel one task by id. The RUNNING task goes through cancelTest() — the only
+// path that truly stops a batch test (task bodies never poll ctx.isCancelled(),
+// only AppController::cancelRequested_ is honored). Queued ids are removed from
+// the queue with their onComplete fired.
+void cancelTask(const std::string& taskId);
+// Cancel every QUEUED task (the running task is untouched).
+void cancelAllQueuedTasks() { taskQueue_.cancelAllPending(); }
 
 // Find (async)
    TestResult findFirstProxy();
@@ -294,6 +313,12 @@ private:
     void doResumeAutoTask(wxEvtHandler* wxHandler);
     void doResolveRegionsBatch(wxEvtHandler* handler, const std::string& subId);
     void doResolveSingleProxyRegion(const std::string& indexId, wxEvtHandler* handler);
+    // Overall progress of the running update task (owner 2026-11-06: 更新订阅
+    // 不再拆解订阅名，改为复用队列进度条显示整体进度). The breakdown snapshot
+    // is reduced to counters on the worker thread; getBatchQueueStats() reads
+    // them on the UI thread when no batch tester is alive.
+    void publishUpdateProgress(int total, int done, int ok, int failed);
+    void resetUpdateProgress();
 
   sqlite3* db_;
   // Handles of databases that were replaced but could not be closed yet
@@ -308,10 +333,27 @@ private:
   std::atomic<bool> cancelRequested_{false};
   std::atomic<bool> isRunning_{false};
   std::atomic<int> currentTaskType_{0}; // task::TaskType as int
-  // Running batch tester instance (for priority insertion)
-  std::atomic<ProxyBatchTester*> proxyBatchTester_{nullptr};
+  // Running batch tester instance (for priority insertion + queue stats).
+  // shared_ptr (not atomic<ProxyBatchTester*>): the monitoring poll on the UI
+  // thread needs to CALL into the tester (getQueueStats/insertProxy) while a
+  // worker may be destroying it — a raw pointer races to use-after-free; a
+  // snapshot copy under batchTesterMutex_ keeps it alive for the call.
+  mutable std::mutex batchTesterMutex_;
+  std::shared_ptr<ProxyBatchTester> proxyBatchTester_;
+  // Publish/clear/copy the live tester under batchTesterMutex_. set/clear are
+  // called from worker task bodies; snapshot is for UI-thread callers that
+  // need the pointer to stay alive across a call.
+  void setBatchTester(std::shared_ptr<ProxyBatchTester> tester);
+  std::shared_ptr<ProxyBatchTester> batchTesterSnapshot() const;
   // Batch subtask tracking (Scheme A fine-grained splitting)
   std::atomic<int> batchRemaining_{0};
+  // Overall update-task progress (see publishUpdateProgress). Written by the
+  // update observer on the worker thread, read by the UI poll.
+  std::atomic<bool> updateProgressActive_{false};
+  std::atomic<int> updateProgressTotal_{0};
+  std::atomic<int> updateProgressDone_{0};
+  std::atomic<int> updateProgressOk_{0};
+  std::atomic<int> updateProgressFailed_{0};
   wxEvtHandler* batchWxHandler_{nullptr};
   // Set while the periodic silent probe runs (cleared by ScopeGuard in
   // doTestOnlineProxies). Distinct from isRunning_ so the config dialog can
