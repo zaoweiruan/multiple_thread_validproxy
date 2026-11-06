@@ -193,7 +193,7 @@ cmake --build build --parallel 8 && .\scripts\run_coverage.ps1
 | `构思` / `brainstorm` / `头脑风暴` / `创意方案` / `需求分析` / `需求探索` | **brainstorming** | 1. 加载技能 `skill(name="brainstorming")`。<br>2. 引导用户明确需求边界、核心目标和约束条件。<br>3. 输出多个可选方案供用户决策。<br>4. 决策完成后再进入实现阶段（路由至 using-superpowers）。 |
 | `调整功能` / `开发功能` / `新增功能` / `重构` / `架构调整` / `修改行为` | **using-superpowers** |1. 严格检查是否**禁止了 `auto`**。<br>2. 优先通过读取 docs/INDEX.md 检索开发规范、历史技术规格设计文档（Spec）。<br>3. 在修改后将其更新至 `docs/plans/project-plans-tracker.md`。 |
 | `bug` / `修复` / `fix` / `异常` / `崩溃` / `错误` / `测试失败` / `故障` | **systematic-debugging** | 1. 启动根因分析（RCA）。 <br> 2. 明确指出受影响的模块文件（如 `XrayApi.cpp` ）。 <br> 3. 提供异常捕获加固方案，并输出修复日志到 `docs/bugfix/`。 |
-| `ASAN` / `sanitizer` / `调试` / `debug` / `dump` / `cppcheck` / `覆盖率` / `coverage` / `稳定性` / `MiniDump` | — | 1. 优先引用 **AGENTS.md §4.2** 获取调试命令速查。<br>2. 深度工作流（ASAN 输出解读 / dump 分析 / Logger 调优）参考 **`docs/project-knowledge.md#8`**。 |
+| `ASAN` / `sanitizer` / `调试` / `debug` / `dump` / `cppcheck` / `覆盖率` / `coverage` / `稳定性` / `MiniDump` | — | 1. **优先按 §6.3.5 使用 CLion MCP（`xdebug_*` 断点调试 / `get_file_problems`）做定位**。<br>2. 优先引用 **AGENTS.md §4.2** 获取调试命令速查。<br>3. 深度工作流（ASAN 输出解读 / dump 分析 / Logger 调优）参考 **`docs/project-knowledge.md#8`**。 |
 | `计划` / `方案` / `制定计划` / `设计文档` / `design doc` / `spec` / `技术方案` | **writing-plans** | 1. 严格遵循产品/工程视角区分（PRD 与 Spec 隔离）。<br>2. 产出包含输入、输出、边界条件、前置条件的标准 Markdown。 |
 | `实现` / `编码` / `写代码` / `implement` | **test-driven-development** | 1. 强制要求在编写实现代码的同时，或之前，在 `tests/` 目录下提供 Google Test（`TEST_F`）测试用例。 |
 | `测试` / `test` / `单元测试` / `ctest` | **cmake-build** | 1. 执行 `cmake --build build` 编译。 <br> 2. 执行 `ctest -V` 运行全量测试。 |
@@ -262,5 +262,25 @@ caura_recall（检索既有经验，避免重复犯错）
    ▼
 caura_write（沉淀可复用知识，下次会话可直接复用）
 ```
+
+#### 6.3.5 硬约束：CLion MCP 可用时优先（用户长期偏好，2026-11-06 登记）
+
+> 本条为用户明确指示的持久性偏好（Caura 记忆 id `a244dab4-6afd-4e89-8670-821de1b53590`；
+> keystone 通道因 trust_level 不足暂不可用，故以本节作为每会话必注入的硬锚点）。
+
+**若 CLion MCP server 可用（`tools.clion.*` 可调用），修改、测试、调试等开发活动必须优先使用它**：
+
+- **定位 / 静态诊断**优先 `search_symbol` / `search_text` / `search_regex` / `get_file_problems`；
+- **后端行为疑问**（"值为什么不对"、竞态、死锁）用 `xdebug_*` 断点调试闭环替代临时日志：
+  `xdebug_set_breakpoints` → `xdebug_start_debugger_session` → `xdebug_get_stack` / `get_threads` /
+  `get_frame_values` → `xdebug_evaluate_expression` → `xdebug_control_session`（参数与坑见参考文档 §7）；
+- **数据核验**用 `create_database_connection` + `execute_sql_query` 直查数据库，而非肉眼翻日志；
+- **边界（不得用 CLion 替代既有门禁）**：UI 交付仍须 `scripts/build-and-test.bat` 全绿（UITests 为跨进程
+  UIA，调试器不可达被测进程）；全量回归仍 `ctest --test-dir build`；构建以项目 Ninja 目录为准；
+  ASAN / 覆盖率 / cppcheck 走既有脚本；
+- **已知坑**：含中日韩文本的改动**禁用** `clion apply_patch`（实测吞字符），一律用 edit 工具精确替换；
+  所有 clion 工具须显式传 `projectPath`。
+
+操作细节、能力全表与排障见 `docs/2026-11-06-Reference-CLion-MCP-Usage-v1.1.md`（§7–§10）。
 
 * * *

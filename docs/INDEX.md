@@ -1,4 +1,4 @@
-updated: 2026-10-30
+updated: 2026-11-06
 title: "docs: project document index"
 type: meta
 status: maintained
@@ -27,12 +27,12 @@ status: maintained
 | [设计规范](#5-设计规范) | 13 | `docs/design/` |
 | [需求与脑暴](#6-需求与脑暴) | 4 | `docs/superpowers/brainstorm/` |
 | [技术方案](#7-技术方案) | 6 | `docs/superpowers/specs/` |
-| [规范化设计](#75-规范化设计) | 87 | `docs/specs/` |
+| [规范化设计](#75-规范化设计) | 88 | `docs/specs/` |
 | [实施计划](#8-实施计划) | 108 | `docs/plans/` |
 | [分析报告](#9-分析报告) | 28 | `docs/reports/` |
-| [Bug 修复记录](#91-bug-修复记录) | 142 | `docs/bugfix/` |
+| [Bug 修复记录](#91-bug-修复记录) | 143 | `docs/bugfix/` |
 | [测试报告](#10-测试报告) | 1 | `docs/test/` |
-| [长期记忆](#13-长期记忆) | 1 | `docs/project-knowledge.md` (6.2 KB) |
+| [长期记忆](#13-长期记忆) | 3 | `docs/project-knowledge.md` (6.2 KB) |
 
 ---
 
@@ -221,6 +221,7 @@ esolveChainPort 链式取用第一个非零值，erdict=NotChecked；D2 判定�
 | 59 | [`docs/specs/2026-10-29-Spec-ProxyTestUnified-v1.0.md`](./specs/2026-10-29-Spec-ProxyTestUnified-v1.0.md) | **统一代理测试反馈与队列化方案 v1.0** — 4 阶段：A 存活队列检查（单/多选/批量先查 proxyBatchTester_，有则 inject，无则按类型创建池，多选 count=N 而非 N×count=1）B 统一日志格式（`[Testing]`/`[Result]`/`[Summary]`）C 统一完成汇总（正常/取消/关闭均打印 `[Summary] Total/Success/Failed/Remaining (exit: ...)`）D 队列汇总信息（TaskQueue stats）；验收：多选 69 代理只创建 1 个池（count=69）；评审结论 CONDITIONAL PASS → B1/B2/B3 已修订（spec v1.0 §3.1/§3.3） | 🟡 reviewed | — |
 | 60 | [`docs/specs/2026-10-30-Spec-TaskQueueMonitorAndLogTabs-v1.0.md`](./specs/2026-10-30-Spec-TaskQueueMonitorAndLogTabs-v1.0.md) | **任务与队列监控面板 + 日志多标签页方案 v1.0** — 3 功能：①暴露当前执行任务与待执行任务列表，支持手工终止（TaskQueue::snapshot() + TaskMonitorPanel）②暴露批量测试双队列（proxiesQueue_/insertedQueue_）剩余数与百分比（ProxyBatchTester::getQueueStats() + BatchQueuePanel）③底部日志区改为 wxNotebook 标签页（日志/任务/测试队列）；新增 taskTypeToString、AppController 薄包装；评审结论 CONDITIONAL PASS → B1-B4/I1-I6/D1-D3 待修订 | 🟡 reviewed | — |
 | 61 | [`docs/specs/2026-10-30-Spec-TaskQueueMonitorAndLogTabs-v1.1.md`](./specs/2026-10-30-Spec-TaskQueueMonitorAndLogTabs-v1.1.md) | **任务与队列监控面板 + 日志多标签页方案 v1.1（修订版）** — 修订 v1.0 的 B1–B4/I1–I6/D1–D3：①`snapshot()` 成员函数内部访问 `queue_.c`，pending 按 priority desc→createdAt asc；②`proxyBatchTester_` 改 `shared_ptr`+mutex 解决 use-after-free；③notebook 统一成员 `bottomNotebook_`；④取消排队任务回调/UI 反馈语义；⑤timer 仅活动标签页运行；⑥标签含英文 TaskType；⑦控件 ID 枚举 + UI 测试用例；⑧文件清单补全；⑨与 ProxyTestUnified Phase D 分工明确 | 🟡 reviewed | — |
+| 66 | [`docs/specs/2026-11-03-Spec-TaskQueueMonitorAndLogTabs-v1.2.md`](./specs/2026-11-03-Spec-TaskQueueMonitorAndLogTabs-v1.2.md) | **任务与监控面板 + 底部单选视图方案 v1.2（取代 v1.1，按 v1.2 评审 14 项修订落地）** — 底部由 wxNotebook 改为 **wxRadioBox「视图」单选 + 三面板共用同一区域 Hide/Show**（日志页恒可见，保住 UIA 布局门禁）；B1 snapshot 改"复制 priority_queue 排空"（禁碰 `queue_.c`）；B2 `getQueueStats()` 去 const；B3 `cancelTask()` 按 taskId 分流 `cancelTest()`（唯一真停批量链路）+ `cancel()` 回调出锁 + `cancelAllPending()`；B4 AutoTaskManager 持 `shared_ptr<ProxyBatchTester>`；控件 ID 移至 `wxID_HIGHEST+1200/1300/1400` 段并集中 `src/ui/UiControlIds.h`；新增 `taskTypeToString`/`elapsedSecondsSince`；**全部 4 个 Phase 已实施**：Phase 1 后端（TaskQueue snapshot/cancelAllPending/回调出锁 + workerLoop 启动竞态修复、BatchQueueStats、AppController shared_ptr 迁移（13 处）与 4 个监控 API、AutoTaskManager PoolObserver 签名迁移）；Phase 2/3 UI（bottomPanel_+radio+Hide/Show、TaskMonitorPanel、BatchQueuePanel、单一 bottomViewTimer_）；Phase 4 测试（UIA `[bottomview]` V1-V5 + UI_BOTTOMVIEW）；新增单测 11 例全绿 + build-and-test.bat 13/13 全绿；**增补 §12–§15**（v1.2.4 清洗文案/自动任务子任务拆解、v1.2.5 订阅拆解/监控组名/默认页、v1.2.6 自动任务 update_all 拆解/终态保留、v1.2.7 回退订阅级拆解改为队列进度条整体进度 + 「测试队列」页更名「任务进度」） | 📝 implemented | — |
 
 ---
 
@@ -507,6 +508,7 @@ esolveChainPort 链式取用第一个非零值，erdict=NotChecked；D2 判定�
 | 111 | [docs/bugfix/2026-11-02-Bugfix-ProxyListPanel-RefreshPerf-v1.0.md](./bugfix/2026-11-02-Bugfix-ProxyListPanel-RefreshPerf-v1.0.md) | **批量测试中点击「全部」订阅 UI 阻塞** — 转发直接同步 refresh → markDirty（Spec §3.6）+ refreshResultsFor O(B×N)→O(N+B)（exItems_/view-row 单遍索引）+ loadProxyResultsFor 独立 WAL 连接，消除 SQLITE_MISUSE | ✅ completed | — |
 | 112 | [docs/bugfix/2026-11-02-Bugfix-ConfigDialog-UIDeadlock-v1.0.md](./bugfix/2026-11-02-Bugfix-ConfigDialog-UIDeadlock-v1.0.md) | **AutoTask 执行中打开配置对话框阻塞、无法退出** — ConfigDialog 用共享 db_ 连接在 UI 线程同步读 DB，与 AutoTask writer 线程并发使用 → SQLITE_MISUSE/Busy 阻塞模态循环；改为独立 WAL reader 连接 + ownsDb_ 析构 | ✅ completed | — |
 | 113 | [docs/bugfix/2026-11-03-Bugfix-FloatingWidget-LocateProxy-v1.0.md](./bugfix/2026-11-03-Bugfix-FloatingWidget-LocateProxy-v1.0.md) | **悬浮窗弹窗点击代理无法定位到主窗口** — 代码链路执行正确但主窗口被 topmost 悬浮窗遮挡；定位后 collapseToOrb + Iconize(false)+Maximize()+Raise() 使结果可见 | ✅ completed | — |
+| 114 | [docs/bugfix/2026-11-03-Bugfix-CancelFlagPoisoning-BetweenQueuedTasks-v1.0.md](./bugfix/2026-11-03-Bugfix-CancelFlagPoisoning-BetweenQueuedTasks-v1.0.md) | **订阅测试"未纳入任务管理"** — 双根因：RC1 `AppController::cancelRequested_` 进程级单标志只在入队（UI 线程）复位，任务 A 被终止后排队任务 B 继承 poisoned flag **零代理秒退**（16:08 日志实证 B 无 cancelTest 却 `exit: cancelled`）→ 14 个任务体统一 worker 侧 `cancelRequested_ = false;`（补 12 处，AUTO_TASK 先例）；RC2 队列只有计数无清单 → `TaskQueue::submit` 统一入队日志 + `ProxyBatchTester::getPendingProxies()`（`proxiesSealed_` 防读替换中的 `proxies_`）+ 纯函数 `test::drainPendingView` + 「测试队列」页虚拟 `wxListCtrl` 待测代理清单；验证 = `BatchPendingViewTest` 5/5 + `TaskCancelResetGuardTest`（变异测试证伪）+ `[bottomview]` V7 + build-and-test.bat 13/13 | ✅ completed | — |
 
 | # | 文件 | 说明 | 状态 | 大小 |
 |------|------|------|------|------|
@@ -535,6 +537,7 @@ esolveChainPort 链式取用第一个非零值，erdict=NotChecked；D2 判定�
 | 15 | [`docs/reviews/2026-10-29-Review-ProxyTestUnified-v1.0.md`](./reviews/2026-10-29-Review-ProxyTestUnified-v1.0.md) | **统一代理测试反馈与队列化方案 v1.0 独立评审（三视角）** — 评审对象 `docs/specs/2026-10-29-Spec-ProxyTestUnified-v1.0.md`；结论 **CONDITIONAL PASS**；**3 条阻断项**（B1 Phase A `count=N` 池创建与现有 Scheme B 不兼容，需新增 `testSelectedProxiesAsync`+`loadProxies` 接口 / B2 TaskQueue 缺 `pendingTasks()/hasPending()` 接口 / B3 程序关闭时汇总打印位置需在 ProxyBatchTester 析构时）+ **5 条重要问题**（I1 日志格式与 Logger 级别对齐 / I2 keepXrayAlive_ 与池复用交互 / I3 detach worker 计入 remaining / I4 QueueStats 复用 history() / I5 验收标准限定单次操作）+ **2 条文档一致性**（D1 任务类型表与 MutexPolicy 矩阵一致 ✅ / D2 N 明确为选中代理数（上限 xray_workers））；评分=技术 8.0、可实施 6.0、文档 7.0、验收 6.5，综合 7.0/10 | 🟡 draft | — |
 | 16 | [`docs/reviews/2026-10-30-Review-TaskQueueMonitorAndLogTabs-v1.0.md`](./reviews/2026-10-30-Review-TaskQueueMonitorAndLogTabs-v1.0.md) | **任务与队列监控面板 + 日志多标签页方案 v1.0 独立评审（三视角）** — 评审对象 `docs/specs/2026-10-30-Spec-TaskQueueMonitorAndLogTabs-v1.0.md`；结论 **CONDITIONAL PASS**；**4 条阻断项**（B1 priority_queue 遍历方式 / B2 proxyBatchTester_ 生命周期与 use-after-free / B3 notebook 成员变量不一致 / B4 取消排队任务回调语义）+ **6 条重要问题**（I1 timer 仅活动标签页 / I2 taskTypeToString 标签格式 / I3 LogPanel 布局 / I4 BatchQueuePanel 防抖 / I5 控件 ID 枚举 / I6 pending 排序语义）+ **3 条一致性**（D1 成员变量 / D2 文件清单遗漏 / D3 与 ProxyTestUnified Phase D 分工）；评分=技术 7.5、可实施 6.5、文档 7.0、验收 6.5，综合 7.0/10 | 🟡 draft | — |
 | 17 | [`docs/reviews/2026-10-30-Review-TaskQueueMonitorAndLogTabs-v1.1.md`](./reviews/2026-10-30-Review-TaskQueueMonitorAndLogTabs-v1.1.md) | **任务与队列监控面板 + 日志多标签页方案 v1.1 独立评审（三视角）** — 评审对象 `docs/specs/2026-10-30-Spec-TaskQueueMonitorAndLogTabs-v1.1.md`；结论 **CONDITIONAL PASS**（0 blockers, 2 important, 1 consistency）；v1.0 的 B1–B4/I1–I6/D1–D3 全部解决；代码事实核对修正 B4（onComplete 非 onRejected）与 snapshot 排序（Entry time_point 避免 string 字典序）；评分=技术 8.5、可实施 8.0、文档 8.5、验收 8.0，综合 8.3/10 | 🟡 draft | — |
+| 18 | [`docs/reviews/2026-11-03-Review-TaskQueueMonitorAndLogTabs-v1.2.md`](./reviews/2026-11-03-Review-TaskQueueMonitorAndLogTabs-v1.2.md) | **任务与队列监控面板 + 日志多标签页方案 v1.1 第二轮独立评审（实施前门禁，含编译实证）** — 评审对象 `docs/specs/2026-10-30-Spec-TaskQueueMonitorAndLogTabs-v1.1.md`；结论 **FAIL（需修订）**；**4 条阻断项**（B1 `queue_.c` 为 protected 访问非法 → g++ 14.2.0 实测编译失败，推翻上一轮 B1「已解决」/ B2 `getQueueStats() const` 锁非 `mutable` 互斥量 → 实测编译失败 / B3 终止当前按钮链路不成立（只置 TaskQueue 标志，不置 `AppController::cancelRequested_`，批量测试不停）+ `TaskQueue::cancel` 持锁回调可自死锁 + 缺 `cancelAllPending()` / B4 AutoTaskManager tester 为栈对象，裸指针无法被 shared_ptr 安全接管，B2 修复在自动任务路径失效）+ **6 条重要问题**（steady_clock 字符串时间戳不可读 / `snapshot.running` 是 worker 存活恒 true / `wxEVT_NOTEBOOK_PAGE_CHANGED` 由 notebook 自身处理不会送达 page / 控件 ID +100/+200 撞 ID_MENU_IMPORT_SUB 与 ID_LOG_CLEAR / UI 测试 T1 用进程内 FindWindowById 不可行且会打破 `[layout]` 日志按钮可见断言 / `taskTypeToString` 未覆盖 20+1 枚举且片段含 `auto`）+ **6 条一致性**（风险表 onRejected 矛盾 / 调用点 11 实为 13 且含不存在函数 / §8 重复段 / 缺后端单测 / 文件清单缺 AutoTaskManager.cpp 与 tests / ≤6s 无依据）；评分=技术 7.0、可实施 6.0、文档 7.5、验收 6.5，综合 6.8/10；附 §9 可执行修订清单 14 项 | 🟡 draft | — |
 
  ## 12. 进展与状态跟踪
 
@@ -581,6 +584,7 @@ esolveChainPort 链式取用第一个非零值，erdict=NotChecked；D2 判定�
 |------|------|------|------|------|
 | 1 | [`docs/project-knowledge.md`](./project-knowledge.md) | **项目长期记忆** — 测试规范、错误级别分类、Google Test 规范、错误分析、三文档协同模型、工具模式、架构决策记录、调试与稳定性规则（含 ASAN/UBSan/MiniDump/cppcheck/gcovr 用法、工具选择矩阵、Logger 深度调试）。内容与 AGENTS.md 和 `docs/` 文档不重复。 | — | 6.2 KB |
 | 2 | [`docs/2026-09-18-Reference-Caura-OperationGuide-v1.0.md`](./2026-09-18-Reference-Caura-OperationGuide-v1.0.md) | **Caura 跨会话记忆 curl 操作指南** — 完整 MCP 端点 (`https://caura.ai/mcp`) curl 命令集：诊断连通性、工具列表、强制策略 (keystones)、列出/搜索/写入/管理记忆、批量写入基础记忆、项目初始化流程、故障排查表 | — | 12.0 KB |
+| 3 | [`docs/2026-11-06-Reference-CLion-MCP-Usage-v1.1.md`](./2026-11-06-Reference-CLion-MCP-Usage-v1.1.md) | **CLion MCP Server 使用与排障指南 v1.1** — 88 工具接入 (`type:remote` 必须用 `/stream` 而非 `/sse`，否则 POST 405)、`xdebug_*` 调试器全量 API 映射到本项目多线程/GUI 崩溃调试、`version.h` 构建期生成头文件缺失致 6 个假阳性诊断的排障（`update_version_h` 目标 + Invalidate Caches）、**§7 实测调试闭环（断点→栈/线程/求值→RESUME→exitCode 0）与 xdebug 参数易错表、§8 能力边界（优先 CLion：后端断点调试/单目标 test_*/SQL 核验/诊断；仍走 ctest+build-and-test.bat：UI 门禁/全量回归/ASAN/构建）、§9 `apply_patch` 中文行吞字符坑与 UTF-8 改写规范、§10 团队约定「CLion MCP 可用则修改/测试/调试优先使用，但不降低门禁要求」** | — | 12.3 KB |
 
 **维护规则**: 会话结束时如有新的架构决策或跨模块知识，追加至 `docs/project-knowledge.md` §7 关键决策记录。
 
