@@ -32,6 +32,12 @@ enum UiControlIds {
     ID_BATCH_QUEUE_DETAIL   = wxID_HIGHEST + 1404,
     ID_BATCH_PENDING_COUNT  = wxID_HIGHEST + 1405,
     ID_BATCH_PENDING_LIST   = wxID_HIGHEST + 1406,
+    // 任务列表右键菜单（spec 2026-11-06 §3.3）
+    ID_TASK_CTX_CLEAR_ALL   = wxID_HIGHEST + 1500,   // 清理全部完成记录
+    ID_TASK_CTX_CANCEL_ONE  = wxID_HIGHEST + 1501,   // 取消此排队任务
+    ID_TASK_CTX_REMOVE_ONE  = wxID_HIGHEST + 1502,   // 移除此记录
+    ID_TASK_CTX_CANCEL_ALL  = wxID_HIGHEST + 1503,   // 取消全部排队
+    ID_TASK_CTX_TERM_ONE    = wxID_HIGHEST + 1504,   // 终止当前任务
 };
 
 #endif // UI_CONTROL_IDS_H

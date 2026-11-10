@@ -80,6 +80,21 @@ TaskMonitorPanel::TaskMonitorPanel(wxWindow* parent, AppController* controller)
     cancelAllBtn_->Bind(wxEVT_BUTTON, &TaskMonitorPanel::onCancelAll, this);
     pendingList_->Bind(wxEVT_LIST_ITEM_SELECTED, &TaskMonitorPanel::onItemSelected, this);
     pendingList_->Bind(wxEVT_LIST_ITEM_DESELECTED, &TaskMonitorPanel::onItemSelected, this);
+    // Context menu (spec 2026-11-06 §3.3): wxEVT_CONTEXT_MENU handles both row
+    // and blank-space right-clicks with one entry point (on wxMSW, row right-
+    // clicks fire ITEM_RIGHT_CLICK *and* propagate WM_CONTEXTMENU, so binding
+    // both events would double-popup the menu).
+    pendingList_->Bind(wxEVT_CONTEXT_MENU, &TaskMonitorPanel::onListContextMenu, this);
+    // Menu commands bind on the PANEL, not the list: wxMSW routes a popup's
+    // WM_COMMAND to the window whose PopupMenu() call owned the track loop
+    // (this->PopupMenu below → the panel's HWND). The same pattern as
+    // ProxyListPanel's EVT_MENU context bindings. Binding on pendingList_
+    // would never fire (verified 2026-11-09 via UIA invoke + ledger unchanged).
+    Bind(wxEVT_MENU, &TaskMonitorPanel::onContextCommand, this, ID_TASK_CTX_CLEAR_ALL);
+    Bind(wxEVT_MENU, &TaskMonitorPanel::onContextCommand, this, ID_TASK_CTX_CANCEL_ONE);
+    Bind(wxEVT_MENU, &TaskMonitorPanel::onContextCommand, this, ID_TASK_CTX_REMOVE_ONE);
+    Bind(wxEVT_MENU, &TaskMonitorPanel::onContextCommand, this, ID_TASK_CTX_CANCEL_ALL);
+    Bind(wxEVT_MENU, &TaskMonitorPanel::onContextCommand, this, ID_TASK_CTX_TERM_ONE);
 
     updateButtonStates(task::TaskQueueSnapshot());   // start fully disabled
 }
@@ -112,13 +127,28 @@ void TaskMonitorPanel::refreshNow() {
         currentInfo_->SetLabel(line);
     }
 
-    // ── task list: RUNNING first, then pending (snapshot order == dequeue
-    // order, do NOT re-sort). The running task shares the list so one table
-    // answers "what is the queue doing right now" (owner request 2026-11-04).
+    // ── task list: RUNNING first, then children, pending (snapshot order ==
+    // dequeue order, do NOT re-sort), then FINISHED records (newest first).
+    // Finished rows STAY until the user clears them via the context menu
+    // (owner request 2026-11-06: 完成任务不清除只标识状态).
+    //
+    // Selection/scroll survive the 1s full rebuild: DeleteAllItems destroys
+    // both, so remember the selected row's taskId + the first visible item
+    // and restore by ID afterwards (spec §3.2 — with 200 finished rows a
+    // per-second selection loss is unusable).
+    wxString keepSelectedId;
+    long keepTop = 0;
+    if (selectedRow_ >= 0 && selectedRow_ < static_cast<long>(pendingIds_.size())) {
+        keepSelectedId = wxString::FromAscii(
+            pendingIds_[static_cast<std::size_t>(selectedRow_)].c_str());
+    }
+    keepTop = pendingList_->GetTopItem();
+
     pendingList_->DeleteAllItems();
     selectedRow_ = -1;
     pendingIds_.clear();
     rowIsChild_.clear();
+    rowKinds_.clear();
     long row = 0;
     // targetId → subscription remark, resolved at most once per id per refresh
     // (the list refreshes every second — never hit SQLite once per row).
@@ -137,8 +167,8 @@ void TaskMonitorPanel::refreshNow() {
         remarkCache[h.targetId] = name;
         return name;
     };
-    std::function<void(const task::TaskHandle&, bool, bool)> insertRow =
-        [this, &row, &targetName](const task::TaskHandle& h, bool indent, bool monitorOnly) {
+    std::function<void(const task::TaskHandle&, bool, int)> insertRow =
+        [this, &row, &targetName](const task::TaskHandle& h, bool indent, int kind) {
         // Child rows (auto-task steps) get a "└" prefix and are monitor-only:
         // they never live in queue_, so cancel-selected stays disabled for
         // them (rowIsChild_).
@@ -148,42 +178,180 @@ void TaskMonitorPanel::refreshNow() {
         pendingList_->SetItem(idx, 1, wxString::FromUTF8(task::taskTypeToString(h.type)));
         pendingList_->SetItem(idx, 2, targetName(h));
         pendingList_->SetItem(idx, 3, wxString::Format("%d", h.priority));
-        pendingList_->SetItem(idx, 4, wxString::FromAscii(statusToString(h.status)));
+        // FAILED rows carry an ASCII "!" (owner §4: no owner-draw, the status
+        // text alone must separate 成功/失败 at a glance).
+        wxString statusText = wxString::FromAscii(statusToString(h.status));
+        if (h.status == task::TaskStatus::FAILED) statusText += "!";
+        pendingList_->SetItem(idx, 4, statusText);
         // 提交于: local wall-clock HH:MM:SS derived from the steady stamp
         // (owner request 2026-11-04: was "Ns前" relative seconds).
         pendingList_->SetItem(idx, 5, wxString::FromAscii(
             task::wallClockText(h.createdAt, std::chrono::steady_clock::now(),
                                 std::chrono::system_clock::now()).c_str()));
         pendingIds_.push_back(h.taskId);   // row index → taskId (see .h note)
-        rowIsChild_.push_back(!h.parentTaskId.empty() || monitorOnly);
+        rowIsChild_.push_back(kind == RowChild);
+        rowKinds_.push_back(kind);
         ++row;
     };
-    if (!snap.current.taskId.empty()) insertRow(snap.current, false, false);
+    if (!snap.current.taskId.empty()) insertRow(snap.current, false, RowCurrent);
     // Auto-task step breakdown, rendered under its running parent
     // (owner request 2026-11-04: 子任务拆解纳入任务监控).
-    for (const task::TaskHandle& h : snap.children) insertRow(h, true, false);
-    // Finished-task outcome: while idle, keep the last parent + its breakdown
-    // visible until the next task starts (owner feedback 2026-11-05). The
-    // rows are terminal — monitor-only so cancel cannot target them.
-    if (idle && !snap.recentParent.taskId.empty()) {
-        insertRow(snap.recentParent, false, true);
-        for (const task::TaskHandle& h : snap.recentChildren) insertRow(h, true, false);
+    for (const task::TaskHandle& h : snap.children) insertRow(h, true, RowChild);
+    for (const task::TaskHandle& h : snap.pending) insertRow(h, false, RowPending);
+    // Finished records, newest first (spec §3.1/§3.2). history_ serves BOTH
+    // diagnostics and this list now — recentParent (v1.2.6 single-row
+    // retention) is superseded: the finished ledger shows the same row plus
+    // its predecessors, and unlike recentParent it survives the next start
+    // until the user clears it (契约演进, spec §3.1).
+    for (const task::TaskHandle& h : snap.history) {
+        if (h.status == task::TaskStatus::COMPLETED ||
+            h.status == task::TaskStatus::FAILED ||
+            h.status == task::TaskStatus::CANCELLED) {
+            insertRow(h, false, RowFinished);
+        }
     }
-    for (const task::TaskHandle& h : snap.pending) insertRow(h, false, false);
+    // Empty list: one non-selectable placeholder row (spec §3.2 空态).
+    if (row == 0) {
+        const long idx = pendingList_->InsertItem(0, wxString::FromUTF8(u8"（无任务）"));
+        pendingList_->SetItem(idx, 1, wxString());
+        pendingIds_.push_back(std::string());
+        rowIsChild_.push_back(true);   // monitor-only: cancel never targets it
+        rowKinds_.push_back(RowChild);
+    }
+
+    // Restore selection + scroll by taskId (rows shifted; index is stale).
+    if (!keepSelectedId.empty()) {
+        for (std::size_t i = 0; i < pendingIds_.size(); ++i) {
+            if (pendingIds_[i] == std::string(keepSelectedId.utf8_str())) {
+                selectedRow_ = static_cast<long>(i);
+                pendingList_->SetItemState(selectedRow_,
+                                           wxLIST_STATE_SELECTED | wxLIST_STATE_FOCUSED,
+                                           wxLIST_STATE_SELECTED | wxLIST_STATE_FOCUSED);
+                break;
+            }
+        }
+    }
+    if (keepTop > 0 && keepTop < pendingList_->GetItemCount()) {
+        pendingList_->EnsureVisible(keepTop);
+    }
 
     updateButtonStates(snap);
 }
 
 void TaskMonitorPanel::updateButtonStates(const task::TaskQueueSnapshot& snap) {
     cancelCurrentBtn_->Enable(!snap.current.taskId.empty());
-    // Child (auto-task step) rows are monitor-only: cancelling one means
-    // cancelling the whole AUTO_TASK, which is what 终止当前 already does.
+    // 取消选中 enables for QUEUED rows only (spec §3.5): child/placeholder
+    // rows are monitor-only, Running goes through 终止当前, and Finished rows
+    // are terminal — they get 移除 from the context menu, never 取消.
     const bool rowSelected = selectedRow_ >= 0 &&
                              selectedRow_ < static_cast<long>(pendingIds_.size());
-    const bool selectedIsChild = rowSelected && rowIsChild_.size() == pendingIds_.size() &&
-                                 rowIsChild_[static_cast<std::size_t>(selectedRow_)];
-    cancelSelectedBtn_->Enable(rowSelected && !selectedIsChild);
+    const bool selectedIsPending = rowSelected &&
+                                   rowKinds_.size() == pendingIds_.size() &&
+                                   rowKinds_[static_cast<std::size_t>(selectedRow_)] == RowPending;
+    cancelSelectedBtn_->Enable(selectedIsPending);
     cancelAllBtn_->Enable(snap.queueDepth > 0);
+}
+
+// -------------------------------------------------------------------
+//  Context menu (spec 2026-11-06 §3.3). One wxEVT_CONTEXT_MENU handler for
+//  row + blank-space right-clicks (wxMSW fires ITEM_RIGHT_CLICK for rows AND
+//  propagates WM_CONTEXTMENU — binding both would double-popup).
+// -------------------------------------------------------------------
+void TaskMonitorPanel::onListContextMenu(wxContextMenuEvent& event) {
+    wxPoint pt = event.GetPosition();
+    if (pt == wxDefaultPosition) {
+        // Keyboard context-menu key: anchor the menu near the list centre.
+        const wxSize sz = pendingList_->GetClientSize();
+        pt = pendingList_->ClientToScreen(wxPoint(sz.GetX() / 2, sz.GetY() / 2));
+    }
+    // HitTest and wxMSW's PopupMenu both want CLIENT coordinates
+    // (wxWindowMSW::PopupMenu ClientToScreens its point internally).
+    const wxPoint clientPt = pendingList_->ScreenToClient(pt);
+    int hitFlags = 0;
+    const long hit = pendingList_->HitTest(clientPt, hitFlags);
+    const bool hitRow = hit >= 0 && hit < static_cast<long>(pendingIds_.size());
+
+    // Capture the target NOW: the command event arrives later, by which time
+    // the 1s refresh may have re-indexed rows (taskId stays stable though).
+    ctxTaskId_.clear();
+    ctxRowKind_ = -1;
+    if (hitRow) {
+        ctxTaskId_ = pendingIds_[static_cast<std::size_t>(hit)];
+        ctxRowKind_ = rowKinds_[static_cast<std::size_t>(hit)];
+        selectedRow_ = hit;
+        pendingList_->SetItemState(hit, wxLIST_STATE_SELECTED | wxLIST_STATE_FOCUSED,
+                                   wxLIST_STATE_SELECTED | wxLIST_STATE_FOCUSED);
+    }
+
+    const task::TaskQueueSnapshot snap = controller_->getTaskQueueSnapshot();
+    bool hasFinished = false;
+    for (const task::TaskHandle& h : snap.history) {
+        if (h.status == task::TaskStatus::COMPLETED ||
+            h.status == task::TaskStatus::FAILED ||
+            h.status == task::TaskStatus::CANCELLED) { hasFinished = true; break; }
+    }
+
+    wxMenu menu;
+    if (ctxRowKind_ == RowCurrent) {
+        menu.Append(ID_TASK_CTX_TERM_ONE, wxString::FromUTF8(u8"终止当前任务"));
+    } else if (ctxRowKind_ == RowPending) {
+        menu.Append(ID_TASK_CTX_CANCEL_ONE, wxString::FromUTF8(u8"取消此排队任务"));
+    } else if (ctxRowKind_ == RowFinished) {
+        menu.Append(ID_TASK_CTX_REMOVE_ONE, wxString::FromUTF8(u8"移除此记录"));
+    } else {
+        // Blank space / child rows: whole-queue actions only.
+        wxMenuItem* cancelAllItem = menu.Append(ID_TASK_CTX_CANCEL_ALL,
+                                                wxString::FromUTF8(u8"取消全部排队"));
+        cancelAllItem->Enable(snap.queueDepth > 0);
+    }
+    // Every row (and the blank area) additionally offers the bulk cleanup.
+    wxMenuItem* clearItem = menu.Append(ID_TASK_CTX_CLEAR_ALL,
+                                        wxString::FromUTF8(u8"清理全部完成记录"));
+    clearItem->Enable(hasFinished);
+
+    PopupMenu(&menu, clientPt);
+    // No event.Skip(): the list's default (no menu) must not run as well.
+}
+
+void TaskMonitorPanel::onContextCommand(wxCommandEvent& event) {
+    const int id = event.GetId();
+    if (id == ID_TASK_CTX_CLEAR_ALL) {
+        const std::size_t n = controller_->clearFinishedTasks();
+        refreshNow();
+        wxQueueEvent(wxGetTopLevelParent(this), new StatusUpdateEvent(
+            0, "已清理 " + std::to_string(n) + " 条完成记录"));
+        return;
+    }
+    if (id == ID_TASK_CTX_REMOVE_ONE) {
+        if (!ctxTaskId_.empty()) controller_->removeFinishedTask(ctxTaskId_);
+        refreshNow();
+        return;
+    }
+    if (id == ID_TASK_CTX_CANCEL_ONE) {
+        if (!ctxTaskId_.empty()) controller_->cancelTask(ctxTaskId_);
+        refreshNow();
+        wxQueueEvent(wxGetTopLevelParent(this),
+                     new StatusUpdateEvent(0, "已取消排队任务"));
+        return;
+    }
+    if (id == ID_TASK_CTX_CANCEL_ALL) {
+        controller_->cancelAllQueuedTasks();
+        refreshNow();
+        wxQueueEvent(wxGetTopLevelParent(this),
+                     new StatusUpdateEvent(0, "已取消全部排队任务"));
+        return;
+    }
+    if (id == ID_TASK_CTX_TERM_ONE) {
+        const task::TaskQueueSnapshot snap = controller_->getTaskQueueSnapshot();
+        if (!snap.current.taskId.empty()) {
+            controller_->cancelTask(snap.current.taskId);
+            wxQueueEvent(wxGetTopLevelParent(this), new StatusUpdateEvent(
+                0, std::string("已取消当前任务: ") + task::taskTypeToString(snap.current.type)));
+        }
+        refreshNow();
+        return;
+    }
+    event.Skip();
 }
 
 std::string TaskMonitorPanel::selectedTaskId() const {

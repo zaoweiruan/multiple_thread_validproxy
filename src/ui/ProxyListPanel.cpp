@@ -750,17 +750,24 @@ void ProxyListPanel::onResolveRegion(wxCommandEvent& event) {
     wxDataViewItem item = listCtrl_->GetSelection();
     if (!item.IsOk()) return;
 
-    if (controller_ && controller_->isRunning()) {
-        wxMessageBox(L"操作进行中，请等待完成后再试", L"操作进行中", wxOK | wxICON_WARNING);
-        return;
-    }
-
     unsigned int viewRow = model_->GetRow(item);
     if (viewRow == static_cast<unsigned int>(-1)) return;
 
     std::string indexId = model_->getIndexIdAtRow(viewRow);
     if (indexId.empty()) return;
 
+    // G7 ungated (spec 2026-11-06 §2.2-A): resolveSingleProxyRegionAsync IS a
+    // TaskQueue submit (RESOLVE_SINGLE_REGION) — the single worker serialises
+    // it, so a modal refusal was pure loss of the user's click. Enqueue +
+    // status-bar notice instead.
+    const std::size_t ahead = controller_->getTaskQueueSnapshot().queueDepth;
+    wxWindow* topLevel = wxGetTopLevelParent(this);
+    if (topLevel) {
+        static_cast<MainFrame*>(topLevel)->setStatusNotice(
+            ahead > 0
+                ? wxString::Format(L"已加入队列：解析代理地区，前方还有 %zu 个任务", ahead)
+                : wxString(L"解析代理地区已开始"));
+    }
     // Use batch resolver async method (online via api.ipinfo.io/lite)
     controller_->resolveSingleProxyRegionAsync(indexId, this);
     (void)event;
@@ -778,11 +785,16 @@ void ProxyListPanel::onBatchResolveRegion(wxCommandEvent& event) {
         }
     }
 
-    if (controller_->isRunning()) {
-        wxMessageBox(L"操作进行中，请等待完成后再试", L"操作进行中", wxOK | wxICON_WARNING);
-        return;
+    // G8 ungated (spec 2026-11-06 §2.2-A): RESOLVE_REGION goes through
+    // taskQueue_.submit — queueing IS the mutual exclusion, no modal refusal.
+    const std::size_t ahead = controller_->getTaskQueueSnapshot().queueDepth;
+    wxWindow* topLevel = wxGetTopLevelParent(this);
+    if (topLevel) {
+        static_cast<MainFrame*>(topLevel)->setStatusNotice(
+            ahead > 0
+                ? wxString::Format(L"已加入队列：批量解析地区，前方还有 %zu 个任务", ahead)
+                : wxString(L"批量解析地区已开始"));
     }
-
     controller_->resolveRegionsBatchAsync(this, currentSubId_);
     (void)event;
 }

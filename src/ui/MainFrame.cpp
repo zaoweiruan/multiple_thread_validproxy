@@ -199,6 +199,11 @@ MainFrame::MainFrame(const config::AppConfig& cfg, sqlite3* db)
                 payload == "AutoTask failed" ||
                 payload == "AutoTask cancelled") {
                 setOperationState(OperationType::NONE);
+                // Completion-time reads (spec 2026-11-06 §2.6-3): BOTH loads
+                // must run HERE, when the task actually finished. They must
+                // NOT be hoisted to submit time — with queueing, a task can
+                // start minutes after its click, and any snapshot taken at
+                // click time would be stale by then.
                 if (subPanel_ && controller_) {
                     controller_->loadSubscriptionsAsync(this);
                 }
@@ -211,6 +216,10 @@ MainFrame::MainFrame(const config::AppConfig& cfg, sqlite3* db)
     });
 
     // ── Test completion → refresh Delay column and restore UI state ──
+    // Completion path RE-READS the DB (refreshResults → loadProxyResults)
+    // instead of writing back clicked row numbers (spec 2026-11-06 §2.6-3):
+    // queueing can delay the actual run arbitrarily, so every row must be
+    // matched by indexId against the CURRENT list — never a remembered index.
     Bind(wxEVT_PROXY_TEST_PROGRESS, [this](ProxyTestProgressEvent& evt) {
         if (evt.isCompleted()) {
             if (proxyPanel_) {
@@ -687,6 +696,16 @@ void MainFrame::setStatusText(int field, const wxString& text) {
     if (statusBar_) statusBar_->SetStatusText(text, field);
 }
 
+void MainFrame::setStatusNotice(const wxString& text) {
+    // Arm the one-shot protection (same mechanism as onStatusUpdate): the
+    // next loader write into field0 re-prints THIS text instead of its own
+    // (MainFrame.cpp:345/350/377 consume sites). statusTextPending_ doubles
+    // as the "notice to restore" slot.
+    statusTextPending_ = std::string(text.utf8_string());
+    statusTextProtected_ = true;
+    setStatusText(0, text);
+}
+
 void MainFrame::setLogFileLabel(const std::string& filePath) {
     if (filePath.empty()) {
         setStatusText(1, "");
@@ -931,6 +950,13 @@ void MainFrame::initPanels() {
     bottomViewRadio_->SetSelection(0);
     bottomSizer->Add(bottomViewRadio_, 0, wxEXPAND | wxLEFT | wxRIGHT | wxTOP, 2);
 
+    // Queue-count badge (spec §2.4): its own thin row under the radio, hidden
+    // at depth 0. SetString on the radio itself would rebuild the whole
+    // wxRadioBox on MSW (UIA element churn every 1s poll).
+    queueBadge_ = new wxStaticText(bottomPanel_, wxID_ANY, wxString());
+    queueBadge_->Hide();
+    bottomSizer->Add(queueBadge_, 0, wxLEFT | wxBOTTOM, 6);
+
     logPanel_ = new LogPanel(bottomPanel_);
     logPanel_->setInitialLogLevel(Logger::stringToLevel(config_.log_console_level));
     taskMonitorPanel_ = new TaskMonitorPanel(bottomPanel_, controller_);
@@ -1078,6 +1104,26 @@ void MainFrame::onBottomViewTimer(wxTimerEvent&) {
     // Page indices (owner request 2026-11-05): 0=任务 1=任务进度 2=日志.
     if (bottomViewIndex_ == 0 && taskMonitorPanel_) taskMonitorPanel_->refreshNow();
     if (bottomViewIndex_ == 1 && batchQueuePanel_)  batchQueuePanel_->refreshNow();
+    updateQueueBadge();
+}
+
+// Queue-count badge (spec 2026-11-06 §2.4): "排队: N" beside the 监控 radio.
+// Only touches the control when N actually changed (a 1s SetLabel churn
+// repaints the bottom panel for no reason). Finished rows never count; the
+// badge tracks QUEUED depth only.
+void MainFrame::updateQueueBadge() {
+    if (!queueBadge_ || !controller_) return;
+    const long depth = static_cast<long>(controller_->getTaskQueueSnapshot().queueDepth);
+    if (depth == badgeQueueDepth_) return;
+    badgeQueueDepth_ = depth;
+    if (depth <= 0) {
+        queueBadge_->SetLabel(wxString());
+        queueBadge_->Hide();
+    } else {
+        queueBadge_->SetLabel(wxString::Format(L"排队: %ld", depth));
+        queueBadge_->Show();
+    }
+    bottomPanel_->Layout();
 }
 
 void MainFrame::switchBottomView(int index) {
@@ -1215,12 +1261,12 @@ void MainFrame::onMenuFindBest(wxCommandEvent&) {
 }
 
 void MainFrame::onMenuDedup(wxCommandEvent&) {
-    setStatusText(0, "Deduplicating…");
-    std::thread([this]() {
-        bool ok = controller_->deduplicate();
-        wxQueueEvent(this, new StatusUpdateEvent(0,
-            ok ? "DEDUP_OK" : "DEDUP_FAIL"));
-    }).detach();
+    // Queued now (spec §2.5-G14): DEDUP used to run on a bare detached thread
+    // OUTSIDE TaskQueue, racing the batch/update workers over profileitem/
+    // subitem. The queue serialises it; the DEDUP_OK/DEDUP_FAIL status event
+    // still drives the existing completion modal in onStatusUpdate.
+    setStatusNotice(L"已加入队列：移除重复代理");
+    controller_->deduplicateAsync(this);
 }
 
 void MainFrame::onMenuExportShareLink(wxCommandEvent&) {
@@ -1306,11 +1352,27 @@ void MainFrame::onMenuConfig(wxCommandEvent&) {
         db_switch_policy::Decision dbSwitchDecision =
             db_switch_policy::Decision::Allow;
         if (dbPathChanged) {
+            // Three-state probe-aware decision stays (QuiesceProbe must keep
+            // quiescing the silent probe before the handle swap — see the
+            // quiesceOnlineProbe() call below). ON TOP of that, a QUEUED task
+            // now also refuses the switch (spec 2026-11-06 §2.6-3): the next
+            // queued task would reopen and run against the NEW database via
+            // ensureDatabaseInitialized(), silently migrating work that was
+            // enqueued against the old one.
             dbSwitchDecision = db_switch_policy::decide(
                 controller_->isRunning(), controller_->isOnlineProbeRunning());
             if (dbSwitchDecision ==
                 db_switch_policy::Decision::RefuseUserOperation) {
                 wxMessageBox(L"操作进行中，无法切换数据库", L"操作进行中", wxOK | wxICON_WARNING);
+                return;
+            }
+            // Queue check independent of the decision: queued tasks exist
+            // precisely while isRunning()==false (they only set busy_ when the
+            // worker picks them up), so BOTH Allow and QuiesceProbe can still
+            // carry a backlog.
+            if (controller_->getTaskQueueSnapshot().queueDepth > 0) {
+                wxMessageBox(L"任务队列有排队任务，为避免新旧库混跑，请先清理队列再切换数据库",
+                             L"任务进行中", wxOK | wxICON_WARNING);
                 return;
             }
         }
@@ -1464,28 +1526,23 @@ void MainFrame::onMenuConfig(wxCommandEvent&) {
 }
 
 void MainFrame::onMenuAutoTask(wxCommandEvent&) {
-    // AUTO_TASK is mutually exclusive with any running worker task (batch test,
-    // subscription update, dedup, sync, etc.). Guard at the UI entry so clicking
-    // "自动任务" during a batch test is rejected instead of silently queueing.
-    if (controller_->isRunning()) {
-        wxMessageBox(L"操作进行中，请等待完成后再试", L"操作进行中", wxOK | wxICON_WARNING);
-        return;
-    }
-    syncToolbarState();
-    setOperationState(OperationType::AUTOTASK);
-    setStatusText(0, L"自动任务开始…");
+    // Queued now (spec 2026-11-06 §2.5-G3): the single-worker TaskQueue is the
+    // mutex — no modal "operation in progress" refusal. No setOperationState:
+    // the cancel tool reflects what is RUNNING (syncToolbarState via the 1s
+    // timer), not what the last click enqueued.
+    const std::size_t ahead = controller_->getTaskQueueSnapshot().queueDepth;
+    setStatusNotice(ahead > 0
+        ? wxString::Format(L"已加入队列：自动任务，前方还有 %zu 个任务", ahead)
+        : wxString(L"自动任务已开始"));
     controller_->runAutoTaskAsync(this);
 }
 
 void MainFrame::onMenuAutoTaskResume(wxCommandEvent&) {
-    // Same mutual-exclusion guard as onMenuAutoTask.
-    if (controller_->isRunning()) {
-        wxMessageBox(L"操作进行中，请等待完成后再试", L"操作进行中", wxOK | wxICON_WARNING);
-        return;
-    }
-    syncToolbarState();
-    setOperationState(OperationType::AUTOTASK);
-    setStatusText(0, L"恢复自动任务…");
+    // Same queued semantics as onMenuAutoTask (spec §2.5-G4).
+    const std::size_t ahead = controller_->getTaskQueueSnapshot().queueDepth;
+    setStatusNotice(ahead > 0
+        ? wxString::Format(L"已加入队列：恢复自动任务，前方还有 %zu 个任务", ahead)
+        : wxString(L"恢复自动任务已开始"));
     controller_->resumeAutoTaskAsync(this);
 }
 
@@ -1531,20 +1588,16 @@ void MainFrame::onTestSubscription(SubscriptionTestEvent& evt) {
 }
 
 void MainFrame::onToolTest(wxCommandEvent& event) {
-    syncToolbarState();
-    // Auto-task (AUTO_TASK) and batch test (TEST_ALL) are mutually exclusive
-    // worker tasks (MutexPolicy: worker vs worker → REJECT). Block the batch
-    // test button while any operation (including an auto-task) is running so
-    // the user cannot queue a conflicting batch test.
-    if (controller_ && controller_->isRunning()) {
-        wxMessageBox(L"操作进行中，请等待完成后再试", L"操作进行中",
-                     wxOK | wxICON_WARNING);
-        return;
-    }
-    // Test ALL proxies (not just the selected subscription)
-    setOperationState(OperationType::TEST);
+    // Queued now (spec 2026-11-06 §2.5-G5): the single-worker TaskQueue
+    // serialises TEST_ALL behind whatever runs — no modal refusal. The
+    // cancel tool is enabled by the 1s syncToolbarState poll only while the
+    // batch ACTUALLY runs (enqueuing alone must not light it up).
+    if (!controller_) { (void)event; return; }
+    const std::size_t ahead = controller_->getTaskQueueSnapshot().queueDepth;
+    setStatusNotice(ahead > 0
+        ? wxString::Format(L"已加入队列：全部测试 (TEST_ALL)，前方还有 %zu 个任务", ahead)
+        : wxString(L"Testing all proxies…"));
     controller_->testAllProxiesAsync(this);
-    setStatusText(0, "Testing all proxies…");
     (void)event;
 }
 

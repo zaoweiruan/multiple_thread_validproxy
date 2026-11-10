@@ -54,6 +54,11 @@ public:
     std::string getDbPath() const;
     // Status bar helpers
     void setStatusText(int field, const wxString& text);
+    // Protected field-0 notice (spec 2026-11-06 §2.4): reuses the existing
+    // one-shot statusTextProtected_ guard so the transient loader writes
+    // ("Loaded subscription…"/"Refresh: loaded all proxies") that fire right
+    // after an enqueue do not swallow the "已加入队列…" feedback.
+    void setStatusNotice(const wxString& text);
     void showBalloon(const wxString& title, const wxString& msg);
     void setOperationState(OperationType op);
     void syncToolbarState();
@@ -156,6 +161,13 @@ private:
     // sizer space (wxBoxSizer CalcMin/DoLayout skip hidden windows).
     wxPanel* bottomPanel_{nullptr};
     wxRadioBox* bottomViewRadio_{nullptr};
+    // Queue-count badge next to the 监控 radio (spec 2026-11-06 §2.4).
+    // Separate wxStaticText on purpose: wxRadioBox::SetString rebuilds the
+    // whole control on MSW (destroys the UIA element every poll). Hidden at
+    // depth 0 so it never enters the UIA tree of the idle UI.
+    wxStaticText* queueBadge_{nullptr};
+    long badgeQueueDepth_{-1};   // last published depth (skip no-op SetLabel)
+    void updateQueueBadge();
     TaskMonitorPanel* taskMonitorPanel_{nullptr};
     BatchQueuePanel* batchQueuePanel_{nullptr};
     wxTimer* bottomViewTimer_{nullptr};

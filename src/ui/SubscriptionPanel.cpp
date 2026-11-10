@@ -369,10 +369,8 @@ void SubscriptionPanel::onRefreshSubscription(wxCommandEvent&) {
             static_cast<MainFrame*>(topLevel)->syncToolbarState();
         }
     }
-    if (controller_ && controller_->isRunning()) {
-        wxMessageBox(L"操作进行中，请等待完成后再试", L"操作进行中", wxOK | wxICON_WARNING);
-        return;
-    }
+    // G9 ungated (spec 2026-11-06 §2.5): loadSubscriptions is a READ-ONLY
+    // reload — a running/queued task never blocks it (old gate refused it).
     loadSubscriptions();
     // Notify MainFrame so it reloads the full proxy list (all proxies)
     {
@@ -392,8 +390,15 @@ void SubscriptionPanel::onEditSubscription(wxCommandEvent&) {
             static_cast<MainFrame*>(topLevel)->syncToolbarState();
         }
     }
-    if (controller_ && controller_->isRunning()) {
-        wxMessageBox(L"操作进行中，请等待完成后再试", L"操作进行中", wxOK | wxICON_WARNING);
+    // G10 (spec 2026-11-06 §2.2-C): NOT ungated — the edit dialog's OK path
+    // runs updateSubitem / updateSubscrip (synchronous DB write: DELETE-then-
+    // INSERT by SubID, see SubitemUpdaterV2.cpp:1224-1252). Concurrent with a
+    // queue worker it can revive deleted rows / race their writes, so the
+    // gate is TIGHTENED to isBusy(): queued tasks count too (a queued update
+    // runs shortly after the edit would commit).
+    if (controller_ && controller_->isBusy()) {
+        wxMessageBox(L"任务队列有任务（执行中或排队），为避免数据竞争，保存订阅修改前请先清理队列",
+                     L"任务进行中", wxOK | wxICON_WARNING);
         return;
     }
     std::string subId = getSelectedSubId();
@@ -414,8 +419,12 @@ void SubscriptionPanel::onDeleteSubscription(wxCommandEvent&) {
             static_cast<MainFrame*>(topLevel)->syncToolbarState();
         }
     }
-    if (controller_ && controller_->isRunning()) {
-        wxMessageBox(L"操作进行中，请等待完成后再试", L"操作进行中", wxOK | wxICON_WARNING);
+    // G11 (spec 2026-11-06 §2.3): synchronous DB write OUTSIDE the queue;
+    // tightened to isBusy() — a QUEUED test/update would race the delete the
+    // moment it starts (its worker re-inserts rows the delete just removed).
+    if (controller_ && controller_->isBusy()) {
+        wxMessageBox(L"任务队列有任务（执行中或排队），为避免数据竞争，删除前请先清理队列",
+                     L"任务进行中", wxOK | wxICON_WARNING);
         return;
     }
     std::string subId = getSelectedSubId();
@@ -473,8 +482,10 @@ void SubscriptionPanel::onDeleteProxies(wxCommandEvent&) {
             static_cast<MainFrame*>(topLevel)->syncToolbarState();
         }
     }
-    if (controller_ && controller_->isRunning()) {
-        wxMessageBox(L"操作进行中，请等待完成后再试", L"操作进行中", wxOK | wxICON_WARNING);
+    // G12 (spec 2026-11-06 §2.3): same synchronous-write race as G11 → isBusy().
+    if (controller_ && controller_->isBusy()) {
+        wxMessageBox(L"任务队列有任务（执行中或排队），为避免数据竞争，删除前请先清理队列",
+                     L"任务进行中", wxOK | wxICON_WARNING);
         return;
     }
     std::string subId = getSelectedSubId();
