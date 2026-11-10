@@ -379,6 +379,12 @@ bool removeFinishedTask(const std::string& taskId); // → removeFromHistory
 > `InvokePattern` 命中 `TaskLedgerClearMenuItemName`」——原生菜单项不暴露为常规 UIA 子元素，
 > `clickMenu` 的 menubar 路径不适用；`SendMessageW(WM_CONTEXTMENU)` 仍在 worker 线程阻塞至菜单循环退出，
 > ESC（`keybd_event`）收尾替代 `PostMessage(WM_CANCELMODE)`。核心留存/清理断言不降级。
+>
+> **V8 加固（全量 ctest 暴露后，2026-11-10）**：①`InvokePattern` 返回成功不等于命令执行——以「菜单循环
+> 是否真的退出」为生效判据，并按 `WM_CANCELMODE → ESC → 终止被测进程` 三级兜底，poster 线程永不悬挂
+> （原实现会把 ctest 拖到超时）；②ctest 注册补 `UI_SANDBOX_PREP` fixture 使 `ctest -R UI_TASKLEDGER`
+> 自洽，`TIMEOUT` 240→180；③锁屏/非交互桌面下自动降级为「COMPLETED 行留存」断言（INFO 明示），
+> 该降级已在 spec 允许范围内。
 
 **全量**：`ctest --test-dir build` 仅 `XrayManagerStartupTest` 已知噪声；门禁
 `scripts/build-and-test.bat` 14/14（新增 `UI_TASKLEDGER` 后由 13 升至 14）。
