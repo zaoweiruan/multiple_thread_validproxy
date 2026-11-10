@@ -1,140 +1,113 @@
-# AGENTS.md — 长期记忆与 AI 上下文注入点
+# AGENTS.md — 项目长期约束与 AI 工作入口
 
-## 1\. 项目概述与技术栈边界
+## 1. 用途与信息边界
 
-| 关键要素 | 规范与版本 | 备注 / 约束限制 |
-| :--- | :--- | :--- |
-| **编程语言** | C++ 20/17 (**标准: C++17**) | **核心约束：全栈代码中禁止使用 `auto` 进行类型推导** |
-| **构建系统** | CMake + Ninja | Debug 模式编译：`cmake -B build -G "Ninja" -DCMAKE_BUILD_TYPE=Debug` |
-| **UI 框架** | wxWidgets 3.2+ (wxMSW) | 仅在 GUI 模式下生效，入口文件为 `src/ui/UIApp.cpp`。本地源码路径：`E:\eclipse_workspace\wxWidgets` |
-| **目标平台** | Windows (MinGW/GCC) | 必须保证 GCC 编译器的兼容性。**默认终端：PowerShell**，所有模型、MCP tools、skills 必须使用 PowerShell 命令语法 |
-| **核心业务** | 代理验证与网络转发 | 涉及 Xray-core、gRPC API、cURL HTTP 请求及 SQLite 存储 |
-| **文档总图** | **`docs/INDEX.md`** ⭐ | **全量静态文档、历史分析及变更记录的唯一分类总索引入口** |
-| **系统版本** | 1.5.1 | 入口点：`src/main_gui.cpp`（包含 `main()`，创建并启动 `UIApp` wxWidgets 实例） |
+本文件是项目级 AI 上下文入口，只保存必须长期生效的规则：
 
-* * *
+- 稳定的技术栈、目录边界和数据安全约束。
+- 用户明确的长期开发偏好。
+- 文档入口、工具使用原则和研发门禁。
+- 关键模块导航。
+- 关键词→技能路由表与 CLI 速查表（用户明确要求保留，2026-11-09 登记）。
 
-## 2\. 目录结构与设计规范
+本文件不保存当前任务进度、临时待办、详细工具参数、易变数据库统计、发布版本或具体故障过程。
 
-```text
-./src/            源文件 — Xray 核心控制与业务逻辑
-./include/        头文件
-./src/ui/         UI 层 — wxWidgets (AppController, MainFrame, 6 面板)
-./tests/          单元测试 — Google Test（所有可编译测试源码必须在此）
-./test/           测试数据集 — 仅存放测试数据库、配置文件、模拟脚本，禁止包含源码
-./bin/            生产运行目录 (配置文件 config.json + 数据库 worker/guindb.db)
-./docs/           项目文档主目录
-  ├── INDEX.md   ⭐ 核心主索引：全量长短期文档分类索引入口点（AI 检索必读）
-  ├── DEV-PROCESS.md 开发规范
-  ├── plans/     全局实施计划与状态跟踪器 (tracker.md)
-  ├── design/    UI 设计、无效过滤等基础设计规范
-  └── specs/     各个核心重构模块的技术方案与规格说明书
-./skills/         Agent 技能集
-./scripts/        Python 辅助脚本
-./temp/           调试临时文件 (脚本、输出、临时配置)
+- 静态文档分类索引：`docs/INDEX.md`
+- 工程进度与状态：`docs/plans/project-plans-tracker.md`
+- 专题设计、排障、评审和工具说明：放在 `docs/` 已有的合适子目录中。
 
-```
+只按任务需要读取专题文档，不默认加载全部项目资料。
 
-### 2.1 测试目录与文档约束
+## 2. 项目硬约束
 
-- **`tests/` 目录**：存放所有测试相关文件（测试源码 `.cpp`/`.h`、测试可执行文件、测试辅助工具）。
-- **`test/` 目录**：仅存放测试所需数据（如 `guindb.db`、配置文件、模拟脚本），**不得包含任何可编译的测试源码或可执行文件**。
-- **状态隔离红线**：`AGENTS.md` 本身不记录任何动态跟踪状态，不得将任何状态跟踪写入。全量静态文件的分类总索引必须收拢至 `docs/INDEX.md`，而工程进度状态必须写入 `docs/plans/project-plans-tracker.md`。
-- **文档目录约束**：只能在 `docs/` 目录下子目录中放置文档，不得在 `docs/` 中新建目录。
-- **规范参考**：项目设计、开发、文档等规范参考 `docs/INDEX.md` 文档。
+### 2.1 技术栈
 
-* * *
+- C++ 标准：**C++17**。升级标准必须经过独立决策，不得从"c++20/17"等混合表述自行推断。
+- 全部项目 C++ 代码禁止使用 `auto` 进行类型推导。
+- 目标平台：Windows，必须兼容 MinGW/GCC。
+- 构建系统：CMake + Ninja。
+- GUI：wxWidgets 3.2+（wxMSW）。
+- 默认终端：PowerShell；命令须兼容当前实际 PowerShell 版本。
+- 核心业务：代理验证、订阅管理与网络转发。
+- 主要依赖：Xray-core、gRPC、cURL、SQLite。
 
-## 3\. 核心模块与文件映射
+### 2.2 目录边界
 
-### 3.1 业务核心逻辑
+- `src/`：业务实现。
+- `include/`：公共头文件。
+- `src/ui/`：wxWidgets UI 与控制器。
+- `tests/`：测试源码、测试辅助工具及约定的测试产物。
+- `test/`：测试数据、配置和模拟脚本；不得放置可编译测试源码或测试可执行文件。
+- `bin/`：项目约定的运行配置及构建产物。
+- `bin/worker/`：运行时工作目录，不是构建输出目录。
+- `docs/`：项目文档；新专题文档放入已有合适子目录，不擅自创建新子目录。
+- `skills/`：Agent 技能。
+- `scripts/`：维护与辅助脚本。
+- `temp/`：临时调试产物。
 
-- **`XrayManager`** (`include/XrayManager.h`, `src/XrayManager.cpp`)：Xray 实例单例管理。
-- **`XrayInstance`** (`include/XrayInstance.h`, `src/XrayInstance.cpp`)：单个 Xray 进程生命周期维护。
-- **`XrayApi`** (`include/XrayApi.h`, `src/XrayApi.cpp`)：与 Xray 进行 gRPC API 通信（注意：已修复 `CreateProcessA` 引起的 CMD 窗口闪烁问题）。
-- **`ProxyFinder`** (`include/ProxyFinder.h`, `src/ProxyFinder.cpp`)：代理查找策略（F/FMIN）。
-- **`ProxyBatchTester`** (`include/ProxyBatchTester.h`, `src/ProxyBatchTester.cpp`)：多线程并发测试调度引擎。
-- **`ProxyTester`** (`include/ProxyTester.h`, `src/ProxyTester.cpp`)：单个代理测试核心（CURL + Xray 联动）。
-- **`ConfigGenerator`** (`include/ConfigGenerator.h`, `src/ConfigGenerator.cpp`)：Xray JSON 配置文件动态生成。
-- **`ConfigReader`** (`include/ConfigReader.h`, `src/ConfigReader.cpp`)：全局 `config.json` 解析。
-- **`SubitemUpdaterV2`** (`include/SubitemUpdaterV2.h`, `src/SubitemUpdaterV2.cpp`)：订阅更新、解析与高效率去重。
-- **`DatabaseHelper`** (`include/DatabaseHelper.h`)：基于 SQLite DAO 的纯数据访问层。
-- **`Logger`** (`include/Logger.h`, `src/Logger.cpp`)：全局日志（级别：`TRACE` < `DEBUG` < `INFO` < `REPORT` < `WARN` < `ERR`；DIAG 日志已从 INFO 调优至 TRACE）。
-- **`ShareLink`** (`include/ShareLink.h`, `src/ShareLink.cpp`)：分享链接导出与解析。
-- **`PortManager`** (`include/PortManager.h`, `src/PortManager.cpp`)：并发测试中的本地端口动态分配与回收。
-- **`UrlFetcher`** (`include/UrlFetcher.h`, `src/UrlFetcher.cpp`)：底层的 cURL HTTP/HTTPS 请求器。
-- **`CurlEasyHandle`** (`include/CurlEasyHandle.h`)：cURL RAII 模式的 header-only 安全封装。
+`AGENTS.md` 不记录动态进度；静态文档索引和工程进度分别维护在上述指定入口。
 
-### 3.2 数据模型 (Data Models)
+### 2.3 构建与数据安全
 
-- **`Profileitem`** (`include/Profileitem.h`)：底层基础代理配置项模型。
-- **`Subitem`** (`include/Subitem.h`)：订阅源节点模型。
-- **`ProfileExItem`** (`include/ProfileExItem.h`)：携带测试状态、延迟等动态数据的扩展代理模型。
+- 普通构建不得自动向 `bin/worker/` 复制产物。
+- 禁止使用 `bin/worker/validproxy.exe` 进行修复验证或问题复现；它可能是陈旧副本。
+- 验证必须使用本次构建产生的最新可执行文件。项目现有规范指定优先使用 `bin/` 下产物；若实际 CMake 输出与此不一致，先核对构建配置和产物时间/路径，再确定目标，禁止猜测。
+- 测试默认使用测试配置和测试数据库，不得把生产数据库作为默认测试目标。
+- 任何可能修改数据库或生产数据的操作，执行前必须确认配置路径、数据库路径、操作范围及是否可恢复。
+- 测试数据库名称在现有资料中存在 `test/guindb.db`、`test/guiNDB.db`、`test/guiNDB_empty.db` 等不同写法。**已核验（2026-11-09）**：`test/guiNDB.db`（153 MB）为全量测试库、`test/guiNDB_empty.db`（0.1 MB）为精简库、`test/guindb.db` 不存在；`bin/test_config.json` 指向 `test/guiNDB.db`。未核验实际文件和配置引用前，不得擅自合并、改名或认定它们是同一数据库。
 
-### 3.3 UI 表现层 (wxWidgets)
+## 3. 任务开始前的上下文读取
 
-- **`AppController`** (`src/ui/AppController.h`, `src/ui/AppController.cpp`)：控制器层，负责业务调度、解耦 UI 与核心逻辑。
-- **`MainFrame`** (`src/ui/MainFrame.h`, `src/ui/MainFrame.cpp`)：主窗口布局、状态栏与工具栏交互。
-- **`SubscriptionPanel`** (`src/ui/SubscriptionPanel.h`, `src/ui/SubscriptionPanel.cpp`)：订阅源管理面板。
-- **`ProxyListPanel`** (`src/ui/ProxyListPanel.h`, `src/ui/ProxyListPanel.cpp`)：代理列表面板。
-- **`LogPanel`** (`src/ui/LogPanel.h`, `src/ui/LogPanel.cpp`)：日志展示面板。
-- **`Events`** (`src/ui/Events.h`, `src/ui/Events.cpp`)：自定义事件系统，处理多线程测试回调与 UI 刷新的异步通信。
+根据任务范围执行：
 
-* * *
+1. 先遵守本文件中的硬约束。
+2. 根据主题查阅 `docs/INDEX.md`。
+3. 涉及在途任务时读取 `docs/plans/project-plans-tracker.md`。
+4. 查阅当前模块相关 Spec、设计文档、开发规范和历史排障记录。
+5. 架构调整、跨模块改动、核心模块实现、构建/调试问题或需要历史决策时，若项目记忆工具可用，检索相关记忆。
 
-## 4\. 自动化运维与 CLI 常用命令
+只读取与任务相关的内容。
 
-### 4.1 构建与测试命令 (PowerShell 语法)
+### 信息冲突处理
 
-> **构建规范**: CMake 构建输出仅写入 `bin/` 和 `tests/` 目录。**不得**在构建过程中自动写入 `bin/worker/` 目录。
-> `bin/worker/` 是运行时工作目录（存放 `guindb.db`、`validproxy.exe` 副本等），由用户手动或有明确意图的脚本维护。
-> 构建时自动复制到此目录会因文件锁定（运行中的 `validproxy.exe`）导致 `POST_BUILD` 阶段失败。
-> **调试/修复验证红线**：验证一律使用 `bin/` 下的最新构建产物；`bin/worker/validproxy.exe` 是陈旧副本（非构建输出），**禁止**将其作为调试、修复验证或问题复现的对象。
+- 区分用户当前明确要求、项目长期规则、当前代码/配置事实和历史记忆。
+- 用户当前明确决策不得被旧记忆覆盖；历史记忆也不得覆盖当前代码和验证证据。
+- 代码与配置用于核验当前实现，不代表可以擅自违反数据安全或用户明确约束。
+- 对构建产物路径、数据库目标、目录规则等存在冲突的事项，先核验；影响安全或行为且无法核实时先澄清。
+- 不得静默选择某一条互相矛盾的旧规则并将其描述为已确认事实。
 
-```powershell
-# 1. 配置并生成 Debug 模式构建流
-cmake -B build -G "Ninja" -DCMAKE_BUILD_TYPE=Debug
+## 4. 研发工作流程
 
-# 2. 并行编译 (指定 8 线程)
-cmake --build build --parallel 8
+### 4.1 功能开发与重构
 
-# 3. 运行主程序
-# 优先使用 CLI 进行功能测试，通过修改配置文件中默认sql定制目标进行测试，分析产生的日志进行维护、修复、功能验证等
-.\build\validproxy.exe            # GUI 入口（默认启动图形界面）
-.\build\validproxy-cli.exe        # CLI 入口（无参启动时，进行默认批量测试）
+1. 明确目标、范围、输入输出、前置条件、边界条件和验收标准。
+2. 修改业务代码前，先创建或更新 Spec/设计文档；简单且不改变行为的文档性修改可按实际范围处理。
+3. 实现之前或同时，在 `tests/` 中补充 Google Test 回归测试；按项目现有约定使用 `TEST_F`。
+4. 遵循相邻代码模式，控制改动范围。
+5. 执行构建、相关测试及任务要求的全量/专项验收。
+6. 将新建或变更的专题文档登记到 `docs/INDEX.md`，并更新 `docs/plans/project-plans-tracker.md`。
 
-# 4. 执行全量集成测试
-ctest -V
+### 4.2 故障修复
 
-# 5. 运行指定前缀的单项测试
-ctest -R DedupTest -V
+1. 先复现并收集证据，提出可证伪的根因假设。
+2. 定位根因，明确受影响模块、文件和行为。
+3. 修复并补充回归测试。
+4. 执行与风险相匹配的验证。
+5. 将可复用的根因、证据和修复结论记录到 `docs/bugfix/`（使用已有目录；若目录不存在，先核对文档目录规范，不擅自新建）。
+6. 更新 `docs/INDEX.md` 和项目跟踪器。
 
-# 6. UI 自动化测试一键验收（UI 相关变更交付前必须全绿，规范见 docs/DEV-PROCESS.md）
-.\scripts\build-and-test.bat
+### 4.3 文档规范
 
-```
+- 新建专题文档放入 `docs/` 下已有的合适子目录；不擅自在 `docs/` 下新建目录。
+- 既有入口文件保留原位，不因目录规则自动搬迁。
+- Spec、设计、评审、修复等专题文档命名遵循：`[YYYY-MM-DD]-[DocType]-[Module]-[Version].md`。
+- Spec 至少包含：目标、输入、输出、前置条件、边界条件和验收标准。
+- 新建或变更的专题文档登记到 `docs/INDEX.md`。
+- 工程进度只写入 `docs/plans/project-plans-tracker.md`，不得写入本文件。
 
-### 4.2 调试命令 (PowerShell 语法)
+### 4.4 CLI 工具参数速查表（用户明确要求保留，2026-11-09 登记）
 
-```powershell
-# 1. Sanitizer 构建（拦截内存泄漏/越界/未定义行为）
-cmake -B build -G "Ninja" -DCMAKE_BUILD_TYPE=Debug -DENABLE_SANITIZERS=ON
-cmake --build build --parallel 8 && ctest -V
-
-# 2. 覆盖率构建
-cmake -B build -G "Ninja" -DCMAKE_BUILD_TYPE=Debug -DENABLE_COVERAGE=ON
-cmake --build build --parallel 8 && .\scripts\run_coverage.ps1
-
-# 3. 静态分析（cppcheck）
-.\scripts\run_static_analysis.ps1
-
-# 4. Logger 级别控制（在 bin/config.json 中设置）
-# log.file_level: "TRACE" | "DEBUG" | "INFO" | "REPORT" | "WARN" | "ERR"
-```
-
-### 4.3 CLI 工具参数速查表
-
-> CLI 入口程序：`validproxy-cli.exe`。
+> CLI 入口程序：`validproxy-cli.exe`。完整 CLI 手册以 `docs/INDEX.md` 定向检索为准。
 
 ```text
 （无参）                    : 无参启动时，进行默认批量测试（对数据库中全部代理执行连通性测试）
@@ -151,136 +124,153 @@ cmake --build build --parallel 8 && .\scripts\run_coverage.ps1
 -S, -sync [src[:dst]]       : 数据库双向/单向高效同步
 -IS, -import-sub-config <f> : 从本地文件或网络 URL 批量导入订阅节点
 -h, --help                  : 打印 CLI 帮助菜单
-
 ```
 
-* * *
+## 5. 工具与技能使用原则
 
-## 5\. 数据源与环境配置文件路由
+### 5.1 能力探测与降级
 
-| 数据库环境 | 相对路径 | 核心物理说明 |
-| --- | --- | --- |
-| **生产运行时数据库** | `bin/worker/guindb.db` | 实际业务存储，由 `bin/config.json` 的 `database.path` 指定 |
-| **全局生产配置文件** | `bin/config.json` | 包含默认超时、并发数、高优先级字段配置 |
-| **默认测试数据库 (全量)** | `test/guindb.db` | 内含 53,837 profiles, 44 SubIDs，用于除导入、迁移数据功能外全部测试 |
-| **测试数据库 (精简)** | `test/guiNDB_empty.db` | 内含 711 profiles, 8 SubIDs，专门用于导入、迁移数据功能回归单测 |
-| **默认测试专用配置文件** | `bin/test_config.json` | 预先配置指向 `test/guiNDB.db`，防止污染生产环境 |
+- 仅使用当前会话实际提供且可调用的工具、MCP 和技能。
+- 根据任务语义选择技能；不得仅因引用文本或偶然出现关键词而机械触发。
+- 调用前确认工具/技能可用，并遵循其实际参数契约。
+- 工具不可用时，明确说明限制；可用等价方式满足同等安全和验证要求时再降级。
+- 若缺少必要能力会导致数据安全、正确性或验收无法保证，应暂停对应操作并说明原因。
+- 不得声称已调用、检索、写入、构建或测试未实际执行的事项。
 
-* * *
+### 5.2 CLion MCP 优先
 
-## 6\. AI 行为规范与核心研发路由表
+若 CLion MCP 在当前环境可用，开发、定位、测试和调试活动优先使用它：
 
-为了让 AI 助手提供最符合项目预期的代码及文书，编写代码或制定设计方案时请**必须**遵循以下路由：
+- 符号与文本定位：优先 `search_symbol`、`search_text`、`search_regex`。
+- 静态诊断：优先 `get_file_problems`。
+- 行为异常、竞态和死锁：优先使用 `xdebug_*` 断点调试闭环，而非仅依赖临时日志。
+- 数据核验：可用时使用数据库连接与 SQL 查询能力。
+- 所有 CLion 工具调用显式传入 `projectPath`。
+- 含中日韩文本的修改禁用已知可能吞字符的 `clion apply_patch`，改用能可靠保留字符的精确编辑方式。
 
-### 6.1 文档先行与命名规范
+CLion 检查不能替代项目正式门禁：
 
-任何涉及功能修改、重构的代码，**必须在修改代码前**先在 `docs/` 下创建或更新设计文档/技术方案（Spec/SDD），其文件命名必须精确遵循：  
-`[YYYY-MM-DD]-[DocType]-[Module]-[Version].md`  
-*(例如: `2026-06-10-Spec-ProxyTester-v1.0.md`)*  
-**修改完成后，必须将文档路径同步登记至 `docs/INDEX.md` 总索引中**。
+- Ninja 构建。
+- 全量 CTest 回归。
+- UI 自动化验收。
+- 项目既有 ASAN、覆盖率和 cppcheck 流程。
 
-### 6.2 智能路由跳转表（关键词定向约束）
+CLion 工具名称、参数、已知限制和调试步骤以项目现有 CLion 参考文档为准。引用路径在使用前应通过 `docs/INDEX.md` 核实；不要因本文件保留历史路径就假定该文件当前仍存在。
 
-> **强制前置检查（每次用户输入后、生成回复前，必须执行）：**
-> 1. 扫描用户输入是否命中下表关键词。
-> 2. 对每个命中项，立刻调用 `skill` 工具加载对应技能。
-> 3. 在生成的回复中遵循该技能的行为约束。
+### 5.3 关键词→技能/方法论路由表（用户明确要求保留，2026-11-09 登记）
 
-当监测到提示词中包含以下核心意图时，AI 应当自动引入项目对应的标准开发思想：
+> **意图路由辅助**：命中关键词时按 §5.1 先做能力探测与降级，按任务语义判断是否启用技能，不机械触发；技能不存在时明确说明限制并采用等价方式，不虚构调用。
 
 | 用户输入意图包含的关键词 | 匹配的技能/方法论 (Skills) | AI 应当输出的特定行为约束 |
 | :--- | :--- | :--- |
-| `构思` / `brainstorm` / `头脑风暴` / `创意方案` / `需求分析` / `需求探索` | **brainstorming** | 1. 加载技能 `skill(name="brainstorming")`。<br>2. 引导用户明确需求边界、核心目标和约束条件。<br>3. 输出多个可选方案供用户决策。<br>4. 决策完成后再进入实现阶段（路由至 using-superpowers）。 |
-| `调整功能` / `开发功能` / `新增功能` / `重构` / `架构调整` / `修改行为` | **using-superpowers** |1. 严格检查是否**禁止了 `auto`**。<br>2. 优先通过读取 docs/INDEX.md 检索开发规范、历史技术规格设计文档（Spec）。<br>3. 在修改后将其更新至 `docs/plans/project-plans-tracker.md`。 |
-| `bug` / `修复` / `fix` / `异常` / `崩溃` / `错误` / `测试失败` / `故障` | **systematic-debugging** | 1. 启动根因分析（RCA）。 <br> 2. 明确指出受影响的模块文件（如 `XrayApi.cpp` ）。 <br> 3. 提供异常捕获加固方案，并输出修复日志到 `docs/bugfix/`。 |
-| `ASAN` / `sanitizer` / `调试` / `debug` / `dump` / `cppcheck` / `覆盖率` / `coverage` / `稳定性` / `MiniDump` | — | 1. **优先按 §6.3.5 使用 CLion MCP（`xdebug_*` 断点调试 / `get_file_problems`）做定位**。<br>2. 优先引用 **AGENTS.md §4.2** 获取调试命令速查。<br>3. 深度工作流（ASAN 输出解读 / dump 分析 / Logger 调优）参考 **`docs/project-knowledge.md#8`**。 |
+| `构思` / `brainstorm` / `头脑风暴` / `创意方案` / `需求分析` / `需求探索` | **brainstorming** | 1. 引导用户明确需求边界、核心目标和约束条件。<br>2. 输出多个可选方案供用户决策。<br>3. 决策完成后再进入实现阶段（路由至 using-superpowers）。 |
+| `调整功能` / `开发功能` / `新增功能` / `重构` / `架构调整` / `修改行为` | **using-superpowers** | 1. 严格检查是否**禁止了 `auto`**。<br>2. 优先通过读取 docs/INDEX.md 检索开发规范、历史技术规格设计文档（Spec）。<br>3. 在修改后将其更新至 `docs/plans/project-plans-tracker.md`。 |
+| `bug` / `修复` / `fix` / `异常` / `崩溃` / `错误` / `测试失败` / `故障` | **systematic-debugging** | 1. 启动根因分析（RCA）。<br>2. 明确指出受影响的模块文件（如 `XrayApi.cpp`）。<br>3. 提供异常捕获加固方案，并输出修复日志到 `docs/bugfix/`。 |
+| `ASAN` / `sanitizer` / `调试` / `debug` / `dump` / `cppcheck` / `覆盖率` / `coverage` / `稳定性` / `MiniDump` | — | 1. **优先按 §5.2 使用 CLion MCP（`xdebug_*` 断点调试 / `get_file_problems`）做定位**。<br>2. 优先引用 **§6.1** 获取构建/测试命令速查。<br>3. 深度工作流（ASAN 输出解读 / dump 分析 / Logger 调优）参考 `docs/project-knowledge.md`。 |
 | `计划` / `方案` / `制定计划` / `设计文档` / `design doc` / `spec` / `技术方案` | **writing-plans** | 1. 严格遵循产品/工程视角区分（PRD 与 Spec 隔离）。<br>2. 产出包含输入、输出、边界条件、前置条件的标准 Markdown。 |
 | `实现` / `编码` / `写代码` / `implement` | **test-driven-development** | 1. 强制要求在编写实现代码的同时，或之前，在 `tests/` 目录下提供 Google Test（`TEST_F`）测试用例。 |
-| `测试` / `test` / `单元测试` / `ctest` | **cmake-build** | 1. 执行 `cmake --build build` 编译。 <br> 2. 执行 `ctest -V` 运行全量测试。 |
+| `测试` / `test` / `单元测试` / `ctest` | **cmake-build** | 1. 执行 `cmake --build build` 编译。<br>2. 执行 `ctest --test-dir build -V` 运行全量测试。 |
 | `构建` / `编译` / `build` / `cmake` / `CI` | **cmake-build** | 1. 按 Debug 模式配置构建：`cmake -B build -G "Ninja" -DCMAKE_BUILD_TYPE=Debug`。<br>2. 并行编译：`cmake --build build --parallel 8`。 |
-| `commit` / `提交` / `git` / `分支` / `branch` / `合并` / `merge` / `推送` / `push` / `PR` / `pull request` / `rebase` / `stash` | **git-master** | 1. 加载技能 `skill(name="git-master")`。<br>2. 严格遵循该技能的分阶段工作流，确保原子提交和版本管理规范。 |
-| `代码审查` / `code review` / `代码评审` / `review` / `PR review` | **requesting-code-review** | 1. 加载技能 `skill(name="requesting-code-review")`。<br>2. 在功能完成并验证测试通过后，提交代码审查。 |
-| `完成` / `complete` / `验证通过` / `verify` / `验证完成` | **verification-before-completion** | 1. 加载技能 `skill(name="verification-before-completion")`。<br>2. 在声称任务完成前必须运行所需验证命令，确认输出后再声明完成。 |
-| `画图` / `生成图片` / `画一只XX` / `image generation` / `generate image` / `draw a` | **agnes-image-gen** | 1. 加载技能 `skill(name="agnes-image-gen")`。<br>2. 提取用户描述，增强为详细英文 prompt（风格、光影、构图）。<br>3. 调用 Agnes Image 2.1 Flash API，下载生成的图像。<br>4. 报告保存路径给用户。 |
-| `生成视频` / `制作动画` / `画一段视频` / `video generation` / `create video` / `make a clip` | **agnes-video-gen** | 1. 加载技能 `skill(name="agnes-video-gen")`。<br>2. 提取用户描述，增强为详细英文 cinematic prompt（镜头运动、光影、风格、画质）。<br>3. 调用 Agnes Video V2.0 API 创建异步任务。<br>4. 轮询任务状态直到 completed，下载 MP4 视频。<br>5. 报告保存路径给用户。 |
+| `commit` / `提交` / `git` / `分支` / `branch` / `合并` / `merge` / `推送` / `push` / `PR` / `pull request` / `rebase` / `stash` | **git-master** | 1. 严格遵循该技能的分阶段工作流，确保原子提交和版本管理规范。 |
+| `代码审查` / `code review` / `代码评审` / `review` / `PR review` | **requesting-code-review** | 1. 在功能完成并验证测试通过后，提交代码审查。 |
+| `完成` / `complete` / `验证通过` / `verify` / `验证完成` | **verification-before-completion** | 1. 在声称任务完成前必须运行所需验证命令，确认输出后再声明完成。 |
+| `画图` / `生成图片` / `画一只XX` / `image generation` / `generate image` / `draw a` | **agnes-image-gen** | 1. 提取用户描述，增强为详细英文 prompt（风格、光影、构图）。<br>2. 调用 Agnes Image 2.1 Flash API，下载生成的图像。<br>3. 报告保存路径给用户。 |
+| `生成视频` / `制作动画` / `画一段视频` / `video generation` / `create video` / `make a clip` | **agnes-video-gen** | 1. 提取用户描述，增强为详细英文 cinematic prompt。<br>2. 调用 Agnes Video V2.0 API 创建异步任务。<br>3. 轮询任务状态直到 completed，下载 MP4 视频。<br>4. 报告保存路径给用户。 |
 | `部署` / `发布` / `release` / `deploy` | **release-skills** | 1. 自动检测版本文件与 changelog，按语义化版本规范发布。 |
-| `图片分析` / `截图分析` / `界面分析` / `GUI分析` / `OCR` / `UI界面分析` / `图片理解` | **wxgui-analyzer-sub**（Agent，非 skill） | 1. 使用 `wxgui-analyzer-sub` 子代理进行 GUI 截图/界面分析。<br>2.  多模态模型选用建议（主模型 `stepfun/step-3.7-flash:free`，第一备降 `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free`）。 |
-| `记忆` / `Caura` / `recall` / `caura_recall` / `caura_write` / `经验` / `教训` / `历史决策` | **caura-memory** | 1. 加载技能 `skill(name="caura-memory")`。<br>2. 遵循 §6.3 跨会话记忆规范。<br>3. 在关键节点主动检索/写入 Caura，避免跨会话知识丢失。<br>4. 严禁写入密钥、Token、密码或私密原文。 |
+| `图片分析` / `截图分析` / `界面分析` / `GUI分析` / `OCR` / `UI界面分析` / `图片理解` | **ui-analyst**（角色；原 `wxgui-analyzer-sub`，2026-11-09 更名对齐角色表） | 1. 使用 `ui-analyst` 角色进行 GUI 截图/界面分析。<br>2. 多模态模型选用建议（主模型 `stepfun/step-3.7-flash:free`，第一备降 `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free`）。 |
+| `记忆` / `Caura` / `recall` / `caura_recall` / `caura_write` / `经验` / `教训` / `历史决策` | **caura-memory** | 1. 遵循 §7 跨会话记忆规范。<br>2. 在关键节点主动检索/写入 Caura，避免跨会话知识丢失。<br>3. 严禁写入密钥、Token、密码或私密原文。 |
 
-* * *
+## 6. 构建与验证门禁
 
-### 6.3 跨会话记忆（Caura）使用规范
+### 6.1 基础构建与测试
 
-Caura 是项目级跨会话记忆系统，用于在多个 AI 会话之间沉淀、复用关键经验，避免每次会话从零开始。AI 在涉及本项目的工作时**必须**遵循以下规则：
+PowerShell 基础命令（逐条执行并检查退出码；前一步失败时，不得把后续结果当作有效验收；若项目当前构建目录或测试注册方式不同，先核对 CMakePresets.json、CMake 配置和实际构建目录，再调整命令）：
 
-#### 6.3.1 读取时机（caura_recall）
-
-在开始以下任务之前，**必须**先调用 `caura_recall` 检索与当前主题相关的既有记忆，以避免重复探索或违背既有决策：
-
-- 启动复杂任务（架构调整、重构、新功能、跨模块改动）前
-- 涉及 Xray 核心控制、gRPC API、CURL 网络请求、SQLite 存储的实现前
-- 遇到构建（CMake/Ninja）、部署、调试（ASAN/MiniDump/覆盖率）问题时
-- 处理与既有模块（如 `ProxyBatchTester`、`SubitemUpdaterV2`、`XrayApi`）相关的改动前
-- 需要确认历史架构决策、构建命令、排障结论或用户偏好时
-
-#### 6.3.2 写入时机（caura_write）
-
-在以下场景完成后，**应当**调用 `caura_write` 将确认的结论持久化到 Caura：
-
-- 已确认的**架构决策**（如单例模式、事件驱动通信、DAO 分层边界）
-- 已验证的**构建/调试命令**（如 sanitizer 构建参数、测试目标命令）
-- 已定位的**排障结论**（如根因分析、崩溃栈追踪、修复要点）
-- 用户表达的**偏好与约束**（如代码风格、提交规范、命名约定）
-- 已总结的**失败教训**（如踩过的坑、反模式、规避方案）
-
-#### 6.3.3 安全红线（禁止写入内容）
-
-`caura_write` **严禁**保存以下内容：
-
-- 密钥、API Token、密码、证书、私钥
-- 用户的私密原文（个人身份信息、未脱敏的敏感数据）
-- 任何形式的凭据、会话令牌、认证字符串
-
-如确需在记忆中提及上述内容，必须使用占位符（如 `<REDACTED>`）替代。
-
-#### 6.3.4 工作流闭环
-
-一个完整的记忆工作流应遵循「**检索 → 执行 → 沉淀**」闭环：
-
-```
-[任务开始]
-   │
-   ▼
-caura_recall（检索既有经验，避免重复犯错）
-   │
-   ▼
-[执行任务 / 验证 / 排障]
-   │
-   ▼
-[形成结论：决策 / 命令 / 教训 / 偏好]
-   │
-   ▼
-caura_write（沉淀可复用知识，下次会话可直接复用）
+```powershell
+cmake -B build -G "Ninja" -DCMAKE_BUILD_TYPE=Debug
+cmake --build build --parallel 8
+ctest --test-dir build -V
 ```
 
-#### 6.3.5 硬约束：CLion MCP 可用时优先（用户长期偏好，2026-11-06 登记）
+### 6.2 专项验收
 
-> 本条为用户明确指示的持久性偏好（Caura 记忆 id `a244dab4-6afd-4e89-8670-821de1b53590`；
-> keystone 通道因 trust_level 不足暂不可用，故以本节作为每会话必注入的硬锚点）。
+- UI 相关变更交付前，执行 `scripts/build-and-test.bat`，并确认相关 UI 自动化验收通过。
+- ASAN、覆盖率和静态分析使用项目既有配置与脚本，不自行假设工具链支持情况。
+- 局部测试不能称为全量回归。
+- 静态分析或 CLion 检查不能称为构建、CTest 或 UI 验收。
+- 运行程序进行验证时，使用本次构建的最新产物（`bin/` 下）；严禁使用 `bin/worker/validproxy.exe`。
 
-**若 CLion MCP server 可用（`tools.clion.*` 可调用），修改、测试、调试等开发活动必须优先使用它**：
+### 6.3 完成声明与证据
 
-- **定位 / 静态诊断**优先 `search_symbol` / `search_text` / `search_regex` / `get_file_problems`；
-- **后端行为疑问**（"值为什么不对"、竞态、死锁）用 `xdebug_*` 断点调试闭环替代临时日志：
-  `xdebug_set_breakpoints` → `xdebug_start_debugger_session` → `xdebug_get_stack` / `get_threads` /
-  `get_frame_values` → `xdebug_evaluate_expression` → `xdebug_control_session`（参数与坑见参考文档 §7）；
-- **数据核验**用 `create_database_connection` + `execute_sql_query` 直查数据库，而非肉眼翻日志；
-- **边界（不得用 CLion 替代既有门禁）**：UI 交付仍须 `scripts/build-and-test.bat` 全绿（UITests 为跨进程
-  UIA，调试器不可达被测进程）；全量回归仍 `ctest --test-dir build`；构建以项目 Ninja 目录为准；
-  ASAN / 覆盖率 / cppcheck 走既有脚本；
-- **已知坑**：含中日韩文本的改动**禁用** `clion apply_patch`（实测吞字符），一律用 edit 工具精确替换；
-  所有 clion 工具须显式传 `projectPath`。
+声称构建成功、测试通过或修复完成时，提供：
 
-操作细节、能力全表与排障见 `docs/2026-11-06-Reference-CLion-MCP-Usage-v1.1.md`（§7–§10）。
+- 实际执行的命令和目标构建目录。
+- 退出码。
+- 测试通过、失败、跳过数量或可靠的输出摘要。
+- 未执行的验证项目及原因。
+- 尚存风险、环境限制和未解决问题。
 
-* * *
+未执行验证时明确标记"未验证"；不得将计划执行、工具静态检查或推测结果表述为"验证通过"。
+
+## 7. 跨会话项目记忆
+
+项目记忆工具可用时，遵循"检索 → 执行 → 沉淀"：
+
+### 7.1 检索时机
+
+以下任务开始前检索相关历史决策和经验：
+
+- 架构调整、重构、新功能和跨模块修改。
+- Xray、gRPC、cURL、SQLite 核心实现。
+- 构建、部署、调试、ASAN、MiniDump 或覆盖率问题。
+- 涉及 `ProxyBatchTester`、`SubitemUpdaterV2`、`XrayApi` 等既有模块。
+- 需要确认历史决策、已验证命令或长期偏好。
+
+### 7.2 写入条件
+
+仅沉淀已确认且可复用的信息：
+
+- 长期偏好与稳定约束。
+- 已接受的架构决策及理由。
+- 在明确环境中验证过的命令。
+- 有证据支持的根因、修复结论和失败教训。
+
+不得沉淀临时待办、未验证猜测、重复规则或私密凭据。严禁保存密钥、Token、密码、证书、私钥、会话令牌和未脱敏私密原文。
+
+正式规范以项目文档为准；记忆保存摘要、适用范围、来源、验证状态、日期及失效/替代条件。工具不可用时不得声称已检索或已保存。
+
+## 8. 角色分工
+
+按任务需要切换角色，不为简单任务机械执行完整角色链：
+
+- **planner**：需求澄清、PRD/Spec 边界、方案和验收设计；不直接修改业务代码。
+- **implementer**：按已确认 Spec 实现，遵守 C++17、禁用 `auto`、TDD 和相邻代码模式。
+- **debugger**：复现、取证、根因定位、断点调试和修复验证。
+- **tester**：构建、CTest、UI 验收、专项测试和验证证据。
+- **reviewer**：独立评审；发现按严重程度分级，并锚定真实文件、行号和证据；不直接修改被评审代码。
+- **ui-analyst**：GUI 截图、窗口、布局和交互分析；遵循项目 UI 自动化规范。
+
+关键协作要求：
+
+- 功能/重构通常按 planner → implementer → tester → reviewer → 交付推进；debugger 可在需要时介入。
+- reviewer 重点检查多线程竞态、锁使用、悬垂指针、重复释放、UAF 和 DLL 加载冲突。
+- UI 自动化定位以项目 `tests/ui/UIIds.h` 等正式定位源为准，禁止在测试中随意硬编码控件标识；跨进程 UIA 的验收不能依赖调试器可附加这一假设。
+- UI 截图和临时分析产物按项目约定存入 `temp/`。
+- 角色交接使用项目跟踪器记录必要状态，不重复劳动。
+- 任何角色均不得绕过数据安全、构建和验收门禁。
+
+## 9. 核心模块导航
+
+- Xray 生命周期：`XrayManager` / `XrayInstance`。
+- gRPC：`XrayApi`。
+- 测试调度：`ProxyBatchTester`。
+- 单代理测试：`ProxyTester`。
+- 代理查找：`ProxyFinder`。
+- 配置：`ConfigReader` / `ConfigGenerator`。
+- 订阅更新：`SubitemUpdaterV2`。
+- 数据访问：`DatabaseHelper`。
+- 网络请求：`UrlFetcher` / `CurlEasyHandle`。
+- UI 调度与事件：`AppController` / `Events`。
+- 主窗口：`MainFrame`。
+
+完整文件路径、CLI 参数、环境配置、模块规格、UI 自动化细节、CLion 工具说明和历史分析，从 `docs/INDEX.md` 定向检索。
