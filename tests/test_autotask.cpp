@@ -1,4 +1,7 @@
 #include <gtest/gtest.h>
+
+#include <filesystem>
+
 #include "AutoTaskManager.h"
 #include "test_utils.h"
 
@@ -84,6 +87,29 @@ TEST(AutoTaskStatePersistenceTest, roundTripState) {
 
     EXPECT_EQ(loaded.steps[1].name, "test");
     EXPECT_EQ(loaded.steps[1].status, StepStatus::PENDING);
+}
+
+// spec 2026-11-06 §2.7 (owner R-2): saveStateFile must swap atomically —
+// no .tmp survivor, and overwriting an existing checkpoint keeps it readable.
+TEST(AutoTaskStatePersistenceTest, atomicSaveLeavesNoTmpAndOverwrites) {
+    TempDir tmp;
+    const std::string stateFile = tmp.path() + "/autotask_state.json";
+    const std::string tmpPath = stateFile + ".tmp";
+
+    AutoTaskState state;
+    state.task_id = "atomic_first";
+    ASSERT_TRUE(AutoTaskManager::saveStateFile(stateFile, state));
+    EXPECT_FALSE(std::filesystem::exists(tmpPath)) << ".tmp must be renamed away";
+
+    AutoTaskState second;
+    second.task_id = "atomic_second";
+    second.current_step_index = 3;
+    ASSERT_TRUE(AutoTaskManager::saveStateFile(stateFile, second));  // overwrite path
+    EXPECT_FALSE(std::filesystem::exists(tmpPath));
+
+    AutoTaskState loaded = AutoTaskManager::loadStateFile(stateFile);
+    EXPECT_EQ(loaded.task_id, "atomic_second");
+    EXPECT_EQ(loaded.current_step_index, 3);
 }
 
 TEST(AutoTaskStatePersistenceTest, loadMissingFile) {

@@ -7,6 +7,7 @@
 #include "Logger.h"
 #include "config/ConfigFileStore.h"
 #include "Utils.h"
+#include "AtomicFileWrite.h"
 
 namespace config {
 
@@ -26,19 +27,13 @@ std::string ConfigFileStore::read(const std::string& path) {
 }
 
 void ConfigFileStore::write(const std::string& path, const std::string& content) {
-    std::filesystem::path parentDir = std::filesystem::path(path).parent_path();
-    if (!parentDir.empty()) {
-        std::filesystem::create_directories(parentDir);
-    }
-
-    std::ofstream file(path);
-    if (!file.is_open()) {
+    // Atomic swap (.tmp + rename): config.json is rewritten while the app
+    // runs, and a truncating half-file after a crash would brick every
+    // later startup read (spec 2026-11-06 §2.7).
+    if (!utils::writeFileAtomically(path, content)) {
         Logger::write("Failed to write config to: " + utils::toWindowsPath(path), LogLevel::ERR);
         throw std::runtime_error("Failed to write configuration file.\n\nPath:\n" + utils::toWindowsPath(path) + "\n\nCheck that the path is writable.");
     }
-
-    file << content;
-    file.close();
 
     Logger::write("Config saved to: " + utils::toWindowsPath(path), LogLevel::INFO);
 }

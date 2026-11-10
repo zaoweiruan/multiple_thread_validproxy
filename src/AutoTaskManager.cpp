@@ -8,6 +8,7 @@
 #include "Profileitem.h"
 #include "ProfileExItem.h"
 #include "Utils.h"
+#include "AtomicFileWrite.h"
 
 #include <fstream>
 #include <sstream>
@@ -523,19 +524,14 @@ bool AutoTaskManager::saveStateFile(const std::string& filePath, const AutoTaskS
         }
         root["steps"] = stepsArr;
 
-        // Ensure parent directory exists
-        std::filesystem::path parent = std::filesystem::path(filePath).parent_path();
-        if (!parent.empty() && !std::filesystem::exists(parent)) {
-            std::filesystem::create_directories(parent);
-        }
-
-        std::ofstream file(filePath);
-        if (!file.is_open()) {
+        // Atomic swap (.tmp + rename): the file is rewritten after EVERY step
+        // while the task runs, so a plain truncating ofstream would expose a
+        // half-written checkpoint to the next loadStateFile (resume lost) on
+        // any crash in that window (spec 2026-11-06 §2.7).
+        if (!utils::writeFileAtomically(filePath, boost::json::serialize(root))) {
             Logger::write("AutoTask: failed to write state file: " + filePath, LogLevel::ERR);
             return false;
         }
-        file << boost::json::serialize(root);
-        file.close();
         return true;
     } catch (const std::exception& e) {
         Logger::write("AutoTask: exception writing state file: " + std::string(e.what()), LogLevel::ERR);
