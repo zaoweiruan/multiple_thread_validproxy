@@ -29,26 +29,30 @@ CMakeLists.txt 工具链从 w64devkit GCC 16.2.0 切到 CLion 内置 MinGW GCC 1
 
 ## 4. 修复
 
-**UI 删除 53 个 GTest 配置 → 重启 CLion**（不是 reload）：Run | Edit Configurations 里选中全部 Google Test 类型条目 → − → Apply → OK → 重启 IDE。
+**UI 删除 53 个 GTest 配置 → 重启 CLion**（完全退出再打开，不是 reload）：Run | Edit Configurations 里选中全部 Google Test 类型条目 → − → Apply → OK → 重启 IDE。
 
-删除后实测：`CMakeGoogleTestRunConfigurationType` 计数 **53 → 0**，红叉消失；9 个 CMake 应用程序配置不受影响；`.idea/runConfigurations/` 仍为空（无文件型配置参与）。注意 **CLion 2026.3 重启后不会为已删配置自动重建永久 GTest 配置**（实测计数=0），「删除」即终态，后续测试走 §5 的两条已验证路径。
+CLion 2026.3 在项目模型加载完成后**自动重建全部 53 个 GTest 配置**，且绑定完整：`PROJECT_NAME`/`TARGET_NAME`/`CONFIG_NAME="Debug"` + `RUN_TARGET_PROJECT_NAME`/`RUN_TARGET_NAME` + `TEST_MODE="SUITE_TEST"` + `<method v="2">` 内 `BuildBeforeRunTask enabled="true"`。红叉消失，MCP 可直接执行（见 §5）。
+
+> **结论纠正（留档）**：初版曾据「删除后立即 grep 计数=0」误判「2026.3 不会自动重建」。实际重建发生在模型加载完成后，删除后的计数=0 只是瞬态；重启完成后的终态是计数=53 且绑定齐全。观测运行配置类问题时必须等模型加载完成再下结论。
 
 ## 5. 验证证据
 
 | 项 | 结果 |
 |---|---|
+| MCP 执行重建后的 GTest 配置（闭环原卡点） | `execute_run_configuration(test_autotask)` → `exitCode=0`，`[==========] 11 tests from 5 test suites ran`、`[ PASSED ] 11 tests.`（修复前同一调用挂起被中断、临时输出 0 字节） |
+| 配置实体终态 | workspace.xml：GTest 53 条全部带 `RUN_TARGET_*` + `TEST_MODE="SUITE_TEST"` + `BuildBeforeRunTask`；CMake Application 9 条不变；`.idea/runConfigurations/` 空 |
 | MCP 跑单套件（CTest 配置 + 显示名过滤） | `execute_run_configuration("所有 CTest", "-R ^AutoTaskTest$ --output-on-failure")` → `exitCode=0`，`1/1 Test #19: AutoTaskTest Passed 0.55 sec`（**显示名 ≠ 目标名**：`AutoTaskTest` vs `test_autotask`） |
 | MCP 跑整目标（CMake Application 类型） | `execute_run_configuration(test_curl_easy_handle)` → `exitCode=0`，输出全绿 `All tests passed!` |
 | MCP 调试链路 | `xdebug_start_debugger_session(test_curl_easy_handle)` → sessionId=254 running，停止后 exitCode=0 |
 | 全量 ctest（cmake-build-debug/，CLion 工具链树） | 69 例 **68 过 1 失败**，exit=8；唯一失败 #45 `XrayManagerStartupTest.RealXrayStartsBounded`（冷启动 6472 ms > 3 s 已知噪声）；`UI_TASKLEDGER` 11 assertions 8.05 s 绿（`temp/ctest_clion_tc.log`） |
-| 配置实体终态 | workspace.xml：GTest 0 / CMake Application 9 / Catch 1 / CTest 1；`.idea/runConfigurations/` 空 |
 
 ## 6. 残余风险与建议
 
-1. **批量重建的确定性子案（本次未用，需要时随时可做）**：向 `.idea/runConfigurations/` 写 53 个 `test_*.xml`，类型 CMake Application，模板逐字取自已验证的 `test_curl_easy_handle` 配置块（含 `TARGET_NAME` + `RUN_TARGET_NAME` + `BuildBeforeRunTask`）。该目录被 gitignore，不污染仓库；IDE 启动时读取。
-2. **MCP 跑测试的推荐姿势**：单套件 → CTest 配置 + `-R ^<显示名>$`；整目标 exe → CMake Application 配置；单用例过滤 → 编辑器 gutter 图标/临时配置。**不要**用 CTest 配置跑 `--gtest_filter`（`temp/googletest_err.md` 明确不兼容），也不要再用 Google Test 模板配置跑 MCP。
+1. **reload ≠ restart**：reload 只从模型重新序列化、会剥掉坏条目的绑定属性（§2-B）；**删除 + 重启**才触发自动重建。删除后立即观测计数=0 不代表终态，须等模型加载完成。
+2. **MCP 跑测试姿势**：GTest 类型配置在绑定完整时 MCP 可直接执行（`test_autotask` 实证）；红叉（绑定缺失）状态下不要跑 GTest 类型（MCP 挂起）。单套件亦可用 CTest 配置 + `-R ^<显示名>$`；整目标 exe 用 CMake Application 配置；单用例过滤走编辑器 gutter/临时配置。**不要用 CTest 配置跑 `--gtest_filter`**（`temp/googletest_err.md` 明确不兼容）。
 3. **workspace.xml 是 IDE 托管文件**：IDE 运行时手改会被覆盖（本次 reload 剥属性即为实例）；删配置必须走 UI。
-4. **通用教训**：工具链/项目模型变更后，先检查运行配置绑定是否完好（红叉 = 绑定失效信号）再跑 MCP 执行；MCP 挂起 + 0 字节临时输出文件 = 进程未启动，先看 idea.log 的 `CMakeExecutableTool` 记录。
+4. **批量 XML 方案不再需要**（留档备查）：向 `.idea/runConfigurations/` 写 CMake Application 型 `test_*.xml` 可确定性批量建配置，但自动重建已覆盖该需求。
+5. **通用教训**：工具链/项目模型变更后，先检查运行配置绑定是否完好（红叉 = 绑定失效信号）再跑 MCP 执行；MCP 挂起 + 0 字节临时输出文件 = 进程未启动，先看 idea.log 的 `CMakeExecutableTool` 记录。
 
 ## 7. 关联
 
