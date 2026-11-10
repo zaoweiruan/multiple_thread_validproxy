@@ -1,6 +1,13 @@
 cmake_minimum_required(VERSION 3.20)
 project(multiple_thread_validproxy VERSION 1.6.0 LANGUAGES CXX)
 
+# ===== Rule 5: only use environment DLLs, never copy dependency DLLs =====
+# The vcpkg toolchain (CMAKE_TOOLCHAIN_FILE) injects a z-applocal POST_BUILD
+# that copies runtime DLLs from <triplet>/debug/bin next to each executable
+# (docs/DEV-PROCESS.md Rule 5 forbids this). Force-disable it so DLLs are only
+# resolved via PATH, never copied into ${CMAKE_SOURCE_DIR}/bin.
+set(VCPKG_APPLOCAL_DEPS OFF CACHE BOOL "Disable vcpkg applocal DLL copy (Rule 5)" FORCE)
+
 # iphlpapi provides GetExtendedTcpTable (used by utils::isPortAvailable to
 # detect occupied ports via the system TCP table). Link it for every target
 # defined below that compiles src/Utils.cpp.
@@ -255,6 +262,25 @@ set_target_properties(validproxy-cli PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/bin
 )
 
+# MinGW runtime DLLs (libstdc++/libgcc/libwinpthread) - see the same block
+# under the validproxy GUI target: the loader must find the compiler's own
+# runtime next to the exe because system PATH has Tesseract-OCR's OLDER
+# MinGW runtime before the MinGW/vcpkg dirs (would deadlock at startup).
+# Conditional for the same reason: a static-runtime toolchain (w64devkit)
+# has no such DLLs and the copy would fail POST_BUILD.
+get_filename_component(MINGW_RUNTIME_DIR "${CMAKE_CXX_COMPILER}" DIRECTORY)
+if(EXISTS "${MINGW_RUNTIME_DIR}/libstdc++-6.dll")
+    add_custom_command(TARGET validproxy-cli POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${MINGW_RUNTIME_DIR}/libstdc++-6.dll"
+            "${MINGW_RUNTIME_DIR}/libgcc_s_seh-1.dll"
+            "${MINGW_RUNTIME_DIR}/libwinpthread-1.dll"
+            ${CMAKE_SOURCE_DIR}/bin/
+        COMMENT "Copy MinGW runtime DLLs to bin/ (PATH has Tesseract-OCR before MinGW)"
+        VERBATIM
+    )
+endif()
+
 if(USE_GRPC_API)
     target_compile_definitions(validproxy-cli PRIVATE USE_GRPC_API=1)
 endif()
@@ -366,79 +392,9 @@ add_dependencies(validproxy update_version_h)
     # Add include directory for UI source headers
     target_include_directories(validproxy PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/ui)
 
-    # Copy wx DLLs to output directory
-    function(copy_wx_dlls TARGET_NAME)
-        get_target_property(_bin_dir ${TARGET_NAME} RUNTIME_OUTPUT_DIRECTORY)
-        if(NOT _bin_dir)
-            set(_bin_dir "${CMAKE_SOURCE_DIR}/bin")
-        endif()
-
-        # Determine if we're building Debug or Release to choose correct DLL directory
-        if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-            set(wx_bin_dir "${VCPKG_ROOT}/installed/x64-mingw-dynamic/debug/bin")
-            # Debug DLLs have 'd' suffix (wxWidgets 3.3.3 naming)
-            set(WX_DLLS
-                wxbase333ud_gcc_x64_custom.dll
-                wxbase333ud_net_gcc_x64_custom.dll
-                wxmsw333ud_adv_gcc_x64_custom.dll
-                wxmsw333ud_aui_gcc_x64_custom.dll
-                wxmsw333ud_core_gcc_x64_custom.dll
-                wxmsw333ud_html_gcc_x64_custom.dll
-                wxmsw333ud_propgrid_gcc_x64_custom.dll
-                libpcre2-16d.dll
-                libzd.dll
-                libjpeg-62.dll
-                libpng16d.dll
-                libtiffd-6.dll
-                liblzma.dll
-                libwebp.dll
-                libwebpdecoder.dll
-                libwebpdemux.dll
-                libsharpyuv.dll
-            )
-        else()
-            set(wx_bin_dir "${VCPKG_ROOT}/installed/x64-mingw-dynamic/bin")
-            # Release DLLs (wxWidgets 3.3.3 naming)
-            set(WX_DLLS
-                wxbase333u_gcc_x64_custom.dll
-                wxbase333u_net_gcc_x64_custom.dll
-                wxmsw333u_adv_gcc_x64_custom.dll
-                wxmsw333u_aui_gcc_x64_custom.dll
-                wxmsw333u_core_gcc_x64_custom.dll
-                wxmsw333u_html_gcc_x64_custom.dll
-                wxmsw333u_propgrid_gcc_x64_custom.dll
-                libpcre2-16.dll
-                libz.dll
-                libjpeg-62.dll
-                libpng16.dll
-                libtiff-6.dll
-                liblzma.dll
-                libwebp.dll
-                libwebpdecoder.dll
-                libwebpdemux.dll
-                libsharpyuv.dll
-            )
-        endif()
-
-        foreach(dll ${WX_DLLS})
-            set(src_dll "${wx_bin_dir}/${dll}")
-            if(EXISTS "${src_dll}")
-                add_custom_command(TARGET ${TARGET_NAME} POST_BUILD
-                    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                        "${src_dll}"
-                        "${_bin_dir}/${dll}"
-                    COMMENT "Copying ${dll} to ${_bin_dir}"
-                )
-            endif()
-        endforeach()
-    endfunction()
-
     # Scheme A (PATH-based): wx DLLs are resolved via the PATH env var
     # pointing to ${VCPKG_ROOT}/installed/x64-mingw-dynamic/{,debug/}bin.
-    # The copy_wx_dlls() function is kept above for rollback; re-enable by
-    # uncommenting the three call sites (validproxy, test_log_statistics_event,
-    # test_unified_monitor_rows). No DLLs are copied to ${CMAKE_SOURCE_DIR}/bin.
-    # copy_wx_dlls(validproxy)
+    # No DLLs are copied to ${CMAKE_SOURCE_DIR}/bin (docs/DEV-PROCESS.md 规则 5).
 
     # WIN32_EXECUTABLE creates GUI subsystem executable (no console window)
     set_target_properties(validproxy PROPERTIES
@@ -448,6 +404,36 @@ add_dependencies(validproxy update_version_h)
         RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/bin
     )
     target_compile_definitions(validproxy PRIVATE HAS_WXWIDGETS=1)
+
+    # ===== MinGW runtime DLLs (libstdc++/libgcc/libwinpthread) =====
+    # validproxy.exe is built with CLion's bundled MinGW (GCC 15.2.0) and
+    # imports libstdc++-6.dll / libgcc_s_seh-1.dll / libwinpthread-1.dll.
+    # The system PATH has "C:\Program Files (x86)\Tesseract-OCR" BEFORE the
+    # MinGW/vcpkg dirs, so the loader picks Tesseract's OLDER MinGW runtime
+    # at startup and validproxy dies in ntdll!NtRaiseHardError (entry point
+    # not found -> hard-error dialog -> deadlock). Copy the compiler's own
+    # runtime DLLs next to the exe: the loader searches the exe directory
+    # FIRST, so the correct versions always load regardless of PATH order.
+    # NOTE: this is an EXCEPTION to docs/DEV-PROCESS.md 规则 5 (which forbids
+    # copying DEPENDENCY DLLs like wxWidgets) - the MinGW runtime is the
+    # compiler's own C++ runtime, not a copyable dependency.
+    # CONDITIONAL (2026-11-09): w64devkit links the C++ runtime STATICALLY
+    # (objdump of validproxy.exe shows no libstdc++-6 import), so its bin/ dir
+    # has no such DLLs to copy and an unconditional copy_if_different fails
+    # POST_BUILD on every GUI link. CLion's bundled MinGW DOES ship them
+    # (dynamic runtime), so keep the copy exactly for that toolchain.
+    get_filename_component(MINGW_RUNTIME_DIR "${CMAKE_CXX_COMPILER}" DIRECTORY)
+    if(EXISTS "${MINGW_RUNTIME_DIR}/libstdc++-6.dll")
+        add_custom_command(TARGET validproxy POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${MINGW_RUNTIME_DIR}/libstdc++-6.dll"
+                "${MINGW_RUNTIME_DIR}/libgcc_s_seh-1.dll"
+                "${MINGW_RUNTIME_DIR}/libwinpthread-1.dll"
+                ${CMAKE_SOURCE_DIR}/bin/
+            COMMENT "Copy MinGW runtime DLLs to bin/ (PATH has Tesseract-OCR before MinGW)"
+            VERBATIM
+        )
+    endif()
 
     # ===== ProxyListModel evaluation-maps unit test (needs wx runtime) =====
     add_executable(test_proxy_list_model tests/test_proxy_list_model.cpp
@@ -1220,7 +1206,6 @@ if(wxWidgets_FOUND)
         RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
     )
     # Scheme A (PATH-based): rely on PATH env var; do not copy wx DLLs to tests/.
-    # copy_wx_dlls(test_log_statistics_event)
     add_test(NAME LogStatisticsEventTest COMMAND test_log_statistics_event)
 endif()
 
@@ -1245,7 +1230,6 @@ if(wxWidgets_FOUND)
         RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
     )
     # Scheme A (PATH-based): rely on PATH env var; do not copy wx DLLs to tests/.
-    # copy_wx_dlls(test_unified_monitor_rows)
     add_test(NAME UnifiedMonitorRowsTest COMMAND test_unified_monitor_rows)
 endif()
 
@@ -1686,6 +1670,7 @@ if(wxWidgets_FOUND AND BUILD_UI_TESTS)
             tests/ui/TestLayoutSensing.cpp
             tests/ui/TestMenuAction.cpp
             tests/ui/TestPopupGuard.cpp
+            tests/ui/TestTaskLedgerContextMenu.cpp
         )
         add_executable(UITests ${UI_FRAMEWORK_SOURCES} ${UI_TEST_SOURCES})
         target_include_directories(UITests PRIVATE
@@ -1715,6 +1700,7 @@ if(wxWidgets_FOUND AND BUILD_UI_TESTS)
 add_test(NAME UI_BOTTOMVIEW COMMAND UITests "[bottomview]")
         add_test(NAME UI_MENUACTION COMMAND UITests "[menu]")
         add_test(NAME UI_POPUPGUARD COMMAND UITests "[popup]")
+        add_test(NAME UI_TASKLEDGER COMMAND UITests "[taskledger]")
         set_tests_properties(UI_MAINWINDOW UI_SEARCH UI_CLEAR UI_CHAINPREVIEW PROPERTIES
             TIMEOUT 120
             WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
@@ -1724,6 +1710,10 @@ add_test(NAME UI_BOTTOMVIEW COMMAND UITests "[bottomview]")
         # The new sensing suites boot the GUI once per TEST_CASE, so they need a
         # longer budget than the single-fixture suites above.
         set_tests_properties(UI_WINDOWSENSING UI_LAYOUTSENSING UI_MENUACTION UI_POPUPGUARD PROPERTIES
+            TIMEOUT 240
+            WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+        # V8 boots the GUI once and waits for a real DEDUP run + menu loop.
+        set_tests_properties(UI_TASKLEDGER PROPERTIES
             TIMEOUT 240
             WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
     endif()

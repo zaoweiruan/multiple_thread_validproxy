@@ -156,5 +156,18 @@ inline const wchar_t* const ToolBarDetailLabel    = L"详情";    // ID_TOOL_DET
 // toolbar-level geometry assertion has a pinned locator.
 inline const wchar_t* const ToolBarHostName       = L"control";
 
+// ---------------------------------------------------------------------------
+// Task-monitor finished ledger + context menu (spec 2026-11-06 §3.3/§6-V8).
+// Status texts are ASCII by design (TaskMonitorPanel renders statusToString,
+// FAILED carries a trailing "!"). The context-menu command id is pinned from
+// src/ui/UiControlIds.h: ID_TASK_CTX_CLEAR_ALL = wxID_HIGHEST + 1500 with
+// wxID_HIGHEST == 6000 (wxWidgets include/wx/defs.h:1921) → 7500.
+// ---------------------------------------------------------------------------
+inline const wchar_t* const TaskLedgerClearMenuItemName = L"清理全部完成记录";
+inline const wchar_t* const TaskStatusCompleted = L"COMPLETED";
+inline const wchar_t* const TaskStatusFailed    = L"FAILED!";
+inline const wchar_t* const TaskStatusCancelled = L"CANCELLED";
+inline const UINT TaskCtxClearAllCmdId = 7500;
+
 } // namespace ids
 } // namespace uitest
