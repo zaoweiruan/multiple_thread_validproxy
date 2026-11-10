@@ -3,6 +3,7 @@
 #include "Logger.h"
 #include "task/TaskType.h"
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <mutex>
@@ -32,14 +33,69 @@ TaskQueue::TaskQueue() {
 }
 
 TaskQueue::~TaskQueue() {
+    // Dequeue-and-stop BEFORE anything else: the worker must never execute a
+    // queued task after the owner (AppController) has freed db_/XrayManager.
+    // notify=false — UI handlers may already be destroyed at destructor time.
+    stop(false);
+}
+
+void TaskQueue::stop(bool notify) {
+    // 1) Cooperative cancel of the RUNNING task (same semantics as before).
     cancelCurrent();
+
+    // 2) Drain the backlog FIRST (archived as CANCELLED), then publish
+    //    running_=false. Order matters: workerLoop only breaks on
+    //    (!running_ && queue_.empty()); setting running_ first would let the
+    //    worker pick up and EXECUTE the backlog after the caller has already
+    //    released shared resources (review critical, spec 2026-11-06 §2.6).
+    std::vector<std::pair<TaskHandle, TaskCallbacks>> dropped;
     {
         std::lock_guard<std::mutex> lock(mutex_);
+        while (!queue_.empty()) {
+            Entry e = queue_.top();
+            queue_.pop();
+            e.handle.status = TaskStatus::CANCELLED;
+            e.handle.completedAt = std::to_string(
+                std::chrono::steady_clock::now().time_since_epoch().count());
+            history_.push_back(e.handle);
+            if (history_.size() > historyLimit_) history_.erase(history_.begin());
+            dropped.emplace_back(std::move(e.handle), std::move(e.callbacks));
+        }
         running_.store(false);
         busy_.store(false);
     }
     cv_.notify_all();
+
+    // 3) Callbacks out of the lock (UI may re-enter snapshot(); non-recursive
+    //    mutex_ would deadlock). Suppressed in destructor paths.
+    if (notify) {
+        for (std::pair<TaskHandle, TaskCallbacks>& item : dropped) {
+            if (item.second.onComplete) {
+                try { item.second.onComplete(item.first); } catch (...) {}
+            }
+        }
+    }
+
+    // 4) The worker now unwinds the current task (cancel flag set in 1) and
+    //    exits on the empty-queue break, so this join is bounded by the
+    //    current task's own cancellation latency.
     if (worker_.joinable()) worker_.join();
+}
+
+std::size_t TaskQueue::clearHistory() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    const std::size_t n = history_.size();
+    history_.clear();
+    return n;
+}
+
+bool TaskQueue::removeFromHistory(const std::string& taskId) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    const std::size_t before = history_.size();
+    history_.erase(std::remove_if(history_.begin(), history_.end(),
+                                  [&taskId](const TaskHandle& h) { return h.taskId == taskId; }),
+                   history_.end());
+    return history_.size() != before;
 }
 
 TaskHandle TaskQueue::submit(TaskType type, TaskFunc func, int priority, TaskCallbacks callbacks,
@@ -113,6 +169,8 @@ void TaskQueue::cancel(const std::string& taskId) {
             queue_.pop();
             if (e.handle.taskId == taskId) {
                 e.handle.status = TaskStatus::CANCELLED;
+                e.handle.completedAt = std::to_string(
+                    std::chrono::steady_clock::now().time_since_epoch().count());
                 history_.push_back(e.handle);
                 if (history_.size() > historyLimit_) history_.erase(history_.begin());
                 cancelled.emplace_back(e.handle, e.callbacks);
@@ -137,6 +195,8 @@ void TaskQueue::cancelAllPending() {
             Entry e = queue_.top();
             queue_.pop();
             e.handle.status = TaskStatus::CANCELLED;
+            e.handle.completedAt = std::to_string(
+                std::chrono::steady_clock::now().time_since_epoch().count());
             history_.push_back(e.handle);
             if (history_.size() > historyLimit_) history_.erase(history_.begin());
             cancelled.emplace_back(e.handle, e.callbacks);
@@ -163,8 +223,7 @@ void TaskQueue::forceRelease() {
         if (!current_.taskId.empty()) {
             if (current_.status != TaskStatus::COMPLETED && current_.status != TaskStatus::FAILED) {
                 current_.status = TaskStatus::CANCELLED;
-                history_.push_back(current_);
-                if (history_.size() > historyLimit_) history_.erase(history_.begin());
+                archiveFinishedLocked(current_);
             }
             // Same visibility rule as the worker's normal finish path.
             recentParent_ = current_;
@@ -265,6 +324,8 @@ TaskQueueSnapshot TaskQueue::snapshot() const {
         snap.recentChildren = recentChildren_;
     }
     snap.queueDepth = queue_.size();
+    // Finished ledger for the monitoring panel, newest first (spec §3.1).
+    snap.history.assign(history_.rbegin(), history_.rend());
     // std::priority_queue's underlying container `c` is protected and NOT
     // accessible from a non-derived class member; copy the queue and drain it.
     // Drain order == pop order == the real execution order (priority desc, then
@@ -279,6 +340,17 @@ TaskQueueSnapshot TaskQueue::snapshot() const {
     snap.busy = busy_.load(std::memory_order_relaxed);
     snap.workerAlive = running_.load(std::memory_order_relaxed);
     return snap;
+}
+
+void TaskQueue::archiveFinishedLocked(const TaskHandle& handle) {
+    for (TaskHandle& existing : history_) {
+        if (existing.taskId == handle.taskId) {
+            existing = handle;   // forceRelease-archived row refreshed in place
+            return;
+        }
+    }
+    history_.push_back(handle);
+    if (history_.size() > historyLimit_) history_.erase(history_.begin());
 }
 
 void TaskQueue::workerLoop() {
@@ -366,8 +438,7 @@ void TaskQueue::workerLoop() {
             recentChildren_ = children_;
             current_ = TaskHandle{};
             children_.clear();   // container children die with their parent
-            history_.push_back(entry.handle);
-            if (history_.size() > historyLimit_) history_.erase(history_.begin());
+            archiveFinishedLocked(entry.handle);
         }
 
         if (entry.callbacks.onComplete) entry.callbacks.onComplete(entry.handle);

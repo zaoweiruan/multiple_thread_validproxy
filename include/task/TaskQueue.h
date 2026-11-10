@@ -47,6 +47,11 @@ struct TaskQueueSnapshot {
     // Valid only while NO task is running; replaced on every task end.
     TaskHandle recentParent;
     std::vector<TaskHandle> recentChildren;
+    // Terminal (COMPLETED/FAILED/CANCELLED) task records, newest first,
+    // capped at historyLimit_. Finished rows STAY in the monitoring list
+    // until the user clears them via clearHistory()/removeFromHistory()
+    // (spec 2026-11-06 §3: 完成任务不清除只标识状态 + 右键清理).
+    std::vector<TaskHandle> history;
     std::size_t queueDepth = 0;
     bool busy = false;                  // a task is executing (the UI's busy gate)
     bool workerAlive = false;           // worker thread alive (debug only; true once
@@ -84,6 +89,24 @@ public:
     std::size_t queueDepth() const;
     TaskHandle currentTask() const;
     std::vector<TaskHandle> history(std::size_t n) const;
+
+    // Drop every QUEUED task (archived as CANCELLED) BEFORE publishing
+    // running_=false, then join the worker. Clearing queue_ first is the whole
+    // point: workerLoop breaks only on (!running_ && queue_.empty()), so
+    // without the clear the worker would keep EXECUTING queued tasks after the
+    // owner already released db_/XrayManager (spec 2026-11-06 §2.6, review
+    // critical: shutdown with a backlog executed tasks on freed resources).
+    // onComplete of the dropped tasks fires only when notify is true (runtime
+    // cancel path); destructors pass false — UI handlers may already be gone
+    // (spec §7 row 2).
+    void stop(bool notify = true);
+
+    // UI-facing finished-list management (spec 2026-11-06 §3.1). history_ is
+    // the single ledger serving both history(n) diagnostics and snapshot().history;
+    // clearHistory empties it wholesale (returns cleared count), removeFromHistory
+    // drops one record by taskId (returns whether it existed).
+    std::size_t clearHistory();
+    bool removeFromHistory(const std::string& taskId);
 
     // Aggregate read-only view for the monitoring panel. Takes mutex_ once; must
     // NOT call the other locking getters (non-recursive mutex -> self-deadlock).
@@ -137,6 +160,13 @@ private:
 
     void workerLoop();
     std::string makeTaskId() const;
+    // Append a terminal handle to history_ WITHOUT duplicating: forceRelease()
+    // archives the current task as CANCELLED while the worker is still winding
+    // down, and the worker's normal finish path then archives the same taskId
+    // again — with the finished list now visible in the UI (spec 2026-11-06
+    // §3.2) a second row per task would show. Re-archives REPLACE in place.
+    // Caller must hold mutex_.
+    void archiveFinishedLocked(const TaskHandle& handle);
 
     mutable std::mutex mutex_;
     std::condition_variable cv_;

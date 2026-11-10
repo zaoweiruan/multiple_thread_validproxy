@@ -243,3 +243,141 @@ TEST(TaskQueueSnapshotTest, CancelAllPendingClearsQueueWithoutTouchingCurrent) {
     release.store(true);
     EXPECT_TRUE(waitUntil([&q] { return !q.isBusy(); }, 5000));
 }
+
+// ---------------------------------------------------------------------------
+// Finished ledger for the monitoring UI (spec 2026-11-06 §3.1 / §2.6, U1)
+// ---------------------------------------------------------------------------
+
+TEST(TaskQueueFinishedTest, HistoryServedInSnapshotNewestFirst) {
+    task::TaskQueue q;
+    const task::TaskHandle first = q.submit(task::TaskType::DEDUP, nopTask(), 1);
+    EXPECT_TRUE(waitUntil([&q] { return !q.isBusy() && q.queueDepth() == 0; }, 2000));
+    const task::TaskHandle second = q.submit(task::TaskType::EXPORT_SHARE_LINKS, nopTask(), 1);
+    EXPECT_TRUE(waitUntil([&q] { return !q.isBusy() && q.queueDepth() == 0; }, 2000));
+
+    const task::TaskQueueSnapshot snap = q.snapshot();
+    ASSERT_EQ(snap.history.size(), 2u);
+    // newest first
+    EXPECT_EQ(snap.history[0].taskId, second.taskId);
+    EXPECT_EQ(snap.history[0].status, task::TaskStatus::COMPLETED);
+    EXPECT_EQ(snap.history[1].taskId, first.taskId);
+    EXPECT_EQ(snap.history[1].status, task::TaskStatus::COMPLETED);
+}
+
+TEST(TaskQueueFinishedTest, ClearHistoryEmptiesSnapshotAndDiagnostics) {
+    task::TaskQueue q;
+    q.submit(task::TaskType::DEDUP, nopTask(), 1);
+    EXPECT_TRUE(waitUntil([&q] { return !q.isBusy() && q.queueDepth() == 0; }, 2000));
+    ASSERT_FALSE(q.snapshot().history.empty());
+
+    const std::size_t cleared = q.clearHistory();
+    EXPECT_EQ(cleared, 1u);
+    EXPECT_TRUE(q.snapshot().history.empty());
+    EXPECT_TRUE(q.history(10).empty());
+
+    // A later task still archives normally.
+    q.submit(task::TaskType::DEDUP, nopTask(), 1);
+    EXPECT_TRUE(waitUntil([&q] { return !q.isBusy() && q.queueDepth() == 0; }, 2000));
+    EXPECT_EQ(q.snapshot().history.size(), 1u);
+}
+
+TEST(TaskQueueFinishedTest, ForceReleaseThenWorkerFinishArchivesOnce) {
+    // cancelTest() calls forceRelease() while the worker is still unwinding;
+    // the worker's normal finish path then archives the SAME task again. The
+    // visible finished list must contain exactly one row per task
+    // (spec §3.2 — rows are user-facing now).
+    task::TaskQueue q;
+    std::atomic<bool> running{false};
+    std::atomic<bool> finish{false};
+    const task::TaskHandle slow = q.submit(task::TaskType::AUTO_TASK,
+        [&](task::TaskContext&) {
+            running.store(true);
+            while (!finish.load()) sleepMs(2);
+        }, 1);
+    EXPECT_TRUE(waitUntil([&running] { return running.load(); }, 2000));
+
+    q.cancelCurrent();       // sets the cancel flags
+    q.forceRelease();        // archives the current task as CANCELLED
+    finish.store(true);      // worker now returns and archives its own terminal
+    EXPECT_TRUE(waitUntil([&q] { return !q.isBusy(); }, 5000));
+
+    int rows = 0;
+    for (const task::TaskHandle& h : q.snapshot().history) {
+        if (h.taskId == slow.taskId) ++rows;
+    }
+    EXPECT_EQ(rows, 1) << "forceRelease + worker finish must not double-archive";
+}
+
+TEST(TaskQueueFinishedTest, RemoveFromHistoryRemovesOnlyTarget) {
+    task::TaskQueue q;
+    const task::TaskHandle a = q.submit(task::TaskType::DEDUP, nopTask(), 1);
+    EXPECT_TRUE(waitUntil([&q] { return !q.isBusy() && q.queueDepth() == 0; }, 2000));
+    const task::TaskHandle b = q.submit(task::TaskType::DEDUP, nopTask(), 1);
+    EXPECT_TRUE(waitUntil([&q] { return !q.isBusy() && q.queueDepth() == 0; }, 2000));
+
+    EXPECT_TRUE(q.removeFromHistory(a.taskId));
+    EXPECT_FALSE(q.removeFromHistory(a.taskId));  // second removal: not found
+    const task::TaskQueueSnapshot snap = q.snapshot();
+    ASSERT_EQ(snap.history.size(), 1u);
+    EXPECT_EQ(snap.history[0].taskId, b.taskId);
+}
+
+TEST(TaskQueueFinishedTest, CancelledQueuedTasksLandInSnapshotHistory) {
+    // cancel()/cancelAllPending() archive removed QUEUED tasks; they must be
+    // visible to the UI as CANCELLED rows (spec §3.1 终态补漏).
+    task::TaskQueue q;
+    std::atomic<bool> release{false};
+    occupyWorker(q, release);
+    const task::TaskHandle a = q.submit(task::TaskType::DEDUP, nopTask(), 1);
+    q.submit(task::TaskType::DEDUP, nopTask(), 1);
+    q.cancel(a.taskId);
+    q.cancelAllPending();
+
+    const task::TaskQueueSnapshot snap = q.snapshot();
+    EXPECT_EQ(snap.queueDepth, 0u);
+    int cancelledRecords = 0;
+    for (const task::TaskHandle& h : snap.history) {
+        if (h.status == task::TaskStatus::CANCELLED) ++cancelledRecords;
+        EXPECT_FALSE(h.completedAt.empty());  // stamped on the cancel paths too
+    }
+    EXPECT_GE(cancelledRecords, 2);
+
+    release.store(true);
+    EXPECT_TRUE(waitUntil([&q] { return !q.isBusy(); }, 5000));
+}
+
+TEST(TaskQueueFinishedTest, StopClearsQueueWithoutExecuting) {
+    // Review critical (spec §2.6): with a backlog, stop()/~TaskQueue must NOT
+    // execute the queued tasks — they are dequeued as CANCELLED before the
+    // worker is asked to exit.
+    task::TaskQueue q;
+    std::atomic<bool> release{false};
+    std::atomic<int> cancelledCallbacks{0};
+    std::atomic<int> bodiesRun{0};
+    occupyWorker(q, release);  // blocker holds the worker
+
+    task::TaskCallbacks counting;
+    counting.onComplete = [&cancelledCallbacks](const task::TaskHandle& h) {
+        if (h.status == task::TaskStatus::CANCELLED) ++cancelledCallbacks;
+    };
+    for (int i = 0; i < 3; ++i) {
+        q.submit(task::TaskType::DEDUP,
+                 [&bodiesRun](task::TaskContext&) { ++bodiesRun; }, 1, counting);
+    }
+    ASSERT_EQ(q.queueDepth(), 3u);
+
+    // Real tasks observe the cancel flag stop() raises (AppController wires it
+    // into the tester); release the blocker so the join is bounded.
+    release.store(true);
+    q.stop(true);  // bounded: cancels blocker, dequeues 3 as CANCELLED, joins
+
+    EXPECT_EQ(bodiesRun.load(), 0) << "queued task bodies must never run after stop()";
+    EXPECT_EQ(cancelledCallbacks.load(), 3);
+    EXPECT_EQ(q.queueDepth(), 0u);
+    EXPECT_FALSE(q.isRunning());
+    EXPECT_FALSE(q.isBusy());
+    // stop() archives the dropped backlog.
+    EXPECT_GE(q.history(10).size(), 3u);
+    // Worker already joined; a second stop is a harmless no-op.
+    q.stop(false);
+}
