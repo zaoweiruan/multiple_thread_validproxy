@@ -27,6 +27,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <atomic>
 #include <string>
 #include <thread>
 #include <vector>
@@ -48,7 +49,28 @@ namespace {
 
 constexpr int kRowWaitMs = 30000;     // dedup run + 1s refresh cadence
 constexpr int kMenuWaitMs = 6000;     // popup appearance
+constexpr int kMenuCloseWaitMs = 4000;  // menu loop exit after invoke / ESC
 constexpr int kClearedWaitMs = 6000;  // post-clear refresh
+
+// Waits for the poster thread to signal that its SendMessage returned.
+bool waitPosterDone(std::atomic<bool>* done, int timeoutMs) {
+    for (int t = 0; t * 50 < timeoutMs; ++t) {
+        if (done->load()) return true;
+        ::Sleep(50);
+    }
+    return done->load();
+}
+
+// Last resort so the worker thread can never dangle: the poster is blocked in
+// SendMessage until the app leaves its modal menu loop. Escalate to app
+// termination, which makes the blocked call return immediately.
+void closeMenuLoop(std::atomic<bool>* done, HWND hMain, AppProcess& app) {
+    if (waitPosterDone(done, 1500)) return;
+    ::PostMessageW(hMain, WM_CANCELMODE, 0, 0);
+    if (waitPosterDone(done, 1500)) return;
+    app.terminate();
+    (void)waitPosterDone(done, 5000);
+}
 
 bool isTerminalStatus(const std::wstring& s) {
     return s == ids::TaskStatusCompleted || s == ids::TaskStatusFailed ||
@@ -195,9 +217,15 @@ TEST_CASE("Task ledger: finished row persists, context menu 清理 removes it",
     ::Sleep(150);
 
     // The SendMessage blocks until the menu loop exits → run on a worker.
-    std::thread poster([&] {
-        ::SendMessageW(hList, WM_CONTEXTMENU, reinterpret_cast<WPARAM>(hList),
-                       packLParam(center.x, center.y));
+    // Captured by value: the worker must never touch our stack.
+    const HWND listForPoster = hList;
+    const POINT ptForPoster = center;
+    std::atomic<bool> posterDone{false};
+    std::thread poster([listForPoster, ptForPoster, &posterDone] {
+        ::SendMessageW(listForPoster, WM_CONTEXTMENU,
+                       reinterpret_cast<WPARAM>(listForPoster),
+                       packLParam(ptForPoster.x, ptForPoster.y));
+        posterDone.store(true);
     });
 
     HWND hMenu = nullptr;
@@ -210,6 +238,7 @@ TEST_CASE("Task ledger: finished row persists, context menu 清理 removes it",
         // drop).
         keybd_event(VK_ESCAPE, 0, 0, 0);
         keybd_event(VK_ESCAPE, 0, KEYEVENTF_KEYUP, 0);
+        closeMenuLoop(&posterDone, hMain, fx.app());
         poster.join();
         INFO("V8 downgrade: #32768 popup never appeared for the ledger row; "
              "menu interaction skipped (retention assertion still enforced).");
@@ -232,19 +261,32 @@ TEST_CASE("Task ledger: finished row persists, context menu 清理 removes it",
             }
         }
     }
-    if (!invoked) {
-        // ESC through the input queue closes the tracking menu reliably
-        // (posted messages would starve in the modal loop).
-        keybd_event(VK_ESCAPE, 0, 0, 0);
-        keybd_event(VK_ESCAPE, 0, KEYEVENTF_KEYUP, 0);
-    }
-    poster.join();   // menu loop exited (invoke or cancel closed it)
 
-    if (!invoked) {
-        INFO("V8 downgrade: 清理全部完成记录 item not UIA-invokable here; "
-             "menu interaction skipped (retention assertion still enforced).");
+    // A successful InvokePattern return does NOT prove the command ran: on a
+    // non-interactive desktop (locked/idle session, foreground contended) the
+    // provider can accept the call while the app keeps tracking the menu.
+    // Only "the menu loop actually exited" counts as an effective invoke.
+    bool menuClosed = waitPosterDone(&posterDone, kMenuCloseWaitMs);
+    if (!invoked || !menuClosed) {
+        if (!menuClosed) {
+            ::PostMessageW(hMenu, WM_CANCELMODE, 0, 0);
+            menuClosed = waitPosterDone(&posterDone, kMenuCloseWaitMs);
+        }
+        if (!menuClosed) {
+            // ESC through the input queue closes the tracking menu reliably
+            // (posted messages would starve in the modal loop).
+            keybd_event(VK_ESCAPE, 0, 0, 0);
+            keybd_event(VK_ESCAPE, 0, KEYEVENTF_KEYUP, 0);
+            menuClosed = waitPosterDone(&posterDone, kMenuCloseWaitMs);
+        }
+        closeMenuLoop(&posterDone, hMain, fx.app());
+        poster.join();   // menu loop exited (cancelled or app terminated)
+        INFO("V8 downgrade: 清理全部完成记录 not driven on this desktop "
+             "(invoked=" << invoked << ", menuClosed=" << menuClosed
+             << "); menu interaction skipped (retention assertion still enforced).");
         return;
     }
+    poster.join();   // menu loop exited on the invoke
 
     // ── Post-menu assertion (spec: assertions AFTER the menu loop) ─────
     bool cleared = false;

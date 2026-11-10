@@ -50,6 +50,9 @@ public:
     }
     DWORD pid() const { return app_.pid(); }
     const AppProcess& app() const { return app_; }
+    // Non-const accessor: tests that must unblock a stuck app (e.g. a blocked
+    // modal menu loop) need AppProcess::terminate().
+    AppProcess& app() { return app_; }
 
 private:
     static UiElement desktop() {
