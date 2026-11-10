@@ -113,6 +113,12 @@ public:
    config::AppConfig getConfig() const { return config_; }
    bool saveConfig(const config::AppConfig& cfg);
    bool isRunning() const { return isRunning_.load() || taskQueue_.isBusy(); }
+    // True while a queue task is running OR QUEUED. The synchronous-DB-write
+    // gates (编辑订阅确认/删除订阅/删除代理) use this instead of isRunning(): a
+    // queued task will run shortly and race the write just like a running one
+    // (spec 2026-11-06 §2.2-C). isRunning() stays "a task is executing" for
+    // the owner-mandated config/DB-switch prompts.
+    bool isBusy() const { return isRunning() || taskQueue_.queueDepth() > 0; }
     // True while the periodic SILENT probe (background task) is running.
     // The config dialog uses this to allow ordinary config saves during the
     // probe (it snapshots config_ under configMutex_) while still blocking
@@ -210,6 +216,12 @@ std::vector<ProxyBatchTester::PendingProxy> getPendingBatchProxies(std::size_t l
 void cancelTask(const std::string& taskId);
 // Cancel every QUEUED task (the running task is untouched).
 void cancelAllQueuedTasks() { taskQueue_.cancelAllPending(); }
+// Finished-list management for the monitoring panel's context menu
+// (spec 2026-11-06 §3.4). Both are UI-thread safe (TaskQueue mutex).
+// clearFinishedTasks drops every terminal record; returns the count.
+std::size_t clearFinishedTasks() { return taskQueue_.clearHistory(); }
+// removeFinishedTask drops a single record by taskId; false when unknown.
+bool removeFinishedTask(const std::string& taskId) { return taskQueue_.removeFromHistory(taskId); }
 
 // Find (async)
    TestResult findFirstProxy();
@@ -226,6 +238,9 @@ void cancelAllQueuedTasks() { taskQueue_.cancelAllPending(); }
 // Export / Tool
     std::tuple<bool, int, std::string> exportShareLinks();
    bool deduplicate();
+   // Queued dedup (spec 2026-11-06 §2.5-G14). Fires DEDUP_OK/DEDUP_FAIL on the
+   // handler when the task finishes.
+   void deduplicateAsync(wxEvtHandler* wxHandler);
    bool syncDatabases(const std::string& src = "", const std::string& dst = "");
    bool generateConfig(const std::string& indexId);
     void stopXray();

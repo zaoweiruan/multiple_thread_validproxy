@@ -73,6 +73,15 @@ AppController::AppController(sqlite3* db, const config::AppConfig& cfg)
 }
 
 AppController::~AppController() {
+    // Drain the task queue BEFORE this destructor body frees db_/XrayManager
+    // (spec 2026-11-06 §2.6, review critical): taskQueue_ is a member, so
+    // ~TaskQueue — and any task body it was still executing — would run AFTER
+    // sqlite3_close()/release(), letting a queued task reopen the closed .db
+    // (ensureDatabaseInitialized) and post events to a destroyed MainFrame.
+    // stop() dequeues the backlog (as CANCELLED) before asking the worker to
+    // exit; notify=false because UI handlers may already be gone.
+    taskQueue_.stop(false);
+
     // The proxy pool's evaluator thread calls back into this controller
     // (onMembersChanged captures `this` and posts wx events to topWindow_).
     // It MUST be stopped and joined before anything else in this destructor
@@ -363,8 +372,10 @@ bool AppController::deleteSubscription(const std::string& subId) {
 }
 
 void AppController::updateSubscriptionAsync(const std::string& subId, wxEvtHandler* wxHandler) {
-    cancelRequested_ = false;
-
+    // No cancelRequested_ reset here: a reset on the UI thread would UNDO a
+    // cancellation the user just asked for on the RUNNING task (spec
+    // 2026-11-06 §2.3). Every task body resets it on the worker before doing
+    // work (bugfix 2026-11-03 P2, guarded by TaskCancelResetGuardTest).
     taskQueue_.submit(task::TaskType::UPDATE_SUBSCRIPTION,
         [this, subId, wxHandler](task::TaskContext& ctx) {
             (void)ctx;
@@ -378,8 +389,7 @@ void AppController::updateSubscriptionAsync(const std::string& subId, wxEvtHandl
 }
 
 void AppController::updateAllSubscriptionsAsync(wxEvtHandler* wxHandler) {
-    cancelRequested_ = false;
-
+    // cancelRequested_ is reset by the task body on the worker only (§2.3).
     taskQueue_.submit(task::TaskType::UPDATE_ALL,
         [this, wxHandler](task::TaskContext& ctx) {
             (void)ctx;
@@ -664,8 +674,7 @@ void AppController::getRunningDurationsAsync(wxEvtHandler* handler) {
 // Testing / Cancellation
 // ---------------------------------------------------------------
 void AppController::testSubscriptionAsync(const std::string& subId, wxEvtHandler* wxHandler) {
-    cancelRequested_ = false;
-
+    // cancelRequested_ is reset by the task body on the worker only (§2.3).
     taskQueue_.submit(task::TaskType::TEST_SUBSCRIPTION,
         [this, subId, wxHandler](task::TaskContext& ctx) {
             (void)ctx;
@@ -698,7 +707,7 @@ void AppController::testSingleProxyAsync(const std::string& indexId, wxEvtHandle
     if (!isRunning_ && workerThread_.joinable()) {
         workerThread_.join();
     }
-    cancelRequested_ = false;
+    // cancelRequested_ is reset by the task body on the worker only (§2.3).
 
     taskQueue_.submit(task::TaskType::TEST_SINGLE_PROXY,
         [this, indexId, wxHandler](task::TaskContext& ctx) {
@@ -718,8 +727,7 @@ void AppController::testSingleProxyAsync(const std::string& indexId, wxEvtHandle
 }
 
 void AppController::testAllProxiesAsync(wxEvtHandler* wxHandler) {
-    cancelRequested_ = false;
-
+    // cancelRequested_ is reset by the task body on the worker only (§2.3).
     taskQueue_.submit(task::TaskType::TEST_ALL,
         [this, wxHandler](task::TaskContext& ctx) {
             (void)ctx;
@@ -788,7 +796,7 @@ void AppController::testSelectedProxiesAsync(const std::vector<std::string>& ind
         // fall through to the queue path.
     }
 
-    cancelRequested_ = false;
+    // cancelRequested_ is reset by the task body on the worker only (§2.3).
 
     taskQueue_.submit(task::TaskType::TEST_ALL,
         [this, indexIds, wxHandler](task::TaskContext& ctx) {
@@ -991,8 +999,7 @@ TestResult AppController::findBestProxy() {
 // Find operations  (async — used by GUI MainFrame)
 // ---------------------------------------------------------------
 void AppController::findFirstProxyAsync(wxEvtHandler* wxHandler) {
-    cancelRequested_ = false;
-
+    // cancelRequested_ is reset by the task body on the worker only (§2.3).
     taskQueue_.submit(task::TaskType::FIND_FIRST,
         [this, wxHandler](task::TaskContext& ctx) {
             (void)ctx;
@@ -1006,8 +1013,7 @@ void AppController::findFirstProxyAsync(wxEvtHandler* wxHandler) {
 }
 
 void AppController::findBestProxyAsync(wxEvtHandler* wxHandler) {
-    cancelRequested_ = false;
-
+    // cancelRequested_ is reset by the task body on the worker only (§2.3).
     taskQueue_.submit(task::TaskType::FIND_BEST,
         [this, wxHandler](task::TaskContext& ctx) {
             (void)ctx;
@@ -1089,6 +1095,28 @@ std::tuple<bool, int, std::string> AppController::exportShareLinks() {
 bool AppController::deduplicate() {
     update::SubitemUpdaterV2 updater(db_, config_.proxy.xray_executable, config_, nullptr, "");
     return updater.deduplicate();
+}
+
+void AppController::deduplicateAsync(wxEvtHandler* wxHandler) {
+    // Queued dedup (spec 2026-11-06 §2.5-G14): the old bare std::thread ran
+    // DEDUP OUTSIDE the queue, racing the batch/update workers over the very
+    // profileitem/subitem rows they write (both tables are read/written by the
+    // dedup pass). DEDUP is an exclusive worker type, so the queue itself is
+    // the mutex now. cancelRequested_ is reset by the body on the worker only.
+    taskQueue_.submit(task::TaskType::DEDUP,
+        [this, wxHandler](task::TaskContext& ctx) {
+            (void)ctx;
+            ScopeGuard<std::atomic<bool>> _guard{isRunning_};
+            isRunning_ = true;
+            ScopeGuard<std::atomic<int>> _taskGuard{currentTaskType_};
+            currentTaskType_.store(static_cast<int>(task::TaskType::DEDUP));
+            cancelRequested_ = false;   // P2: reset on the worker (bugfix 2026-11-03)
+            const bool ok = deduplicate();
+            if (wxHandler) {
+                wxQueueEvent(wxHandler, new StatusUpdateEvent(0, std::string(
+                    ok ? ui::refresh_cmd::kDedupOk : ui::refresh_cmd::kDedupFail)));
+            }
+        }, 1);
 }
 
 bool AppController::syncDatabases(const std::string& src, const std::string& dst) {
@@ -3853,6 +3881,11 @@ void AppController::doSyncDatabases(wxEvtHandler* wxHandler) {
 }
 
 void AppController::findProxyByIndexIdAsync(const std::string& indexId, wxEvtHandler* wxHandler) {
+    // CLASS D, untouched this cycle (spec 2026-11-06 §1.1-G13 / §9-F2): the
+    // REJECT gates here stay — this path is the -F CLI mirror with no queue
+    // semantics (its AUTO_RESUME branch would silently drop the resume when
+    // merely queued). Follow-up: enqueue it properly once the onComplete
+    // return-value contract is fixed.
     auto decision = task::MutexPolicy::decide(static_cast<task::TaskType>(currentTaskType_.load()),
                                              task::TaskType::FIND_BY_INDEX,
                                              isOnlineProbeRunning(), isRunning());
@@ -3925,8 +3958,7 @@ void AppController::findProxyByIndexIdAsync(const std::string& indexId, wxEvtHan
 }
 
 void AppController::syncDatabasesAsync(wxEvtHandler* wxHandler) {
-    cancelRequested_ = false;
-
+    // cancelRequested_ is reset by the task body on the worker only (§2.3).
     taskQueue_.submit(task::TaskType::SYNC_DB,
         [this, wxHandler](task::TaskContext& ctx) {
             (void)ctx;
@@ -3951,8 +3983,7 @@ int AppController::resolveRegionsForValidProxies(const std::string& subId) {
 // Async Batch Region Resolution (standalone, triggered from UI)
 // ---------------------------------------------------------------
 void AppController::resolveRegionsBatchAsync(wxEvtHandler* handler, const std::string& subId) {
-    cancelRequested_ = false;
-
+    // cancelRequested_ is reset by the task body on the worker only (§2.3).
     taskQueue_.submit(task::TaskType::RESOLVE_REGION,
         [this, handler, subId](task::TaskContext& ctx) {
             (void)ctx;
@@ -4045,8 +4076,7 @@ void AppController::doResolveRegionsBatch(wxEvtHandler* handler, const std::stri
 // Single proxy region resolution (uses RegionBatchResolver pattern)
 // ---------------------------------------------------------------
 void AppController::resolveSingleProxyRegionAsync(const std::string& indexId, wxEvtHandler* handler) {
-    cancelRequested_ = false;
-
+    // cancelRequested_ is reset by the task body on the worker only (§2.3).
     taskQueue_.submit(task::TaskType::RESOLVE_SINGLE_REGION,
         [this, indexId, handler](task::TaskContext& ctx) {
             (void)ctx;
@@ -4259,8 +4289,7 @@ void AppController::resetUpdateProgress() {
 }
 
 void AppController::runAutoTaskAsync(wxEvtHandler* wxHandler) {
-    cancelRequested_ = false;
-
+    // cancelRequested_ is reset by the task body on the worker only (§2.3).
     taskQueue_.submit(task::TaskType::AUTO_TASK,
         [this, wxHandler](task::TaskContext& ctx) {
             (void)ctx;
@@ -4277,8 +4306,7 @@ void AppController::runAutoTaskAsync(wxEvtHandler* wxHandler) {
 }
 
 void AppController::resumeAutoTaskAsync(wxEvtHandler* wxHandler) {
-    cancelRequested_ = false;
-
+    // cancelRequested_ is reset by the task body on the worker only (§2.3).
     taskQueue_.submit(task::TaskType::AUTO_TASK,
         [this, wxHandler](task::TaskContext& ctx) {
             (void)ctx;
