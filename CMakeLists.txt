@@ -1,4 +1,28 @@
 cmake_minimum_required(VERSION 3.20)
+
+# ===== Toolchain selection (must run before project()) =====
+# Order: $ENV{VALIDPROXY_MINGW_ROOT} > CLion bundled MinGW (if present) > PATH.
+# Rationale (2026-11-10): w64devkit GCC 16.2.0's libstdc++.a references
+# __imp_wctype/__imp_wctob/__imp_btowc/__imp_fseeko64/fstat64/... which this
+# vcpkg static link line does not satisfy -> "undefined reference" at link
+# time. CLion's bundled GCC 15.2.0 links clean and ships its runtime DLLs
+# dynamically (the POST_BUILD copy guards below key off CMAKE_CXX_COMPILER).
+if(NOT DEFINED CMAKE_CXX_COMPILER OR "${CMAKE_CXX_COMPILER}" STREQUAL "")
+    set(_MINGW_ROOT "$ENV{VALIDPROXY_MINGW_ROOT}")
+    if(NOT _MINGW_ROOT AND EXISTS "E:/clion/bin/mingw/bin/g++.exe")
+        set(_MINGW_ROOT "E:/clion/bin/mingw")
+    endif()
+    if(_MINGW_ROOT)
+        set(CMAKE_CXX_COMPILER "${_MINGW_ROOT}/bin/g++.exe" CACHE FILEPATH "C++ compiler" FORCE)
+        # Some dependency module pulls in the C language; keep the whole
+        # project on one compiler so C and C++ runtime objects never mix.
+        set(CMAKE_C_COMPILER "${_MINGW_ROOT}/bin/gcc.exe" CACHE FILEPATH "C compiler" FORCE)
+        set(WX64DEVKIT_ROOT "${_MINGW_ROOT}" CACHE PATH "MinGW root for windres includes" FORCE)
+        message(STATUS "Toolchain: ${CMAKE_CXX_COMPILER}")
+        unset(_MINGW_ROOT)
+    endif()
+endif()
+
 project(multiple_thread_validproxy VERSION 1.6.0 LANGUAGES CXX)
 
 # ===== Rule 5: only use environment DLLs, never copy dependency DLLs =====
@@ -114,6 +138,18 @@ if(NOT WX64DEVKIT_ROOT)
 endif()
 if(NOT GTEST_ROOT)
     set(GTEST_ROOT "E:/eclipse_workspace/googletest")
+endif()
+
+# vcpkg tree quirk (2026-11-10): the zlib port installed its static lib as
+# libzs.a while its config files still point at libzlib.a, so module-mode
+# FindZLIB finds the header (1.3.2) but no library. Seed the cache before
+# find_package(CURL), whose CURLConfig.cmake runs find_dependency(ZLIB).
+if(NOT ZLIB_LIBRARY
+        AND EXISTS "${VCPKG_ROOT}/installed/x64-mingw-static/lib/libzs.a")
+    set(ZLIB_INCLUDE_DIR "${VCPKG_ROOT}/installed/x64-mingw-static/include"
+        CACHE PATH "zlib include dir" FORCE)
+    set(ZLIB_LIBRARY "${VCPKG_ROOT}/installed/x64-mingw-static/lib/libzs.a"
+        CACHE FILEPATH "zlib library" FORCE)
 endif()
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
@@ -1713,8 +1749,25 @@ add_test(NAME UI_BOTTOMVIEW COMMAND UITests "[bottomview]")
             TIMEOUT 240
             WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
         # V8 boots the GUI once and waits for a real DEDUP run + menu loop.
+        # The prep fixture makes `ctest -R UI_TASKLEDGER` self-contained: the
+        # baseline assertion needs a fresh sandbox DB (no finished rows).
+        # ctest quotes every argument, and cmd.exe's quote-stripping rule
+        # turns `cmd "/c" "path\x.bat"` into a malformed command line, so the
+        # bat is driven through a `cmake -P` wrapper (see
+        # scripts/run-ui-sandbox-prep.cmake); the bat stays the single source
+        # of truth shared with build-and-test.bat.
+        file(TO_NATIVE_PATH "${CMAKE_SOURCE_DIR}/scripts/prepare-ui-sandbox.bat"
+             UI_SANDBOX_PREP_SCRIPT)
+        add_test(NAME UI_SANDBOX_PREP
+                 COMMAND ${CMAKE_COMMAND}
+                         -DSANDBOX_BAT=${UI_SANDBOX_PREP_SCRIPT}
+                         -P ${CMAKE_SOURCE_DIR}/scripts/run-ui-sandbox-prep.cmake)
+        set_tests_properties(UI_SANDBOX_PREP PROPERTIES
+            FIXTURES_SETUP ui_sandbox
+            TIMEOUT 60)
         set_tests_properties(UI_TASKLEDGER PROPERTIES
-            TIMEOUT 240
+            FIXTURES_REQUIRED ui_sandbox
+            TIMEOUT 180
             WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
     endif()
 endif()
