@@ -385,9 +385,20 @@ bool removeFinishedTask(const std::string& taskId); // → removeFromHistory
 > （原实现会把 ctest 拖到超时）；②ctest 注册补 `UI_SANDBOX_PREP` fixture 使 `ctest -R UI_TASKLEDGER`
 > 自洽，`TIMEOUT` 240→180；③锁屏/非交互桌面下自动降级为「COMPLETED 行留存」断言（INFO 明示），
 > 该降级已在 spec 允许范围内。
+>
+> **去重成功模态框移除（2026-11-11，用户截图要求）**：`onStatusUpdate` 的
+> `kDedupOk` 分支删除 `wxMessageBox("Dedup completed.")`——完成反馈=状态栏
+> 文案（`statusTextFor(kDedupOk)` 启用「去重完成，代理列表已刷新」，评审
+> 建议 #8 的 P1 落地）+ 任务面板 COMPLETED 行 + `Deduplicator` REPORT 日志；
+> `kDedupFail` 模态框与 ERR 路径保留不变。回归=`DedupOkMapsToStatusText`
+> 空串断言翻转为等值断言；`UI_TASKLEDGER`（V9）新增「COMPLETED 行落定后
+> 不存在 "Dedup" 标题 MessageBox」零容忍断言（原 `dismissAllPopups` 容删）。
 
-**全量**：`ctest --test-dir build` 仅 `XrayManagerStartupTest` 已知噪声；门禁
-`scripts/build-and-test.bat` 14/14（新增 `UI_TASKLEDGER` 后由 13 升至 14）。
+**全量**（CLion MCP `所有 CTest`，cmake-build-debug 树，2026-11-11；本轮按用户指定走
+MCP、未跑 `scripts/build-and-test.bat`）：69 例仅 #45 `XrayManagerStartupTest` 冷启动
+已知噪声；#68/#69 曾现 fixture 抖动（`LastTest.log` 实证 prep Passed、UI_TASKLEDGER
+正常启动），单独复跑 trio（#45/#68/#69）= UI 双绿 + 仅 #45 噪声。UI 门禁
+`-R ^UI_` 15/15（含 `UI_TASKLEDGER` V9 零容忍断言）。
 
 **手工验收（tracker 遗留，owner 确认）**：
 - 批量测试运行中点「自动任务」→ 无弹框，状态栏「已加入队列…前方 N 个」，徽章 `排队: 1`；

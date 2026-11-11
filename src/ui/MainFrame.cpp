@@ -1263,8 +1263,8 @@ void MainFrame::onMenuFindBest(wxCommandEvent&) {
 void MainFrame::onMenuDedup(wxCommandEvent&) {
     // Queued now (spec §2.5-G14): DEDUP used to run on a bare detached thread
     // OUTSIDE TaskQueue, racing the batch/update workers over profileitem/
-    // subitem. The queue serialises it; the DEDUP_OK/DEDUP_FAIL status event
-    // still drives the existing completion modal in onStatusUpdate.
+    // subitem. The queue serialises it; DEDUP_OK/DEDUP_FAIL status events
+    // drive onStatusUpdate (OK = non-modal status-bar text, FAIL = modal).
     setStatusNotice(L"已加入队列：移除重复代理");
     controller_->deduplicateAsync(this);
 }
@@ -1700,8 +1700,9 @@ void MainFrame::onToggleDetailPane(wxCommandEvent&) {
 
 // -------------------------------------------------------------------
 //  StatusUpdateEvent handler — routes refresh commands to panels,
-//  status bar, and log window.  Preserves existing DEDUP_* modal
-//  behaviour (P1 will remove the modal).
+//  status bar, and log window.  DEDUP_OK completion is non-modal
+//  (status-bar text + ledger COMPLETED row + REPORT log); only
+//  DEDUP_FAIL keeps its modal (spec v1.2 增补 2026-11-11).
 // -------------------------------------------------------------------
 void MainFrame::onStatusUpdate(StatusUpdateEvent& event) {
     const std::string text = event.getText();
@@ -1725,8 +1726,8 @@ void MainFrame::onStatusUpdate(StatusUpdateEvent& event) {
                 controller_->loadProxiesAsync(currentSubId, this);
             }
         }
-        wxMessageBox("Dedup completed.", "Dedup",
-                     wxOK | wxICON_INFORMATION);
+        // Completion feedback is the status-bar text written in Step 1;
+        // no modal — the task ledger keeps the COMPLETED row (V9).
         return;
     }
     if (text == std::string(ui::refresh_cmd::kDedupFail)) {

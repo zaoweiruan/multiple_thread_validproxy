@@ -23,6 +23,10 @@
 // the menu interaction is reported via INFO and skipped — but the CORE
 // assertion (the finished row persists after completion) always runs.
 //
+// V9 (spec v1.2 增补 2026-11-11): the DEDUP_OK completion modal is removed;
+// the test no longer dismisses popups and instead asserts zero
+// "Dedup"-titled MessageBox after the COMPLETED row settles.
+//
 // Tag: [taskledger]  (registered as ctest UI_TASKLEDGER)
 
 #include <catch2/catch_test_macros.hpp>
@@ -183,12 +187,15 @@ TEST_CASE("Task ledger: finished row persists, context menu 清理 removes it",
     REQUIRE(clicked);
 
     // ── Wait for the FINISHED row to appear and PERSIST ────────────────
-    // Completion posts kDedupOk → a modal "Dedup completed." box may appear;
-    // dismiss it repeatedly, it is not what V8 asserts on.
+    // V9 (spec v1.2 增补 2026-11-11): DEDUP_OK is non-modal — the
+    // "Dedup completed." message box was removed; feedback is the
+    // status-bar text + this COMPLETED row + the REPORT log line. A
+    // regressed modal would block the UI thread and surface as a
+    // "Dedup"-titled MessageBox in the zero-tolerance check below, so
+    // nothing is dismissed here on purpose.
     int finishedRow = -1;
     const DWORD start = ::GetTickCount();
     while (static_cast<int>(::GetTickCount() - start) < kRowWaitMs) {
-        dismissAllPopups(fx.pid());
         finishedRow = findLedgerFinishedRow(hList);
         if (finishedRow >= 0) break;
         ::Sleep(250);
@@ -197,14 +204,25 @@ TEST_CASE("Task ledger: finished row persists, context menu 清理 removes it",
     // a terminal status instead of vanishing from the list.
     INFO("finished DEDUP row never appeared/persisted in the ledger");
     REQUIRE(finishedRow >= 0);
+    REQUIRE(listItemText(hList, finishedRow, 4) == ids::TaskStatusCompleted);
     INFO("finished row=" << finishedRow
          << " status=" << toUtf8(listItemText(hList, finishedRow, 4))
          << " type=" << toUtf8(listItemText(hList, finishedRow, 1)));
 
+    // V9 zero-tolerance: no "Dedup"-titled completion modal may exist once
+    // the COMPLETED row is in (a regressed wxMessageBox would be up by now).
+    ::Sleep(1200);
+    int dedupModals = 0;
+    for (const WindowInfo& wi : describeTopLevelWindows(fx.pid(), true)) {
+        if (wi.kind == WindowKind::MessageBox && wi.title == L"Dedup") {
+            ++dedupModals;
+        }
+    }
+    REQUIRE(dedupModals == 0);
+
     // Persistence: after two more refresh cadences the row is STILL there
     // (the 1s rebuild must not drop history).
     ::Sleep(2500);
-    dismissAllPopups(fx.pid());
     finishedRow = findLedgerFinishedRow(hList);
     REQUIRE(finishedRow >= 0);
 

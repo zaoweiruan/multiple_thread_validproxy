@@ -30,7 +30,8 @@ inline constexpr std::string_view kResultsChanged = "DATA_RESULTS_CHANGED";
 // 不再新增字符串命令 —— 见规格 §11.4。
 
 // 命令 → 状态栏人读文案。未命中返回空串（调用方据此跳过状态栏写入）。
-// P0 期间 kDedupOk 映射留空（评审建议 #8），P1 去模态框时再启用。
+// kDedupOk 映射已于 2026-11-11 随「去成功模态框」启用（评审建议 #8 的 P1
+// 落地）；kDedupFail 失败路径保留模态框 + ERR 日志，仍不写状态栏成功文案。
 std::string statusTextFor(std::string_view command);
 
 }  // namespace refresh_cmd

@@ -3,7 +3,7 @@ title: "docs: Project Plans Tracker — global plan index and progress tracker"
 type: docs
 status: maintained
 date: 2026-05-11
-updated: 2026-11-06
+updated: 2026-11-11
 ---
 
 # Project Plans Tracker
@@ -17,6 +17,7 @@ updated: 2026-11-06
 
 | 日期 | 类型 | 文档路径 | 说明 |
 |------|------|----------|------|
+| 2026-11-11 | spec | docs/specs/2026-11-06-Spec-TaskQueueAdmissionAndFinishedHistory-v1.2.md | **v1.2 增补：去重成功模态框移除（用户截图要求）** — `onStatusUpdate` `kDedupOk` 分支删 `wxMessageBox("Dedup completed.")`，完成反馈=状态栏文案（`statusTextFor(kDedupOk)` 启用「去重完成，代理列表已刷新」，评审建议 #8 P1 落地）+ 任务面板 COMPLETED 行 + `Deduplicator` REPORT 日志；`kDedupFail` 模态框+ERR 保留。回归=`DedupOkMapsToStatusText` 空串断言翻转为等值断言；`UI_TASKLEDGER`（V9）改「COMPLETED 行落定后无 "Dedup" 标题 MessageBox」零容忍断言（删 `dismissAllPopups` 容删）。验证=CLion MCP：RefreshCommandsTest 9/9、UI 门禁 `-R ^UI_` 15/15、全量仅 #45 已知噪声（#68/#69 fixture 抖动经 trio 复跑排除）；字节级=bin/validproxy.exe 旧弹窗文案消失+新文案在编、UITests.exe 含 V9 宽串断言 | ✅ completed |
 | 2026-11-10 | bugfix | docs/bugfix/2026-11-10-Bugfix-CLion-GTestRunConfigs-RedCrossAfterToolchainSwitch-v1.0.md | **CLion 工具链切换后 53 个 GTest 运行配置红叉 + MCP execute_run_configuration 挂起** — 切 CLion 内置 MinGW GCC 15.2.0 后 53 个 Google Test 模板配置全红叉，MCP 执行无输出被中断（%TEMP% 0 字节 tmp），idea.log 留畸形 `cmake --build` usage error；证伪 DLL 缺失（正常 PATH 11/11 PASSED）与 reload 修复（实测剥掉 PROJECT_NAME/TARGET_NAME/CONFIG_NAME 三绑定属性）两假设；根因=工具链切换后 GTest 模板配置目标绑定失效（缺 RUN_TARGET_* + method 空）→ BuildBeforeRun 畸形 cmake --build → 进程不启动 → MCP 挂起；修复=UI 删除 53 个 GTest 配置 + 重启 CLion（2026.3 在模型加载后自动重建 53 个，绑定完整恢复 RUN_TARGET_*/TEST_MODE=SUITE_TEST/BuildBeforeRunTask，红叉消失；初判「不自动重建」系删除后瞬态计数=0 的误读，已纠正）；验证=重建后 MCP execute_run_configuration(test_autotask) exitCode=0 11/11 PASSED（原挂起同调用闭环）+ CTest -R 显示名 1/1 Passed + Application 配置 exitCode=0 + 全量 ctest 69 例 68 过（#45 已知噪声）；教训=reload≠restart（reload 剥坏条目绑定，删除+重启才触发自动重建）、工具链变更后先查配置绑定、红叉（绑定缺失）状态勿跑 MCP、workspace.xml 运行时手改会被覆盖 | ✅ completed |
 | 2026-11-09 | reference | AGENTS.md | **AGENTS.md 分层记忆重构（ChatGPT 修订版采纳）** — 评估 `agetns优化建议.md`（ppl-ai，282 行）+ `agents_chatgpt 建议.md`/`AGENTS_chatgpt优化版.md`（ChatGPT，232 行）两份外部建议；结论=采纳 ChatGPT 修订版为基座并**按用户指令保留 §4.4 CLI 速查表 + §5.3 关键词→技能路由表**，整体 325→276 行；前置核验 3 项全部完成：①构建产物= `bin/validproxy.exe` 存在（12:32 最新）、`build/validproxy.exe` 不存在 → 运行/验证用 `bin/`；②测试数据库= `test/guiNDB.db`（153MB 全量）真实、`test/guindb.db` 不存在、`test/guiNDB_empty.db`（0.1MB 精简）→ §2.3 写入核验注记；③docs 结构= 12 子目录 + 18 根级入口文档 → 根级入口不搬迁；修正 ChatGPT 方案的 C++17（非 C++20）、PowerShell 逐条执行规避 `&&`（PS 5.1 不支持）、ctest 统一 `--test-dir build -V`；新增治理= §5.1 能力探测与降级、§3 信息冲突处理、§6.3 完成声明证据、§7.2 记忆写入条件；保留= C++17 禁 `auto`、§5.2 CLion MCP 优先、§6.2 UI 一键验收门禁、§8 角色分工（含 UIIds.h 唯一定位/多线程竞态/UAF 评审重点）；原版备份 `AGENTS_old_20261109.md`；未采纳= 整体照搬 ppl-ai 草案（C++20 矛盾、丢项目专属细节）、逐字替换（丢路由表/CLI 表） | ✅ completed |
 | 2026-11-09 | reference | AGENTS.md §6.4 | **角色设置（Role Map）—— 六角色分工落地** — 评估结论：本工作区 `.kilo/` 被 Kilo 运行时用作依赖安装目录（含 `node_modules`/`package.json`），`.kilo/agent/*.md` 被运行时以「blocked file reference outside project config scope」拒绝加载（已实测，最小 frontmatter 亦复现），故角色定义**直接内联 AGENTS.md §6.4**；新增 planner/implementer/debugger/reviewer/tester/ui-analyst 六角色，触发关键词与 §6.2 路由表绑定，门禁链 planner→implementer→tester→reviewer→交付（debugger 任意环节介入），ui-analyst 补齐 §6.2 既有 `wxgui-analyzer-sub` 正式定义（多模态模型链 stepfun→nemotron），CLion MCP 边界沿用 §6.3.5 | ✅ completed |

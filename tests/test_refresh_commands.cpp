@@ -55,8 +55,9 @@ TEST(RefreshCommandsTest, RegionResolveDoneMapsToStatusText) {
 }
 
 TEST(RefreshCommandsTest, DedupOkMapsToStatusText) {
-    // P0 期间 kDedupOk 映射留空（评审建议 #8），P1 去模态框时再启用
-    EXPECT_TRUE(ui::refresh_cmd::statusTextFor(ui::refresh_cmd::kDedupOk).empty());
+    // 2026-11-11 去模态框（评审建议 #8 的 P1 落地）：成功反馈改状态栏文案
+    EXPECT_EQ("去重完成，代理列表已刷新",
+              ui::refresh_cmd::statusTextFor(ui::refresh_cmd::kDedupOk));
 }
 
 TEST(RefreshCommandsTest, DedupFailHasNoStatusText) {
