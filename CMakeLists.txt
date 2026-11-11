@@ -1707,6 +1707,7 @@ if(wxWidgets_FOUND AND BUILD_UI_TESTS)
             tests/ui/TestMenuAction.cpp
             tests/ui/TestPopupGuard.cpp
             tests/ui/TestTaskLedgerContextMenu.cpp
+            tests/ui/TestToolbarRegionButton.cpp
         )
         add_executable(UITests ${UI_FRAMEWORK_SOURCES} ${UI_TEST_SOURCES})
         target_include_directories(UITests PRIVATE
@@ -1737,6 +1738,7 @@ add_test(NAME UI_BOTTOMVIEW COMMAND UITests "[bottomview]")
         add_test(NAME UI_MENUACTION COMMAND UITests "[menu]")
         add_test(NAME UI_POPUPGUARD COMMAND UITests "[popup]")
         add_test(NAME UI_TASKLEDGER COMMAND UITests "[taskledger]")
+        add_test(NAME UI_TOOLBARREGION COMMAND UITests "[toolbarregion]")
         set_tests_properties(UI_MAINWINDOW UI_SEARCH UI_CLEAR UI_CHAINPREVIEW PROPERTIES
             TIMEOUT 120
             WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
@@ -1766,6 +1768,12 @@ add_test(NAME UI_BOTTOMVIEW COMMAND UITests "[bottomview]")
             FIXTURES_SETUP ui_sandbox
             TIMEOUT 60)
         set_tests_properties(UI_TASKLEDGER PROPERTIES
+            FIXTURES_REQUIRED ui_sandbox
+            TIMEOUT 180
+            WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+        # V11 boots the GUI and waits for a real RESOLVE_REGION run
+        # (network-bounded); same sandbox baseline as V8.
+        set_tests_properties(UI_TOOLBARREGION PROPERTIES
             FIXTURES_REQUIRED ui_sandbox
             TIMEOUT 180
             WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})

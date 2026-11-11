@@ -138,7 +138,7 @@ inline const wchar_t* const MenuAboutItem        = L"关于";            // 6111
 // single source of truth for these label strings, so reviewers and any future
 // screenshot/diff tooling read them from one place instead of re-deriving them.
 // ---------------------------------------------------------------------------
-inline const wchar_t* const ToolBarFindBestLabel = L"最佳代理";  // ID_TOOL_FIND
+inline const wchar_t* const ToolBarRegionLabel = L"解析地区"; // ID_TOOL_REGION
 inline const wchar_t* const ToolBarTestLabel     = L"批量测试";   // ID_TOOL_TEST
 inline const wchar_t* const ToolBarCancelLabel   = L"终止当前测试"; // ID_TOOL_CANCEL
 inline const wchar_t* const ToolBarDedupLabel    = L"清洗";      // ID_TOOL_DEDUP

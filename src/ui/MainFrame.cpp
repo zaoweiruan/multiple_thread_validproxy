@@ -59,7 +59,7 @@ enum {
     ID_MENU_STANDALONE_MON  = wxID_HIGHEST + 114,
     ID_TOOL_UPDATE_ALL    = wxID_HIGHEST + 200,
     ID_TOOL_TEST          = wxID_HIGHEST + 201,
-    ID_TOOL_FIND          = wxID_HIGHEST + 202,
+    // ID_TOOL_FIND (+202) retired 2026-11-11 with the toolbar 「最佳代理」 button
     ID_TOOL_DEDUP         = wxID_HIGHEST + 203,
     ID_TOOL_IMPORT        = wxID_HIGHEST + 204,
     ID_TOOL_CONFIG        = wxID_HIGHEST + 205,
@@ -71,6 +71,7 @@ enum {
     ID_SEARCH_TARGET      = wxID_HIGHEST + 300,
     ID_TOOL_DETAIL_TOGGLE = wxID_HIGHEST + 302,
     ID_TOOL_STANDALONE_MON = wxID_HIGHEST + 211,
+    ID_TOOL_REGION        = wxID_HIGHEST + 212,
 
     // Distinct logical IDs for the network/proxy status timers. Each timer
     // must have its own id and each Bind must be constrained to that id,
@@ -104,7 +105,7 @@ wxBEGIN_EVENT_TABLE(MainFrame, wxFrame)
     // Toolbar
     EVT_MENU(ID_TOOL_UPDATE_ALL,  MainFrame::onToolUpdateAll)
     EVT_MENU(ID_TOOL_TEST,        MainFrame::onToolTest)
-    EVT_MENU(ID_TOOL_FIND,        MainFrame::onToolFind)
+    EVT_MENU(ID_TOOL_REGION,      MainFrame::onToolRegion)
     EVT_MENU(ID_TOOL_DEDUP,       MainFrame::onToolDedup)
     EVT_MENU(ID_TOOL_IMPORT,      MainFrame::onToolImport)
     EVT_MENU(ID_TOOL_CONFIG,      MainFrame::onToolConfig)
@@ -844,7 +845,7 @@ void MainFrame::initToolBar() {
     m_toolbar->AddTool(ID_TOOL_CANCEL, "终止当前测试", ToolbarIcons::load("tool_cancel"), "取消测试");
     m_toolbar->EnableTool(ID_TOOL_CANCEL, false);  // disabled until operation starts
     m_toolbar->AddTool(ID_TOOL_SYNC, "同步", ToolbarIcons::load("tool_synchronize"), "同步");
-    m_toolbar->AddTool(ID_TOOL_FIND, "最佳代理", ToolbarIcons::load("tool_find"), "查找最佳代理");
+    m_toolbar->AddTool(ID_TOOL_REGION, "解析地区", ToolbarIcons::load("parsingregion"), "批量解析地区");
     m_toolbar->AddTool(ID_TOOL_DEDUP, "清洗", ToolbarIcons::load("tool_dedup"), "去重");
     m_toolbar->AddTool(ID_TOOL_IMPORT, "添加订阅", ToolbarIcons::load("tool_import"), "增加新订阅");
     m_toolbar->AddTool(ID_TOOL_AUTOTASK, "自动任务", ToolbarIcons::load("tool_pipeline"), "自动任务");
@@ -1609,8 +1610,17 @@ void MainFrame::onToolCancel(wxCommandEvent&) {
     setStatusText(0, "操作已取消");
 }
 
-void MainFrame::onToolFind(wxCommandEvent& event) {
-    onMenuFindBest(event);
+void MainFrame::onToolRegion(wxCommandEvent& event) {
+    if (!controller_) { (void)event; return; }
+    // G8 ungated (spec 2026-11-06 §2.2-A): queueing IS the mutual exclusion,
+    // no modal refusal. Same path as the right-click 「批量解析地区」 entry
+    // (ProxyListPanel::onBatchResolveRegion), full scope: subId = "".
+    const std::size_t ahead = controller_->getTaskQueueSnapshot().queueDepth;
+    setStatusNotice(ahead > 0
+        ? wxString::Format(L"已加入队列：批量解析地区，前方还有 %zu 个任务", ahead)
+        : wxString(L"批量解析地区已开始"));
+    controller_->resolveRegionsBatchAsync(this, "");
+    (void)event;
 }
 
 void MainFrame::onToolDedup(wxCommandEvent& event) {

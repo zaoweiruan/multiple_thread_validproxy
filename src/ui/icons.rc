@@ -27,6 +27,7 @@ tool_config_png       RCDATA "docs/design/ui/icon/png/tool_config.png"
  tool_dockarrow_png    RCDATA "docs/design/ui/icon/png/tool_dockarrow.png"
 tool_pipeline_png     RCDATA "docs/design/ui/icon/png/tool_pipeline.png"
 tool_monitoring_proxy_process_png RCDATA "docs/design/ui/icon/png/tool_monitoring_proxy_process.png"
+parsingregion_png     RCDATA "docs/design/ui/icon/png/parsingregion.png"
 
 // ── Floating-widget background (circular orb) ───────────────────
 // Loaded by StandaloneFloatingWidget via ToolbarIcons::loadPngFromResource

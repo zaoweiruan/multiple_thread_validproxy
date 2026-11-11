@@ -96,7 +96,7 @@ private:
     void syncFloatingWidgetControls();
     void onToolUpdateAll(wxCommandEvent& event);
     void onToolTest(wxCommandEvent& event);
-    void onToolFind(wxCommandEvent& event);
+    void onToolRegion(wxCommandEvent& event);
     void onToolDedup(wxCommandEvent& event);
     void onToolImport(wxCommandEvent& event);
     void onToolConfig(wxCommandEvent& event);
