@@ -1,3 +1,10 @@
+<p align="center">
+  <a href="README.md">简体中文</a> |
+  <a href="README.en.md">English</a>
+</p>
+
+---
+
 # validproxy — Proxy Validation & Network Forwarding Manager
 
 > **Version**: v1.6.0 · **Git**: `84fdfae` · **Platform**: Windows (MinGW/GCC) · **Language**: C++17

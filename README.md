@@ -1,3 +1,10 @@
+<p align="center">
+  <a href="README.md">简体中文</a> |
+  <a href="README.en.md">English</a>
+</p>
+
+---
+
 # validproxy — 代理验证与网络转发管理工具
 
 > **版本**: v1.6.0 · **Git**: `84fdfae` · **平台**: Windows (MinGW/GCC) · **语言**: C++17
