@@ -833,6 +833,22 @@ set_target_properties(test_refresh_commands PROPERTIES
 )
 add_test(NAME RefreshCommandsTest COMMAND test_refresh_commands)
 
+# -- Toolbar region icon file-level constraints (square 1:1 + RGBA alpha from
+#    background removal; pure file I/O PNG IHDR parse, no wx) --
+add_executable(test_toolbar_region_icon tests/test_toolbar_region_icon.cpp)
+target_include_directories(test_toolbar_region_icon PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(test_toolbar_region_icon PRIVATE gtest_main gtest)
+set_target_properties(test_toolbar_region_icon PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+)
+add_test(NAME ToolbarRegionIconTest COMMAND test_toolbar_region_icon)
+# IHDR-anchored file contract; relative path needs repo-root cwd (same as UI suites).
+set_tests_properties(ToolbarRegionIconTest PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+)
+
 # -- FloatingWidget pure-policy unit tests (no wx, no external deps beyond gtest) --
 add_executable(test_floating_widget_state tests/test_floating_widget_state.cpp)
 target_include_directories(test_floating_widget_state PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)

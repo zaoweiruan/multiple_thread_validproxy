@@ -844,9 +844,9 @@ void MainFrame::initToolBar() {
     m_toolbar->AddTool(ID_TOOL_TEST, "批量测试", ToolbarIcons::load("tool_test"), "测试全部代理");
     m_toolbar->AddTool(ID_TOOL_CANCEL, "终止当前测试", ToolbarIcons::load("tool_cancel"), "取消测试");
     m_toolbar->EnableTool(ID_TOOL_CANCEL, false);  // disabled until operation starts
-    m_toolbar->AddTool(ID_TOOL_SYNC, "同步", ToolbarIcons::load("tool_synchronize"), "同步");
-    m_toolbar->AddTool(ID_TOOL_REGION, "解析地区", ToolbarIcons::load("parsingregion"), "批量解析地区");
     m_toolbar->AddTool(ID_TOOL_DEDUP, "清洗", ToolbarIcons::load("tool_dedup"), "去重");
+    m_toolbar->AddTool(ID_TOOL_REGION, "解析地区", ToolbarIcons::load("parsingregion"), "批量解析地区");
+    m_toolbar->AddTool(ID_TOOL_SYNC, "同步", ToolbarIcons::load("tool_synchronize"), "同步");
     m_toolbar->AddTool(ID_TOOL_IMPORT, "添加订阅", ToolbarIcons::load("tool_import"), "增加新订阅");
     m_toolbar->AddTool(ID_TOOL_AUTOTASK, "自动任务", ToolbarIcons::load("tool_pipeline"), "自动任务");
     m_toolbar->AddTool(ID_TOOL_STANDALONE_MON, "悬浮窗", ToolbarIcons::load("tool_monitoring_proxy_process"), "监控代理", wxITEM_CHECK);
