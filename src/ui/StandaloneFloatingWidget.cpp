@@ -336,11 +336,12 @@ StandaloneFloatingWidget::StandaloneFloatingWidget(const config::AppConfig& cfg,
     // 池成员更新事件：MainFrame 不再转发，悬浮窗自消费（timer 兜底全量刷新）。
     Bind(wxEVT_POOL_MEMBERS_UPDATED, &StandaloneFloatingWidget::onPoolMembersUpdated, this);
     list_->Bind(wxEVT_LIST_ITEM_ACTIVATED, &StandaloneFloatingWidget::onItemActivated, this);
-    // Single-click on a row also locates the proxy, reusing the same
-    // LocateProxyEvent -> MainFrame chain as the test-result dialog.
-    list_->Bind(wxEVT_LIST_ITEM_SELECTED, &StandaloneFloatingWidget::onItemSelected, this);
-    // 列表内任意区域（含行间/行下方空白）双击 → 切换主界面。wxListCtrl 为
-    // 子窗口，其边界内（行与空白区）的双击都先到达 list_，故在此直接绑定。
+    // Single click on a row only selects it (native wxListCtrl behavior) -- it
+    // must NOT locate the proxy. Locating is bound to the row double-click
+    // (onItemActivated) per spec 2026-11-12.
+    // 列表内任意区域（含行间/行下方空白）双击：命中数据行 → 定位代理；
+    // 空白区 → 切换主界面。wxListCtrl 为子窗口，其边界内（行与空白区）的
+    // 双击都先到达 list_，故在此绑定并按 HitTest 分流。
     list_->Bind(wxEVT_LEFT_DCLICK, &StandaloneFloatingWidget::onListLeftDClick, this);
 
     setMode(Mode::Orb, true);
@@ -598,21 +599,28 @@ void StandaloneFloatingWidget::toggleMainFrameMaximize() {
 
 // 双击悬浮窗背景切换主界面 最大化 ⇄ 最小化。
 // parentWindow_ 即主窗口(MainFrame, 继承自 wxFrame)。本回调仅接收落在悬浮窗
-// 自身背景（非子列表）的双击；子列表 wxListCtrl 内的双击（行与空白区）由
-// onListLeftDClick 接管。二者共用 lastToggleTime_ 防抖。
+// 自身背景（非子列表）的双击；子列表 wxListCtrl 内的双击由 onListLeftDClick
+// 按命中结果分流（行 → 定位代理，空白 → 最大化切换）。二者共用
+// lastToggleTime_ 防抖。
 void StandaloneFloatingWidget::onLeftDClick(wxMouseEvent& WXUNUSED(event)) {
     // Panel 模式双击不会出现 Orb 展开的几何扰动，Windows 仍派发
     // WM_LBUTTONDBLCLK → wxEVT_LEFT_DCLICK，直接走受防抖保护的切换路径。
     toggleMainFrameMaximize();
 }
 
-// 双击列表内任意区域（含行/空白）切换主界面 最大化 ⇄ 最小化。
+// 双击列表内任意区域：命中数据行 → 定位代理（由 onItemActivated 处理）；
+// 命中空白区（行间/行下方）→ 切换主界面 最大化 ⇄ 最小化。
 // wxListCtrl 为子窗口：其边界内（数据行及行下方/行间空白区）的任何双击都
-// 先到达 list_，故在此捕获「任意区域双击」；行双击同时仍触发 onItemActivated。
-// 单击定位保持由 onItemSelected 负责。二者共用 lastToggleTime_ 防抖，
-// 行双击时本回调与 onItemActivated 均触发也只会切换一次。
+// 先到达 list_，故在此捕获并按 HitTest 结果分流；行双击时本回调跳过切换，
+// 随后 NM_DBLCLK 触发 onItemActivated 完成定位。
+// 单击仅选中当前记录（原生 wxListCtrl 行为），不再触发定位（spec 2026-11-12）。
 void StandaloneFloatingWidget::onListLeftDClick(wxMouseEvent& event) {
-    toggleMainFrameMaximize();
+    int hitFlags = 0;
+    const long hitRow = list_->HitTest(event.GetPosition(), hitFlags);
+    if (FloatingWidgetPolicy::listDoubleClickAction(hitRow) ==
+        FloatingWidgetPolicy::ListDoubleClickAction::ToggleMainFrame) {
+        toggleMainFrameMaximize();
+    }
     event.Skip();  // 交由原生 wxListCtrl 继续处理（行选择/激活）
 }
 
@@ -906,19 +914,14 @@ void StandaloneFloatingWidget::onActivate(wxActivateEvent& event) {
     event.Skip();
 }
 
-// 双击列表行：切换主界面 最大化 ⇄ 还原。
-// 单击定位由 onItemSelected(wxEVT_LIST_ITEM_SELECTED) 负责；双击在此切换主界面，
-// 与 Panel 背景双击(onLeftDClick)语义一致，共用 lastToggleTime_ 防抖，避免双重触发。
-void StandaloneFloatingWidget::onItemActivated(wxListEvent& WXUNUSED(event)) {
-    toggleMainFrameMaximize();
-}
-
-// Single-click locate: reuses the same LocateProxyEvent -> MainFrame chain as
-// the test-result dialog. On select, post the owning indexId so MainFrame's
-// wxEVT_LOCATE_PROXY handler locates the proxy + owning subscription.
-void StandaloneFloatingWidget::onItemSelected(wxListEvent& event) {
+// 双击列表行：定位到主界面相关订阅 + 代理列表窗口（spec 2026-11-12）。
+// 复用与「在线代理测试结果」弹窗相同的 LocateProxyEvent -> MainFrame 链路：
+// MainFrame 的 wxEVT_LOCATE_PROXY 处理器切换订阅过滤、选中代理行、收起本悬浮窗
+// 并显示/最大化主窗。单击仅选中记录（原生行为），不再定位；列表空白区双击
+// 仍由 onListLeftDClick 切换主界面最大化。
+void StandaloneFloatingWidget::onItemActivated(wxListEvent& event) {
     const long row = event.GetIndex();
-    if (row < 0 || !controller_ || !locateTarget_) {
+    if (row < 0 || !locateTarget_) {
         return;
     }
     const wxString indexId = list_->GetItemText(row, COL_INDEX_ID);

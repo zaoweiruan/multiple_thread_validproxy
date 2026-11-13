@@ -5,7 +5,7 @@
 - **模块**: `StandaloneFloatingWidget`（进程监控悬浮窗）
 - **版本**: v1.0
 - **日期**: 2026-09-03
-- **状态**: 待实施 → 已实施（v1.0 已实现；v1.1 依实测修订「手动双击检测」方案；v1.2 依再次实测「捕获保持+延迟展开」方案；v1.3 依用户需求修订「仅面板模式双击切换，悬浮球不捕获双击」，回退 v1.1/v1.2 Orb 双击机制；v1.4 依用户需求「列表双击也应切换」将 onItemActivated 由定位改为切换主界面；v1.5 依用户需求「双击列表内任何区域均触发」在 list_ 子控件上直接绑定 wxEVT_LEFT_DCLICK 捕获任意区域双击；v1.6 依用户需求「将双击效果改为最大化、最小化」将切换目标改为「窗口化/最小化→最大化；最大化→最小化」。本文档以 v1.6 为准）
+- **状态**: 待实施 → 已实施（v1.0 已实现；v1.1 依实测修订「手动双击检测」方案；v1.2 依再次实测「捕获保持+延迟展开」方案；v1.3 依用户需求修订「仅面板模式双击切换，悬浮球不捕获双击」，回退 v1.1/v1.2 Orb 双击机制；v1.4 依用户需求「列表双击也应切换」将 onItemActivated 由定位改为切换主界面；v1.5 依用户需求「双击列表内任何区域均触发」在 list_ 子控件上直接绑定 wxEVT_LEFT_DCLICK 捕获任意区域双击；v1.6 依用户需求「将双击效果改为最大化、最小化」将切换目标改为「窗口化/最小化→最大化；最大化→最小化」；**v1.7 依用户需求「单击只是选中当前记录，定位改为双击」回退 v1.4/v1.5 的行双击语义：行双击恢复定位、行单击不再定位，仅列表空白区双击切换主界面（见 §4.8）**。本文档以 v1.7 为准）
 - **关联**:
   - `docs/specs/2026-09-01-Spec-StandaloneFloatingWidget-v1.3.md`
   - `docs/specs/2026-08-24-Spec-StandaloneFloatingWidget-v1.2.md`
@@ -211,6 +211,24 @@ void StandaloneFloatingWidget::onListLeftDClick(wxMouseEvent& event) {
 - **切换目标（v1.6 用户需求 `toggleMainFrameMaximize` 统一实现）**：当前窗口化/最小化 → `Maximize(true)`（最大化）；当前最大化 → `Iconize(true)`（最小化）。`toggleMainFrameMaximize` 名为历史遗留，实际切换「最大化 ⇄ 最小化」。
 
 **为何有效**：`list_` 是悬浮窗的子窗口，列表边界内（含空白区）的任何双击都先派发到 `list_` 控件，故在其上绑定 `wxEVT_LEFT_DCLICK` 可捕获**任意区域**双击；`event.Skip()` 保证原生 `wxListCtrl` 处理（行选择/激活定位）不被破坏。
+
+### 4.8 单击仅选中、行双击定位（v1.7 用户需求，回退 v1.4/v1.5 行语义）
+
+**需求变更（用户明确）**：『将悬浮弹窗中单击独立代理定位到主界面相关订阅、代理列表窗口功能改为双击执行，单击只是选中当前记录』。
+
+**实现（spec 2026-11-12）**：
+
+1. **删除单击定位**：移除 `list_->Bind(wxEVT_LIST_ITEM_SELECTED, onItemSelected)` 与 `onItemSelected` 声明/定义 —— 单击只保留 wxListCtrl 原生选中（`wxLC_SINGLE_SEL`）。
+2. **行双击 → 定位**：`onItemActivated` 恢复为取 `event.GetIndex()` 行的 `COL_INDEX_ID` → `wxQueueEvent(locateTarget_, new LocateProxyEvent(indexId))`（复用 MainFrame 既有双定位 + `collapseToOrb` + 主窗最大化链路）。
+3. **空白区双击 → 切换**：`onListLeftDClick` 用 `wxListCtrl::HitTest(event.GetPosition(), flags)` 分流，仅当未命中数据行时 `toggleMainFrameMaximize()`；命中行时交由 `onItemActivated` 定位。判定抽为纯函数 `FloatingWidgetPolicy::listDoubleClickAction(long)`。
+
+**最终语义（v1.7）**：
+- **Orb 模式**：单击展开为 Panel；不捕获双击。
+- **Panel 背景双击** → `onLeftDClick` → `toggleMainFrameMaximize()`。
+- **Panel 列表空白区双击**（行间/行下方）→ `onListLeftDClick` → `toggleMainFrameMaximize()`。
+- **Panel 列表行双击** → `onItemActivated` → **定位**到主界面订阅 + 代理列表（v1.7 起不再切换主界面）。
+- **Panel 列表行单击** → 仅选中该行（v1.7 起不再定位）。
+- 定位成功后由 MainFrame 处理器收起悬浮窗并最大化主窗，用户可见定位结果。
 
 ## 5. 变更清单
 

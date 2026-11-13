@@ -107,8 +107,7 @@ private:
     WXLRESULT MSWWindowProc(WXUINT message, WXWPARAM wParam, WXLPARAM lParam) override;
     void updateLayeredWindow(wxImage& img);
 #endif
-    void onItemActivated(wxListEvent& event);
-    void onItemSelected(wxListEvent& event);
+    void onItemActivated(wxListEvent& event);  // 双击行 → 定位到订阅 + 代理列表
 
     void refreshRows();
     void setMode(Mode m, bool force = false);

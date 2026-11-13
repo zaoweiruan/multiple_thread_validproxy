@@ -175,6 +175,19 @@ inline int clampHoverExpandDelayMs(int v) {
 // Pixels of movement below which a press-release is a click, not a drag.
 inline int dragThresholdPx() { return 4; }
 
+// Double-click inside the floating monitor list. A double-click that hits a
+// data row locates the proxy (LocateProxyEvent -> subscription + proxy list);
+// a double-click on the blank area below/between rows keeps the old
+// "toggle main frame maximize" gesture. Single click only selects the row and
+// never locates (spec 2026-11-12).
+enum class ListDoubleClickAction { LocateProxy, ToggleMainFrame };
+
+// `hitRow` is wxListCtrl::HitTest's return value (wxNOT_FOUND == -1 on blank).
+inline ListDoubleClickAction listDoubleClickAction(long hitRow) {
+    return hitRow >= 0 ? ListDoubleClickAction::LocateProxy
+                       : ListDoubleClickAction::ToggleMainFrame;
+}
+
 } // namespace FloatingWidgetPolicy
 
 #endif // FLOATING_WIDGET_POLICY_H

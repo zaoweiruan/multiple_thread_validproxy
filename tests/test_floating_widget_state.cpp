@@ -110,3 +110,22 @@ TEST(FloatingWidgetStateTest, HideDelaySliderRoundTrip) {
     EXPECT_EQ(FloatingWidgetPolicy::hideDelayToSlider(mid), 500);
     EXPECT_EQ(FloatingWidgetPolicy::dragThresholdPx(), 4);
 }
+
+// Spec 2026-11-12: double-click a data row locates the proxy; only a
+// double-click on blank list area keeps toggling the main frame. Single click
+// must never locate (that path is gone -- no wxEVT_LIST_ITEM_SELECTED binding).
+TEST(FloatingWidgetStateTest, ListDoubleClickActionOnRowLocatesProxy) {
+    EXPECT_EQ(FloatingWidgetPolicy::listDoubleClickAction(0),
+              FloatingWidgetPolicy::ListDoubleClickAction::LocateProxy);
+    EXPECT_EQ(FloatingWidgetPolicy::listDoubleClickAction(7),
+              FloatingWidgetPolicy::ListDoubleClickAction::LocateProxy);
+}
+
+TEST(FloatingWidgetStateTest, ListDoubleClickActionOnBlankTogglesMainFrame) {
+    // wxNOT_FOUND == -1 (blank area below/between rows).
+    EXPECT_EQ(FloatingWidgetPolicy::listDoubleClickAction(-1),
+              FloatingWidgetPolicy::ListDoubleClickAction::ToggleMainFrame);
+    // Any other negative sentinel must also fall back to the toggle gesture.
+    EXPECT_EQ(FloatingWidgetPolicy::listDoubleClickAction(-42),
+              FloatingWidgetPolicy::ListDoubleClickAction::ToggleMainFrame);
+}
