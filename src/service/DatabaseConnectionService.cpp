@@ -6,9 +6,16 @@ namespace service {
 DatabaseConnectionService::DatabaseConnectionService() {
 }
 
-sqlite3* DatabaseConnectionService::open(const std::string& path) {
+sqlite3* DatabaseConnectionService::open(const std::string& path, OpenMode mode) {
     sqlite3* db = nullptr;
-    int rc = sqlite3_open_v2(path.c_str(), &db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX, nullptr);
+    // FULLMUTEX must stay in both modes: the app shares this handle across threads.
+    int flags = SQLITE_OPEN_FULLMUTEX;
+    if (mode == OpenMode::ReadWriteCreate) {
+        flags |= SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE;
+    } else {
+        flags |= SQLITE_OPEN_READWRITE;
+    }
+    int rc = sqlite3_open_v2(path.c_str(), &db, flags, nullptr);
     if (rc != SQLITE_OK) {
         Logger::write("Failed to open database: " + std::string(sqlite3_errmsg(db)), LogLevel::ERR);
         if (db) sqlite3_close(db);
