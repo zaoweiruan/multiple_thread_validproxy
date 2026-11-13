@@ -81,6 +81,8 @@ private:
     void onIconize(wxIconizeEvent& event);
     void onMenuImportSub(wxCommandEvent& event);
     void onMenuSyncDb(wxCommandEvent& event);
+    void onMenuCloudPullSubs(wxCommandEvent& event);
+    void onMenuCloudPush(wxCommandEvent& event);
     void onMenuExit(wxCommandEvent& event);
     void onMenuUpdateAll(wxCommandEvent& event);
     void onMenuFindProxy(wxCommandEvent& event);

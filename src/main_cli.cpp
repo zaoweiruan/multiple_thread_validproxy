@@ -29,6 +29,11 @@
 #include "ProxyBatchTester.h"
 #include "Utils.h"
 #include "Logger.h"
+#include "service/CloudSyncService.h"
+#include "net/WebDavClient.h"
+#include "net/WebDavCredentials.h"
+#include "Subitem.h"
+#include <boost/json.hpp>
 #include "version.h"
 #include "service/DatabaseConnectionService.h"
 #include "FullConfigTemplateDAO.h"
@@ -225,6 +230,102 @@ ProxyBatchTester tester(db, *appConfig, exeDir, &g_cancelRequested);
 // constructs AppController, so unlike the GUI (AppController constructor +
 // saveConfig) it would otherwise leave g_timeWaitBlocking stuck at its default
 // false, making port.time_wait_blocking un-rollable for CLI runs.
+
+// ---------------------------------------------------------------------------
+// WebDAV cloud sync (manual CLI entry points; the GUI has menu items for the
+// same operations). Credentials are embedded at build time - see
+// scripts/provision_webdav_secret.py.
+// ---------------------------------------------------------------------------
+static std::string readWebDavRemoteDir(const std::string& configPath) {
+    const char* const kDefault = "validproxy";
+    std::ifstream in(configPath, std::ios::binary);
+    if (!in.is_open()) {
+        return kDefault;
+    }
+    std::ostringstream ss;
+    ss << in.rdbuf();
+    boost::system::error_code ec;
+    boost::json::value root = boost::json::parse(ss.str(), ec);
+    if (ec || !root.is_object()) {
+        return kDefault;
+    }
+    boost::json::value* webdav = root.as_object().if_contains("webdav");
+    if (webdav == nullptr || !webdav->is_object()) {
+        return kDefault;
+    }
+    boost::json::value* dir = webdav->as_object().if_contains("remote_dir");
+    if (dir == nullptr || !dir->is_string()) {
+        return kDefault;
+    }
+    const std::string value = dir->as_string().c_str();
+    return value.empty() ? std::string(kDefault) : value;
+}
+
+static int runCloudSync(const std::string& mode, const std::string& configPath,
+                        const std::string& exeDir, const std::string& logDir) {
+    Logger::init(logDir, "cloud");
+
+    net::WebDavCredentials credentials;
+    std::string credError;
+    if (!net::WebDavCredentialsStore::load(credentials, credError)) {
+        logError(credError);
+        std::cerr << "[cloud] " << credError << std::endl;
+        Logger::close();
+        return 2;
+    }
+
+    const std::string remoteDir = readWebDavRemoteDir(configPath);
+    net::WebDavClient client(credentials, "https://dav.jianguoyun.com/dav/");
+
+    std::optional<config::AppConfig> appConfig = config::ConfigReader::load(configPath);
+    if (!appConfig && mode != "cloudpullconfig") {
+        logError("Failed to load config from: " + configPath);
+        Logger::close();
+        return 1;
+    }
+
+    const std::string localConfigPath =
+            (std::filesystem::path(exeDir) / "config.json").string();
+
+    // cloudpullconfig does not need a database; the other two do.
+    if (mode == "cloudpullconfig") {
+        const service::CloudSyncResult result =
+                service::CloudSyncService::pullConfigOnly(client, remoteDir, localConfigPath);
+        std::cout << (result.ok ? "[cloud] " : "[cloud] FAILED: ") << result.detail
+                  << result.error << std::endl;
+        Logger::close();
+        return result.ok ? 0 : 1;
+    }
+
+    sqlite3* db = nullptr;
+    if (!openDatabase(*appConfig, db, "[cloud] sync")) {
+        Logger::close();
+        return 1;
+    }
+    db::models::SubitemDAO subDao(db);
+    service::CloudSyncService service(client, remoteDir, localConfigPath, subDao);
+
+    int exitCode = 0;
+    if (mode == "cloudpullsubs") {
+        const service::CloudSyncResult result = service.pullSubscriptions();
+        std::cout << (result.ok ? "[cloud] " : "[cloud] FAILED: ") << result.detail
+                  << result.error << std::endl;
+        exitCode = result.ok ? 0 : 1;
+    } else {  // cloudpush
+        const service::CloudSyncResult cfgResult = service.pushConfig();
+        std::cout << "[cloud] config: " << (cfgResult.ok ? cfgResult.detail : cfgResult.error)
+                  << std::endl;
+        const service::CloudSyncResult subResult = service.pushSubscriptions();
+        std::cout << "[cloud] subscriptions: "
+                  << (subResult.ok ? subResult.detail : subResult.error) << std::endl;
+        exitCode = (cfgResult.ok && subResult.ok) ? 0 : 1;
+    }
+
+    sqlite3_close(db);
+    Logger::close();
+    return exitCode;
+}
+
 int main(int argc, char* argv[]) {
     SetConsoleCtrlHandler(consoleCtrlHandler, TRUE);
     CurlGlobalGuard curlGuard;  // RAII guard for curl global init/cleanup
@@ -307,6 +408,12 @@ int main(int argc, char* argv[]) {
             commandMode = "test-all";
         } else if (arg == "-TU" || arg == "-tourl" || arg == "--tourl") {
             commandMode = "tourl";
+        } else if (arg == "-CP" || arg == "-cloud-pull-subs" || arg == "--cloud-pull-subs") {
+            commandMode = "cloudpullsubs";
+        } else if (arg == "-CU" || arg == "-cloud-push" || arg == "--cloud-push") {
+            commandMode = "cloudpush";
+        } else if (arg == "-CF" || arg == "-cloud-pull-config" || arg == "--cloud-pull-config") {
+            commandMode = "cloudpullconfig";
         } else if (arg == "-S" || arg == "-sync" || arg == "--sync") {
             commandMode = "sync";
             if (i + 1 < argc) {
@@ -374,6 +481,12 @@ int main(int argc, char* argv[]) {
     
     if (commandMode == "test-all") {
         return runDefaultTest(configPath, exeDir, logDir, "test-all");
+    }
+
+    // ---- WebDAV cloud sync (manual triggers) ----
+    if (commandMode == "cloudpullconfig" || commandMode == "cloudpullsubs" ||
+        commandMode == "cloudpush") {
+        return runCloudSync(commandMode, configPath, exeDir, logDir.string());
     }
     
     

@@ -167,6 +167,24 @@ configure_file(
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
     ${CMAKE_CURRENT_SOURCE_DIR}/resources/schema_init.sql)
 
+# ---- Embedded WebDAV credential blob (gitignored; empty when not provisioned) ----
+set(WEBDAV_SECRET_INC ${CMAKE_CURRENT_SOURCE_DIR}/resources/webdav_secret.inc)
+if(EXISTS ${WEBDAV_SECRET_INC})
+    file(READ ${WEBDAV_SECRET_INC} WEBDAV_SECRET_BLOB)
+    message(STATUS "WebDAV credentials: provisioned")
+else()
+    set(WEBDAV_SECRET_BLOB "")
+    message(STATUS "WebDAV credentials: NOT provisioned (cloud sync disabled)")
+endif()
+string(STRIP "${WEBDAV_SECRET_BLOB}" WEBDAV_SECRET_BLOB)
+set(WEBDAV_SECRET_GENERATED ${CMAKE_CURRENT_BINARY_DIR}/generated/WebDavSecret.cpp)
+configure_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/resources/WebDavSecret.cpp.in
+    ${WEBDAV_SECRET_GENERATED}
+    @ONLY
+)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${WEBDAV_SECRET_INC})
+
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
 include_directories(${CMAKE_BINARY_DIR}/include)
 include_directories(${VCPKG_ROOT}/installed/x64-mingw-static/include)
@@ -269,7 +287,11 @@ set(CORE_SOURCES
     src/test/ProxyTestResultSink.cpp
     src/service/DatabaseConnectionService.cpp
     src/service/DatabaseBootstrap.cpp
+    src/net/WebDavClient.cpp
+    src/net/WebDavCredentials.cpp
+    src/service/CloudSyncService.cpp
     ${SCHEMA_INIT_GENERATED}
+    ${WEBDAV_SECRET_GENERATED}
     src/task/MutexPolicy.cpp
     src/task/TaskQueue.cpp
     src/task/TaskType.cpp
@@ -898,6 +920,40 @@ set_target_properties(test_database_bootstrap PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
 )
 add_test(NAME DatabaseBootstrapTest COMMAND test_database_bootstrap)
+
+# -- Cloud sync unit tests (pure logic: no network, no sqlite) --
+add_executable(test_cloud_sync
+    tests/test_cloud_sync.cpp
+    src/service/CloudSyncService.cpp
+    src/net/WebDavClient.cpp
+    src/net/WebDavCredentials.cpp
+    src/SubitemDAO.cpp
+    src/Logger.cpp
+    src/LoggerInstance.cpp
+    src/Utils.cpp
+    ${SCHEMA_INIT_GENERATED}
+    ${WEBDAV_SECRET_GENERATED}
+)
+target_include_directories(test_cloud_sync PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(test_cloud_sync PRIVATE
+    gtest_main
+    gtest
+    ${VCPKG_ROOT}/installed/x64-mingw-static/lib/libsqlite3.a
+    ${VCPKG_ROOT}/installed/x64-mingw-static/lib/libboost_json-gcc14-mt-x64-1_91.a
+    ${VCPKG_ROOT}/installed/x64-mingw-static/lib/libcurl.a
+    ${VCPKG_ROOT}/installed/x64-mingw-static/lib/libzs.a
+    ws2_32
+    crypt32
+    secur32
+    bcrypt
+    wintrust
+)
+set_target_properties(test_cloud_sync PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+)
+add_test(NAME CloudSyncTest COMMAND test_cloud_sync)
 
 # -- ConfigGenerator unit tests (SQLite + boost_json, now delegates to extracted components) --
 add_executable(test_config_generator

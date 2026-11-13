@@ -1,3 +1,8 @@
+#include <filesystem>
+#include "Subitem.h"
+#include "net/WebDavCredentials.h"
+#include "net/WebDavClient.h"
+#include "service/CloudSyncService.h"
 #include "MainFrame.h"
 #include "ConfigDialog.h"
 #include "StandaloneFloatingWidget.h"
@@ -44,6 +49,8 @@
 enum {
     ID_MENU_IMPORT_SUB    = wxID_HIGHEST + 100,
     ID_MENU_SYNC_DB       = wxID_HIGHEST + 101,
+    ID_MENU_CLOUD_PULL   = wxID_HIGHEST + 191,
+    ID_MENU_CLOUD_PUSH   = wxID_HIGHEST + 192,
     ID_MENU_EXIT          = wxID_HIGHEST + 102,
     ID_MENU_UPDATE_ALL    = wxID_HIGHEST + 103,
 
@@ -90,6 +97,8 @@ wxBEGIN_EVENT_TABLE(MainFrame, wxFrame)
     // Menu
     EVT_MENU(ID_MENU_IMPORT_SUB,  MainFrame::onMenuImportSub)
     EVT_MENU(ID_MENU_SYNC_DB,     MainFrame::onMenuSyncDb)
+EVT_MENU(ID_MENU_CLOUD_PULL, MainFrame::onMenuCloudPullSubs)
+EVT_MENU(ID_MENU_CLOUD_PUSH, MainFrame::onMenuCloudPush)
     EVT_MENU(ID_MENU_EXIT,        MainFrame::onMenuExit)
     EVT_MENU(ID_MENU_UPDATE_ALL,  MainFrame::onMenuUpdateAll)
     EVT_MENU(ID_MENU_FIND_PROXY,  MainFrame::onMenuFindProxy)
@@ -795,6 +804,8 @@ void MainFrame::initMenuBar() {
     fileMenu->Append(ID_MENU_IMPORT_SUB,  L"导入订阅链接…\tCtrl+I");
     fileMenu->Append(ID_MENU_UPDATE_ALL,  L"更新全部订阅\tCtrl+U");
     fileMenu->Append(ID_MENU_SYNC_DB,     L"同步数据库…");
+    fileMenu->Append(ID_MENU_CLOUD_PULL, L"从云端同步订阅");
+    fileMenu->Append(ID_MENU_CLOUD_PUSH, L"上传配置与订阅到云端");
     fileMenu->AppendSeparator();
     fileMenu->Append(ID_MENU_EXIT,        L"退出\tAlt+X");
     bar->Append(fileMenu, L"&文件");
@@ -1238,6 +1249,67 @@ void MainFrame::onMenuSyncDb(wxCommandEvent&) {
     // TODO: prompt for confirmation
     // controller_->syncDatabasesAsync(src, dst, this);
 }
+
+namespace {
+
+// Runs the requested cloud operation off the UI thread and reports back through
+// the frame's status bar. Network IO must never run on the wx main thread.
+void runCloudOperationAsync(MainFrame* frame, sqlite3* db, const std::string& localConfigPath,
+                            const std::string& remoteDir, bool push) {
+    std::thread([frame, db, localConfigPath, remoteDir, push]() {
+        net::WebDavCredentials credentials;
+        std::string credError;
+        if (!net::WebDavCredentialsStore::load(credentials, credError)) {
+            frame->CallAfter([frame, credError]() {
+                wxMessageBox(wxString::FromUTF8(credError.c_str()), "云端同步",
+                             wxOK | wxICON_WARNING, frame);
+            });
+            return;
+        }
+
+        net::WebDavClient client(credentials, "https://dav.jianguoyun.com/dav/");
+        db::models::SubitemDAO subDao(db);
+        service::CloudSyncService sync(client, remoteDir, localConfigPath, subDao);
+
+        service::CloudSyncResult primary;
+        std::string message;
+        if (push) {
+            const service::CloudSyncResult cfgResult = sync.pushConfig();
+            primary = sync.pushSubscriptions();
+            message = primary.detail + (cfgResult.ok ? "" : ("；config 失败：" + cfgResult.error));
+            primary.ok = primary.ok && cfgResult.ok;
+        } else {
+            primary = sync.pullSubscriptions();
+            message = primary.ok ? primary.detail : primary.error;
+        }
+
+        const bool ok = primary.ok;
+        frame->CallAfter([frame, message, ok]() {
+            static_cast<wxFrame*>(frame)->SetStatusText(wxString::FromUTF8(message.c_str()));
+            wxMessageBox(wxString::FromUTF8(message.c_str()), "云端同步",
+                         wxOK | (ok ? wxICON_INFORMATION : wxICON_ERROR), frame);
+        });
+    }).detach();
+}
+
+} // namespace
+
+void MainFrame::onMenuCloudPullSubs(wxCommandEvent&) {
+    const std::string localConfigPath =
+            (std::filesystem::path(utils::getExecutableDir()) / "config.json").string();
+    runCloudOperationAsync(this, db_, localConfigPath, "validproxy", /*push=*/false);
+}
+
+void MainFrame::onMenuCloudPush(wxCommandEvent&) {
+    const wxString confirm = "将把当前 config.json 与订阅列表上传到云端，可能覆盖云端已有文件。\n\n是否继续？";
+    if (wxMessageBox(confirm, "上传到云端", wxYES_NO | wxICON_QUESTION, this) != wxYES) {
+        return;
+    }
+    const std::string localConfigPath =
+            (std::filesystem::path(utils::getExecutableDir()) / "config.json").string();
+    runCloudOperationAsync(this, db_, localConfigPath, "validproxy", /*push=*/true);
+}
+
 
 void MainFrame::onMenuExit(wxCommandEvent&) {
     Close();
