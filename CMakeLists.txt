@@ -1,29 +1,93 @@
 cmake_minimum_required(VERSION 3.20)
 
 # ===== Toolchain selection (must run before project()) =====
-# Order: $ENV{VALIDPROXY_MINGW_ROOT} > CLion bundled MinGW (if present) > PATH.
-# Rationale (2026-11-10): w64devkit GCC 16.2.0's libstdc++.a references
-# __imp_wctype/__imp_wctob/__imp_btowc/__imp_fseeko64/fstat64/... which this
-# vcpkg static link line does not satisfy -> "undefined reference" at link
-# time. CLion's bundled GCC 15.2.0 links clean and ships its runtime DLLs
-# dynamically (the POST_BUILD copy guards below key off CMAKE_CXX_COMPILER).
-if(NOT DEFINED CMAKE_CXX_COMPILER OR "${CMAKE_CXX_COMPILER}" STREQUAL "")
-    set(_MINGW_ROOT "$ENV{VALIDPROXY_MINGW_ROOT}")
-    if(NOT _MINGW_ROOT AND EXISTS "E:/clion/bin/mingw/bin/g++.exe")
-        set(_MINGW_ROOT "E:/clion/bin/mingw")
+# VALIDPROXY_TOOLCHAIN selects the MinGW toolchain via a CMake toolchain file:
+#   -DVALIDPROXY_TOOLCHAIN=<tc>  or  $ENV{VALIDPROXY_TOOLCHAIN}=<tc>
+#   <tc> = clion | ucrt
+# Resolution order: -D cache value > $ENV{VALIDPROXY_TOOLCHAIN} > default "ucrt".
+#   clion : CLion bundled MinGW (E:/clion/bin/mingw)  GCC 15.2.0, MSVCRT
+#           (zero-risk baseline; wx/Catch2 from the vcpkg msvcrt tree)
+#   ucrt  : UCRT MinGW (E:/mingw64)                    GCC 16.2.0, UCRT
+#           (the GUI flash-crash fix toolchain; wx/Catch2 from temp/vcpkg-ucrt-root)
+# Each toolchain file sets the compiler, the CRT label (VALIDPROXY_TC_CRT) and
+# per-toolchain dependency roots (VALIDPROXY_TC_WX_DIR / VALIDPROXY_TC_CATCH2_DIR).
+# Dependency policy (user directive 2026-11-13): wxWidgets = DYNAMIC; every
+# other dependency (boost / sqlite3 / gtest / Catch2 / curl / zlib / ...) =
+# STATIC. cmake/AbiGuard.cmake (included after project()) FATALs if the compiler
+# CRT and the wx DLL CRT diverge, and warns on Catch2 major-version drift.
+#
+# NOTE: switching VALIDPROXY_TOOLCHAIN changes CMAKE_TOOLCHAIN_FILE, so use a
+# FRESH build directory per toolchain (or delete CMakeCache.txt) — the cached
+# compiler of a previously-configured dir would otherwise win.
+if(NOT DEFINED CMAKE_TOOLCHAIN_FILE OR "${CMAKE_TOOLCHAIN_FILE}" STREQUAL "")
+    set(_VALIDPROXY_TC "$ENV{VALIDPROXY_TOOLCHAIN}")
+    if(DEFINED VALIDPROXY_TOOLCHAIN AND NOT "${VALIDPROXY_TOOLCHAIN}" STREQUAL "")
+        set(_VALIDPROXY_TC "${VALIDPROXY_TOOLCHAIN}")
     endif()
-    if(_MINGW_ROOT)
-        set(CMAKE_CXX_COMPILER "${_MINGW_ROOT}/bin/g++.exe" CACHE FILEPATH "C++ compiler" FORCE)
-        # Some dependency module pulls in the C language; keep the whole
-        # project on one compiler so C and C++ runtime objects never mix.
-        set(CMAKE_C_COMPILER "${_MINGW_ROOT}/bin/gcc.exe" CACHE FILEPATH "C compiler" FORCE)
-        set(WX64DEVKIT_ROOT "${_MINGW_ROOT}" CACHE PATH "MinGW root for windres includes" FORCE)
-        message(STATUS "Toolchain: ${CMAKE_CXX_COMPILER}")
-        unset(_MINGW_ROOT)
+    if("${_VALIDPROXY_TC}" STREQUAL "")
+        set(_VALIDPROXY_TC "ucrt")
     endif()
+
+    if(_VALIDPROXY_TC STREQUAL "clion")
+        set(CMAKE_TOOLCHAIN_FILE
+            "${CMAKE_CURRENT_SOURCE_DIR}/cmake/toolchains/mingw-clion.cmake"
+            CACHE FILEPATH "CMake toolchain file (mingw-clion)" FORCE)
+    elseif(_VALIDPROXY_TC STREQUAL "ucrt")
+        set(CMAKE_TOOLCHAIN_FILE
+            "${CMAKE_CURRENT_SOURCE_DIR}/cmake/toolchains/mingw-ucrt.cmake"
+            CACHE FILEPATH "CMake toolchain file (mingw-ucrt)" FORCE)
+    else()
+        message(FATAL_ERROR
+            "VALIDPROXY_TOOLCHAIN='${_VALIDPROXY_TC}' is unknown. Valid values: clion, ucrt.")
+    endif()
+    set(VALIDPROXY_TOOLCHAIN "${_VALIDPROXY_TC}" CACHE STRING
+        "selected MinGW toolchain (clion|ucrt)" FORCE)
+    unset(_VALIDPROXY_TC)
 endif()
 
+
 project(multiple_thread_validproxy VERSION 1.6.0 LANGUAGES CXX)
+
+# ===== Per-toolchain dependency roots (defaults; overridable via -D) =====
+# wxWidgets = DYNAMIC; every other dependency = STATIC (user directive).
+# The toolchain file provides the matching roots; -DWX_VCPKG_DIR /
+# -DCATCH2_VCPKG_DIR still override for a custom dependency build.
+# Guard on non-empty so a custom -DCMAKE_TOOLCHAIN_FILE (no per-tc roots)
+# falls through to the vcpkg-tree defaults set later in this file.
+if(VALIDPROXY_TC_WX_DIR)
+    set(WX_VCPKG_DIR "${VALIDPROXY_TC_WX_DIR}" CACHE PATH
+        "vcpkg wxWidgets (dynamic) install dir — defaults to the selected toolchain's tree")
+endif()
+if(VALIDPROXY_TC_CATCH2_DIR)
+    set(CATCH2_VCPKG_DIR "${VALIDPROXY_TC_CATCH2_DIR}" CACHE PATH
+        "vcpkg Catch2 (static) install dir — defaults to the selected toolchain's tree")
+endif()
+
+# ===== ABI gate (configure-time toolchain/dependency consistency) =====
+# FATAL if compiler CRT != wx DLL CRT (the 0xC0000374 failure mode); warns on
+# Catch2 major-version drift. Escape hatch: -DVALIDPROXY_ALLOW_ABI_MISMATCH=ON.
+include(cmake/AbiGuard.cmake)
+
+# ===== Output isolation (per-toolchain) =====
+# VALIDPROXY_BIN_DIR / VALIDPROXY_TEST_DIR choose where the GUI/CLI exe + runtime
+# DLLs and the test exes land. Default = the in-tree bin/ and tests/ (current,
+# zero-change behaviour, keeps UI tests / build-and-test.bat working).
+# Set -DVALIDPROXY_ISOLATE_OUTPUTS=ON (with VALIDPROXY_TOOLCHAIN set) to place
+# them under <build>/out/{bin,tests} so different toolchains never share them.
+set(VALIDPROXY_ISOLATE_OUTPUTS OFF CACHE BOOL
+    "isolate GUI/CLI and test outputs under <build>/out/{bin,tests}")
+if(VALIDPROXY_ISOLATE_OUTPUTS)
+    set(VALIDPROXY_BIN_DIR "${CMAKE_BINARY_DIR}/out/bin" CACHE PATH
+        "directory for GUI/CLI exe + runtime DLL outputs (isolated)")
+    set(VALIDPROXY_TEST_DIR "${CMAKE_BINARY_DIR}/out/tests" CACHE PATH
+        "directory for test exe outputs (isolated)")
+else()
+    set(VALIDPROXY_BIN_DIR "${CMAKE_SOURCE_DIR}/bin" CACHE PATH
+        "directory for GUI/CLI exe + runtime DLL outputs")
+    set(VALIDPROXY_TEST_DIR "${CMAKE_SOURCE_DIR}/tests" CACHE PATH
+        "directory for test exe outputs")
+endif()
+message(STATUS "Toolchain: ${VALIDPROXY_TC_LABEL} | bin=${VALIDPROXY_BIN_DIR} | tests=${VALIDPROXY_TEST_DIR}")
 
 # ===== Rule 5: only use environment DLLs, never copy dependency DLLs =====
 # The vcpkg toolchain (CMAKE_TOOLCHAIN_FILE) injects a z-applocal POST_BUILD
@@ -55,8 +119,43 @@ set(VERSION_H_IN ${CMAKE_CURRENT_SOURCE_DIR}/include/version.h.in)
 # Build-time version header custom target — an ALL target that runs the
 # generator on every `cmake --build`, so APP_BUILD_TIME reflects the actual
 # build moment instead of the last configure time.
+#
+# Prefer configure-time Python discovery: `find_program` embeds the full
+# interpreter path into the generated build file, so the target no longer
+# depends on a bare `python` being on PATH at build time.  CLion's build
+# process (and any non-login shell that omits Python from PATH) previously
+# broke the `update_version_h` -> `version.h` edge and the dependent
+# `OBJECT_DEPENDS` on src/main_gui.cpp / src/main_cli.cpp / src/ui/MainFrame.cpp.
+#
+# Discovery chain (first hit wins, so CI / non-default installs are honoured):
+#   1. `$ENV{VALIDPROXY_PYTHON}`   — explicit user override (env var, CMake 3.23+)
+#   2. `py.exe` / `python3` / `python` on CMAKE_PROGRAM_PATH / PATH
+#   3. `python` as a last-resort bare name + configure-time WARNING
+# No version pin: any CPython 3.x works (the script is 2/3-compatible), so
+# `find_program` does NOT pass a `VERSION` argument.
+find_program(VALIDPROXY_PYTHON
+    NAMES py.exe python3 python
+    ENV VALIDPROXY_PYTHON
+)
+if(VALIDPROXY_PYTHON)
+    message(STATUS "version.h generator: using ${VALIDPROXY_PYTHON}")
+    set(VERSION_H_PYTHON_COMMAND ${VALIDPROXY_PYTHON})
+else()
+    message(WARNING
+        "No Python interpreter found for the update_version_h target "
+        "(searched py.exe, python3, python; $ENV{VALIDPROXY_PYTHON} unset). "
+        "Falling back to a bare `python` on PATH at build time. "
+        "Set VALIDPROXY_PYTHON (absolute path) before re-configuring to pin a specific interpreter.")
+    set(VERSION_H_PYTHON_COMMAND python)
+endif()
+
+# BYPRODUCTS declares ${VERSION_H} as a known output so Ninja has a rule for it
+# even in a FRESH build dir where the file does not yet exist (the ALL target
+# alone declares no output edge -> ninja "missing and no known rule to make it"
+# on the OBJECT_DEPENDS edge). The ALL target still runs the generator on every
+# `cmake --build`, so APP_BUILD_TIME keeps reflecting the build moment.
 add_custom_target(update_version_h ALL
-    COMMAND python ${CMAKE_CURRENT_SOURCE_DIR}/scripts/generate_version_h.py
+    COMMAND ${VERSION_H_PYTHON_COMMAND} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/generate_version_h.py
         ${VERSION_H_IN}
         ${VERSION_H}
         ${CMAKE_BUILD_TYPE}
@@ -66,6 +165,7 @@ add_custom_target(update_version_h ALL
         ${VERSION_TAG}
         ${VERSION_COMMIT}
         ${VERSION_DIRTY}
+    BYPRODUCTS ${VERSION_H}
     COMMENT "[version.h] Regenerating build-time version header..."
     VERBATIM
 )
@@ -152,6 +252,21 @@ if(NOT ZLIB_LIBRARY
         CACHE FILEPATH "zlib library" FORCE)
 endif()
 
+# ---- Embedded bootstrap schema (resources/schema_init.sql -> DatabaseSchemaInit.cpp) ----
+# The generated file is compiled into every target that links CORE_SOURCES, plus
+# the DatabaseBootstrap unit-test target. CMAKE_CONFIGURE_DEPENDS makes editing the
+# SQL trigger a reconfigure; without it the stale text would be embedded silently.
+file(MAKE_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/resources)
+file(READ ${CMAKE_CURRENT_SOURCE_DIR}/resources/schema_init.sql SCHEMA_INIT_SQL)
+set(SCHEMA_INIT_GENERATED ${CMAKE_CURRENT_BINARY_DIR}/generated/DatabaseSchemaInit.cpp)
+configure_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/resources/DatabaseSchemaInit.cpp.in
+    ${SCHEMA_INIT_GENERATED}
+    @ONLY
+)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+    ${CMAKE_CURRENT_SOURCE_DIR}/resources/schema_init.sql)
+
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
 include_directories(${CMAKE_BINARY_DIR}/include)
 include_directories(${VCPKG_ROOT}/installed/x64-mingw-static/include)
@@ -159,11 +274,18 @@ link_directories(${VCPKG_ROOT}/installed/x64-mingw-static/lib)
 
 find_package(Threads REQUIRED)
 find_package(CURL REQUIRED)
+# SQLite3 is a static vcpkg dependency (all deps static except wxWidgets).
+# Seed the CMake search paths with the vcpkg static tree so a fresh configure
+# needs no manual -DSQLite3_LIBRARY/-DSQLite3_INCLUDE_DIR (previously cached
+# only via command line). find_library/find_path re-search would otherwise
+# override a cached hint with NOTFOUND.
+list(APPEND CMAKE_LIBRARY_PATH "${VCPKG_ROOT}/installed/x64-mingw-static/lib")
+list(APPEND CMAKE_INCLUDE_PATH "${VCPKG_ROOT}/installed/x64-mingw-static/include")
 find_package(SQLite3 REQUIRED)
 
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin)
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/bin)
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/bin)
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${VALIDPROXY_BIN_DIR})
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_DEBUG ${VALIDPROXY_BIN_DIR})
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_RELEASE ${VALIDPROXY_BIN_DIR})
 
 # Shared core sources (compiled into both CLI and GUI targets)
 set(CORE_SOURCES
@@ -253,6 +375,8 @@ set(CORE_SOURCES
     src/test/ProxyTestCounters.cpp
     src/test/ProxyTestResultSink.cpp
     src/service/DatabaseConnectionService.cpp
+    src/service/DatabaseBootstrap.cpp
+    ${SCHEMA_INIT_GENERATED}
     src/task/MutexPolicy.cpp
     src/task/TaskQueue.cpp
     src/task/TaskType.cpp
@@ -293,9 +417,9 @@ add_dependencies(validproxy-cli update_version_h)
 
 # Force CLI output to bin (override global setting for tests)
 set_target_properties(validproxy-cli PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin
-    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/bin
-    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/bin
+    RUNTIME_OUTPUT_DIRECTORY ${VALIDPROXY_BIN_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${VALIDPROXY_BIN_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${VALIDPROXY_BIN_DIR}
 )
 
 # MinGW runtime DLLs (libstdc++/libgcc/libwinpthread) - see the same block
@@ -311,7 +435,7 @@ if(EXISTS "${MINGW_RUNTIME_DIR}/libstdc++-6.dll")
             "${MINGW_RUNTIME_DIR}/libstdc++-6.dll"
             "${MINGW_RUNTIME_DIR}/libgcc_s_seh-1.dll"
             "${MINGW_RUNTIME_DIR}/libwinpthread-1.dll"
-            ${CMAKE_SOURCE_DIR}/bin/
+            ${VALIDPROXY_BIN_DIR}/
         COMMENT "Copy MinGW runtime DLLs to bin/ (PATH has Tesseract-OCR before MinGW)"
         VERBATIM
     )
@@ -322,10 +446,15 @@ if(USE_GRPC_API)
 endif()
 
 # -- wxWidgets (GUI mode) --
+# vcpkg wxWidgets dynamic install dir. Defaults to the msvcrt tree; override
+# with -DWX_VCPKG_DIR=<dir> to use a differently-built wx (e.g. the UCRT
+# rebuild that fixes the GUI 0xC0000374 heap corruption, see
+# docs/bugfix/2026-11-13-Bugfix-GuiFlashCrash-WxToolchainMismatch-v1.0.md).
+set(WX_VCPKG_DIR "${VCPKG_ROOT}/installed/x64-mingw-dynamic" CACHE PATH "vcpkg wxWidgets dynamic install dir")
 # Find wxWidgets as a CMake CONFIG package from vcpkg (dynamic variant, which has proper cmake config)
 # Pre-find NanoSVG dependency so wxWidgets config can find it
 find_package(NanoSVG CONFIG QUIET
-    PATHS "${VCPKG_ROOT}/installed/x64-mingw-dynamic/share/nanosvg"
+    PATHS "${WX_VCPKG_DIR}/share/nanosvg"
     NO_DEFAULT_PATH
 )
 if(NOT NanoSVG_FOUND)
@@ -333,7 +462,7 @@ if(NOT NanoSVG_FOUND)
 endif()
 
 find_package(wxWidgets CONFIG QUIET
-    PATHS "${VCPKG_ROOT}/installed/x64-mingw-dynamic/share/wxwidgets"
+    PATHS "${WX_VCPKG_DIR}/share/wxwidgets"
     NO_DEFAULT_PATH
 )
 
@@ -423,21 +552,21 @@ add_dependencies(validproxy update_version_h)
     )
 
     # Add include directory for wx headers (dynamic variant headers)
-    target_include_directories(validproxy PRIVATE "${VCPKG_ROOT}/installed/x64-mingw-dynamic/include")
+    target_include_directories(validproxy PRIVATE "${WX_VCPKG_DIR}/include")
 
     # Add include directory for UI source headers
     target_include_directories(validproxy PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/ui)
 
     # Scheme A (PATH-based): wx DLLs are resolved via the PATH env var
-    # pointing to ${VCPKG_ROOT}/installed/x64-mingw-dynamic/{,debug/}bin.
+    # pointing to ${WX_VCPKG_DIR}/{,debug/}bin.
     # No DLLs are copied to ${CMAKE_SOURCE_DIR}/bin (docs/DEV-PROCESS.md 规则 5).
 
     # WIN32_EXECUTABLE creates GUI subsystem executable (no console window)
     set_target_properties(validproxy PROPERTIES
         WIN32_EXECUTABLE TRUE
-        RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin
-        RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/bin
-        RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/bin
+        RUNTIME_OUTPUT_DIRECTORY ${VALIDPROXY_BIN_DIR}
+        RUNTIME_OUTPUT_DIRECTORY_DEBUG ${VALIDPROXY_BIN_DIR}
+        RUNTIME_OUTPUT_DIRECTORY_RELEASE ${VALIDPROXY_BIN_DIR}
     )
     target_compile_definitions(validproxy PRIVATE HAS_WXWIDGETS=1)
 
@@ -465,10 +594,36 @@ add_dependencies(validproxy update_version_h)
                 "${MINGW_RUNTIME_DIR}/libstdc++-6.dll"
                 "${MINGW_RUNTIME_DIR}/libgcc_s_seh-1.dll"
                 "${MINGW_RUNTIME_DIR}/libwinpthread-1.dll"
-                ${CMAKE_SOURCE_DIR}/bin/
+                ${VALIDPROXY_BIN_DIR}/
             COMMENT "Copy MinGW runtime DLLs to bin/ (PATH has Tesseract-OCR before MinGW)"
             VERBATIM
         )
+    endif()
+
+    # ===== wxWidgets runtime DLLs (dynamic wx, GUI) =====
+    # Rule 5 forbids copying dependency DLLs to bin/ and wx is resolved via
+    # PATH (Scheme A) by default. BUT the Windows loader searches the exe
+    # directory FIRST, so a plain double-click launch (no PATH override) loads
+    # whatever wx it finds on PATH - which can be a DIFFERENT toolchain/CRT
+    # than the exe (see docs/bugfix/2026-11-13-Bugfix-GuiFlashCrash-WxToolchainMismatch-v1.0.md:
+    # msvcrt wx + UCRT exe = heap corruption 0xC0000374). To make the GUI
+    # self-contained and double-click-safe for a given wx build, set
+    # -DVALIDPROXY_COPY_WX_RUNTIME=ON to copy ${WX_VCPKG_DIR}/debug/bin/*.dll
+    # next to the exe (the loader picks the exe-dir copy first, so it always
+    # matches the exe's CRT). OFF by default to preserve Rule 5 semantics.
+    option(VALIDPROXY_COPY_WX_RUNTIME "Copy wxWidgets runtime DLLs to bin/ (exe dir) so the GUI loads a CRT-matching wx on double-click" OFF)
+    if(VALIDPROXY_COPY_WX_RUNTIME AND EXISTS "${WX_VCPKG_DIR}/debug/bin")
+        file(GLOB _wx_runtime_dlls "${WX_VCPKG_DIR}/debug/bin/*.dll")
+        if(_wx_runtime_dlls)
+            add_custom_command(TARGET validproxy POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    ${_wx_runtime_dlls}
+                    ${VALIDPROXY_BIN_DIR}/
+                COMMENT "Copy wxWidgets runtime DLLs to ${VALIDPROXY_BIN_DIR}/ (exe-dir-first loader search, CRT-matched wx)"
+                VERBATIM
+            )
+        endif()
+        unset(_wx_runtime_dlls)
     endif()
 
     # ===== ProxyListModel evaluation-maps unit test (needs wx runtime) =====
@@ -482,12 +637,12 @@ add_dependencies(validproxy update_version_h)
     target_include_directories(test_proxy_list_model PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include
         ${CMAKE_CURRENT_SOURCE_DIR}/src/ui
-        "${VCPKG_ROOT}/installed/x64-mingw-dynamic/include")
+        "${WX_VCPKG_DIR}/include")
     # 动态 wx 头文件必须优先于全局 static/include（否则 setup.h 按静态 wx ABI
     # 编译，链接动态 wx DLL 时产生不存在的导出符号，运行时报 0xC0000139）
     target_include_directories(test_proxy_list_model SYSTEM BEFORE PRIVATE
-        "${VCPKG_ROOT}/installed/x64-mingw-dynamic/include"
-        "${VCPKG_ROOT}/installed/x64-mingw-dynamic/lib/mswud")
+        "${WX_VCPKG_DIR}/include"
+        "${WX_VCPKG_DIR}/lib/mswud")
     target_link_libraries(test_proxy_list_model PRIVATE
         gtest_main
         gtest
@@ -500,7 +655,7 @@ add_dependencies(validproxy update_version_h)
         wx::wxnet
         ${VCPKG_ROOT}/installed/x64-mingw-static/lib/libsqlite3.a)
     set_target_properties(test_proxy_list_model PROPERTIES
-        RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/tests)
+        RUNTIME_OUTPUT_DIRECTORY ${VALIDPROXY_TEST_DIR})
     add_test(NAME ProxyListModelTest COMMAND test_proxy_list_model)
 
 else()
@@ -541,9 +696,9 @@ add_executable(test_task_type tests/test_task_type.cpp src/task/TaskType.cpp)
 target_include_directories(test_task_type PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(test_task_type PRIVATE gtest_main gtest)
 set_target_properties(test_task_type PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
-    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
-    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${VALIDPROXY_TEST_DIR}
 )
 add_test(NAME TaskTypeLabelTest COMMAND test_task_type)
 
@@ -551,9 +706,9 @@ add_executable(test_task_format tests/test_task_format.cpp src/task/TaskFormat.c
 target_include_directories(test_task_format PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(test_task_format PRIVATE gtest_main gtest)
 set_target_properties(test_task_format PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
-    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
-    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${VALIDPROXY_TEST_DIR}
 )
 add_test(NAME TaskFormatTest COMMAND test_task_format)
 
@@ -561,9 +716,9 @@ add_executable(test_batch_pending tests/test_batch_pending.cpp)
 target_include_directories(test_batch_pending PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(test_batch_pending PRIVATE gtest_main gtest)
 set_target_properties(test_batch_pending PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
-    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
-    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${VALIDPROXY_TEST_DIR}
 )
 add_test(NAME BatchPendingViewTest COMMAND test_batch_pending)
 
@@ -576,9 +731,9 @@ add_test(NAME TaskCancelResetGuardTest COMMAND test_task_cancel_reset)
 target_include_directories(test_curl_easy_handle PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(test_curl_easy_handle PRIVATE CURL::libcurl)
 set_target_properties(test_curl_easy_handle PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
-    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
-    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${VALIDPROXY_TEST_DIR}
 )
 add_test(NAME CurlEasyHandleTest COMMAND test_curl_easy_handle)
 
@@ -597,9 +752,9 @@ target_link_libraries(test_connectivity_verify PRIVATE
     -lws2_32
 )
 set_target_properties(test_connectivity_verify PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
-    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
-    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${VALIDPROXY_TEST_DIR}
 )
 add_test(NAME ConnectivityVerifyTest COMMAND test_connectivity_verify)
 
@@ -613,9 +768,9 @@ target_link_libraries(test_standalone_proxy_log_forwarder PRIVATE
     gtest
 )
 set_target_properties(test_standalone_proxy_log_forwarder PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
-    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
-    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${VALIDPROXY_TEST_DIR}
 )
 add_test(NAME StandaloneProxyLogForwarderTest COMMAND test_standalone_proxy_log_forwarder)
 
@@ -629,9 +784,9 @@ target_link_libraries(test_standalone_config_port PRIVATE gtest_main gtest
     -lws2_32
 )
 set_target_properties(test_standalone_config_port PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
-    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
-    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${VALIDPROXY_TEST_DIR}
 )
 add_test(NAME StandaloneConfigPortTest COMMAND test_standalone_config_port)
 
@@ -644,9 +799,9 @@ target_link_libraries(test_dedup PRIVATE
     -lws2_32
 )
 set_target_properties(test_dedup PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
-    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
-    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${VALIDPROXY_TEST_DIR}
 )
 add_test(NAME DedupTest COMMAND test_dedup)
 
@@ -659,9 +814,9 @@ target_link_libraries(test_profile_ex_item_dao PRIVATE
     ws2_32
 )
 set_target_properties(test_profile_ex_item_dao PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
-    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
-    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${VALIDPROXY_TEST_DIR}
 )
 add_test(NAME ProfileExItemDAOTest COMMAND test_profile_ex_item_dao)
 
@@ -674,9 +829,9 @@ target_link_libraries(test_sql_query PRIVATE
     ws2_32
 )
 set_target_properties(test_sql_query PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
-    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
-    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${VALIDPROXY_TEST_DIR}
 )
 add_test(NAME SqlQueryDAOTest COMMAND test_sql_query)
 
@@ -696,9 +851,9 @@ add_executable(test_logger tests/test_logger.cpp src/Logger.cpp src/LoggerInstan
 target_include_directories(test_logger PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(test_logger PRIVATE gtest_main gtest)
 set_target_properties(test_logger PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
-    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
-    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${VALIDPROXY_TEST_DIR}
 )
 add_test(NAME LoggerTest COMMAND test_logger)
 
@@ -719,9 +874,9 @@ add_executable(test_sharelink
 target_include_directories(test_sharelink PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(test_sharelink PRIVATE gtest_main gtest)
 set_target_properties(test_sharelink PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
-    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
-    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${VALIDPROXY_TEST_DIR}
 )
 add_test(NAME ShareLinkTest COMMAND test_sharelink)
 
@@ -730,9 +885,9 @@ add_executable(test_uri_codec tests/test_uri_codec.cpp src/share/UriCodec.cpp)
 target_include_directories(test_uri_codec PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(test_uri_codec PRIVATE gtest_main gtest)
 set_target_properties(test_uri_codec PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
-    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
-    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${VALIDPROXY_TEST_DIR}
 )
 add_test(NAME UriCodecTest COMMAND test_uri_codec)
 
@@ -752,9 +907,9 @@ target_link_libraries(test_autotask PRIVATE gtest_main gtest
     -lws2_32
 )
 set_target_properties(test_autotask PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
-    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
-    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${VALIDPROXY_TEST_DIR}
 )
 add_test(NAME AutoTaskTest COMMAND test_autotask)
 
@@ -774,9 +929,9 @@ target_link_libraries(test_update_breakdown PRIVATE gtest_main gtest
     -lws2_32
 )
 set_target_properties(test_update_breakdown PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
-    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
-    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${VALIDPROXY_TEST_DIR}
 )
 add_test(NAME UpdateBreakdownTest COMMAND test_update_breakdown)
 
@@ -788,9 +943,9 @@ target_include_directories(test_utils PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/includ
 target_compile_definitions(test_utils PRIVATE TEST_BUILD=1)
 target_link_libraries(test_utils PRIVATE gtest_main gtest -lws2_32)
 set_target_properties(test_utils PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
-    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
-    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${VALIDPROXY_TEST_DIR}
 )
 add_test(NAME UtilsTest COMMAND test_utils)
 
@@ -799,9 +954,9 @@ add_executable(test_pool_candidate tests/test_pool_candidate.cpp src/PoolCandida
 target_include_directories(test_pool_candidate PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(test_pool_candidate PRIVATE gtest_main gtest -lws2_32)
 set_target_properties(test_pool_candidate PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
-    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
-    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${VALIDPROXY_TEST_DIR}
 )
 add_test(NAME PoolCandidateTest COMMAND test_pool_candidate)
 
@@ -816,9 +971,9 @@ add_executable(test_config_reader tests/test_config_reader.cpp tests/test_config
 target_include_directories(test_config_reader PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(test_config_reader PRIVATE gtest_main gtest ${VCPKG_ROOT}/installed/x64-mingw-static/lib/libboost_json-gcc14-mt-x64-1_91.a -lws2_32)
 set_target_properties(test_config_reader PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
-    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
-    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${VALIDPROXY_TEST_DIR}
 )
 add_test(NAME ConfigReaderTest COMMAND test_config_reader)
 
@@ -827,9 +982,9 @@ add_executable(test_refresh_commands tests/test_refresh_commands.cpp src/ui/Refr
 target_include_directories(test_refresh_commands PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(test_refresh_commands PRIVATE gtest_main gtest)
 set_target_properties(test_refresh_commands PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
-    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
-    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${VALIDPROXY_TEST_DIR}
 )
 add_test(NAME RefreshCommandsTest COMMAND test_refresh_commands)
 
@@ -839,9 +994,9 @@ add_executable(test_toolbar_region_icon tests/test_toolbar_region_icon.cpp)
 target_include_directories(test_toolbar_region_icon PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(test_toolbar_region_icon PRIVATE gtest_main gtest)
 set_target_properties(test_toolbar_region_icon PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
-    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
-    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${VALIDPROXY_TEST_DIR}
 )
 add_test(NAME ToolbarRegionIconTest COMMAND test_toolbar_region_icon)
 # IHDR-anchored file contract; relative path needs repo-root cwd (same as UI suites).
@@ -854,11 +1009,33 @@ add_executable(test_floating_widget_state tests/test_floating_widget_state.cpp)
 target_include_directories(test_floating_widget_state PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(test_floating_widget_state PRIVATE gtest_main gtest)
 set_target_properties(test_floating_widget_state PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
-    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
-    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${VALIDPROXY_TEST_DIR}
 )
 add_test(NAME FloatingWidgetStateTest COMMAND test_floating_widget_state)
+
+# -- DatabaseBootstrap unit tests (sqlite3 + gtest only; no wx, no DAO) --
+add_executable(test_database_bootstrap
+    tests/test_database_bootstrap.cpp
+    src/service/DatabaseBootstrap.cpp
+    ${SCHEMA_INIT_GENERATED}
+)
+target_include_directories(test_database_bootstrap PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_compile_definitions(test_database_bootstrap PRIVATE
+    DB_SCHEMA_BASELINE="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/db_schema_baseline.sql")
+target_link_libraries(test_database_bootstrap PRIVATE
+    gtest_main
+    gtest
+    ${VCPKG_ROOT}/installed/x64-mingw-static/lib/libsqlite3.a
+    ws2_32
+)
+set_target_properties(test_database_bootstrap PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${VALIDPROXY_TEST_DIR}
+)
+add_test(NAME DatabaseBootstrapTest COMMAND test_database_bootstrap)
 
 # -- ConfigGenerator unit tests (SQLite + boost_json, now delegates to extracted components) --
 add_executable(test_config_generator
@@ -937,9 +1114,9 @@ target_link_libraries(test_config_generator PRIVATE gtest_main gtest
     -lws2_32
 )
 set_target_properties(test_config_generator PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
-    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
-    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${VALIDPROXY_TEST_DIR}
 )
 add_test(NAME ConfigGeneratorTest COMMAND test_config_generator)
 
@@ -1012,9 +1189,9 @@ target_link_libraries(test_standalone_proxy_pool PRIVATE gtest_main gtest
     -lws2_32
 )
 set_target_properties(test_standalone_proxy_pool PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
-    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
-    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${VALIDPROXY_TEST_DIR}
 )
 add_test(NAME StandaloneProxyPoolTest COMMAND test_standalone_proxy_pool)
 
@@ -1085,9 +1262,9 @@ target_link_libraries(test_proxy_probe_pool PRIVATE gtest_main gtest
     -lws2_32
 )
 set_target_properties(test_proxy_probe_pool PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
-    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
-    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${VALIDPROXY_TEST_DIR}
 )
 add_test(NAME ProxyProbePoolTest COMMAND test_proxy_probe_pool)
 
@@ -1102,9 +1279,9 @@ target_link_libraries(test_delete_subscription PRIVATE gtest_main gtest
     -lws2_32
 )
 set_target_properties(test_delete_subscription PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
-    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
-    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${VALIDPROXY_TEST_DIR}
 )
 add_test(NAME DeleteSubscriptionTest COMMAND test_delete_subscription)
 
@@ -1113,9 +1290,9 @@ add_executable(test_subscription_parser tests/test_subscription_parser.cpp src/u
 target_include_directories(test_subscription_parser PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(test_subscription_parser PRIVATE gtest_main gtest ${VCPKG_ROOT}/installed/x64-mingw-static/lib/libboost_json-gcc14-mt-x64-1_91.a -lws2_32)
 set_target_properties(test_subscription_parser PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
-    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
-    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${VALIDPROXY_TEST_DIR}
 )
 add_test(NAME SubscriptionParserTest COMMAND test_subscription_parser)
 
@@ -1124,9 +1301,9 @@ add_executable(test_proxy_batch_components tests/test_proxy_batch_components.cpp
 target_include_directories(test_proxy_batch_components PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(test_proxy_batch_components PRIVATE gtest_main gtest)
 set_target_properties(test_proxy_batch_components PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
-    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
-    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${VALIDPROXY_TEST_DIR}
 )
 add_test(NAME ProxyBatchComponentsTest COMMAND test_proxy_batch_components)
 
@@ -1135,9 +1312,9 @@ add_executable(test_batch_worker_policy tests/test_batch_worker_policy.cpp)
 target_include_directories(test_batch_worker_policy PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(test_batch_worker_policy PRIVATE gtest_main gtest)
 set_target_properties(test_batch_worker_policy PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
-    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
-    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${VALIDPROXY_TEST_DIR}
 )
 add_test(NAME BatchWorkerPolicyTest COMMAND test_batch_worker_policy)
 
@@ -1146,9 +1323,9 @@ add_executable(test_outbound_payload tests/test_outbound_payload.cpp)
 target_include_directories(test_outbound_payload PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(test_outbound_payload PRIVATE gtest_main gtest ${VCPKG_ROOT}/installed/x64-mingw-static/lib/libboost_json-gcc14-mt-x64-1_91.a)
 set_target_properties(test_outbound_payload PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
-    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
-    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${VALIDPROXY_TEST_DIR}
 )
 add_test(NAME OutboundPayloadTest COMMAND test_outbound_payload)
 
@@ -1197,9 +1374,9 @@ target_link_libraries(test_proxy_batch_query PRIVATE gtest_main gtest
     -lws2_32
 )
 set_target_properties(test_proxy_batch_query PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
-    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
-    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${VALIDPROXY_TEST_DIR}
 )
 add_test(NAME ProxyBatchQueryTest COMMAND test_proxy_batch_query)
 
@@ -1208,9 +1385,9 @@ add_executable(test_network_monitor tests/test_network_monitor.cpp src/NetworkMo
 target_include_directories(test_network_monitor PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(test_network_monitor PRIVATE gtest_main gtest Threads::Threads CURL::libcurl)
 set_target_properties(test_network_monitor PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
-    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
-    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${VALIDPROXY_TEST_DIR}
 )
 add_test(NAME NetworkMonitorTest COMMAND test_network_monitor)
 
@@ -1219,9 +1396,9 @@ add_executable(test_ipv6_formatter tests/test_ipv6_formatter.cpp src/share/Ipv6F
 target_include_directories(test_ipv6_formatter PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(test_ipv6_formatter PRIVATE gtest_main gtest)
 set_target_properties(test_ipv6_formatter PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
-    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
-    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${VALIDPROXY_TEST_DIR}
 )
 add_test(NAME Ipv6FormatterTest COMMAND test_ipv6_formatter)
 
@@ -1230,9 +1407,9 @@ add_executable(test_log_statistics tests/test_log_statistics.cpp src/LogStatisti
 target_include_directories(test_log_statistics PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(test_log_statistics PRIVATE gtest_main gtest)
 set_target_properties(test_log_statistics PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
-    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
-    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${VALIDPROXY_TEST_DIR}
 )
 add_test(NAME LogStatisticsTest COMMAND test_log_statistics)
 
@@ -1253,9 +1430,9 @@ if(wxWidgets_FOUND)
     )
     target_compile_definitions(test_log_statistics_event PRIVATE HAS_WXWIDGETS=1)
     set_target_properties(test_log_statistics_event PROPERTIES
-        RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
-        RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
-        RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+        RUNTIME_OUTPUT_DIRECTORY ${VALIDPROXY_TEST_DIR}
+        RUNTIME_OUTPUT_DIRECTORY_DEBUG ${VALIDPROXY_TEST_DIR}
+        RUNTIME_OUTPUT_DIRECTORY_RELEASE ${VALIDPROXY_TEST_DIR}
     )
     # Scheme A (PATH-based): rely on PATH env var; do not copy wx DLLs to tests/.
     add_test(NAME LogStatisticsEventTest COMMAND test_log_statistics_event)
@@ -1277,9 +1454,9 @@ if(wxWidgets_FOUND)
     )
     target_compile_definitions(test_unified_monitor_rows PRIVATE HAS_WXWIDGETS=1)
     set_target_properties(test_unified_monitor_rows PROPERTIES
-        RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
-        RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
-        RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+        RUNTIME_OUTPUT_DIRECTORY ${VALIDPROXY_TEST_DIR}
+        RUNTIME_OUTPUT_DIRECTORY_DEBUG ${VALIDPROXY_TEST_DIR}
+        RUNTIME_OUTPUT_DIRECTORY_RELEASE ${VALIDPROXY_TEST_DIR}
     )
     # Scheme A (PATH-based): rely on PATH env var; do not copy wx DLLs to tests/.
     add_test(NAME UnifiedMonitorRowsTest COMMAND test_unified_monitor_rows)
@@ -1304,9 +1481,9 @@ add_executable(test_share_uri_builders
 target_include_directories(test_share_uri_builders PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(test_share_uri_builders PRIVATE gtest_main gtest)
 set_target_properties(test_share_uri_builders PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
-    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
-    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${VALIDPROXY_TEST_DIR}
 )
 add_test(NAME ShareUriBuildersTest COMMAND test_share_uri_builders)
 
@@ -1325,9 +1502,9 @@ add_executable(test_sharelink_factory
 target_include_directories(test_sharelink_factory PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(test_sharelink_factory PRIVATE gtest_main gtest)
 set_target_properties(test_sharelink_factory PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
-    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
-    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${VALIDPROXY_TEST_DIR}
 )
 add_test(NAME ShareLinkFactoryTest COMMAND test_sharelink_factory)
 
@@ -1342,9 +1519,9 @@ target_link_libraries(test_singbox_vless_builder PRIVATE gtest_main gtest
     ${VCPKG_ROOT}/installed/x64-mingw-static/lib/libboost_json-gcc14-mt-x64-1_91.a
 )
 set_target_properties(test_singbox_vless_builder PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
-    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
-    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${VALIDPROXY_TEST_DIR}
 )
 add_test(NAME SingBoxVLESSBuilderTest COMMAND test_singbox_vless_builder)
 
@@ -1363,9 +1540,9 @@ if(USE_GRPC_API)
         -lws2_32
     )
     set_target_properties(test_xray_api_direct PROPERTIES
-        RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
-        RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
-        RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+        RUNTIME_OUTPUT_DIRECTORY ${VALIDPROXY_TEST_DIR}
+        RUNTIME_OUTPUT_DIRECTORY_DEBUG ${VALIDPROXY_TEST_DIR}
+        RUNTIME_OUTPUT_DIRECTORY_RELEASE ${VALIDPROXY_TEST_DIR}
     )
     add_test(NAME XrayApiDirectTest COMMAND test_xray_api_direct)
 endif()
@@ -1429,9 +1606,9 @@ target_link_libraries(test_xray_instance_stderr PRIVATE gtest_main gtest
     ${VCPKG_ROOT}/installed/x64-mingw-static/lib/libboost_json-gcc14-mt-x64-1_91.a
     -lws2_32)
 set_target_properties(test_xray_instance_stderr PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
-    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
-    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${VALIDPROXY_TEST_DIR}
 )
 add_test(NAME XrayInstanceStderrTest COMMAND test_xray_instance_stderr)
 
@@ -1442,9 +1619,9 @@ add_test(NAME XrayInstanceStderrTest COMMAND test_xray_instance_stderr)
 # must land in the same output directory as test_xray_instance_stderr.
 add_executable(fake_xray_helper tests/fake_xray_helper.cpp)
 set_target_properties(fake_xray_helper PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
-    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
-    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${VALIDPROXY_TEST_DIR}
 )
 
 # -- XrayManager crash-aware, bounded startup regression test --
@@ -1511,9 +1688,9 @@ target_link_libraries(test_xray_manager_startup PRIVATE gtest_main gtest
     ${VCPKG_ROOT}/installed/x64-mingw-static/lib/libboost_json-gcc14-mt-x64-1_91.a
     -lws2_32)
 set_target_properties(test_xray_manager_startup PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
-    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
-    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${VALIDPROXY_TEST_DIR}
 )
 add_test(NAME XrayManagerStartupTest COMMAND test_xray_manager_startup)
 
@@ -1523,9 +1700,9 @@ add_executable(test_result_queue tests/test_result_queue_test.cpp
 target_include_directories(test_result_queue PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(test_result_queue PRIVATE gtest_main gtest)
 set_target_properties(test_result_queue PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
-    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
-    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${VALIDPROXY_TEST_DIR}
 )
 add_test(NAME ResultQueueTest COMMAND test_result_queue)
 
@@ -1534,9 +1711,9 @@ add_executable(test_port_manager tests/test_port_manager.cpp
 target_include_directories(test_port_manager PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(test_port_manager PRIVATE gtest_main gtest -lws2_32)
 set_target_properties(test_port_manager PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
-    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
-    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${VALIDPROXY_TEST_DIR}
 )
 add_test(NAME PortManagerTest COMMAND test_port_manager)
 
@@ -1548,9 +1725,9 @@ add_executable(test_proxy_scorer tests/test_proxy_scorer.cpp
 target_include_directories(test_proxy_scorer PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(test_proxy_scorer PRIVATE gtest_main gtest)
 set_target_properties(test_proxy_scorer PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
-    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
-    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${VALIDPROXY_TEST_DIR}
 )
 add_test(NAME ProxyScorerTest COMMAND test_proxy_scorer)
 
@@ -1563,9 +1740,9 @@ target_link_libraries(test_runtime_history_dao PRIVATE
     ${VCPKG_ROOT}/installed/x64-mingw-static/lib/libsqlite3.a
 )
 set_target_properties(test_runtime_history_dao PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
-    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
-    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${VALIDPROXY_TEST_DIR}
 )
 add_test(NAME RuntimeHistoryDAOTest COMMAND test_runtime_history_dao)
 
@@ -1576,9 +1753,9 @@ target_include_directories(test_standalone_adoption_policy
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(test_standalone_adoption_policy PRIVATE gtest_main gtest)
 set_target_properties(test_standalone_adoption_policy PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
-    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
-    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${VALIDPROXY_TEST_DIR}
 )
 add_test(NAME StandaloneAdoptionPolicyTest COMMAND test_standalone_adoption_policy)
 
@@ -1589,9 +1766,9 @@ target_include_directories(test_database_switch_policy
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(test_database_switch_policy PRIVATE gtest_main gtest)
 set_target_properties(test_database_switch_policy PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
-    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
-    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${VALIDPROXY_TEST_DIR}
 )
 add_test(NAME DatabaseSwitchPolicyTest COMMAND test_database_switch_policy)
 
@@ -1607,9 +1784,9 @@ target_link_libraries(test_process_exit_listener PRIVATE
     -lntdll
 )
 set_target_properties(test_process_exit_listener PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
-    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
-    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${VALIDPROXY_TEST_DIR}
 )
 add_test(NAME ProcessExitListenerTest COMMAND test_process_exit_listener)
 
@@ -1626,9 +1803,9 @@ target_include_directories(test_process_inspector PRIVATE ${CMAKE_CURRENT_SOURCE
    )
 
 set_target_properties(test_process_inspector PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
-    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
-    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${VALIDPROXY_TEST_DIR}
 )
 add_test(NAME ProcessInspectorTest COMMAND test_process_inspector)
 
@@ -1680,9 +1857,9 @@ target_link_libraries(test_region_batch_resolver PRIVATE
     -lws2_32
 )
 set_target_properties(test_region_batch_resolver PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
-    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
-    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${VALIDPROXY_TEST_DIR}
 )
 add_test(NAME RegionBatchResolverTest COMMAND test_region_batch_resolver)
 
@@ -1691,8 +1868,14 @@ add_test(NAME RegionBatchResolverTest COMMAND test_region_batch_resolver)
 # wxWidgets (pure Win32/UIA/COM), so it cannot disturb existing GTest targets.
 option(BUILD_UI_TESTS "Build wxWidgets UI automation tests (real GUI)" ON)
 if(wxWidgets_FOUND AND BUILD_UI_TESTS)
+    # vcpkg Catch2 (static) install dir. Defaults to the GCC14.2/msvcrt tree;
+    # override with -DCATCH2_VCPKG_DIR=<dir> to use a same-toolchain Catch2
+    # (e.g. the GCC16.2/UCRT rebuild that fixes the undefined
+    # basic_streambuf::seekpos(fpos<int>) at UITests link, see
+    # docs/bugfix/2026-11-13-Bugfix-GuiFlashCrash-WxToolchainMismatch-v1.0.md §8).
+    set(CATCH2_VCPKG_DIR "${VCPKG_ROOT}/installed/x64-mingw-static" CACHE PATH "vcpkg Catch2 (static) install dir")
     find_package(Catch2 CONFIG QUIET
-        PATHS "${VCPKG_ROOT}/installed/x64-mingw-static/share/catch2"
+        PATHS "${CATCH2_VCPKG_DIR}/share/catch2"
         NO_DEFAULT_PATH)
     if(NOT Catch2_FOUND)
         message(STATUS "Catch2 not installed (run: vcpkg install catch2:x64-mingw-static) - UI tests skipped")
@@ -1733,9 +1916,9 @@ if(wxWidgets_FOUND AND BUILD_UI_TESTS)
             uiautomationcore oleaut32 uuid
             user32 gdi32 gdiplus shell32 ws2_32 iphlpapi)
         set_target_properties(UITests PROPERTIES
-            RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
-            RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
-            RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests)
+            RUNTIME_OUTPUT_DIRECTORY ${VALIDPROXY_TEST_DIR}
+            RUNTIME_OUTPUT_DIRECTORY_DEBUG ${VALIDPROXY_TEST_DIR}
+            RUNTIME_OUTPUT_DIRECTORY_RELEASE ${VALIDPROXY_TEST_DIR})
 
         # CTest entries for the three tagged UI suites. WORKING_DIRECTORY is
         # the repo root: Paths::* resolve absolute paths from the module
@@ -1793,5 +1976,20 @@ add_test(NAME UI_BOTTOMVIEW COMMAND UITests "[bottomview]")
             FIXTURES_REQUIRED ui_sandbox
             TIMEOUT 180
             WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+        # Point the UI tests at the actual GUI exe for THIS build (VALIDPROXY_BIN_DIR).
+        # Default (non-isolated) = <repo>/bin/validproxy.exe, same as the built-in
+        # fallback; isolated = <build>/out/bin/validproxy.exe.
+        file(TO_NATIVE_PATH "${VALIDPROXY_BIN_DIR}/validproxy.exe" _UI_APP_EXE)
+        # VALIDPROXY_APP_ROOT re-anchors the UI framework's repo-root inference.
+        # UITests.exe lives in VALIDPROXY_TEST_DIR (out/tests when isolated, the
+        # in-tree tests/ otherwise); only the in-tree tests/ case lets the exe-dir
+        # inference resolve the repo correctly, so always inject the real root.
+        file(TO_NATIVE_PATH "${CMAKE_SOURCE_DIR}" _UI_APP_ROOT)
+        set_tests_properties(UI_MAINWINDOW UI_SEARCH UI_CLEAR UI_FLOATINGWIDGET
+            UI_POOL UI_PORTCLOSE UI_EXITASSERT UI_CHAINPREVIEW UI_WINDOWSENSING
+            UI_LAYOUTSENSING UI_BOTTOMVIEW UI_MENUACTION UI_POPUPGUARD
+            UI_TASKLEDGER UI_TOOLBARREGION UI_SANDBOX_PREP
+            PROPERTIES ENVIRONMENT
+                "VALIDPROXY_APP_EXE=${_UI_APP_EXE};VALIDPROXY_APP_ROOT=${_UI_APP_ROOT}")
     endif()
 endif()

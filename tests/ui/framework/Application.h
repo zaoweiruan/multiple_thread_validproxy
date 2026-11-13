@@ -1,6 +1,7 @@
 // tests/ui/framework/Application.h - GUI process lifecycle for UI tests.
 #pragma once
 #include <windows.h>
+#include <cstdlib>
 #include <string>
 #include "framework/ComPtr.h"
 
@@ -46,6 +47,15 @@ private:
 class Paths {
 public:
     static std::wstring root() {           // UITests.exe lives in <repo>/tests
+        // An isolated build (VALIDPROXY_ISOLATE_OUTPUTS=ON) places UITests.exe
+        // under <build>/out/tests, so exe-dir inference would resolve to
+        // <build>/out instead of the repo. CMake injects VALIDPROXY_APP_ROOT
+        // (<repo>) for the UI tests so sandbox/exe paths stay correct in both
+        // layouts; it wins over exe-dir inference when present.
+        const wchar_t* env = ::_wgetenv(L"VALIDPROXY_APP_ROOT");
+        if (env != nullptr && env[0] != L'\0') {
+            return std::wstring(env);
+        }
         wchar_t buf[MAX_PATH] = L"";
         ::GetModuleFileNameW(nullptr, buf, MAX_PATH);
         std::wstring dir(buf);
@@ -56,7 +66,17 @@ public:
     static std::wstring sandboxDir() { return root() + L"\\test\\ui-sandbox"; }
     static std::wstring sandboxDb() { return sandboxDir() + L"\\ui-test.db"; }
     static std::wstring sandboxConfig() { return sandboxDir() + L"\\config.json"; }
-    static std::wstring exePath() { return root() + L"\\bin\\validproxy.exe"; }
+    // Validproxy GUI exe to drive. Defaults to <repo>/bin/validproxy.exe.
+    // Override with $ENV{VALIDPROXY_APP_EXE} so a per-toolchain isolated build
+    // (VALIDPROXY_ISOLATE_OUTPUTS=ON -> <build>/out/bin) can be driven without
+    // the in-tree bin/ copy.
+    static std::wstring exePath() {
+        const wchar_t* env = ::_wgetenv(L"VALIDPROXY_APP_EXE");
+        if (env != nullptr && env[0] != L'\0') {
+            return std::wstring(env);
+        }
+        return root() + L"\\bin\\validproxy.exe";
+    }
     static std::wstring artifactsDir() { return root() + L"\\test-results\\ui-artifacts"; }
 };
 
