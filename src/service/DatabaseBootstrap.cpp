@@ -232,7 +232,7 @@ const char* DatabaseBootstrap::schemaInitSql() {
 }
 
 std::string DatabaseBootstrap::backupTimestamp() {
-    const auto now = std::chrono::system_clock::now();
+    const std::chrono::system_clock::time_point now = std::chrono::system_clock::now();
     const std::time_t t = std::chrono::system_clock::to_time_t(now);
     std::tm tm{};
 #ifdef _WIN32
