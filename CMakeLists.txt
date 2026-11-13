@@ -152,6 +152,21 @@ if(NOT ZLIB_LIBRARY
         CACHE FILEPATH "zlib library" FORCE)
 endif()
 
+# ---- Embedded bootstrap schema (resources/schema_init.sql -> DatabaseSchemaInit.cpp) ----
+# Compiled into every target that links CORE_SOURCES, plus the DatabaseBootstrap
+# unit-test target. CMAKE_CONFIGURE_DEPENDS makes editing the SQL trigger a
+# reconfigure; without it stale text would be embedded silently.
+file(MAKE_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/resources)
+file(READ ${CMAKE_CURRENT_SOURCE_DIR}/resources/schema_init.sql SCHEMA_INIT_SQL)
+set(SCHEMA_INIT_GENERATED ${CMAKE_CURRENT_BINARY_DIR}/generated/DatabaseSchemaInit.cpp)
+configure_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/resources/DatabaseSchemaInit.cpp.in
+    ${SCHEMA_INIT_GENERATED}
+    @ONLY
+)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+    ${CMAKE_CURRENT_SOURCE_DIR}/resources/schema_init.sql)
+
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
 include_directories(${CMAKE_BINARY_DIR}/include)
 include_directories(${VCPKG_ROOT}/installed/x64-mingw-static/include)
@@ -253,6 +268,8 @@ set(CORE_SOURCES
     src/test/ProxyTestCounters.cpp
     src/test/ProxyTestResultSink.cpp
     src/service/DatabaseConnectionService.cpp
+    src/service/DatabaseBootstrap.cpp
+    ${SCHEMA_INIT_GENERATED}
     src/task/MutexPolicy.cpp
     src/task/TaskQueue.cpp
     src/task/TaskType.cpp
@@ -859,6 +876,28 @@ set_target_properties(test_floating_widget_state PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
 )
 add_test(NAME FloatingWidgetStateTest COMMAND test_floating_widget_state)
+
+# -- DatabaseBootstrap unit tests (sqlite3 + gtest only; no wx, no DAO) --
+add_executable(test_database_bootstrap
+    tests/test_database_bootstrap.cpp
+    src/service/DatabaseBootstrap.cpp
+    ${SCHEMA_INIT_GENERATED}
+)
+target_include_directories(test_database_bootstrap PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_compile_definitions(test_database_bootstrap PRIVATE
+    DB_SCHEMA_BASELINE="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/db_schema_baseline.sql")
+target_link_libraries(test_database_bootstrap PRIVATE
+    gtest_main
+    gtest
+    ${VCPKG_ROOT}/installed/x64-mingw-static/lib/libsqlite3.a
+    ws2_32
+)
+set_target_properties(test_database_bootstrap PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/tests
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/tests
+)
+add_test(NAME DatabaseBootstrapTest COMMAND test_database_bootstrap)
 
 # -- ConfigGenerator unit tests (SQLite + boost_json, now delegates to extracted components) --
 add_executable(test_config_generator
