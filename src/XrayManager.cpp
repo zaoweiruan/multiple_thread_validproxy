@@ -31,9 +31,40 @@ std::map<int, std::shared_ptr<std::mutex>> XrayManager::g_portLocks;
 static constexpr int INSTANCE_START_TIMEOUT_MS = 5000;
 static constexpr int INSTANCE_START_STEP_MS = 100;
 
+// Ensure Winsock is started before any socket()/connect() call in this file.
+// waitInstanceReady uses raw Winsock, but previously relied on Winsock having
+// been initialised elsewhere (XrayApi/DnsCache/Utils). An isolated caller that
+// never touched Winsock (e.g. the XrayManagerStartupTest exe) would get
+// WSANOTINITIALISED from socket() -> connect never attempted -> the API-readiness
+// check always burned the full timeout. Mirror the ref-counted, success-cached
+// pattern from XrayApi::ensureWinsock (mutex-guarded; a lock-free static bool
+// had a startup race, and std::call_once would cache a failed WSAStartup).
+static bool ensureWinsock() {
+    static std::mutex mtx;
+    static bool started = false;
+    std::lock_guard<std::mutex> lock(mtx);
+    if (started) return true;
+    WSADATA wsa;
+    const int rc = WSAStartup(MAKEWORD(2, 2), &wsa);
+    if (rc != 0) {
+        Logger::write("[XrayManager] ensureWinsock: WSAStartup failed, error=" +
+                          std::to_string(rc),
+                      LogLevel::ERR);
+        return false;
+    }
+    started = true;
+    return true;
+}
+
 static bool waitInstanceReady(const XrayInstance* inst, int apiPort,
                                int timeoutMs = INSTANCE_START_TIMEOUT_MS,
                                int stepMs = INSTANCE_START_STEP_MS) {
+    // The raw socket()/connect() below require Winsock to be initialised.
+    // Fail fast (don't burn the timeout) if startup itself fails.
+    if (!ensureWinsock()) {
+        return false;
+    }
+
     struct sockaddr_in addr = {};
     addr.sin_family = AF_INET;
     addr.sin_addr.s_addr = inet_addr("127.0.0.1");
