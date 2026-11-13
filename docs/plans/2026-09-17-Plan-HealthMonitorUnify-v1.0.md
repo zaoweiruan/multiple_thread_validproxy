@@ -8,7 +8,7 @@
 
 **Tech Stack:** C++17 / wxWidgets 3.2+ (wxPropertyGrid 嵌套 wxPropertyCategory) / boost::json / Google Test、Catch2 UI 自动化测试。
 
-**规格来源:** `docs/reports/2026-09-16-Report-StandalonePool-ConfigSemantics-v1.0.md` v1.2 §7.4.4（方案 B 详细设计）+ §7.3 v1.2 评审层级树；评审依据 `docs/review/2026-09-17-Review-results-of-configuration-item-reengineering.md`。
+**规格来源:** `docs/reports/2026-09-16-Report-StandalonePool-ConfigSemantics-v1.0.md` v1.2 §7.4.4（方案 B 详细设计）+ §7.3 v1.2 评审层级树；评审依据 `../reviews/2026-09-17-Review-results-of-configuration-item-reengineering.md`。
 
 ---
 

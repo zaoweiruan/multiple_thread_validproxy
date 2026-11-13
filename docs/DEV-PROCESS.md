@@ -1,9 +1,9 @@
 # 开发流程规范 (Development Process Rules)
 
-> 版本: v1.2  
+> 版本: v1.3  
 > 创建日期: 2026-05-11  
-> 最后更新: 2026-10-14（v1.2 新增「非本会话源码变更不得修改」「库表 Schema 变更基准」"
-"「高危数据重建命令」三条核心规则）
+> 最后更新: 2026-11-06（v1.3 新增「只使用环境中的 DLL，禁止复制依赖 DLL」核心规则；
+v1.2 新增「非本会话源码变更不得修改」「库表 Schema 变更基准」「高危数据重建命令」三条核心规则）
 
 ---
 
@@ -89,6 +89,39 @@ E:\eclipse_workspace\multiple_thread_validproxy\scripts\sync_db_schema.sql
   导致文件无法被覆盖，复制静默失败）
 - 只想「按现有链重新物化 Config」时，用 `-SM`，**不要**用 `-RB` / `-DC`
 - 执行后必须**逐节比对**变更前后的配置，确认没有节丢失
+
+---
+
+### **规则 5：只使用环境中的 DLL，禁止复制依赖 DLL**
+
+**规范**：
+- 构建产物**只**使用运行环境中已存在的依赖 DLL（vcpkg 安装目录、系统 `PATH` 等），
+  **禁止**在构建流程中把依赖 DLL 复制到输出/部署目录（`bin/`、`tests/` 等）。
+- 依赖 DLL 的定位由运行时环境负责（`PATH` / vcpkg 安装目录），构建与部署**不承载**
+  DLL 分发；产物目录内不得出现依赖 DLL 的副本。
+- 本规则适用于 `CMakeLists.txt` 中的 `copy_wx_dlls()` 等一切 DLL 复制逻辑，以及任何
+  新增构建目标——不得引入新的依赖 DLL 复制。
+
+**适用范围**：`CMakeLists.txt`（尤其 `copy_wx_dlls()`，见 370-434 行）、`install`/`POST_BUILD`
+指令、`scripts/` 下任何复制 DLL 的构建脚本。
+
+> **例外（2026-11-06 登记）**：MinGW 编译器运行时（`libstdc++-6.dll` / `libgcc_s_seh-1.dll` /
+> `libwinpthread-1.dll`）**不在本规则禁止之列**——它们是编译器自身的 C++ 运行时，非可复制
+> 的依赖 DLL（wxWidgets 等）。若系统 `PATH` 早于 MinGW/vcpkg 目录出现**不兼容的旧版** MinGW
+> 运行时（如 `C:\Program Files (x86)\Tesseract-OCR\`，2026-11-06 实测导致 validproxy.exe
+> `ntdll!NtRaiseHardError` 入口点不匹配死锁），构建须经 CMake `POST_BUILD` 将编译器目录的
+> 运行时 DLL 复制到输出目录（加载器优先搜索 exe 目录，不受 PATH 顺序影响）。
+
+**原因**：依赖 DLL 由包管理（vcpkg `x64-mingw-dynamic`）统一管理，复制到输出目录会造成：
+1. **双份 DLL 版本漂移**——产物目录与包管理目录各持一份，版本不一致难排查；
+2. **构建期文件锁冲突**——与 AGENTS.md §4.1「禁止 POST_BUILD 写入 `bin/worker/`」同理，
+   运行中的进程会锁定 DLL，导致复制失败；
+3. **部署不一致隐患**——本机复制成功的 DLL 版本可能与部署机包管理环境不符，
+   运行时行为漂移。
+
+> **当前冲突（待对齐）**：`CMakeLists.txt` 的 `copy_wx_dlls()`（370-434 行）仍在构建时
+> 将 wxWidgets 动态 DLL 复制到 `bin\`。本规则生效后，该函数应被移除或改造为「仅校验
+> 环境存在、不复制」；对齐属代码变更，须按 §6.1 文档先行另立变更。
 
 ---
 

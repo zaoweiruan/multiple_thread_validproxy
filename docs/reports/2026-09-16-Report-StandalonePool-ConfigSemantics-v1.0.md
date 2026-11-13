@@ -10,7 +10,7 @@
 
 > **修订记录（v1.0 → v1.1, 2026-09-16）**：新增 §7 配置项架构评估章节，覆盖 4 子节：§7.1 `standalone_pool.enabled` 必要性、§7.2 健康度评估与 `proxy_process_monitor.enabled` 合并可行性、§7.3 配置窗口分类标识问题（P1-P6）、§7.4 架构级合并方案（A/B/C 三档评估 + 推荐方案 B 详细设计）。§6 结论 #3 同步修正为「独立到新增「独立代理评分」分类」，与 §7.3 P2、§7.4 方案 B 建议一致。附录证据索引补充 v1.1 依据。
 
-> **修订记录（v1.1 → v1.2, 2026-09-17）**：按 `docs/review/2026-09-17-Review-results-of-configuration-item-reengineering.md` 评审意见修订 §7.3「建议分类重构方案」——由「平铺 13 分类」改为「层级式」：「健康度评估」新增为父分类，下挂「独立代理评估」+「代理池评估」两个子分类；「代理池配置」承载 pool 本体；「监控悬浮窗」重命名；「代理后端选择」独立分类。§6 结论 #3 同步改为「独立到新增「独立代理评估」子分类」；§7.4.4 方案 B 的 ConfigDialog 分类树对齐评审层级。附录证据索引补充 v1.2 依据。*（评审修订补记：§7.3 补 `observatory.intervalSec/timeoutSec` 归属注记；§7.4.3/§7.4.4 控件口径与灰化条件按 Plan v1.1 评审统一——「悬浮窗新增 1 个 probeChk_」且「不随池/探活状态灰化」，原稿 3 控件/灰化公式为遗留笔误。)*
+> **修订记录（v1.1 → v1.2, 2026-09-17）**：按 `../reviews/2026-09-17-Review-results-of-configuration-item-reengineering.md` 评审意见修订 §7.3「建议分类重构方案」——由「平铺 13 分类」改为「层级式」：「健康度评估」新增为父分类，下挂「独立代理评估」+「代理池评估」两个子分类；「代理池配置」承载 pool 本体；「监控悬浮窗」重命名；「代理后端选择」独立分类。§6 结论 #3 同步改为「独立到新增「独立代理评估」子分类」；§7.4.4 方案 B 的 ConfigDialog 分类树对齐评审层级。附录证据索引补充 v1.2 依据。*（评审修订补记：§7.3 补 `observatory.intervalSec/timeoutSec` 归属注记；§7.4.3/§7.4.4 控件口径与灰化条件按 Plan v1.1 评审统一——「悬浮窗新增 1 个 probeChk_」且「不随池/探活状态灰化」，原稿 3 控件/灰化公式为遗留笔误。)*
 
 ---
 
@@ -305,7 +305,7 @@ config_.proxy.scoring_delay_weight * 5000.0 + 3000.0); // speed max ~5000ms
    - `docs/specs/2026-09-09-Note-PoolMemberHealthEvaluation-v1.0.md` — 池成员健康度评估现状与后续完善清单（P1/P2/P3 缺口）
    - `docs/specs/2026-09-16-Spec-PoolConfigDialogAdjust-v1.0.md` — 本轮 ConfigDialog 方案甲调整（移除 `observatory.destination`、新增 `probeWorkers`）
    - `docs/specs/2026-08-13-Spec-ProxyScoring-History-v1.0.md` — ProxyScorer 三因子评分设计与权重来源
-   - `docs/review/2026-09-17-Review-results-of-configuration-item-reengineering.md` — 分类重构评审意见（v1.2 §7.3 层级树来源）
+   - `../reviews/2026-09-17-Review-results-of-configuration-item-reengineering.md` — 分类重构评审意见（v1.2 §7.3 层级树来源）
    - `docs/plans/2026-09-17-Plan-HealthMonitorUnify-v1.0.md` — 方案 B 实施计划（评审修订后 v1.1，执行状态见 tracker）
 
 ---
@@ -380,7 +380,7 @@ config_.proxy.scoring_delay_weight * 5000.0 + 3000.0); // speed max ~5000ms
 | P5 | 「监控代理进程」分类的 `enabled` 与「独立代理池」分类的 `enabled` **同名** | 用户混淆两者语义 | 前者重命名为「启用悬浮窗」，后者「启用代理池」 |
 | P6 | 「独立代理池」分类字段数 12 超过单栏舒适展示（ConfigDialog 高度 600 px） | 滚动不便 | 拆分或折叠 |
 
-**建议分类重构方案**（已按 `docs/review/2026-09-17-Review-results-of-configuration-item-reengineering.md` 评审意见修订，由「平铺 13 分类」改为「层级式」）：
+**建议分类重构方案**（已按 `../reviews/2026-09-17-Review-results-of-configuration-item-reengineering.md` 评审意见修订，由「平铺 13 分类」改为「层级式」）：
 
 ```
 ├── 数据库
@@ -530,4 +530,4 @@ config_.proxy.scoring_delay_weight * 5000.0 + 3000.0); // speed max ~5000ms
 
 ### v1.2 评审修订依据
 
-- `docs/review/2026-09-17-Review-results-of-configuration-item-reengineering.md`（评审意见：§7.3 分类重构方案由「平铺 13 分类」修订为「层级式」——「健康度评估」父分类 + 「独立代理评估」/「代理池评估」子分类 + 「代理池配置」+ 「监控悬浮窗」重命名 + 「代理后端选择」独立分类）
+- `../reviews/2026-09-17-Review-results-of-configuration-item-reengineering.md`（评审意见：§7.3 分类重构方案由「平铺 13 分类」修订为「层级式」——「健康度评估」父分类 + 「独立代理评估」/「代理池评估」子分类 + 「代理池配置」+ 「监控悬浮窗」重命名 + 「代理后端选择」独立分类）
