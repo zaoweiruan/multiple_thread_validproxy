@@ -323,3 +323,29 @@ public:
 - GUI 菜单两项（「从云端同步订阅」/「上传配置与订阅到云端」）已接线并编译通过、
   主窗口可正常打开，但**点击行为未做端到端点击验证**（UI 自动化受 wx CRT 问题影响）。
 - `If-Unmodified-Since` 乐观并发控制参数已透传但未启用（当前 PUT 不带该头）。
+
+## 14. 随带修正：CLI 不再静默产出残缺库（2026-11-13）
+
+排查 `bin\guindb.db` 只有 `proxy_runtime_history` 一张表时确认：`main_cli.cpp::openDatabase()`
+仍以 `SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE` 打开，因此路径不存在时会静默得到
+一个"只有 DAO 顺手建的表"的空库，核心表（`SubItem`/`ProfileItem`/`ComponentBundle`…）全缺；
+同时 `seedDefaultTemplates()` 写入的 8 条模板 `BundleChain` 为空。
+
+原 Spec（`2026-11-12-Spec-DatabasePathAutoInit-v1.0.md` R7）把"CLI 行为不变"列为非目标，
+实践证明该非目标会持续产出坏库。现修正为：
+
+| 探测结果 | CLI 行为 |
+|---|---|
+| `Ok` | 直接打开 |
+| `MissingPath` / `MissingFile` / `MissingDirectory` / `EmptyFile` | 调 `DatabaseBootstrap::create()` 建**完整** schema（11 表 + 3 索引 + 16 + 8 种子），写 `REPORT` 日志 |
+| `NotADatabase` / `MissingCoreTables` / `BusyOrLocked` / `Inaccessible` / `WALReadOnlyBlocked` / `BackupRecoverable` | **拒绝打开**，打印可执行错误（提示改用 GUI 修复/重建），绝不修改或删除既有文件 |
+
+打开阶段不再传 `SQLITE_OPEN_CREATE`。验证：
+
+```
+validproxy-cli.exe -c <cmd> -show-sub      # 目标路径不存在
+→ [REPORT] created database schema at ...\cli_probe.db
+→ 12 tables(含 sqlite_sequence) / 3 indexes / ComponentBundle 16 / 模板 8 / empty BundleChain 0
+```
+
+回归：全量构建 EXIT=0；`ctest -E "UI_"` 56/57（仅既有 `XrayManagerStartupTest` 失败）。

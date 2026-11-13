@@ -30,6 +30,7 @@
 #include "Utils.h"
 #include "Logger.h"
 #include "service/CloudSyncService.h"
+#include "service/DatabaseBootstrap.h"
 #include "net/WebDavClient.h"
 #include "net/WebDavCredentials.h"
 #include "Subitem.h"
@@ -68,7 +69,58 @@ void logError(const std::string& msg, LogLevel level = LogLevel::ERR) {
 }
 
 static bool openDatabase(const config::AppConfig& config, sqlite3*& db, const std::string& context) {
-    if (sqlite3_open_v2(config.database_path.c_str(), &db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX, nullptr) != SQLITE_OK) {
+    // CLI database bootstrap.
+    //
+    // This used to open with SQLITE_OPEN_CREATE, which silently produced a
+    // database containing only whatever the DAOs happen to create on first use
+    // (no SubItem/ProfileItem/ComponentBundle ...). The CLI cannot prompt, so the
+    // rule is: create the full schema when the file is absent or empty, and
+    // refuse (never destroy) anything else.
+    if (config.database_path.empty()) {
+        Logger::write(context + " - database.path is empty", LogLevel::ERR);
+        std::cerr << context << " - database.path is empty" << std::endl;
+        return false;
+    }
+    {
+        const service::DbInspection inspection =
+                service::DatabaseBootstrap::inspect(config.database_path);
+        const bool absent = inspection.probe == service::DbProbe::MissingPath ||
+                            inspection.probe == service::DbProbe::MissingFile ||
+                            inspection.probe == service::DbProbe::MissingDirectory ||
+                            inspection.probe == service::DbProbe::EmptyFile;
+        if (inspection.probe != service::DbProbe::Ok) {
+            if (!absent) {
+                Logger::write(context + " - database is not usable: " + inspection.detail,
+                              LogLevel::ERR);
+                Logger::write(context + " - probed path: " +
+                                      utils::toWindowsPath(config.database_path),
+                              LogLevel::ERR);
+                std::cerr << context << " - database is not usable: " << inspection.detail
+                          << std::endl;
+                std::cerr << context << " - probed path: "
+                          << utils::toWindowsPath(config.database_path) << std::endl;
+                std::cerr << context
+                          << " - start validproxy.exe (GUI) to repair or rebuild it"
+                          << std::endl;
+                return false;
+            }
+            std::string createError;
+            if (!service::DatabaseBootstrap::create(config.database_path, createError)) {
+                Logger::write(context + " - failed to create database: " + createError,
+                              LogLevel::ERR);
+                std::cerr << context << " - failed to create database: " << createError
+                          << std::endl;
+                return false;
+            }
+            Logger::write(context + " - created database schema at " +
+                                  utils::toWindowsPath(config.database_path),
+                          LogLevel::REPORT);
+        }
+    }
+
+    // Existence is verified above, so never pass SQLITE_OPEN_CREATE here: that is
+    // what allowed an empty database to slip through unnoticed.
+    if (sqlite3_open_v2(config.database_path.c_str(), &db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_FULLMUTEX, nullptr) != SQLITE_OK) {
         Logger::write(context + " - Failed to open database: " + std::string(sqlite3_errmsg(db)), LogLevel::ERR);
         Logger::write(context + " - Database path from config: " + utils::toWindowsPath(config.database_path), LogLevel::ERR);
         std::cerr << context << " - Failed to open database: " << sqlite3_errmsg(db) << std::endl;
