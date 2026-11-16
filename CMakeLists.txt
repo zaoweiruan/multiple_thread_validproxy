@@ -48,6 +48,11 @@ endif()
 
 project(multiple_thread_validproxy VERSION 1.6.1 LANGUAGES CXX)
 
+# Partial static linking: link libgcc/libstdc++ into the exe so the release no
+# longer depends on libgcc_s_seh-1.dll / libstdc++-6.dll (only libwinpthread-1.dll
+# remains). Applies to every target (GUI, CLI, tests).
+add_link_options(-static-libgcc -static-libstdc++)
+
 # ===== Per-toolchain dependency roots (defaults; overridable via -D) =====
 # wxWidgets = DYNAMIC; every other dependency = STATIC (user directive).
 # The toolchain file provides the matching roots; -DWX_VCPKG_DIR /
