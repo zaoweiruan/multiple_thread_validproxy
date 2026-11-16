@@ -1,4 +1,4 @@
-updated: 2026-11-13
+updated: 2026-11-16
 title: "docs: project document index"
 type: meta
 status: maintained
@@ -20,7 +20,7 @@ status: maintained
 | [术语表](#1-术语表) | 1 | `docs/glossary.md` |
 | [项目上下文](#2-项目上下文) | 4 | `docs/context.md` |
 | [模型配置](#25-模型配置) | 1 | `docs/model-config.md` |
-| [开发流程规范](#3-开发流程规范) | 1 | `docs/DEV-PROCESS.md` |
+| [开发流程规范](#3-开发流程规范) | 2 | `docs/DEV-PROCESS.md` |
 | [提示模式规范](#35-提示模式规范) | 1 | `docs/prompt-patterns.md` |
 | [可用技能参考](#36-可用技能参考) | 1 | `docs/available-skills-reference.md` |
 | [整体架构](#4-整体架构) | 3 | `docs/architecture.md` |
@@ -29,7 +29,7 @@ status: maintained
 | [技术方案](#7-技术方案) | 6 | `docs/superpowers/specs/` |
 | [规范化设计](#75-规范化设计) | 89 | `docs/specs/` |
 | [实施计划](#8-实施计划) | 108 | `docs/plans/` |
-| [分析报告](#9-分析报告) | 30 | `docs/reports/` |
+| [分析报告](#9-分析报告) | 31 | `docs/reports/` |
 | [Bug 修复记录](#91-bug-修复记录) | 144 | `docs/bugfix/` |
 | [测试报告](#10-测试报告) | 1 | `docs/test/` |
 | [长期记忆](#13-长期记忆) | 3 | `docs/project-knowledge.md` (6.2 KB) |
@@ -72,6 +72,7 @@ status: maintained
 | # | 文件 | 说明 | 状态 | 大小 |
 |------|------|------|------|------|
 | 1 | [`docs/plans/DEV-PROCESS.md`](./plans/DEV-PROCESS.md) | **开发流程核心规则** — "先创建计划文档、审核后再执行" 7 步工作流；LogLevel 等级规范(INFO/WARN/ERR/REPORT/DEBUG)；计划文档 frontmatter 模板；**v1.1 UI 自动化测试规范**(适用范围/TDD 定位先行/UIIds.h 唯一定位源/数据隔离红线/一键验收 build-and-test.bat)；**v1.3 构建 DLL 规范**(只使用环境中的 DLL，禁止复制依赖 DLL) | — | 3.6 KB |
+| 2 | [`docs/2026-11-16-Reference-MinGW-Toolchain-Usage-v1.0.md`](./2026-11-16-Reference-MinGW-Toolchain-Usage-v1.0.md) | **MinGW 工具链使用规范 v1.0** — 声明式工具链矩阵（`clion`=CLion GCC15.2.0/MSVCRT 基线、`ucrt`=`E:\mingw64` GCC16.2.0/UCRT 修复链，默认 `ucrt`）；选择机制 `VALIDPROXY_TOOLCHAIN`（`-D` > 环境变量 > 默认）；依赖策略（wx 动态 + 其余全静态）与每工具链依赖根；**工具链↔构建目录强绑定**（切换必须全新目录，防混链）；**配置期 ABI 闸门** `cmake/AbiGuard.cmake`（编译器 CRT vs wx DLL CRT 不一致 → FATAL，`0xC0000374` 失效模式文案 + 逃生舱 `VALIDPROXY_ALLOW_ABI_MISMATCH=ON`）；产物隔离 `VALIDPROXY_ISOLATE_OUTPUTS`（ON → `<build>/out/{bin,tests}`）；wx 运行时部署 `VALIDPROXY_COPY_WX_RUNTIME`（exe 目录置入 CRT 匹配 wx）；标准 configure/build/test 命令、故障排查表、2026-11-13 实测验证状态（两工具链 EXIT 0 / 全量 ctest 71/72 + 已知 flaky 单跑复验 / ABI 四态 / 禁 auto） | — | 8.6 KB |
 
 > **约束**: 任何源代码修改前**必须先创建计划文档**并经过审核。详见 DEV-PROCESS.md §1–2。
 
@@ -394,6 +395,7 @@ esolveChainPort 链式取用第一个非零值，erdict=NotChecked；D2 判定�
 | 17 | [`docs/reports/2026-10-20-Report-Hysteria2-GrpcEncoderFeasibility-v1.0.md`](./reports/2026-10-20-Report-Hysteria2-GrpcEncoderFeasibility-v1.0.md) | **xray-core Hysteria2 编码器调查报告** — xray-core v26.3.27 存在 `xray.proxy.hysteria.ClientConfig`（version=1、server=2）与 `xray.transport.internet.hysteria.Config`（version=1、auth=2）proto 定义，但无「专属编码器」层；CLI `ado` 与 gRPC AddOutbound 共用同一 proto（`main/commands/all/api/outbounds_add.go:34-77`）；本项目回退 CLI 的原因是 `supportedTypeUrls` 未覆盖 hysteria + `encodeStreamConfig` 缺 `hysteriaSettings` 编码；改 gRPC 须底层+传输层两层编码器与 TLS，只加 typeUrl 会「注入成功、运行必坏」；决策对比含实测性能依据（gRPC 88s vs subprocess 196s） | — | — |
 | 18 | [`docs/reports/2026-10-22-Report-StandaloneAdoption-CurrentLogic-v1.0.md`](./reports/2026-10-22-Report-StandaloneAdoption-CurrentLogic-v1.0.md) | **纳管独立代理进程（Standalone Proxy Adoption）当前完整逻辑** — 现状基线报告：① 入口与并发守卫（`tryBeginAdoption` in-flight 互斥 + 既有 `ui::ScopeGuard` 复位；三调用点 `MainFrame.cpp:453/:979` 带 `VALIDPROXY_NO_ADOPT` 门控、切库路径无门控）② 身份识别（命令行 → `standalone_<indexId>-xray.json` → indexId，**命令行是唯一身份判据**，历史表按 pid 反查仅兜底）③ D5 实例闸门（`PROCESS_QUERY_LIMITED_INFORMATION` 探针 + `checkInstanceIdentity` 三态 Match/Recycled/Unverifiable；Recycled 放弃纳管、Unverifiable 降级放行；探针权限永不强于枚举）④ 三态路由 `decideAdoptionRoute`（Skip/BypassDetect/FullDetect；本次启动的代理**完全跳过活体检测**）⑤ 端口链四级来源（历史表 → 命令行配置 → 目录探测[仅 `<exeDir>\config\`] → 活体 OS）+ D2 七步短路判定（越界/api 端口/`!readOk`/空表/`∉osPorts`/`∈socksPorts`/其余）⑥ 配置 ↔ ProfileItem 交叉核对（必比 protocol/address/port/userId，可选 requestHost/publicKey；三态 Match/Mismatch/Unverifiable；**不相符只告警不阻断纳管**）⑦ 丢弃语义（仅「身份不明」与「端口链全空」；不写行 / 不建 watcher / 不对活体进程 `finalizeStop`）⑧ 行身份 append-only（三元组或宽匹配命中 ⇒ 复用 + `touchHeartbeat`，都不命中才 `insertStartWithPort`）⑨ 三条相邻路径对比（R6 接管 / 监控路径零 socket / 启动路径）与 3 条全局不变量（fail-open 优于显示错端口、历史表 append-only 唯一信源、端口以链解出的为准）⑩ 关键生产库事实（孤儿行 128、重复三元组 11 组、`start_count` 恒 0、REPORT 级不落盘、周期 30000ms）与 9 条已知陷阱 | — | 32.6 KB |
 | 19 | [`docs/reports/2026-11-11-Report-Toolchain-Verification-v1.0.md`](./reports/2026-11-11-Report-Toolchain-Verification-v1.0.md) | **编译工具链环境核对 + CMakeLists 评估 + 全量回归验证** — 按环境变量实测（gcc/g++ 15.2.0 @ `E:\clion\bin\mingw`、cmake 4.4.2、ninja 1.13.2、`VCPKG_ROOT=d:\vcpkg`、`VALIDPROXY_MINGW_ROOT` 未设置），判定 `CMakeLists.txt:10-24` 的 `ENV > E:/clion/bin/mingw > PATH` 选择链**无需修改**；重配置实测 `GNU 15.2.0` + `wxWidgets 3.3.3` + `[PASS] Application + UITests`；全量 `ctest` **70/71**（302.65 s，EXIT=8），唯一失败 `#46 XrayManagerStartupTest`（真实 xray API 端口 29601 5 s 未就绪 → `actualCount=0`、`elapsedMs=6219 > 3000`，既有环境基线）；UI 门禁 `build-and-test.bat` **15/16**（128.93 s，EXIT=8），唯一失败 `#59 UI_FLOATINGWIDGET`（单跑 6 次 4 过 2 败，断言 `:491/492`/`:638/639`/`:805` 位置采样漂移，既有 flaky）；另登记 4 项观察风险（Boost 库名 `gcc14` 硬编码 17 处、浮窗保位断言竞态、真实 xray 依赖缺 skip 门、cmake 双版本）与零改动声明 | — | 11.5 KB |
+| 20 | [`docs/reports/2026-11-16-Report-ClangToolchainFeasibility-v1.0.md`](./reports/2026-11-16-Report-ClangToolchainFeasibility-v1.0.md) | **clang-23.1.5 工具链可行性评估** — 定位 `E:\llvm-mingw-20261104-ucrt-x86_64`（clang 23.1.5，目标 `x86_64-w64-windows-gnu`，**UCRT**，**libc++ 动态** `libc++.dll`+`libunwind.dll`，自带 sysroot + `llvm-objdump`/`llvm-windres`）；**核心障碍（实测）**：clang 强制 libc++，`--gcc-toolchain=E:/mingw64` 被忽略、`-stdlib=libstdc++` 编译失败（`<string>` not found），与现有 GCC16+libstdc++ 依赖树 **C++ ABI 不兼容** → wx（动态）/Catch2（静态）/boost（libboost_json 静态）**必须用 clang+libc++ 重建**，sqlite3/curl/zlib（纯 C）可复用；**集成缺口**：AbiGuard `find_program(objdump)` 会命中非可执行 busybox 包装（`objdump`/`x86_64-w64-mingw32-objdump` 无扩展名），需工具链文件提供 `VALIDPROXY_OBJDUMP=...\llvm-objdump.exe`（实测可读导入表）；clang `-dM` 定义 `_UCRT`（闸门判 `ucrt`，判据无需改）；libc++ 运行时 DLL 需部署（类似 `VALIDPROXY_COPY_WX_RUNTIME`）；**分阶段建议**（①vcpkg clang+libc++ 依赖树试建 wx 单 port 验证→②工具链文件+选择器+闸门适配→③集成验证）+ **风险闸门**（wx+libc++ 失败即叫停）+ 结论「可行但成本高」；本次仅评估不改构建系统 | — | 9.8 KB |
 
 ---
 
