@@ -46,7 +46,7 @@ if(NOT DEFINED CMAKE_TOOLCHAIN_FILE OR "${CMAKE_TOOLCHAIN_FILE}" STREQUAL "")
 endif()
 
 
-project(multiple_thread_validproxy VERSION 1.6.0 LANGUAGES CXX)
+project(multiple_thread_validproxy VERSION 1.6.1 LANGUAGES CXX)
 
 # ===== Per-toolchain dependency roots (defaults; overridable via -D) =====
 # wxWidgets = DYNAMIC; every other dependency = STATIC (user directive).
