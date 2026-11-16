@@ -7,7 +7,7 @@
 
 # validproxy — 代理验证与网络转发管理工具
 
-> **版本**: v1.6.0 · **Git**: `84fdfae` · **平台**: Windows (MinGW/GCC) · **语言**: C++17
+> **版本**: v1.6.1 · **Git**: `3e703e6` · **平台**: Windows (MinGW/GCC) · **语言**: C++17
 
 `validproxy` 是一个基于 **Xray-core** 的代理验证与网络转发管理工具，提供 **wxWidgets 图形界面** 与 **命令行（CLI）** 双入口。它面向 v2rayN 生态，支持订阅源管理、代理批量连通性测试、去重清洗、分享链接导入导出、独立代理/代理池启动与监控、以及实时日志与统计面板。
 
@@ -199,7 +199,7 @@ cmake --build build --parallel 8 && .\scripts\run_coverage.ps1
 - `docs/bugfix/` — 根因分析与修复记录。
 - `docs/reviews/` — 独立评审记录（三视角 / 5-persona 并行）。
 - `docs/design/` — UI 设计、无效过滤等基础设计规范。
-- `CHANGELOG.md` — 版本变更记录（当前 v1.6.0）。
+- `CHANGELOG.md` — 版本变更记录（当前 v1.6.1）。
 
 ---
 
