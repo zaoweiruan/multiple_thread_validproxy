@@ -10,6 +10,10 @@
 #include "version.h"
 #include "service/DatabaseConnectionService.h"
 #include "service/DatabaseBootstrap.h"
+#include "service/CloudSyncService.h"
+#include "service/UploadGate.h"
+#include "net/WebDavClient.h"
+#include "net/WebDavCredentials.h"
 #include "config/ConfigFileStore.h"
 #include "config/ConfigJsonParser.h"
 #include "config/sections/LogConfigParser.h"
@@ -487,6 +491,27 @@ int main(int argc, char* argv[]) {
     Logger::setConsoleEnabled(false);
 
     // Load configuration
+    // R1: config.json missing -> pull it from WebDAV. Credentials are embedded at
+    // build time (scripts/provision_webdav_secret.py); when they are absent this
+    // is a no-op and the existing "configuration missing" error path still runs.
+    {
+        std::error_code cfgEc;
+        if (!std::filesystem::exists(configPath, cfgEc)) {
+            net::WebDavCredentials credentials;
+            std::string credError;
+            if (!net::WebDavCredentialsStore::load(credentials, credError)) {
+                Logger::write("startup: config.json missing; " + credError, LogLevel::WARN);
+            } else {
+                net::WebDavClient webdavClient(credentials, "https://dav.jianguoyun.com/dav/");
+                const service::CloudSyncResult pulled =
+                        service::CloudSyncService::pullConfigOnly(webdavClient, "validproxy",
+                                                                  configPath);
+                Logger::write("startup: " + (pulled.ok ? pulled.detail : pulled.error),
+                              pulled.ok ? LogLevel::REPORT : LogLevel::WARN);
+            }
+        }
+    }
+
     std::optional<config::AppConfig> appConfig = config::ConfigReader::load(configPath);
     if (!appConfig) {
         Logger::write("Failed to load configuration file: " + utils::toWindowsPath(configPath), LogLevel::ERR);
@@ -503,6 +528,12 @@ int main(int argc, char* argv[]) {
     Logger::write(std::string(APP_NAME) + " v" + APP_VERSION + " (" + APP_GIT_TAG + ")", LogLevel::REPORT);
     Logger::write(std::string("Build: ") + APP_BUILD_TYPE + " | " + APP_BUILD_TIME, LogLevel::REPORT);
     Logger::write(std::string("Compiler: ") + __VERSION__, LogLevel::REPORT);
+    // Evidence for the upload gate: whether VALIDPROXY_UPLOAD_TOKEN matched the
+    // compiled-in value decides if the "upload to cloud" menu item is enabled.
+    Logger::write(std::string("Upload gate: ") +
+                          (service::isUploadEnabled() ? "enabled" : "disabled "
+                           "(VALIDPROXY_UPLOAD_TOKEN absent or mismatched)"),
+                  LogLevel::REPORT);
 
     // Bootstrap the database: read-only probe -> prompt -> create/rebuild -> rewrite.
     // This replaces the old behaviour where SQLITE_OPEN_CREATE silently produced a

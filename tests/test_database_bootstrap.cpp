@@ -356,7 +356,7 @@ TEST(DatabaseBootstrapTest, CreateProducesCompleteSchema) {
     const std::map<std::string, BaselineTable> baseline = loadBaseline();
     ASSERT_FALSE(baseline.empty());
 
-    for (const auto& kv : baseline) {
+    for (const std::pair<const std::string, BaselineTable>& kv : baseline) {
         ASSERT_TRUE(tableExists(db, kv.first)) << "missing table " << kv.first;
         const std::vector<std::string> actual = columnsOf(db, kv.first);
         EXPECT_EQ(actual, kv.second.columns)

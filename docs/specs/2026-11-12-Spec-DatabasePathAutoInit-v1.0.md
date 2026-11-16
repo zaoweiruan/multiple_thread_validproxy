@@ -45,7 +45,7 @@
 | R4 | 生成目标与配置路径不同时，把新路径写回 `config.json` 的 `database.path`（必要时连带同值的 `sync.target_db`），并同步内存配置 | 重启后直接命中新库，不再弹窗；后续保存配置不回退 |
 | R5 | 非 SQLite / 损坏文件**不静默覆盖**：单独提示「备份为 .bak 后重建」，默认按钮为「否」 | 未批准时原文件字节不变 |
 | R6 | 探测与生成逻辑可单测，不依赖 UI | 新增 `DatabaseBootstrapTest` 全部为纯 Google Test |
-| R7 | CLI 保持非交互（不弹框）；本次仅收敛为"启动不静默造空库"，不改变脚本化行为 | `main_cli.cpp` 的 13 处 `openDatabase()` 行为不变（内联 `SQLITE_OPEN_CREATE`，不经过 `DatabaseConnectionService::open`） |
+| R7 | CLI 保持非交互（不弹框），但**同样不得静默产出残缺库**：文件缺失/为空时自动建完整 schema，其他非 `Ok` 状态一律拒绝并给出可执行错误 | `main_cli.cpp::openDatabase()` 先 `inspect()`，仅对 MissingPath/MissingFile/MissingDirectory/EmptyFile 调 `create()`，随后以 `READWRITE`（**不带 CREATE**）打开 |
 | R8 | 生成目标与配置路径相同时（配置本来就在 exe 目录），不回写 `config.json` | 生成路径 == 配置路径时 `config.json` 的 mtime 不变 |
 
 ## 3. 无效判定矩阵

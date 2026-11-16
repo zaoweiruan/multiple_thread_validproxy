@@ -291,6 +291,58 @@ configure_file(
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
     ${CMAKE_CURRENT_SOURCE_DIR}/resources/schema_init.sql)
 
+# ---- Embedded WebDAV credential blob (gitignored; empty when not provisioned) ----
+set(WEBDAV_SECRET_INC ${CMAKE_CURRENT_SOURCE_DIR}/resources/webdav_secret.inc)
+if(EXISTS ${WEBDAV_SECRET_INC})
+    file(READ ${WEBDAV_SECRET_INC} WEBDAV_SECRET_BLOB)
+    message(STATUS "WebDAV credentials: provisioned")
+else()
+    set(WEBDAV_SECRET_BLOB "")
+    message(STATUS "WebDAV credentials: NOT provisioned (cloud sync disabled)")
+endif()
+string(STRIP "${WEBDAV_SECRET_BLOB}" WEBDAV_SECRET_BLOB)
+set(WEBDAV_SECRET_GENERATED ${CMAKE_CURRENT_BINARY_DIR}/generated/WebDavSecret.cpp)
+configure_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/resources/WebDavSecret.cpp.in
+    ${WEBDAV_SECRET_GENERATED}
+    @ONLY
+)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${WEBDAV_SECRET_INC})
+
+# ---- Upload gate token (from the environment, or gitignored .inc) ----
+set(UPLOAD_TOKEN_INC ${CMAKE_CURRENT_SOURCE_DIR}/resources/upload_token.inc)
+# The "upload to cloud" entry points only work when VALIDPROXY_UPLOAD_TOKEN
+# matches this value at runtime. Precedence:
+#   1. -DVALIDPROXY_UPLOAD_TOKEN=...   (explicit cache variable)
+#   2. $ENV{VALIDPROXY_UPLOAD_TOKEN}   (the value set in the environment)
+#   3. resources/upload_token.inc      (gitignored file, script-provisioned)
+#   4. empty                           (= upload permanently disabled)
+if(DEFINED VALIDPROXY_UPLOAD_TOKEN AND NOT "${VALIDPROXY_UPLOAD_TOKEN}" STREQUAL "")
+    set(UPLOAD_TOKEN "${VALIDPROXY_UPLOAD_TOKEN}")
+    set(UPLOAD_TOKEN_SOURCE "-DVALIDPROXY_UPLOAD_TOKEN")
+elseif(DEFINED ENV{VALIDPROXY_UPLOAD_TOKEN} AND NOT "$ENV{VALIDPROXY_UPLOAD_TOKEN}" STREQUAL "")
+    set(UPLOAD_TOKEN "$ENV{VALIDPROXY_UPLOAD_TOKEN}")
+    set(UPLOAD_TOKEN_SOURCE "environment")
+elseif(EXISTS ${UPLOAD_TOKEN_INC})
+    file(READ ${UPLOAD_TOKEN_INC} UPLOAD_TOKEN)
+    set(UPLOAD_TOKEN_SOURCE "resources/upload_token.inc")
+else()
+    set(UPLOAD_TOKEN "")
+    set(UPLOAD_TOKEN_SOURCE "")
+endif()
+string(STRIP "${UPLOAD_TOKEN}" UPLOAD_TOKEN)
+if(UPLOAD_TOKEN STREQUAL "")
+    message(STATUS "Upload gate: NOT provisioned (upload disabled)")
+else()
+    message(STATUS "Upload gate: provisioned from ${UPLOAD_TOKEN_SOURCE}")
+endif()
+configure_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/resources/UploadGateToken.h.in
+    ${CMAKE_BINARY_DIR}/include/UploadGateToken.h
+    @ONLY
+)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${UPLOAD_TOKEN_INC})
+
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
 include_directories(${CMAKE_BINARY_DIR}/include)
 include_directories(${VCPKG_ROOT}/installed/x64-mingw-static/include)
@@ -400,7 +452,12 @@ set(CORE_SOURCES
     src/test/ProxyTestResultSink.cpp
     src/service/DatabaseConnectionService.cpp
     src/service/DatabaseBootstrap.cpp
+    src/net/WebDavClient.cpp
+    src/net/WebDavCredentials.cpp
+    src/service/CloudSyncService.cpp
+    src/service/UploadGate.cpp
     ${SCHEMA_INIT_GENERATED}
+    ${WEBDAV_SECRET_GENERATED}
     src/task/MutexPolicy.cpp
     src/task/TaskQueue.cpp
     src/task/TaskType.cpp
@@ -1060,6 +1117,57 @@ set_target_properties(test_database_bootstrap PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY_RELEASE ${VALIDPROXY_TEST_DIR}
 )
 add_test(NAME DatabaseBootstrapTest COMMAND test_database_bootstrap)
+
+# -- Cloud sync unit tests (pure logic: no network, no sqlite) --
+add_executable(test_cloud_sync
+    tests/test_cloud_sync.cpp
+    src/service/CloudSyncService.cpp
+    src/net/WebDavClient.cpp
+    src/net/WebDavCredentials.cpp
+    src/SubitemDAO.cpp
+    src/Logger.cpp
+    src/LoggerInstance.cpp
+    src/Utils.cpp
+    ${SCHEMA_INIT_GENERATED}
+    ${WEBDAV_SECRET_GENERATED}
+)
+target_include_directories(test_cloud_sync PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(test_cloud_sync PRIVATE
+    gtest_main
+    gtest
+    ${VCPKG_ROOT}/installed/x64-mingw-static/lib/libsqlite3.a
+    ${VCPKG_ROOT}/installed/x64-mingw-static/lib/libboost_json-gcc14-mt-x64-1_91.a
+    ${VCPKG_ROOT}/installed/x64-mingw-static/lib/libcurl.a
+    ${VCPKG_ROOT}/installed/x64-mingw-static/lib/libzs.a
+    ws2_32
+    crypt32
+    secur32
+    bcrypt
+    wintrust
+)
+set_target_properties(test_cloud_sync PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${VALIDPROXY_TEST_DIR}
+)
+add_test(NAME CloudSyncTest COMMAND test_cloud_sync)
+
+# -- Upload gate unit tests (pure token predicate + real env-var read) --
+add_executable(test_upload_gate
+    tests/test_upload_gate.cpp
+    src/service/UploadGate.cpp
+)
+target_include_directories(test_upload_gate PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_BINARY_DIR}/include
+)
+target_link_libraries(test_upload_gate PRIVATE gtest_main gtest)
+set_target_properties(test_upload_gate PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${VALIDPROXY_TEST_DIR}
+)
+add_test(NAME UploadGateTest COMMAND test_upload_gate)
 
 # -- ConfigGenerator unit tests (SQLite + boost_json, now delegates to extracted components) --
 add_executable(test_config_generator

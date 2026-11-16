@@ -144,6 +144,9 @@ public:
   std::vector<Subitem> getEnabledSubscriptions();
   bool updateEnabled(const std::string& id, bool enabled);
   bool updateSubitem(const Subitem& sub);
+  // Insert-or-update every column by primary key. Used by cloud sync pulls so a
+  // remote record can create a subscription that does not exist locally yet.
+  bool upsertSubitem(const Subitem& sub);
   bool deleteById(const std::string& id);
 };
 
