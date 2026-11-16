@@ -151,7 +151,7 @@ Win32 环境块一致）；该 MinGW 运行时的 `_putenv_s(name, "")` 会崩�
 
 | 验证项 | 结果 |
 |---|---|
-| 配置期从环境变量取值 | 设置 `VALIDPROXY_UPLOAD_TOKEN=probe-token-123` 后 configure → `build/include/UploadGateToken.h` 内含该值 |
+| 配置期从环境变量取值 | 设置 `VALIDPROXY_UPLOAD_TOKEN` 后 configure → `build/include/UploadGateToken.h` 内含该值 |
 | 未配置构建 | `Upload gate: NOT provisioned (upload disabled)`；头文件为空串 |
 | `UploadGateTest`（已配置） | **14/14 通过** |
 | `UploadGateTest`（未配置） | 13 通过 + 1 skip（`IsUploadEnabledTracksTheCompiledToken`） |
@@ -159,6 +159,22 @@ Win32 环境块一致）；该 MinGW 运行时的 `_putenv_s(name, "")` 会崩�
 | GUI 启动 + 无环境变量 | 日志 `Upload gate: disabled (VALIDPROXY_UPLOAD_TOKEN absent or mismatched)`，主窗口正常 |
 | CLI `--cloud-push` + 无环境变量 | `[cloud] upload disabled: …`，**退出码 3**，无网络请求 |
 | CLI `--cloud-push` + 错误值 | 同上，退出码 3 |
+
+### 12.1 本次 token 供给方式
+
+按用户要求「生成强随机 token，同时写入 User 环境变量并重新配置构建」执行：
+
+1. 用 `System.Security.Cryptography.RandomNumberGenerator` 取 32 字节熵，
+   映射到 `[A-Za-z0-9]` 得到 **32 字符** token（非 `Random`、非时间种子）。
+2. `[Environment]::SetEnvironmentVariable("VALIDPROXY_UPLOAD_TOKEN", <token>, "User")`
+   写入 `HKCU\Environment`（用户级，非机器级）。
+3. 在设置了该变量的 shell 中重新 `cmake -B build …`，
+   CMake 走 `$ENV{VALIDPROXY_UPLOAD_TOKEN}` 分支编入。
+4. **未**生成 `resources/upload_token.inc`：环境变量是唯一来源，避免两处真值。
+
+已知限制：若在**没有该环境变量**的进程里重新 configure（例如变更前启动的 IDE），
+CMake 会打印 `Upload gate: NOT provisioned (upload disabled)`，产物回到禁用状态。
+此时在带变量的终端重新 configure 即可恢复，不需要改代码。
 
 **未验证**：GUI 菜单项置灰的像素级/自动化断言（受 wx CRT 与 UI 自动化限制），
 当前以启动日志 + 处理器二次校验作为证据。
