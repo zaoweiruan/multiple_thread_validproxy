@@ -63,6 +63,30 @@ if(VALIDPROXY_TC_CATCH2_DIR)
         "vcpkg Catch2 (static) install dir — defaults to the selected toolchain's tree")
 endif()
 
+# Fallback defaults for a custom -DCMAKE_TOOLCHAIN_FILE (e.g. CLion's vcpkg
+# toolchain): the per-tc roots above are unset, so default to the vcpkg msvcrt
+# tree. Set BEFORE AbiGuard so its authoritative wx DLL CRT check can run.
+if(NOT DEFINED WX_VCPKG_DIR OR "${WX_VCPKG_DIR}" STREQUAL "")
+    if(DEFINED VCPKG_ROOT AND NOT "${VCPKG_ROOT}" STREQUAL "")
+        set(_abi_vcpkg_root "${VCPKG_ROOT}")
+    else()
+        set(_abi_vcpkg_root "D:/vcpkg")
+    endif()
+    set(WX_VCPKG_DIR "${_abi_vcpkg_root}/installed/x64-mingw-dynamic" CACHE PATH
+        "vcpkg wxWidgets (dynamic) install dir — defaults to the vcpkg msvcrt tree")
+    unset(_abi_vcpkg_root)
+endif()
+if(NOT DEFINED CATCH2_VCPKG_DIR OR "${CATCH2_VCPKG_DIR}" STREQUAL "")
+    if(DEFINED VCPKG_ROOT AND NOT "${VCPKG_ROOT}" STREQUAL "")
+        set(_abi_vcpkg_root "${VCPKG_ROOT}")
+    else()
+        set(_abi_vcpkg_root "D:/vcpkg")
+    endif()
+    set(CATCH2_VCPKG_DIR "${_abi_vcpkg_root}/installed/x64-mingw-static" CACHE PATH
+        "vcpkg Catch2 (static) install dir — defaults to the vcpkg msvcrt tree")
+    unset(_abi_vcpkg_root)
+endif()
+
 # ===== ABI gate (configure-time toolchain/dependency consistency) =====
 # FATAL if compiler CRT != wx DLL CRT (the 0xC0000374 failure mode); warns on
 # Catch2 major-version drift. Escape hatch: -DVALIDPROXY_ALLOW_ABI_MISMATCH=ON.

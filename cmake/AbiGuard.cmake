@@ -39,6 +39,16 @@ endif()
 
 if(_detected_crt STREQUAL "")
     message(WARNING "[AbiGuard] could not determine compiler CRT family (probe rc=${_abi_rc}); skipping CRT check")
+elseif(NOT VALIDPROXY_TC_CRT)
+    # External CMAKE_TOOLCHAIN_FILE (e.g. CLion's vcpkg toolchain) does not load
+    # our toolchain file, so VALIDPROXY_TC_CRT is unset. This is the "native
+    # toolchain" path (CLion Toolchain settings decide the compiler); there is no
+    # declared CRT to compare against, so only WARN and let the authoritative
+    # wx DLL CRT check (section 2) decide.
+    message(WARNING
+        "[AbiGuard] VALIDPROXY_TC_CRT not set (external CMAKE_TOOLCHAIN_FILE, not via VALIDPROXY_TOOLCHAIN);"
+        " skipping compiler-CRT-vs-declared comparison, relying on the wx DLL CRT check."
+        " Compiler CRT = '${_detected_crt}'.")
 elseif(NOT _detected_crt STREQUAL VALIDPROXY_TC_CRT)
     set(_abi_msg
         "[AbiGuard] compiler CRT '${_detected_crt}' != selected toolchain declared CRT '${VALIDPROXY_TC_CRT}'"
