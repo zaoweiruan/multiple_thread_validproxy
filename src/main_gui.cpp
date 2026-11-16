@@ -11,6 +11,7 @@
 #include "service/DatabaseConnectionService.h"
 #include "service/DatabaseBootstrap.h"
 #include "service/CloudSyncService.h"
+#include "service/UploadGate.h"
 #include "net/WebDavClient.h"
 #include "net/WebDavCredentials.h"
 #include "config/ConfigFileStore.h"
@@ -527,6 +528,12 @@ int main(int argc, char* argv[]) {
     Logger::write(std::string(APP_NAME) + " v" + APP_VERSION + " (" + APP_GIT_TAG + ")", LogLevel::REPORT);
     Logger::write(std::string("Build: ") + APP_BUILD_TYPE + " | " + APP_BUILD_TIME, LogLevel::REPORT);
     Logger::write(std::string("Compiler: ") + __VERSION__, LogLevel::REPORT);
+    // Evidence for the upload gate: whether VALIDPROXY_UPLOAD_TOKEN matched the
+    // compiled-in value decides if the "upload to cloud" menu item is enabled.
+    Logger::write(std::string("Upload gate: ") +
+                          (service::isUploadEnabled() ? "enabled" : "disabled "
+                           "(VALIDPROXY_UPLOAD_TOKEN absent or mismatched)"),
+                  LogLevel::REPORT);
 
     // Bootstrap the database: read-only probe -> prompt -> create/rebuild -> rewrite.
     // This replaces the old behaviour where SQLITE_OPEN_CREATE silently produced a

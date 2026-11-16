@@ -3,6 +3,7 @@
 #include "net/WebDavCredentials.h"
 #include "net/WebDavClient.h"
 #include "service/CloudSyncService.h"
+#include "service/UploadGate.h"
 #include "MainFrame.h"
 #include "ConfigDialog.h"
 #include "StandaloneFloatingWidget.h"
@@ -806,6 +807,10 @@ void MainFrame::initMenuBar() {
     fileMenu->Append(ID_MENU_SYNC_DB,     L"同步数据库…");
     fileMenu->Append(ID_MENU_CLOUD_PULL, L"从云端同步订阅");
     fileMenu->Append(ID_MENU_CLOUD_PUSH, L"上传配置与订阅到云端");
+    // Upload can overwrite the remote copy, so it is gated: the item is only
+    // enabled when VALIDPROXY_UPLOAD_TOKEN matches the value baked in at build
+    // time. Evaluated once at startup, and re-checked in the handler.
+    fileMenu->Enable(ID_MENU_CLOUD_PUSH, service::isUploadEnabled());
     fileMenu->AppendSeparator();
     fileMenu->Append(ID_MENU_EXIT,        L"退出\tAlt+X");
     bar->Append(fileMenu, L"&文件");
@@ -1301,6 +1306,13 @@ void MainFrame::onMenuCloudPullSubs(wxCommandEvent&) {
 }
 
 void MainFrame::onMenuCloudPush(wxCommandEvent&) {
+    // Defense in depth: the menu item is greyed out at startup, but the gate is
+    // re-evaluated here so a stale enable state can never trigger an upload.
+    if (!service::isUploadEnabled()) {
+        wxMessageBox("上传功能未启用：环境变量 VALIDPROXY_UPLOAD_TOKEN 缺失或与当前值不符。",
+                     "上传到云端", wxOK | wxICON_WARNING, this);
+        return;
+    }
     const wxString confirm = "将把当前 config.json 与订阅列表上传到云端，可能覆盖云端已有文件。\n\n是否继续？";
     if (wxMessageBox(confirm, "上传到云端", wxYES_NO | wxICON_QUESTION, this) != wxYES) {
         return;

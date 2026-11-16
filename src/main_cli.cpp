@@ -30,6 +30,7 @@
 #include "Utils.h"
 #include "Logger.h"
 #include "service/CloudSyncService.h"
+#include "service/UploadGate.h"
 #include "service/DatabaseBootstrap.h"
 #include "net/WebDavClient.h"
 #include "net/WebDavCredentials.h"
@@ -316,6 +317,18 @@ static std::string readWebDavRemoteDir(const std::string& configPath) {
 static int runCloudSync(const std::string& mode, const std::string& configPath,
                         const std::string& exeDir, const std::string& logDir) {
     Logger::init(logDir, "cloud");
+
+    // Upload is gated exactly like the GUI menu item: the env token must match the
+    // value baked in at build time. Refuse before touching the network.
+    if (mode == "cloudpush" && !service::isUploadEnabled()) {
+        const std::string message =
+                "[cloud] upload disabled: VALIDPROXY_UPLOAD_TOKEN is absent or does not "
+                "match the compiled-in value";
+        logError(message);
+        std::cerr << message << std::endl;
+        Logger::close();
+        return 3;
+    }
 
     net::WebDavCredentials credentials;
     std::string credError;

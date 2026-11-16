@@ -21,6 +21,7 @@
 !/tests/**
 !/resources/**
 resources/webdav_secret.inc
+resources/upload_token.inc
 # 5. 重新忽略自动生成的文件
 /include/version.h
 # 6. 去除特定目录、文件

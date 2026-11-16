@@ -3,7 +3,7 @@ title: "docs: Project Plans Tracker — global plan index and progress tracker"
 type: docs
 status: maintained
 date: 2026-05-11
-updated: 2026-11-13
+updated: 2026-11-16
 ---
 
 # Project Plans Tracker
@@ -17,6 +17,7 @@ updated: 2026-11-13
 
 | 日期 | 类型 | 文档路径 | 说明 |
 |------|------|----------|------|
+| 2026-11-16 | spec | docs/specs/2026-11-16-Spec-UploadGate-v1.0.md | **上传功能环境变量闸门** — 环境变量 `VALIDPROXY_UPLOAD_TOKEN` 与构建期期望值（`-D` > 环境变量 > gitignored `resources/upload_token.inc` > 空）逐字节相等时，GUI「上传配置与订阅到云端」启用，否则置灰；CLI `--cloud-push` 关闭时返回 3 且不发请求；启动日志 `Upload gate: enabled/disabled`；`service::UploadGate` 纯函数可单测（14 例）；属能力开关，非安全边界 | 📝 implemented |
 | 2026-11-13 | spec | docs/specs/2026-11-13-Spec-WebDavCloudSync-v1.0.md | **WebDAV 云端同步（配置引导 / 订阅双向同步 / 上传）** — 用户诉求「config.json 缺失时从坚果云 WebDAV 同步；库表订阅也可同步；增加上传功能」；`net::WebDavClient`（RFC 4918 子集）+ `net::WebDavCredentialsStore`（凭据编译期内嵌 XOR+Base64，**混淆非保密**，`resources/webdav_secret.inc` 已 gitignore）+ `service::CloudSyncService`（时间戳冲突判定 2s 容忍、订阅按 Id upsert 不删本地条目）+ `SubitemDAO::upsertSubitem`；入口=CLI 三个参数 + GUI 两个菜单项 + 启动缺失自动拉取；24 例单测 + 真实服务器端到端已验证；§14 随带修正 CLI 不再静默产出残缺库 | 📝 implemented |
 | 2026-11-13 | spec | docs/specs/2026-11-12-Spec-DatabasePathAutoInit-v1.0.md | **数据库路径无效时提示生成库表并继续启动** — 修复「启动路径固定 `SQLITE_OPEN_CREATE` 导致静默造 0 字节空库、随后全线 no such table」；新增 `service::DatabaseBootstrap`（`inspect` 12 态只读探测、`create` 幂等且失败只删本次新建文件、`mayCreateAt` 目标净化、时间戳备份/恢复）+ 内嵌 `resources/schema_init.sql`（11 表 + 3 索引 + 16 + 8 种子，模板种子带 BundleChain）+ `OpenMode::ReadWriteExisting` + `main_gui` 探测→弹窗→建库→原子回写配置；就地补齐推迟 v2；29 例单测；已 3 轮 6-persona 评审 | 📝 implemented |
 | 2026-11-11 | spec | docs/specs/2026-11-11-Spec-ToolbarRegionParseButton-v1.1.md | **V11.1 增补（同日第二轮）：图标换新去背景+1:1 +「同步」「清洗」工具栏位置交换** — ①图标换用户提供 `bin/icons/parsingregion1.png`（320×320 24bppRgb 无 alpha）：四边种子 BFS flood fill 清连通白底（≥245，不穿透镜片高光/云等内部白）→ 内容 bbox 309×320 → 透明底居中 pad 320×320 正方形（不二次缩放保真）→ docs 源+bin 副本双写字节一致（透明像素 38.5%），`icons.rc` 资源名不变重新嵌入；GTest `ToolbarRegionIconTest` 4 例锁定文件契约（PNG 签名/1:1/colorType 6 RGBA/尺寸 sanity），TDD 红绿完备（旧 1536×1024 红在 1536 vs 1024；新版 4/4 绿）；②`initToolBar` 中 `ID_TOOL_SYNC` 与 `ID_TOOL_DEDUP` 两 AddTool 行互换（id 随功能不随位置，enum/事件表/handler 零改动；自绘工具栏无 UIA 子节点，顺序无自动化断言面，证据=源码 diff+布局套件复跑）；验证=UI 门禁 16/16（UI_TOOLBARREGION 5.89s）、`build-and-test.bat` EXIT 0 16/16 ALL TESTS PASSED、全量 71 例仅 #46 冷启动已知噪声（#45 顺延，solo 6146 ms 同签名）、CLion 静态 6 文件 0 error、新增 auto 0 处；未推送 | ✅ completed |
