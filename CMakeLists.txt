@@ -4,7 +4,7 @@ cmake_minimum_required(VERSION 3.20)
 # VALIDPROXY_TOOLCHAIN selects the MinGW toolchain via a CMake toolchain file:
 #   -DVALIDPROXY_TOOLCHAIN=<tc>  or  $ENV{VALIDPROXY_TOOLCHAIN}=<tc>
 #   <tc> = clion | ucrt
-# Resolution order: -D cache value > $ENV{VALIDPROXY_TOOLCHAIN} > default "ucrt".
+# Resolution order: -D cache value > $ENV{VALIDPROXY_TOOLCHAIN} > default "mingw-ucrt".
 #   clion : CLion bundled MinGW (E:/clion/bin/mingw)  GCC 15.2.0, MSVCRT
 #           (zero-risk baseline; wx/Catch2 from the vcpkg msvcrt tree)
 #   ucrt  : UCRT MinGW (E:/mingw64)                    GCC 16.2.0, UCRT
@@ -25,23 +25,23 @@ if(NOT DEFINED CMAKE_TOOLCHAIN_FILE OR "${CMAKE_TOOLCHAIN_FILE}" STREQUAL "")
         set(_VALIDPROXY_TC "${VALIDPROXY_TOOLCHAIN}")
     endif()
     if("${_VALIDPROXY_TC}" STREQUAL "")
-        set(_VALIDPROXY_TC "ucrt")
+        set(_VALIDPROXY_TC "mingw-ucrt")
     endif()
 
-    if(_VALIDPROXY_TC STREQUAL "clion")
+    if(_VALIDPROXY_TC STREQUAL "clion-msvcrt")
         set(CMAKE_TOOLCHAIN_FILE
             "${CMAKE_CURRENT_SOURCE_DIR}/cmake/toolchains/mingw-clion.cmake"
             CACHE FILEPATH "CMake toolchain file (mingw-clion)" FORCE)
-    elseif(_VALIDPROXY_TC STREQUAL "ucrt")
+    elseif(_VALIDPROXY_TC STREQUAL "mingw-ucrt")
         set(CMAKE_TOOLCHAIN_FILE
             "${CMAKE_CURRENT_SOURCE_DIR}/cmake/toolchains/mingw-ucrt.cmake"
             CACHE FILEPATH "CMake toolchain file (mingw-ucrt)" FORCE)
     else()
         message(FATAL_ERROR
-            "VALIDPROXY_TOOLCHAIN='${_VALIDPROXY_TC}' is unknown. Valid values: clion, ucrt.")
+            "VALIDPROXY_TOOLCHAIN='${_VALIDPROXY_TC}' is unknown. Valid values: clion-msvcrt, mingw-ucrt.")
     endif()
     set(VALIDPROXY_TOOLCHAIN "${_VALIDPROXY_TC}" CACHE STRING
-        "selected MinGW toolchain (clion|ucrt)" FORCE)
+        "selected MinGW toolchain (clion-msvcrt|mingw-ucrt)" FORCE)
     unset(_VALIDPROXY_TC)
 endif()
 

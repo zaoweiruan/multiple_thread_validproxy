@@ -6,7 +6,7 @@
 # roots. The configure-time ABI gate (cmake/AbiGuard.cmake) verifies the
 # compiler CRT and the wx DLL CRT actually match before any build.
 #
-# Select with:  -DVALIDPROXY_TOOLCHAIN=clion   or   $ENV{VALIDPROXY_TOOLCHAIN}=clion
+# Select with:  -DVALIDPROXY_TOOLCHAIN=clion-msvcrt   or   $ENV{VALIDPROXY_TOOLCHAIN}=clion-msvcrt
 #
 # Override the dependency roots per-build with:
 #   -DWX_VCPKG_DIR=<dir>        (wx dynamic install dir, msvcrt tree)

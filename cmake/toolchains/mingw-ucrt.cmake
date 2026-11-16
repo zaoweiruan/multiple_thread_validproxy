@@ -7,7 +7,7 @@
 # The configure-time ABI gate (cmake/AbiGuard.cmake) verifies compiler CRT ==
 # wx DLL CRT (and warns on Catch2 major-version drift) before any build.
 #
-# Select with:  -DVALIDPROXY_TOOLCHAIN=ucrt   or   $ENV{VALIDPROXY_TOOLCHAIN}=ucrt
+# Select with:  -DVALIDPROXY_TOOLCHAIN=mingw-ucrt   or   $ENV{VALIDPROXY_TOOLCHAIN}=mingw-ucrt
 #
 # Override the dependency roots per-build with:
 #   -DWX_VCPKG_DIR=<dir>        (wx dynamic install dir, UCRT tree)

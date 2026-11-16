@@ -94,8 +94,8 @@ version: v1.0
 | 依赖重建时长 | wxWidgets 从源码编译（vcpkg），Catch2/boost 二次编译；可能 30–90+ 分钟，且需网络 | 中 |
 | libc++ 版本漂移 | 新树 libc++ 版本与 clang 23.1.5 捆绑版本需一致；`libc++.dll` 运行时版本错配 → 加载/符号失败 | 中 |
 | vcpkg 对 clang 的支持 | vcpkg MinGW triplet 假定 `gcc`；clang chainload 覆盖属非常规，需验证各 port 的 configure 检测 | 中 |
-| 与既有树并存 | 三工具链三依赖根，磁盘/构建目录增长；默认工具链不变（`ucrt`） | 低 |
-| 既有工具链回归 | 本次未改动 `CMakeLists.txt`/`AbiGuard.cmake`，现有 `clion`/`ucrt` 不受影响 | 低 |
+| 与既有树并存 | 三工具链三依赖根，磁盘/构建目录增长；默认工具链不变（`mingw-ucrt`） | 低 |
+| 既有工具链回归 | 本次未改动 `CMakeLists.txt`/`AbiGuard.cmake`，现有 `clion-msvcrt`/`mingw-ucrt` 不受影响 | 低 |
 
 ## 8. 结论与建议
 

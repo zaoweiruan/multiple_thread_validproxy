@@ -9,6 +9,8 @@ version: v1.0
 
 # 多工具链构建矩阵（Toolchain Selection & Debug/Release Matrix）v1.0
 
+> 变更注记（2026-11-16）：实施落地后，工具链 ID 由 `clion`/`ucrt` **更名**为 `clion-msvcrt`/`mingw-ucrt`（原 `ucrt`→`mingw-ucrt`、原 `clion`→`clion-msvcrt`），以消除「编译器来源 + CRT 族」歧义。本文件保留原始设计命名；**当前行为以 `docs/2026-11-16-Reference-MinGW-Toolchain-Usage-v1.0.md` v1.1 为准**。
+
 ## 0. TL;DR
 
 | 结论 | 内容 |
