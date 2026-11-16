@@ -53,6 +53,28 @@ project(multiple_thread_validproxy VERSION 1.6.1 LANGUAGES CXX)
 # remains). Applies to every target (GUI, CLI, tests).
 add_link_options(-static-libgcc -static-libstdc++)
 
+# ===== Static wxWidgets option (release builds) =====
+# When ON, use the statically-built wxWidgets tree (x64-mingw-static) instead of
+# the dynamic one, and link wx statically. Keeps the dynamic tree as the default
+# so existing debug/ucrt workflows are untouched.
+option(VALIDPROXY_STATIC_WX "Use statically-built wxWidgets (release)" OFF)
+if(VALIDPROXY_STATIC_WX)
+    if(NOT DEFINED VCPKG_ROOT OR "${VCPKG_ROOT}" STREQUAL "")
+        set(_vp_vcpkg_root "D:/vcpkg")
+    else()
+        set(_vp_vcpkg_root "${VCPKG_ROOT}")
+    endif()
+    set(_vp_static_wx "${_vp_vcpkg_root}/installed/x64-mingw-static")
+    if(NOT EXISTS "${_vp_static_wx}/share/wxwidgets/wxWidgetsConfig.cmake")
+        message(FATAL_ERROR "VALIDPROXY_STATIC_WX=ON but static wx tree not found at ${_vp_static_wx}. Build it first (vcpkg install wxwidgets:x64-mingw-static).")
+    endif()
+    set(WX_VCPKG_DIR "${_vp_static_wx}" CACHE PATH "vcpkg wxWidgets (static) install dir" FORCE)
+    set(wxWidgets_USE_STATIC ON CACHE BOOL "Link wxWidgets statically" FORCE)
+    message(STATUS "[wx] using STATIC tree: ${WX_VCPKG_DIR}")
+    unset(_vp_vcpkg_root)
+    unset(_vp_static_wx)
+endif()
+
 # ===== Per-toolchain dependency roots (defaults; overridable via -D) =====
 # wxWidgets = DYNAMIC; every other dependency = STATIC (user directive).
 # The toolchain file provides the matching roots; -DWX_VCPKG_DIR /
