@@ -62,9 +62,29 @@
 - **Windows** + MinGW GCC（CLion 自带或 w64devkit）
 - **CMake ≥ 3.x** + **Ninja**
 - **wxWidgets 3.2+**（MSW，vcpkg：`x64-mingw-dynamic`）
-- **Xray-core**（`xray.exe`）与可选 **Sing-Box**（`sing-box.exe`）
-- **geoip.dat / geosite.dat**（`xray_location_asset` 路径）
+- **Xray-core**（`xray.exe`）与可选 **Sing-Box**（`sing-box.exe`）— **需自行下载，见下方提示**
+- **geoip.dat / geosite.dat**（`xray_location_asset` 路径）— **需自行下载**
 - **vcpkg**（默认 `D:/vcpkg`；Boost、wxWidgets、SQLite、cURL 等依赖）
+
+> ### ⚠️ 代理内核与地理数据需自行下载并配置目录
+>
+> 本仓库与发布包**不内置**代理内核，也不内置 `geoip.dat` / `geosite.dat`。运行前请自行下载并解压：
+>
+> - **Xray-core**：`https://github.com/XTLS/Xray-core/releases`（解压得到 `xray.exe`；发行包通常自带
+>   `geoip.dat` / `geosite.dat`，也可用 `https://github.com/Loyalsoldier/v2ray-rules-dat`）
+> - **Sing-Box**（可选，仅在使用 Sing-Box 内核时需要）：`https://github.com/SagerNet/sing-box/releases`
+>
+> 然后在 `bin/config.json` 中把路径指向解压目录（GUI「配置」对话框也可设置）：
+>
+> | 配置键 | 含义 |
+> | --- | --- |
+> | `proxy.xray_executable` | `xray.exe` 的完整路径，如 `D:/xray/xray.exe` |
+> | `proxy.xray_asset_dir` | `geoip.dat` / `geosite.dat` 所在目录 |
+> | `proxy.singbox_executable` | `sing-box.exe` 的完整路径（使用 Sing-Box 内核时） |
+> | `proxy.singbox_asset_dir` | Sing-Box 资源目录（使用 Sing-Box 内核时） |
+>
+> 未配置内核时程序可以启动与浏览数据库，但**批量测试、独立代理、代理池等需要拉起内核的功能不可用**。
+> Windows 7 用户请选择仍支持 Win7 的内核版本（新版 Xray/Sing-Box 可能要求 Win10+）。
 
 ---
 

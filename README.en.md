@@ -62,9 +62,31 @@
 - **Windows** + MinGW GCC (bundled with CLion or w64devkit)
 - **CMake ≥ 3.x** + **Ninja**
 - **wxWidgets 3.2+** (MSW, vcpkg: `x64-mingw-dynamic`)
-- **Xray-core** (`xray.exe`) and optionally **Sing-Box** (`sing-box.exe`)
-- **geoip.dat / geosite.dat** (`xray_location_asset` path)
+- **Xray-core** (`xray.exe`) and optionally **Sing-Box** (`sing-box.exe`) — **download it yourself, see the note below**
+- **geoip.dat / geosite.dat** (`xray_location_asset` path) — **download it yourself**
 - **vcpkg** (default `D:/vcpkg`; dependencies: Boost, wxWidgets, SQLite, cURL, etc.)
+
+> ### ⚠️ You must download the proxy core and geodata yourself, then point the config at them
+>
+> Neither this repository nor the release package bundles a proxy core, `geoip.dat` or `geosite.dat`.
+> Download and unpack them first:
+>
+> - **Xray-core**: `https://github.com/XTLS/Xray-core/releases` (unpack to get `xray.exe`; release archives
+>   usually also contain `geoip.dat` / `geosite.dat`, or use `https://github.com/Loyalsoldier/v2ray-rules-dat`)
+> - **Sing-Box** (optional, only when using the Sing-Box core): `https://github.com/SagerNet/sing-box/releases`
+>
+> Then point `bin/config.json` at the unpacked directory (the GUI “配置” dialog can set the same keys):
+>
+> | Key | Meaning |
+> | --- | --- |
+> | `proxy.xray_executable` | Full path to `xray.exe`, e.g. `D:/xray/xray.exe` |
+> | `proxy.xray_asset_dir` | Directory containing `geoip.dat` / `geosite.dat` |
+> | `proxy.singbox_executable` | Full path to `sing-box.exe` (Sing-Box core only) |
+> | `proxy.singbox_asset_dir` | Sing-Box asset directory (Sing-Box core only) |
+>
+> Without a configured core the app still starts and can browse the database, but **batch testing,
+> standalone proxies and the proxy pool — anything that spawns the core — will not work**.
+> Windows 7 users must pick a core version that still supports Win7 (recent Xray/Sing-Box builds may require Win10+).
 
 ---
 
