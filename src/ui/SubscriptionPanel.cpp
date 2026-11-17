@@ -68,12 +68,12 @@ SubscriptionPanel::SubscriptionPanel(wxWindow* parent, AppController* controller
 
     // Columns — Append[Toggle|Text]Column(label, model_column, mode, width, ...)
     listCtrl_->AppendTextColumn("#", 0, wxDATAVIEW_CELL_INERT, 30);
-    listCtrl_->AppendToggleColumn("启用", 1, wxDATAVIEW_CELL_ACTIVATABLE, 30);
-    listCtrl_->AppendTextColumn("名称 ↕", 2, wxDATAVIEW_CELL_INERT, 200);  // Changed to INERT to prevent editing
-    listCtrl_->AppendTextColumn("有效 ↕", 3, wxDATAVIEW_CELL_INERT, 60, wxALIGN_RIGHT);
-    listCtrl_->AppendTextColumn("代理数 ↕", 4, wxDATAVIEW_CELL_INERT, 70, wxALIGN_RIGHT);
-    listCtrl_->AppendTextColumn("更新 ↕", 5, wxDATAVIEW_CELL_INERT, 130);
-    listCtrl_->AppendTextColumn("ID ↕", 6, wxDATAVIEW_CELL_INERT, 60);
+    listCtrl_->AppendToggleColumn(L"启用", 1, wxDATAVIEW_CELL_ACTIVATABLE, 30);
+    listCtrl_->AppendTextColumn(L"名称 ↕", 2, wxDATAVIEW_CELL_INERT, 200);  // Changed to INERT to prevent editing
+    listCtrl_->AppendTextColumn(L"有效 ↕", 3, wxDATAVIEW_CELL_INERT, 60, wxALIGN_RIGHT);
+    listCtrl_->AppendTextColumn(L"代理数 ↕", 4, wxDATAVIEW_CELL_INERT, 70, wxALIGN_RIGHT);
+    listCtrl_->AppendTextColumn(L"更新 ↕", 5, wxDATAVIEW_CELL_INERT, 130);
+    listCtrl_->AppendTextColumn(L"ID ↕", 6, wxDATAVIEW_CELL_INERT, 60);
 
     sizer->Add(listCtrl_, 1, wxEXPAND | wxALL, 2);
 
@@ -132,7 +132,7 @@ void SubscriptionPanel::updateSubscriptionList(const std::vector<db::models::Sub
 
     db::models::Subitem allItem;
     allItem.id = ALL_SUBSCRIPTION_ID;
-    allItem.remarks = "全部";
+    allItem.remarks = u8"全部";
     allItem.enabled = "1";
     allItem.url = "";
     allItem.updatetime = "";
@@ -201,7 +201,7 @@ void SubscriptionPanel::filterBySearch(const wxString& query) {
 
     db::models::Subitem allItem;
     allItem.id = ALL_SUBSCRIPTION_ID;
-    allItem.remarks = "全部";
+    allItem.remarks = u8"全部";
     allItem.enabled = "1";
     allItem.url = "";
     allItem.updatetime = "";
@@ -339,15 +339,15 @@ void SubscriptionPanel::onSelectionChanged(wxDataViewEvent& event) {
 void SubscriptionPanel::onContextMenu(wxDataViewEvent&) {
     std::string subId = getSelectedSubId();
     wxMenu menu;
-    menu.Append(ID_SUB_UPDATE, "更新订阅");
-    menu.Append(ID_SUB_TEST, "测试订阅");
+    menu.Append(ID_SUB_UPDATE, L"更新订阅");
+    menu.Append(ID_SUB_TEST, L"测试订阅");
     menu.AppendSeparator();
-    menu.Append(ID_SUB_EDIT, "编辑订阅");
-    menu.Append(ID_SUB_DELETE, "删除订阅");
-    menu.Append(ID_SUB_DELETE_PROXIES, "删除订阅下代理");
+    menu.Append(ID_SUB_EDIT, L"编辑订阅");
+    menu.Append(ID_SUB_DELETE, L"删除订阅");
+    menu.Append(ID_SUB_DELETE_PROXIES, L"删除订阅下代理");
     menu.AppendSeparator();
-    menu.Append(ID_SUB_REFRESH, "刷新");
-    menu.Append(ID_SUB_IMPORT, "添加订阅");
+    menu.Append(ID_SUB_REFRESH, L"刷新");
+    menu.Append(ID_SUB_IMPORT, L"添加订阅");
 
     // Disable context-dependent items if nothing selected
     if (subId.empty()) {

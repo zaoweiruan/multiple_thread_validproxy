@@ -1238,8 +1238,8 @@ bool AppController::startStandaloneProxy(const std::string& indexId, int overrid
         // the dialog pumps messages and must not run while standaloneMutex_ is held).
         lock.unlock();
         const int answer = wxMessageBox(
-            "已发现使用该配置的独立代理进程仍在运行。\n是否关闭旧进程后重新启动？",
-            "独立代理已存在", wxYES_NO | wxICON_QUESTION, topWindow_);
+            L"已发现使用该配置的独立代理进程仍在运行。\n是否关闭旧进程后重新启动？",
+            L"独立代理已存在", wxYES_NO | wxICON_QUESTION, topWindow_);
         lock.lock();
         if (answer != wxYES) {
             Logger::write("[StandaloneProxy] User declined to terminate the existing "
@@ -1385,7 +1385,7 @@ bool AppController::startStandaloneProxy(const std::string& indexId, int overrid
                                   CREATE_NEW_CONSOLE, nullptr, nullptr, &si, &pi);
     if (!created) {
         DWORD err = GetLastError();
-        Logger::write("[StandaloneProxy] 启动失败: CreateProcess 返回值=0(FALSE), GetLastError="
+        Logger::write(u8"[StandaloneProxy] 启动失败: CreateProcess 返回值=0(FALSE), GetLastError="
                       + std::to_string(err), LogLevel::ERR);
         return false;
     }
@@ -1401,7 +1401,7 @@ bool AppController::startStandaloneProxy(const std::string& indexId, int overrid
                           + " (SOCKS5 :" + std::to_string(socksPort) + ")";
         msg += exited ? (", exitCode=" + std::to_string(code))
                      : ", exitCode=STILL_ACTIVE(unknown)";
-        msg += "; xray/sing-box 输出（含崩溃原因）见独立代理控制台窗口";
+        msg += u8"; xray/sing-box 输出（含崩溃原因）见独立代理控制台窗口";
         Logger::write(msg, LogLevel::ERR);
     };
 
@@ -1448,9 +1448,9 @@ bool AppController::startStandaloneProxy(const std::string& indexId, int overrid
             // Release lock before modal dialog — see deadlock note above.
             lock.unlock();
             const std::string msg = dead
-                ? ("代理进程闪崩（SOCKS 端口从未就绪）。崩溃原因见独立代理控制台窗口")
-                : "代理进程已启动，但 SOCKS 端口在超时内未就绪。";
-            const int rc = wxMessageBox(msg, "代理启动失败", wxYES_NO | wxCANCEL, topWindow_);
+                ? (u8"代理进程闪崩（SOCKS 端口从未就绪）。崩溃原因见独立代理控制台窗口")
+                : u8"代理进程已启动，但 SOCKS 端口在超时内未就绪。";
+            const int rc = wxMessageBox(msg, L"代理启动失败", wxYES_NO | wxCANCEL, topWindow_);
             lock.lock();
             if (rc == wxYES) {
                 const BOOL termOk = TerminateProcess(pi.hProcess, 1);
@@ -1485,8 +1485,8 @@ bool AppController::startStandaloneProxy(const std::string& indexId, int overrid
             exDao_.updateTestResult(indexId, -1, false, "process crashed after port ready");
             lock.unlock();
             const int rc = wxMessageBox(
-                "代理进程在连通性验证前闪崩。崩溃原因见独立代理控制台窗口",
-                "代理启动失败", wxYES_NO | wxCANCEL, topWindow_);
+                L"代理进程在连通性验证前闪崩。崩溃原因见独立代理控制台窗口",
+                L"代理启动失败", wxYES_NO | wxCANCEL, topWindow_);
             lock.lock();
             if (rc == wxYES) {
                 const BOOL termOk = TerminateProcess(pi.hProcess, 1);
@@ -1524,8 +1524,8 @@ bool AppController::startStandaloneProxy(const std::string& indexId, int overrid
             // null parent and still shows the dialog.
             // Release lock before modal dialog — see note in portReady path above.
             lock.unlock();
-            const int rc = wxMessageBox("代理已启动但连通性验证失败，是否关闭该进程？",
-                                        "连通性验证失败", wxYES_NO | wxCANCEL, topWindow_);
+            const int rc = wxMessageBox(L"代理已启动但连通性验证失败，是否关闭该进程？",
+                                        L"连通性验证失败", wxYES_NO | wxCANCEL, topWindow_);
             lock.lock();
             if (rc == wxYES) {
                 const BOOL termOk = TerminateProcess(pi.hProcess, 1);
@@ -1625,7 +1625,7 @@ bool AppController::startStandaloneProxy(const std::string& indexId, int overrid
                 }
                 if (topWindow_) {
                     wxQueueEvent(topWindow_, new StandaloneProxyEvent(
-                        idx, "", 0, /*started=*/false, "进程已退出"));
+                        idx, "", 0, /*started=*/false, u8"进程已退出"));
                 }
             },
             // TakeoverFn (R6 auto-takeover): when the old process exits but a new one
@@ -1820,7 +1820,7 @@ bool AppController::startStandaloneProxy(const std::string& indexId, int overrid
                                     topWindow_,
                                     new StandaloneProxyEvent(
                                         idx, "", 0, /*started=*/false,
-                                        "进程已退出"));
+                                        u8"进程已退出"));
                             }
                         },
                         /*takeoverFn*/ nullptr,
@@ -2904,7 +2904,7 @@ void AppController::adoptDanglingStandaloneProxies() {
                     }
                     if (topWindow_) {
                         wxQueueEvent(topWindow_, new StandaloneProxyEvent(
-                            idx, "", 0, /*started=*/false, "进程已退出"));
+                            idx, "", 0, /*started=*/false, u8"进程已退出"));
                     }
                 },
                 /*takeoverFn*/ nullptr,
@@ -3863,7 +3863,7 @@ void AppController::doSyncDatabases(wxEvtHandler* wxHandler) {
     try {
         update::SubitemUpdaterV2 updater(db_, config_.proxy.xray_executable, config_, nullptr, "", &cancelRequested_);
         bool ok = updater.syncDatabases(config_.sync.source_db, config_.sync.target_db);
-        std::string msg = ok ? "数据库同步完成" : "数据库同步失败，请查看日志";
+        std::string msg = ok ? u8"数据库同步完成" : u8"数据库同步失败，请查看日志";
         if (wxHandler) {
             wxQueueEvent(wxHandler, new StatusUpdateEvent(0, msg));
         }
@@ -4027,7 +4027,7 @@ void AppController::doResolveRegionsBatch(wxEvtHandler* handler, const std::stri
         RegionBatchResolver resolver(db_, config_, &cancelRequested_, &netMon_);
         resolver.setProgressCallback([handler](const std::string& indexId, const std::string& region, int processed, int total) {
             if (handler) {
-                std::string msg = "地区解析: " + indexId;
+                std::string msg = u8"地区解析: " + indexId;
                 if (!region.empty()) {
                     msg += " -> " + region;
                 }
@@ -4039,9 +4039,9 @@ void AppController::doResolveRegionsBatch(wxEvtHandler* handler, const std::stri
 
         std::string msg;
         if (resolved > 0) {
-            msg = "批量地区解析完成: " + std::to_string(resolved) + " 个代理";
+            msg = u8"批量地区解析完成: " + std::to_string(resolved) + u8" 个代理";
         } else {
-            msg = "地区解析完成（无新结果）";
+            msg = u8"地区解析完成（无新结果）";
         }
 
         if (handler) {
@@ -4066,7 +4066,7 @@ void AppController::doResolveRegionsBatch(wxEvtHandler* handler, const std::stri
         Logger::write("resolveRegionsBatch: " + msg, LogLevel::REPORT);
     } catch (const std::exception& e) {
         if (handler) {
-            wxQueueEvent(handler, new StatusUpdateEvent(0, std::string("地区解析错误: ") + e.what()));
+            wxQueueEvent(handler, new StatusUpdateEvent(0, std::string(u8"地区解析错误: ") + e.what()));
 }
         Logger::write(std::string("resolveRegionsBatch error: ") + e.what(), LogLevel::ERR);
      }
@@ -4104,7 +4104,7 @@ void AppController::doResolveSingleProxyRegion(const std::string& indexId, wxEvt
         }
 
         if (handler) {
-            wxQueueEvent(handler, new StatusUpdateEvent(0, "正在解析单个代理地区..."));
+            wxQueueEvent(handler, new StatusUpdateEvent(0, u8"正在解析单个代理地区..."));
         }
 
         // Query the specific proxy by indexId
@@ -4116,7 +4116,7 @@ void AppController::doResolveSingleProxyRegion(const std::string& indexId, wxEvt
         if (sqlite3_prepare_v2(db_, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
             Logger::write("resolveSingleRegion: SQL error: " + std::string(sqlite3_errmsg(db_)), LogLevel::ERR);
             if (handler) {
-                wxQueueEvent(handler, new StatusUpdateEvent(0, "查询代理失败"));
+                wxQueueEvent(handler, new StatusUpdateEvent(0, u8"查询代理失败"));
             }
             return;
         }
@@ -4136,7 +4136,7 @@ void AppController::doResolveSingleProxyRegion(const std::string& indexId, wxEvt
         if (proxyIndexId.empty()) {
             Logger::write("resolveSingleRegion: proxy not found or invalid: " + indexId, LogLevel::INFO);
             if (handler) {
-                wxQueueEvent(handler, new StatusUpdateEvent(0, "代理未找到或无效"));
+                wxQueueEvent(handler, new StatusUpdateEvent(0, u8"代理未找到或无效"));
             }
             return;
         }
@@ -4147,14 +4147,14 @@ void AppController::doResolveSingleProxyRegion(const std::string& indexId, wxEvt
         std::string response = RegionBatchResolver::fetchRegionFromIpWhoIs(proxyAddress);
         if (response.empty()) {
             if (handler)
-                wxQueueEvent(handler, new StatusUpdateEvent(0, "API请求失败"));
+                wxQueueEvent(handler, new StatusUpdateEvent(0, u8"API请求失败"));
             return;
         }
 
         std::string region = RegionBatchResolver::parseRegionFromJson(response);
         if (region.empty()) {
             if (handler)
-                wxQueueEvent(handler, new StatusUpdateEvent(0, "无法解析地区"));
+                wxQueueEvent(handler, new StatusUpdateEvent(0, u8"无法解析地区"));
             return;
         }
 
@@ -4170,7 +4170,7 @@ void AppController::doResolveSingleProxyRegion(const std::string& indexId, wxEvt
             sqlite3_finalize(updateStmt);
         }
 
-        std::string msg = "解析成功: " + region;
+        std::string msg = u8"解析成功: " + region;
         if (handler) {
             wxQueueEvent(handler, new StatusUpdateEvent(0, msg));
             wxQueueEvent(handler, new ProxyTestProgressEvent(0, 0, proxyIndexId, "", "", msg, true));
@@ -4186,7 +4186,7 @@ void AppController::doResolveSingleProxyRegion(const std::string& indexId, wxEvt
         }
     } catch (const std::exception& e) {
         if (handler) {
-            wxQueueEvent(handler, new StatusUpdateEvent(0, std::string("解析错误: ") + e.what()));
+            wxQueueEvent(handler, new StatusUpdateEvent(0, std::string(u8"解析错误: ") + e.what()));
         }
         Logger::write(std::string("resolveSingleProxyRegion error: ") + e.what(), LogLevel::ERR);
     }
@@ -4214,12 +4214,12 @@ static task::TaskType autoStepTaskType(AutoTaskStepType type) {
 
 static const char* autoStepDisplayName(AutoTaskStepType type) {
     switch (type) {
-        case AutoTaskStepType::UPDATE_ALL:     return "全部更新";
-        case AutoTaskStepType::TEST_ALL:       return "全部测试";
-        case AutoTaskStepType::DEDUP:          return "清洗";
-        case AutoTaskStepType::SYNC:           return "同步";
-        case AutoTaskStepType::EXPORT:         return "导出";
-        case AutoTaskStepType::RESOLVE_REGION: return "解析地区";
+        case AutoTaskStepType::UPDATE_ALL:     return u8"全部更新";
+        case AutoTaskStepType::TEST_ALL:       return u8"全部测试";
+        case AutoTaskStepType::DEDUP:          return u8"清洗";
+        case AutoTaskStepType::SYNC:           return u8"同步";
+        case AutoTaskStepType::EXPORT:         return u8"导出";
+        case AutoTaskStepType::RESOLVE_REGION: return u8"解析地区";
     }
     return "";
 }
@@ -4276,7 +4276,7 @@ void AppController::publishUpdateProgress(int total, int done, int ok, int faile
     updateProgressActive_.store(total > 0);
     // Same numbers on the running task's 进度 line (task monitor page).
     taskQueue_.setCurrentProgress(done, total,
-        "更新订阅 " + std::to_string(done) + "/" + std::to_string(total));
+        u8"更新订阅 " + std::to_string(done) + "/" + std::to_string(total));
 }
 
 void AppController::resetUpdateProgress() {

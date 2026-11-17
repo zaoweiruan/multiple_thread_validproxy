@@ -42,13 +42,13 @@ LogPanel::LogPanel(wxWindow* parent)
     minLevel_ = LogLevel::INFO; // Initialize to match the default selection
     toolSizer->Add(levelFilter_, 0, wxRIGHT, 8);
 
-    clearBtn_ = new wxButton(this, ID_LOG_CLEAR, "清空日志窗口");
+    clearBtn_ = new wxButton(this, ID_LOG_CLEAR, L"清空日志窗口");
     toolSizer->Add(clearBtn_, 0);
 
-    statsBtn_ = new wxButton(this, ID_LOG_STATISTICS, "日志统计");
+    statsBtn_ = new wxButton(this, ID_LOG_STATISTICS, L"日志统计");
     toolSizer->Add(statsBtn_, 0, wxLEFT, 8);
 
-    openBtn_ = new wxButton(this, ID_LOG_OPEN, "打开日志");
+    openBtn_ = new wxButton(this, ID_LOG_OPEN, L"打开日志");
     toolSizer->Add(openBtn_, 0, wxLEFT, 8);
 
     topSizer->Add(toolSizer, 0, wxEXPAND | wxALL, 4);
@@ -107,7 +107,7 @@ void LogPanel::setLevelFilter(LogLevel minLevel) {
 }
 
 void LogPanel::onLogMessage(LogMessageEvent& event) {
-    appendLog(event.getMessage(), event.getLevel());
+    appendLog(wxString::FromUTF8(event.getMessage()), event.getLevel());
 }
 
 void LogPanel::onClear(wxCommandEvent&) {
@@ -140,7 +140,7 @@ void LogPanel::statisticsForFile(const std::string& logPath) {
     }
     statsCurrentPath_ = logPath;
     if (statsDialog_ && statsTextCtrl_) {
-        statsTextCtrl_->SetValue(wxString::FromUTF8("正在解析日志文件...\n" + logPath));
+        statsTextCtrl_->SetValue(wxString::FromUTF8(u8"正在解析日志文件...\n" + logPath));
     }
     statsThread_ = std::thread([this, logPath]() {
         LogStatisticsResult result = parseLogFile(logPath);
@@ -159,7 +159,7 @@ void LogPanel::onLogStatisticsResult(LogStatisticsEvent& event) {
     std::string text = buildStatisticsText(result, filePath);
 
     if (!statsDialog_) {
-        statsDialog_ = new wxDialog(this, wxID_ANY, "日志统计", wxDefaultPosition, wxSize(760, 560),
+        statsDialog_ = new wxDialog(this, wxID_ANY, L"日志统计", wxDefaultPosition, wxSize(760, 560),
                                     wxDEFAULT_DIALOG_STYLE | wxRESIZE_BORDER);
         wxBoxSizer* dialogSizer = new wxBoxSizer(wxVERTICAL);
         statsTextCtrl_ = new wxTextCtrl(statsDialog_, wxID_ANY, wxEmptyString,
@@ -168,8 +168,8 @@ void LogPanel::onLogStatisticsResult(LogStatisticsEvent& event) {
         dialogSizer->Add(statsTextCtrl_, 1, wxEXPAND | wxALL, 8);
 
         wxBoxSizer* btnSizer = new wxBoxSizer(wxHORIZONTAL);
-        wxButton* selectBtn = new wxButton(statsDialog_, wxID_ANY, "选择日志文件");
-        wxButton* closeBtn = new wxButton(statsDialog_, wxID_OK, "关闭");
+        wxButton* selectBtn = new wxButton(statsDialog_, wxID_ANY, L"选择日志文件");
+        wxButton* closeBtn = new wxButton(statsDialog_, wxID_OK, L"关闭");
         btnSizer->Add(selectBtn, 0, wxRIGHT, 8);
         btnSizer->Add(closeBtn, 0);
         dialogSizer->Add(btnSizer, 0, wxALIGN_CENTER | wxBOTTOM, 8);
@@ -198,8 +198,8 @@ void LogPanel::onLogStatisticsResult(LogStatisticsEvent& event) {
 }
 
 void LogPanel::onSelectLogFile(wxCommandEvent&) {
-    wxFileDialog fileDialog(this, "选择日志文件", "", "",
-                            "日志文件 (*.log;*.txt)|*.log;*.txt|所有文件 (*.*)|*.*",
+    wxFileDialog fileDialog(this, L"选择日志文件", "", "",
+                            L"日志文件 (*.log;*.txt)|*.log;*.txt|所有文件 (*.*)|*.*",
                             wxFD_OPEN | wxFD_FILE_MUST_EXIST);
     if (fileDialog.ShowModal() == wxID_OK) {
         std::string newPath = fileDialog.GetPath().ToStdString();
@@ -210,29 +210,29 @@ void LogPanel::onSelectLogFile(wxCommandEvent&) {
 std::string LogPanel::buildStatisticsText(const LogStatisticsResult& result,
                                           const std::string& filePath) {
     std::ostringstream oss;
-    oss << "日志文件: " << filePath << "\n";
-    oss << "有效日志行: " << result.counts.total << "\n";
-    oss << "\n===== 级别统计 =====\n";
+    oss << L"日志文件: " << filePath << "\n";
+    oss << L"有效日志行: " << result.counts.total << "\n";
+    oss << L"\n===== 级别统计 =====\n";
     oss << "TRACE : " << result.counts.trace << "\n";
     oss << "DEBUG : " << result.counts.debug << "\n";
     oss << "INFO  : " << result.counts.info << "\n";
     oss << "REPORT: " << result.counts.report << "\n";
     oss << "WARN  : " << result.counts.warn << "\n";
     oss << "ERROR : " << result.counts.error << "\n";
-    oss << "\n===== WARN 原因明细 (" << result.warnReasons.size() << " 类) =====\n";
+    oss << L"\n===== WARN 原因明细 (" << result.warnReasons.size() << L" 类) =====\n";
     if (result.warnReasons.empty()) {
-        oss << "(无)\n";
+        oss << L"(无)\n";
     }
     for (size_t i = 0; i < result.warnReasons.size(); ++i) {
-        oss << i + 1 << ". [" << result.warnReasons[i].count << " 次] "
+        oss << i + 1 << ". [" << result.warnReasons[i].count << L" 次] "
             << result.warnReasons[i].reason << "\n";
     }
-    oss << "\n===== ERROR 原因明细 (" << result.errorReasons.size() << " 类) =====\n";
+    oss << L"\n===== ERROR 原因明细 (" << result.errorReasons.size() << L" 类) =====\n";
     if (result.errorReasons.empty()) {
-        oss << "(无)\n";
+        oss << L"(无)\n";
     }
     for (size_t i = 0; i < result.errorReasons.size(); ++i) {
-        oss << i + 1 << ". [" << result.errorReasons[i].count << " 次] "
+        oss << i + 1 << ". [" << result.errorReasons[i].count << L" 次] "
             << result.errorReasons[i].reason << "\n";
     }
     return oss.str();

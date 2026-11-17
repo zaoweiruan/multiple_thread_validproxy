@@ -366,14 +366,14 @@ void ProxyListModel::GetValueByRow(wxVariant& variant, unsigned int row,
             variant = wxVariant(configTypeToName(p.configtype));
             break;
         case COL_ADDRESS:
-            variant = wxVariant(p.address);
+            variant = wxVariant(wxString::FromUTF8(p.address));
             break;
         case COL_PORT:
             variant = wxVariant(p.port);
             break;
         case COL_DELAY: {
             std::unordered_map<std::string, std::string>::const_iterator it = delayMap_.find(idx);
-            variant = wxVariant(it != delayMap_.end() ? it->second : "-");
+            variant = wxVariant(it != delayMap_.end() ? wxString::FromUTF8(it->second) : wxString("-"));
             break;
         }
         case COL_FAILURES: {
@@ -382,15 +382,15 @@ void ProxyListModel::GetValueByRow(wxVariant& variant, unsigned int row,
             break;
         }
         case COL_REMARKS:
-            variant = wxVariant(p.remarks);
+            variant = wxVariant(wxString::FromUTF8(p.remarks));
             break;
         case COL_MESSAGE: {
             std::unordered_map<std::string, std::string>::const_iterator it = messageMap_.find(idx);
-            variant = wxVariant(it != messageMap_.end() ? it->second : "");
+            variant = wxVariant(it != messageMap_.end() ? wxString::FromUTF8(it->second) : wxString(""));
             break;
         }
         case COL_REGION:
-            variant = wxVariant(p.region);
+            variant = wxVariant(wxString::FromUTF8(p.region));
             break;
         case COL_INDEXID:
             variant = wxVariant(idx);

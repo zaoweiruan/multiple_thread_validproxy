@@ -67,7 +67,7 @@ void SubscriptionListModel::GetValueByRow(wxVariant& variant, unsigned int row, 
             variant = wxVariant(sub.enabled == "1");
             break;
         case SUB_COL_NAME:
-            variant = wxVariant(sub.remarks);
+            variant = wxVariant(wxString::FromUTF8(sub.remarks));
             break;
         case SUB_COL_VALID: {
             int count = 0;

@@ -71,6 +71,33 @@ if(VALIDPROXY_STATIC_WX)
     set(WX_VCPKG_DIR "${_vp_static_wx}" CACHE PATH "vcpkg wxWidgets (static) install dir" FORCE)
     set(wxWidgets_USE_STATIC ON CACHE BOOL "Link wxWidgets statically" FORCE)
     message(STATUS "[wx] using STATIC tree: ${WX_VCPKG_DIR}")
+
+    # ── Win7 SP1 runtime provisioning ───────────────────────────────────────
+    # `-static-libgcc -static-libstdc++` still leaves libwinpthread-1.dll as a
+    # dynamic dependency, and the libwinpthread shipped by BOTH toolchains
+    # (E:\clion\bin\mingw 72 KB, E:\mingw64 56 KB) imports the UCRT API sets
+    # (`api-ms-win-crt-convert/heap/runtime/stdio/string/...`). Those DLLs do not
+    # exist on a plain Windows 7 SP1 without the Universal CRT update
+    # (KB2999226), so the app fails at load time with:
+    #   "无法启动此程序，因为计算机中丢失 api-ms-win-crt-convert-l1-1-0.dll"
+    # `-static` is NOT an option here: this toolchain's libpthread.a is a UCRT
+    # build (references `__intrinsic_setjmpex`, only defined in libucrt*.a).
+    # Fix: ship an MSVCRT-only libwinpthread next to the exe. Verified to export
+    # every symbol the exe imports (incl. clock_gettime64 / nanosleep64 /
+    # pthread_cond_timedwait64) and to import only KERNEL32 + msvcrt.
+    # Override with -DVALIDPROXY_MSVCRT_WINPTHREAD_DLL=<path> if needed.
+    set(VALIDPROXY_MSVCRT_WINPTHREAD_DLL
+        "${CMAKE_SOURCE_DIR}/resources/win7/libwinpthread-1.dll"
+        CACHE FILEPATH "MSVCRT-only libwinpthread-1.dll shipped with the Win7 package")
+    if(VALIDPROXY_MSVCRT_WINPTHREAD_DLL AND EXISTS "${VALIDPROXY_MSVCRT_WINPTHREAD_DLL}")
+        message(STATUS "[win7] runtime: ${VALIDPROXY_MSVCRT_WINPTHREAD_DLL} (MSVCRT-only libwinpthread)")
+    else()
+        message(WARNING
+            "[win7] VALIDPROXY_MSVCRT_WINPTHREAD_DLL not found; the package will fall back "
+            "to the toolchain's UCRT-based libwinpthread-1.dll and will NOT start on a "
+            "Windows 7 SP1 without KB2999226. See scripts/check-win7-deps.ps1.")
+    endif()
+
     unset(_vp_vcpkg_root)
     unset(_vp_static_wx)
 endif()
@@ -530,6 +557,18 @@ set_target_properties(validproxy-cli PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY_RELEASE ${VALIDPROXY_BIN_DIR}
 )
 
+# Deploy the MSVCRT-only libwinpthread next to the CLI (see the Win7 SP1 note in
+# the VALIDPROXY_STATIC_WX block: the toolchain's bundled DLL needs the UCRT).
+if(VALIDPROXY_STATIC_WX AND VALIDPROXY_MSVCRT_WINPTHREAD_DLL
+   AND EXISTS "${VALIDPROXY_MSVCRT_WINPTHREAD_DLL}")
+    add_custom_command(TARGET validproxy-cli POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${VALIDPROXY_MSVCRT_WINPTHREAD_DLL}"
+                "$<TARGET_FILE_DIR:validproxy-cli>/libwinpthread-1.dll"
+        COMMENT "Deploying MSVCRT-only libwinpthread-1.dll (Win7 SP1)"
+        VERBATIM)
+endif()
+
 # MinGW runtime DLLs (libstdc++/libgcc/libwinpthread) - see the same block
 # under the validproxy GUI target: the loader must find the compiler's own
 # runtime next to the exe because system PATH has Tesseract-OCR's OLDER
@@ -538,15 +577,23 @@ set_target_properties(validproxy-cli PROPERTIES
 # has no such DLLs and the copy would fail POST_BUILD.
 get_filename_component(MINGW_RUNTIME_DIR "${CMAKE_CXX_COMPILER}" DIRECTORY)
 if(EXISTS "${MINGW_RUNTIME_DIR}/libstdc++-6.dll")
+    set(_mingw_runtime_dlls
+        "${MINGW_RUNTIME_DIR}/libstdc++-6.dll"
+        "${MINGW_RUNTIME_DIR}/libgcc_s_seh-1.dll")
+    # Win7 SP1: the toolchain's libwinpthread-1.dll requires the UCRT api-sets.
+    # The STATIC_WX configuration deploys the MSVCRT-only build instead
+    # (resources/win7/libwinpthread-1.dll), so never clobber it here.
+    if(NOT VALIDPROXY_STATIC_WX)
+        list(APPEND _mingw_runtime_dlls "${MINGW_RUNTIME_DIR}/libwinpthread-1.dll")
+    endif()
     add_custom_command(TARGET validproxy-cli POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${MINGW_RUNTIME_DIR}/libstdc++-6.dll"
-            "${MINGW_RUNTIME_DIR}/libgcc_s_seh-1.dll"
-            "${MINGW_RUNTIME_DIR}/libwinpthread-1.dll"
+            ${_mingw_runtime_dlls}
             ${VALIDPROXY_BIN_DIR}/
         COMMENT "Copy MinGW runtime DLLs to bin/ (PATH has Tesseract-OCR before MinGW)"
         VERBATIM
     )
+    unset(_mingw_runtime_dlls)
 endif()
 
 if(USE_GRPC_API)
@@ -648,6 +695,18 @@ if(wxWidgets_FOUND)
     )
 add_dependencies(validproxy update_version_h)
 
+    # Deploy the MSVCRT-only libwinpthread next to the GUI exe (Win7 SP1: the
+    # toolchain's bundled libwinpthread-1.dll requires the UCRT api-sets).
+    if(VALIDPROXY_STATIC_WX AND VALIDPROXY_MSVCRT_WINPTHREAD_DLL
+       AND EXISTS "${VALIDPROXY_MSVCRT_WINPTHREAD_DLL}")
+        add_custom_command(TARGET validproxy POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    "${VALIDPROXY_MSVCRT_WINPTHREAD_DLL}"
+                    "$<TARGET_FILE_DIR:validproxy>/libwinpthread-1.dll"
+            COMMENT "Deploying MSVCRT-only libwinpthread-1.dll (Win7 SP1)"
+            VERBATIM)
+    endif()
+
     # Link wxWidgets imported targets
     target_link_libraries(validproxy PRIVATE
         wx::wxbase
@@ -697,15 +756,22 @@ add_dependencies(validproxy update_version_h)
     # (dynamic runtime), so keep the copy exactly for that toolchain.
     get_filename_component(MINGW_RUNTIME_DIR "${CMAKE_CXX_COMPILER}" DIRECTORY)
     if(EXISTS "${MINGW_RUNTIME_DIR}/libstdc++-6.dll")
+        set(_mingw_runtime_dlls
+            "${MINGW_RUNTIME_DIR}/libstdc++-6.dll"
+            "${MINGW_RUNTIME_DIR}/libgcc_s_seh-1.dll")
+        # See the CLI block above: STATIC_WX deploys the MSVCRT-only
+        # libwinpthread (Win7 SP1), so do not overwrite it with the UCRT one.
+        if(NOT VALIDPROXY_STATIC_WX)
+            list(APPEND _mingw_runtime_dlls "${MINGW_RUNTIME_DIR}/libwinpthread-1.dll")
+        endif()
         add_custom_command(TARGET validproxy POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                "${MINGW_RUNTIME_DIR}/libstdc++-6.dll"
-                "${MINGW_RUNTIME_DIR}/libgcc_s_seh-1.dll"
-                "${MINGW_RUNTIME_DIR}/libwinpthread-1.dll"
+                ${_mingw_runtime_dlls}
                 ${VALIDPROXY_BIN_DIR}/
             COMMENT "Copy MinGW runtime DLLs to bin/ (PATH has Tesseract-OCR before MinGW)"
             VERBATIM
         )
+        unset(_mingw_runtime_dlls)
     endif()
 
     # ===== wxWidgets runtime DLLs (dynamic wx, GUI) =====
@@ -829,6 +895,21 @@ set_target_properties(test_batch_pending PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY_RELEASE ${VALIDPROXY_TEST_DIR}
 )
 add_test(NAME BatchPendingViewTest COMMAND test_batch_pending)
+
+# ── UI string encoding regression guard (Win7 mojibake / wxMenu asserts) ──
+# Fails when src/ui/** contains narrow (non-L, non-u8) non-ASCII literals:
+# wxString would decode those UTF-8 bytes with the Windows ANSI code page.
+add_executable(test_ui_string_encoding tests/test_ui_string_encoding.cpp)
+target_include_directories(test_ui_string_encoding PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_compile_definitions(test_ui_string_encoding PRIVATE
+    VALIDPROXY_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+target_link_libraries(test_ui_string_encoding PRIVATE gtest_main gtest)
+set_target_properties(test_ui_string_encoding PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${VALIDPROXY_TEST_DIR}
+)
+add_test(NAME UiStringEncodingTest COMMAND test_ui_string_encoding)
 
 add_executable(test_task_cancel_reset tests/test_task_cancel_reset.cpp)
 target_include_directories(test_task_cancel_reset PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
@@ -1586,6 +1667,12 @@ if(wxWidgets_FOUND)
         gtest_main gtest
         wx::wxbase
         wx::wxcore
+        # NOTE: wxcore pulls in comctl32!GetWindowSubclass (delay-loaded), which
+        # requires a Common Controls v6 manifest. Test executables do not embed
+        # src/ui/app.manifest, so on this Release tree the exe dies at load with
+        # 0xC0000139 (STATUS_ENTRYPOINT_NOT_FOUND) against comctl32 5.82.
+        # Pre-existing test-infra gap, unrelated to the app itself (see
+        # docs/bugfix/2026-11-17-Bugfix-Win7-UIEncoding-MenuAssertCrash-v1.0.md §5.1).
     )
     target_compile_definitions(test_log_statistics_event PRIVATE HAS_WXWIDGETS=1)
     set_target_properties(test_log_statistics_event PROPERTIES

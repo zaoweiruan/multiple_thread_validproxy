@@ -244,7 +244,7 @@ MainFrame::MainFrame(const config::AppConfig& cfg, sqlite3* db)
             syncToolbarState();
         } else {
             // Show per-proxy progress in status bar (e.g. region resolution)
-            setStatusText(0, evt.getMessage());
+            setStatusText(0, wxString::FromUTF8(evt.getMessage()));
         }
     });
 
@@ -354,7 +354,7 @@ MainFrame::MainFrame(const config::AppConfig& cfg, sqlite3* db)
               // falls back to an async reload while the cache is not ready.
               proxyPanel_->applySubscriptionFilter(subId);
           }
-          setStatusText(0, "Loaded subscription: " + wxString(subId));
+          setStatusText(0, "Loaded subscription: " + wxString::FromUTF8(subId));
       });
 
 // Reload full proxy list (all proxies) after the subscription list refreshes
@@ -397,7 +397,7 @@ Bind(wxEVT_PROXY_LIST_LOADED, [this](ProxyListLoadedEvent& evt) {
     if (statusTextProtected_.exchange(false)) {
         rewriteRefreshStatusText();
     } else {
-        setStatusText(0, "Loaded subscription: " + wxString(evt.getSubId()));
+        setStatusText(0, "Loaded subscription: " + wxString::FromUTF8(evt.getSubId()));
     }
 });
 
@@ -727,7 +727,7 @@ void MainFrame::setLogFileLabel(const std::string& filePath) {
     if (pos != std::string::npos) {
         basename = basename.substr(pos + 1);
     }
-    setStatusText(1, wxString(basename));
+    setStatusText(1, wxString::FromUTF8(basename));
 }
 
 void MainFrame::showBalloon(const wxString& title, const wxString& msg) {
@@ -750,22 +750,22 @@ void MainFrame::setOperationState(OperationType op) {
         tb->EnableTool(ID_TOOL_CANCEL, true);
         switch (op) {
             case OperationType::TEST:
-                tb->SetToolShortHelp(ID_TOOL_CANCEL, "取消测试");
+                tb->SetToolShortHelp(ID_TOOL_CANCEL, L"取消测试");
                 break;
             case OperationType::UPDATE:
-                tb->SetToolShortHelp(ID_TOOL_CANCEL, "停止更新");
+                tb->SetToolShortHelp(ID_TOOL_CANCEL, L"停止更新");
                 break;
             case OperationType::FIND:
-                tb->SetToolShortHelp(ID_TOOL_CANCEL, "取消查找");
+                tb->SetToolShortHelp(ID_TOOL_CANCEL, L"取消查找");
                 break;
             case OperationType::SYNC:
-                tb->SetToolShortHelp(ID_TOOL_CANCEL, "停止同步");
+                tb->SetToolShortHelp(ID_TOOL_CANCEL, L"停止同步");
                 break;
             case OperationType::AUTOTASK:
-                tb->SetToolShortHelp(ID_TOOL_CANCEL, "停止自动任务");
+                tb->SetToolShortHelp(ID_TOOL_CANCEL, L"停止自动任务");
                 break;
             case OperationType::RESOLVE_REGION:
-                tb->SetToolShortHelp(ID_TOOL_CANCEL, "取消地区解析");
+                tb->SetToolShortHelp(ID_TOOL_CANCEL, L"取消地区解析");
                 break;
             default:
                 break;
@@ -823,7 +823,7 @@ void MainFrame::initMenuBar() {
     proxyMenu_->Append(ID_MENU_EXPORT,     L"导出分享链接");
     proxyMenu_->Append(ID_MENU_GEN_CONFIG, L"生成配置…");
     proxyMenu_->AppendSeparator();
-    proxyMenu_->Append(ID_MENU_STANDALONE_MON, L"独立代理监控…\tCtrl+M", "显示/隐藏独立代理悬浮窗", wxITEM_CHECK);
+    proxyMenu_->Append(ID_MENU_STANDALONE_MON, L"独立代理监控…\tCtrl+M", L"显示/隐藏独立代理悬浮窗", wxITEM_CHECK);
     proxyMenu_->Check(ID_MENU_STANDALONE_MON, config_.proxy_process_monitor.enabled);
     bar->Append(proxyMenu_, L"&代理");
 
@@ -856,28 +856,28 @@ void MainFrame::initToolBar() {
 
     // Note: wxAuiToolBar::AddTool uses different signature than wxToolBar
     // format: AddTool(id, label, bitmap, shortHelp)
-    m_toolbar->AddTool(ID_TOOL_UPDATE_ALL, "更新", ToolbarIcons::load("tool_update1"), "更新");
-    m_toolbar->AddTool(ID_TOOL_TEST, "批量测试", ToolbarIcons::load("tool_test"), "测试全部代理");
-    m_toolbar->AddTool(ID_TOOL_CANCEL, "终止当前测试", ToolbarIcons::load("tool_cancel"), "取消测试");
+    m_toolbar->AddTool(ID_TOOL_UPDATE_ALL, L"更新", ToolbarIcons::load("tool_update1"), L"更新");
+    m_toolbar->AddTool(ID_TOOL_TEST, L"批量测试", ToolbarIcons::load("tool_test"), L"测试全部代理");
+    m_toolbar->AddTool(ID_TOOL_CANCEL, L"终止当前测试", ToolbarIcons::load("tool_cancel"), L"取消测试");
     m_toolbar->EnableTool(ID_TOOL_CANCEL, false);  // disabled until operation starts
-    m_toolbar->AddTool(ID_TOOL_DEDUP, "清洗", ToolbarIcons::load("tool_dedup"), "去重");
-    m_toolbar->AddTool(ID_TOOL_REGION, "解析地区", ToolbarIcons::load("parsingregion"), "批量解析地区");
-    m_toolbar->AddTool(ID_TOOL_SYNC, "同步", ToolbarIcons::load("tool_synchronize"), "同步");
-    m_toolbar->AddTool(ID_TOOL_IMPORT, "添加订阅", ToolbarIcons::load("tool_import"), "增加新订阅");
-    m_toolbar->AddTool(ID_TOOL_AUTOTASK, "自动任务", ToolbarIcons::load("tool_pipeline"), "自动任务");
-    m_toolbar->AddTool(ID_TOOL_STANDALONE_MON, "悬浮窗", ToolbarIcons::load("tool_monitoring_proxy_process"), "监控代理", wxITEM_CHECK);
+    m_toolbar->AddTool(ID_TOOL_DEDUP, L"清洗", ToolbarIcons::load("tool_dedup"), L"去重");
+    m_toolbar->AddTool(ID_TOOL_REGION, L"解析地区", ToolbarIcons::load("parsingregion"), L"批量解析地区");
+    m_toolbar->AddTool(ID_TOOL_SYNC, L"同步", ToolbarIcons::load("tool_synchronize"), L"同步");
+    m_toolbar->AddTool(ID_TOOL_IMPORT, L"添加订阅", ToolbarIcons::load("tool_import"), L"增加新订阅");
+    m_toolbar->AddTool(ID_TOOL_AUTOTASK, L"自动任务", ToolbarIcons::load("tool_pipeline"), L"自动任务");
+    m_toolbar->AddTool(ID_TOOL_STANDALONE_MON, L"悬浮窗", ToolbarIcons::load("tool_monitoring_proxy_process"), L"监控代理", wxITEM_CHECK);
     m_toolbar->ToggleTool(ID_TOOL_STANDALONE_MON, config_.proxy_process_monitor.enabled);
-    m_toolbar->AddTool(ID_TOOL_CONFIG, "配置", ToolbarIcons::load("tool_config"), "配置");
+    m_toolbar->AddTool(ID_TOOL_CONFIG, L"配置", ToolbarIcons::load("tool_config"), L"配置");
 
     // ── Search box: left-shifted by 150px from center ──
     m_toolbar->AddSpacer(70);  // small gap after tools, then search (shifted ~150px left)
 
     // Search target toggle: "代理" (search proxy list) or "订阅" (search subscriptions)
-    wxString searchTargets[] = { "代理", "订阅" };
+    wxString searchTargets[] = { L"代理", L"订阅" };
     m_searchTargetChoice = new wxChoice(m_toolbar, ID_SEARCH_TARGET,
                                         wxDefaultPosition, wxSize(60, 25));
-    m_searchTargetChoice->Append("代理");
-    m_searchTargetChoice->Append("订阅");
+    m_searchTargetChoice->Append(L"代理");
+    m_searchTargetChoice->Append(L"订阅");
     m_searchTargetChoice->SetSelection(0);
     m_toolbar->AddControl(m_searchTargetChoice);
 
@@ -893,9 +893,9 @@ void MainFrame::initToolBar() {
     m_toolbar->AddStretchSpacer(1);  // Push toggle detail to right edge
 
     // Toggle detail panel button (rightmost)
-    m_toggleDetailItem = m_toolbar->AddTool(ID_TOOL_DETAIL_TOGGLE, "详情",
+    m_toggleDetailItem = m_toolbar->AddTool(ID_TOOL_DETAIL_TOGGLE, L"详情",
                                              ToolbarIcons::load("tool_dockarrow"),
-                                             "切换详情面板");
+                                             L"切换详情面板");
 
     m_toolbar->Realize();
 }
@@ -910,7 +910,7 @@ void MainFrame::initStatusBar() {
     statusBar_->SetStatusText("", 1);
     statusBar_->SetStatusText("", 2);
     statusBar_->SetStatusText("", 3);
-    statusBar_->SetStatusText(wxString(getDbPath()), 4);
+    statusBar_->SetStatusText(wxString::FromUTF8(getDbPath()), 4);
 }
 
 void MainFrame::initAuiManager() {
@@ -1266,7 +1266,7 @@ void runCloudOperationAsync(MainFrame* frame, sqlite3* db, const std::string& lo
         std::string credError;
         if (!net::WebDavCredentialsStore::load(credentials, credError)) {
             frame->CallAfter([frame, credError]() {
-                wxMessageBox(wxString::FromUTF8(credError.c_str()), "云端同步",
+                wxMessageBox(wxString::FromUTF8(credError.c_str()), L"云端同步",
                              wxOK | wxICON_WARNING, frame);
             });
             return;
@@ -1281,7 +1281,7 @@ void runCloudOperationAsync(MainFrame* frame, sqlite3* db, const std::string& lo
         if (push) {
             const service::CloudSyncResult cfgResult = sync.pushConfig();
             primary = sync.pushSubscriptions();
-            message = primary.detail + (cfgResult.ok ? "" : ("；config 失败：" + cfgResult.error));
+            message = primary.detail + (cfgResult.ok ? "" : (u8"；config 失败：" + cfgResult.error));
             primary.ok = primary.ok && cfgResult.ok;
         } else {
             primary = sync.pullSubscriptions();
@@ -1291,7 +1291,7 @@ void runCloudOperationAsync(MainFrame* frame, sqlite3* db, const std::string& lo
         const bool ok = primary.ok;
         frame->CallAfter([frame, message, ok]() {
             static_cast<wxFrame*>(frame)->SetStatusText(wxString::FromUTF8(message.c_str()));
-            wxMessageBox(wxString::FromUTF8(message.c_str()), "云端同步",
+            wxMessageBox(wxString::FromUTF8(message.c_str()), L"云端同步",
                          wxOK | (ok ? wxICON_INFORMATION : wxICON_ERROR), frame);
         });
     }).detach();
@@ -1309,12 +1309,12 @@ void MainFrame::onMenuCloudPush(wxCommandEvent&) {
     // Defense in depth: the menu item is greyed out at startup, but the gate is
     // re-evaluated here so a stale enable state can never trigger an upload.
     if (!service::isUploadEnabled()) {
-        wxMessageBox("上传功能未启用：环境变量 VALIDPROXY_UPLOAD_TOKEN 缺失或与当前值不符。",
-                     "上传到云端", wxOK | wxICON_WARNING, this);
+        wxMessageBox(L"上传功能未启用：环境变量 VALIDPROXY_UPLOAD_TOKEN 缺失或与当前值不符。",
+                     L"上传到云端", wxOK | wxICON_WARNING, this);
         return;
     }
-    const wxString confirm = "将把当前 config.json 与订阅列表上传到云端，可能覆盖云端已有文件。\n\n是否继续？";
-    if (wxMessageBox(confirm, "上传到云端", wxYES_NO | wxICON_QUESTION, this) != wxYES) {
+    const wxString confirm = L"将把当前 config.json 与订阅列表上传到云端，可能覆盖云端已有文件。\n\n是否继续？";
+    if (wxMessageBox(confirm, L"上传到云端", wxYES_NO | wxICON_QUESTION, this) != wxYES) {
         return;
     }
     const std::string localConfigPath =
@@ -1335,13 +1335,13 @@ void MainFrame::onMenuUpdateAll(wxCommandEvent&) {
 
 void MainFrame::onMenuFindProxy(wxCommandEvent&) {
     setOperationState(OperationType::FIND);
-    setStatusText(0, "Finding first working proxy…");
+    setStatusText(0, L"Finding first working proxy…");
     controller_->findFirstProxyAsync(this);
 }
 
 void MainFrame::onMenuFindBest(wxCommandEvent&) {
     setOperationState(OperationType::FIND);
-    setStatusText(0, "Finding best proxy…");
+    setStatusText(0, L"Finding best proxy…");
     controller_->findBestProxyAsync(this);
 }
 
@@ -1359,11 +1359,11 @@ void MainFrame::onMenuExportShareLink(wxCommandEvent&) {
     bool ok = std::get<0>(exportResult);
     int count = std::get<1>(exportResult);
     if (ok && count > 0) {
-        setStatusText(0, wxString::Format("导出%d个有效代理至文件%s", count, std::get<2>(exportResult)));
+        setStatusText(0, wxString::Format(L"导出%d个有效代理至文件%s", count, std::get<2>(exportResult)));
     } else if (ok) {
-        setStatusText(0, "没有有效代理可导出。");
+        setStatusText(0, L"没有有效代理可导出。");
     } else {
-        setStatusText(0, "导出分享链接失败。");
+        setStatusText(0, L"导出分享链接失败。");
     }
 }
 
@@ -1571,7 +1571,7 @@ void MainFrame::onMenuConfig(wxCommandEvent&) {
                 // Update config path
                 config_.database_path = cfg.database_path;
                 if (statusBar_) {
-                    statusBar_->SetStatusText(wxString(cfg.database_path), 4);
+                    statusBar_->SetStatusText(wxString::FromUTF8(cfg.database_path), 4);
                 }
 
                 // Refresh all panels with the new database
@@ -1590,7 +1590,7 @@ void MainFrame::onMenuConfig(wxCommandEvent&) {
                     }
                 }
 
-                setStatusText(0, wxString("Switched to database: ") + cfg.database_path);
+                setStatusText(0, L"Switched to database: " + wxString::FromUTF8(cfg.database_path));
             } else {
                 // Failed to open new database — restore old path in config
                 cfg.database_path = oldDbPath;
@@ -1669,7 +1669,7 @@ void MainFrame::onTestSubscription(SubscriptionTestEvent& evt) {
     syncToolbarState();
     setOperationState(OperationType::TEST);
     controller_->testSubscriptionAsync(evt.getSubId(), this);
-    setStatusText(0, "Testing subscription…");
+    setStatusText(0, L"Testing subscription…");
 }
 
 void MainFrame::onToolTest(wxCommandEvent& event) {
@@ -1691,7 +1691,7 @@ void MainFrame::onToolCancel(wxCommandEvent&) {
         controller_->cancelTest();
     }
     setOperationState(OperationType::NONE);
-    setStatusText(0, "操作已取消");
+    setStatusText(0, L"操作已取消");
 }
 
 void MainFrame::onToolRegion(wxCommandEvent& event) {
@@ -1721,7 +1721,7 @@ void MainFrame::onToolConfig(wxCommandEvent& event) {
 
 void MainFrame::onToolSync(wxCommandEvent&) {
     setOperationState(OperationType::SYNC);
-    setStatusText(0, "同步中…");
+    setStatusText(0, L"同步中…");
     if (controller_) {
         controller_->syncDatabasesAsync(this);
     }
@@ -1806,7 +1806,7 @@ void MainFrame::onStatusUpdate(StatusUpdateEvent& event) {
     if (!status.empty()) {
         statusTextPending_ = status;
         statusTextProtected_ = true;
-        setStatusText(0, wxString(status));
+        setStatusText(0, wxString::FromUTF8(status));
     }
 
     // ── Step 2: panel reload ───────────────────────────────
@@ -1862,7 +1862,7 @@ void MainFrame::onStatusUpdate(StatusUpdateEvent& event) {
         return;
     }
     // Chinese status messages etc.: keep original behaviour
-    setStatusText(0, text);
+    setStatusText(0, wxString::FromUTF8(text));
 }
 
 // -------------------------------------------------------------------
@@ -1873,7 +1873,7 @@ void MainFrame::onStatusUpdate(StatusUpdateEvent& event) {
 void MainFrame::rewriteRefreshStatusText() {
     const std::string status = statusTextPending_;
     if (!status.empty()) {
-        setStatusText(0, wxString(status));
+        setStatusText(0, wxString::FromUTF8(status));
         statusTextPending_.clear();
     }
 }

@@ -7,7 +7,7 @@
 TestOnlineResultDialog::TestOnlineResultDialog(wxWindow* parent,
                                                const std::vector<std::string>& failedIndexIds,
                                                int total, int success, int failed)
-    : wxDialog(parent, wxID_ANY, "在线代理测试结果",
+    : wxDialog(parent, wxID_ANY, L"在线代理测试结果",
                wxDefaultPosition, wxSize(620, 480)) {
     rowIndexIds_ = failedIndexIds;
 
@@ -33,7 +33,7 @@ TestOnlineResultDialog::TestOnlineResultDialog(wxWindow* parent,
     list_->InsertColumn(0, "IndexId", wxLIST_FORMAT_LEFT, 420);
     root->Add(list_, 1, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, 8);
 
-    wxButton* closeBtn = new wxButton(this, wxID_OK, "关闭");
+    wxButton* closeBtn = new wxButton(this, wxID_OK, L"关闭");
     root->Add(closeBtn, 0, wxALIGN_RIGHT | wxALL, 8);
 
     closeBtn->Bind(wxEVT_BUTTON, &TestOnlineResultDialog::onClose, this);

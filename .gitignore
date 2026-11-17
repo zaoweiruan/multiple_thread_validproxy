@@ -38,6 +38,9 @@ resources/upload_token.inc
 *.temp
 *.exe
 *.dll
+# Win7 SP1 runtime: an MSVCRT-only libwinpthread must ship with the package
+# (the toolchain's own DLL requires the UCRT api-sets). See resources/win7/README.md.
+!resources/win7/*.dll
 
 # UI test framework outputs (plan 2026-08-24)
 /test-results/

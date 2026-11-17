@@ -32,8 +32,8 @@ BundleSelectorDialog::BundleSelectorDialog(wxWindow* parent, sqlite3* db,
         if (b.coreType != coreType_) {
             continue;
         }
-        list_->InsertItem(row, wxString(b.id));
-        list_->SetItem(row, 1, wxString(b.name));
+        list_->InsertItem(row, wxString::FromUTF8(b.id));
+        list_->SetItem(row, 1, wxString::FromUTF8(b.name));
         list_->SetItem(row, 2, wxString(std::to_string(b.version)));
         list_->SetItem(row, 3, b.coreType == config::CoreType::XRAY ? wxT("Xray") : wxT("SingBox"));
         ++row;

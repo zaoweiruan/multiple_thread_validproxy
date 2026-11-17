@@ -38,38 +38,38 @@ pool_candidate::CandidateSortKey sortKeyForColumn(int col) {
 } // namespace
 
 AddPoolMemberDialog::AddPoolMemberDialog(wxWindow* parent, AppController* controller)
-    : wxDialog(parent, wxID_ANY, "选择代理", wxDefaultPosition, wxSize(900, 440)),
+    : wxDialog(parent, wxID_ANY, L"选择代理", wxDefaultPosition, wxSize(900, 440)),
       controller_(controller) {
     candidates_ = controller_->getPoolCandidateProfiles(500);
 
     wxBoxSizer* root = new wxBoxSizer(wxVERTICAL);
 
     wxStaticText* hint = new wxStaticText(this, wxID_ANY,
-        wxString::Format("选择要加入代理池的有效代理（共 %d 个候选）：",
+        wxString::Format(L"选择要加入代理池的有效代理（共 %d 个候选）：",
                          static_cast<int>(candidates_.size())));
     root->Add(hint, 0, wxALL, 8);
 
     search_ = new wxTextCtrl(this, wxID_ANY, "", wxDefaultPosition, wxDefaultSize);
-    search_->SetHint("按 IndexId / 地址 / 备注 过滤");
+    search_->SetHint(L"按 IndexId / 地址 / 备注 过滤");
     root->Add(search_, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, 8);
     search_->Bind(wxEVT_TEXT, &AddPoolMemberDialog::onSearch, this);
 
     list_ = new wxListCtrl(this, wxID_ANY, wxDefaultPosition, wxDefaultSize,
                            wxLC_REPORT | wxLC_HRULES | wxLC_VRULES);
     list_->InsertColumn(COL_INDEX_ID, "IndexId", wxLIST_FORMAT_LEFT, 170);
-    list_->InsertColumn(COL_PROTOCOL, "协议",    wxLIST_FORMAT_LEFT, 80);
-    list_->InsertColumn(COL_ADDRESS,  "地址",    wxLIST_FORMAT_LEFT, 120);
-    list_->InsertColumn(COL_DELAY,    "时延",    wxLIST_FORMAT_LEFT, 70);
+    list_->InsertColumn(COL_PROTOCOL, L"协议",    wxLIST_FORMAT_LEFT, 80);
+    list_->InsertColumn(COL_ADDRESS,  L"地址",    wxLIST_FORMAT_LEFT, 120);
+    list_->InsertColumn(COL_DELAY,    L"时延",    wxLIST_FORMAT_LEFT, 70);
     list_->InsertColumn(COL_REGION,   "Region",  wxLIST_FORMAT_LEFT, 80);
-    list_->InsertColumn(COL_HEALTH,   "健康度",  wxLIST_FORMAT_LEFT, 70);
+    list_->InsertColumn(COL_HEALTH,   L"健康度",  wxLIST_FORMAT_LEFT, 70);
     list_->InsertColumn(COL_MESSAGE,  "Message", wxLIST_FORMAT_LEFT, 130);
-    list_->InsertColumn(COL_REMARKS,  "备注",    wxLIST_FORMAT_LEFT, 120);
+    list_->InsertColumn(COL_REMARKS,  L"备注",    wxLIST_FORMAT_LEFT, 120);
     root->Add(list_, 1, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, 8);
     list_->Bind(wxEVT_LIST_COL_CLICK, &AddPoolMemberDialog::onColumnClick, this);
 
     wxBoxSizer* btnRow = new wxBoxSizer(wxHORIZONTAL);
-    wxButton* okBtn = new wxButton(this, wxID_OK, "加入");
-    wxButton* cancelBtn = new wxButton(this, wxID_CANCEL, "取消");
+    wxButton* okBtn = new wxButton(this, wxID_OK, L"加入");
+    wxButton* cancelBtn = new wxButton(this, wxID_CANCEL, L"取消");
     btnRow->Add(okBtn, 0, wxALL, 4);
     btnRow->Add(cancelBtn, 0, wxALL, 4);
     root->Add(btnRow, 0, wxALIGN_RIGHT | wxALL, 8);
@@ -146,7 +146,7 @@ void AddPoolMemberDialog::onOK(wxCommandEvent& event) {
         item = list_->GetNextItem(item, wxLIST_NEXT_ALL, wxLIST_STATE_SELECTED);
     }
     if (selectedIndexIds_.empty()) {
-        wxMessageBox("请至少选择一个代理。", "选择代理", wxOK | wxICON_INFORMATION);
+        wxMessageBox(L"请至少选择一个代理。", L"选择代理", wxOK | wxICON_INFORMATION);
         return;
     }
     EndModal(wxID_OK);

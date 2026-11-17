@@ -624,8 +624,8 @@ bool ConfigDialog::saveConfig() {
     {
         std::string accelUrl = propGrid_->GetPropertyValueAsString("accelerator_url").ToStdString();
         if (!accelUrl.empty() && !utils::isValidUrlFormat(accelUrl)) {
-            wxMessageBox("加速器 URL 格式无效，请确认包含 http:// 或 https:// 开头且域名有效",
-                         "URL 格式错误", wxOK | wxICON_WARNING);
+            wxMessageBox(L"加速器 URL 格式无效，请确认包含 http:// 或 https:// 开头且域名有效",
+                         L"URL 格式错误", wxOK | wxICON_WARNING);
             accelUrl.clear();
             propGrid_->SetPropertyValue("accelerator_url", "");
         }
@@ -763,15 +763,15 @@ void ConfigDialog::refreshAutoTaskChainDisplay() {
 void ConfigDialog::refreshUpdateMethodDisplay() {
     wxString display;
     if (propGrid_->GetPropertyValueAsBool("update_method_accelerator")) {
-        if (!display.empty()) display += " → ";
+        if (!display.empty()) display += L" → ";
         display += L"加速器";
     }
     if (propGrid_->GetPropertyValueAsBool("update_method_proxy")) {
-        if (!display.empty()) display += " → ";
+        if (!display.empty()) display += L" → ";
         display += L"代理";
     }
     if (propGrid_->GetPropertyValueAsBool("update_method_direct")) {
-        if (!display.empty()) display += " → ";
+        if (!display.empty()) display += L" → ";
         display += L"直连";
     }
     if (display.empty()) {
@@ -838,53 +838,53 @@ bool ConfigDialog::validateConfig() {
     if (editedConfig_.network_monitor.enabled) {
         for (const std::string& url : editedConfig_.network_monitor.checkUrls) {
             if (!utils::isValidUrlFormat(url)) {
-                wxMessageBox("网络监控检测URL格式无效: " + wxString(url), "URL格式错误", wxOK | wxICON_WARNING);
+                wxMessageBox(L"网络监控检测URL格式无效: " + wxString(url), L"URL格式错误", wxOK | wxICON_WARNING);
                 return false;
             }
         }
         if (editedConfig_.network_monitor.checkUrls.empty()) {
-            wxMessageBox("网络监控启用时必须配置至少一个检测URL", "验证错误", wxOK | wxICON_ERROR);
+            wxMessageBox(L"网络监控启用时必须配置至少一个检测URL", L"验证错误", wxOK | wxICON_ERROR);
             return false;
         }
     }
     // ProxyProcessMonitor validation
     if (editedConfig_.proxy_process_monitor.checkIntervalMs < 5000 ||
         editedConfig_.proxy_process_monitor.checkIntervalMs > 300000) {
-        wxMessageBox("代理进程监控检测间隔必须在 5000 到 300000 毫秒之间", "验证错误", wxOK | wxICON_ERROR);
+        wxMessageBox(L"代理进程监控检测间隔必须在 5000 到 300000 毫秒之间", L"验证错误", wxOK | wxICON_ERROR);
         return false;
     }
 
     // StandalonePool validation — 仅在启用时强制（关闭时不校验数值细节）
     if (editedConfig_.standalone_pool.enabled) {
         if (editedConfig_.standalone_pool.socksPort < 1024 || editedConfig_.standalone_pool.socksPort > 65535) {
-            wxMessageBox("代理池 SOCKS 端口必须在 1024 到 65535 之间", "验证错误", wxOK | wxICON_ERROR);
+            wxMessageBox(L"代理池 SOCKS 端口必须在 1024 到 65535 之间", L"验证错误", wxOK | wxICON_ERROR);
             return false;
         }
         if (editedConfig_.standalone_pool.apiPort < 1024 || editedConfig_.standalone_pool.apiPort > 65535) {
-            wxMessageBox("代理池 API 端口必须在 1024 到 65535 之间", "验证错误", wxOK | wxICON_ERROR);
+            wxMessageBox(L"代理池 API 端口必须在 1024 到 65535 之间", L"验证错误", wxOK | wxICON_ERROR);
             return false;
         }
         if (editedConfig_.standalone_pool.observatory.intervalSec < 1 || editedConfig_.standalone_pool.observatory.intervalSec > 300) {
-            wxMessageBox("观测间隔必须在 1 到 300 秒之间", "验证错误", wxOK | wxICON_ERROR);
+            wxMessageBox(L"观测间隔必须在 1 到 300 秒之间", L"验证错误", wxOK | wxICON_ERROR);
             return false;
         }
         if (editedConfig_.standalone_pool.observatory.timeoutSec < 1 || editedConfig_.standalone_pool.observatory.timeoutSec > 60) {
-            wxMessageBox("观测超时必须在 1 到 60 秒之间", "验证错误", wxOK | wxICON_ERROR);
+            wxMessageBox(L"观测超时必须在 1 到 60 秒之间", L"验证错误", wxOK | wxICON_ERROR);
             return false;
         }
         // observatory.destination 不暴露 UI：恒被 test.url 覆盖（spec PoolConfigDialogAdjust），
         // 后端保留透传，不再校验格式。
         if (editedConfig_.standalone_pool.evaluate.intervalSec < 1 || editedConfig_.standalone_pool.evaluate.intervalSec > 600) {
-            wxMessageBox("评估间隔必须在 1 到 600 秒之间", "验证错误", wxOK | wxICON_ERROR);
+            wxMessageBox(L"评估间隔必须在 1 到 600 秒之间", L"验证错误", wxOK | wxICON_ERROR);
             return false;
         }
         if (editedConfig_.standalone_pool.evaluate.pruneFailStreak < 1) {
-            wxMessageBox("剔除阈值必须大于等于 1", "验证错误", wxOK | wxICON_ERROR);
+            wxMessageBox(L"剔除阈值必须大于等于 1", L"验证错误", wxOK | wxICON_ERROR);
             return false;
         }
         if (editedConfig_.standalone_pool.evaluate.probeWorkers < 0 ||
             editedConfig_.standalone_pool.evaluate.probeWorkers > 64) {
-            wxMessageBox("探针 worker 数必须在 0 到 64 之间（0=禁用探针池）", "验证错误",
+            wxMessageBox(L"探针 worker 数必须在 0 到 64 之间（0=禁用探针池）", L"验证错误",
                          wxOK | wxICON_ERROR);
             return false;
         }
@@ -896,7 +896,7 @@ bool ConfigDialog::validateConfig() {
         const double sw = editedConfig_.proxy.scoring_stability_weight;
         const double hw = editedConfig_.proxy.scoring_history_weight;
         if (dw < 0.0 || dw > 1.0 || sw < 0.0 || sw > 1.0 || hw < 0.0 || hw > 1.0) {
-            wxMessageBox("代理评分权重必须在 0.0 到 1.0 之间", "验证错误", wxOK | wxICON_ERROR);
+            wxMessageBox(L"代理评分权重必须在 0.0 到 1.0 之间", L"验证错误", wxOK | wxICON_ERROR);
             return false;
         }
     }
@@ -1157,11 +1157,11 @@ void ConfigDialog::loadTemplates() {
 
     templateList_->DeleteAllItems();
     for (const auto& item : templates_) {
-        int row = templateList_->InsertItem(templates_.size() - 1, wxString(item.id));
+        int row = templateList_->InsertItem(templates_.size() - 1, wxString::FromUTF8(item.id));
         wxString coreTypeStr = (item.coreType == 2) ? L"Xray" : (item.coreType == 24) ? L"SingBox" : wxString::Format(L"%d", item.coreType);
         templateList_->SetItem(row, 1, coreTypeStr);
-        templateList_->SetItem(row, 2, item.parentId.empty() ? L"(基础)" : wxString(item.parentId));
-        templateList_->SetItem(row, 3, wxString(item.remarks));
+        templateList_->SetItem(row, 2, item.parentId.empty() ? L"(基础)" : wxString::FromUTF8(item.parentId));
+        templateList_->SetItem(row, 3, wxString::FromUTF8(item.remarks));
         templateList_->SetItem(row, 4, item.enabled ? L"✓" : L"✗");
         wxString syncStr = dao.isTemplateInSync(item.id) ? L"✅" : (item.bundleChain.empty() ? L"✅" : L"⚠️");
         templateList_->SetItem(row, 5, syncStr);
@@ -1398,7 +1398,7 @@ void ConfigDialog::loadBundles() {
 
     bundleList_->DeleteAllItems();
     for (const auto& bundle : bundles_) {
-        int row = bundleList_->InsertItem(static_cast<long>(bundles_.size()) - 1, wxString(bundle.id));
+        int row = bundleList_->InsertItem(static_cast<long>(bundles_.size()) - 1, wxString::FromUTF8(bundle.id));
         wxString coreTypeStr = (bundle.coreType == config::CoreType::XRAY) ? L"Xray"
                               : (bundle.coreType == config::CoreType::SINGBOX) ? L"SingBox"
                               : wxString::Format(L"%d", static_cast<int>(bundle.coreType));
@@ -1857,9 +1857,9 @@ void ConfigDialog::createChainEditTab() {
 
         // 配置预览（resolveToConfig 填充 result.config）
         if (!result.success) {
-            showChainPreview(std::string("// 解析失败：") + result.errorMessage);
+            showChainPreview(std::string(u8"// 解析失败：") + result.errorMessage);
         } else if (result.config.is_null()) {
-            showChainPreview(std::string("// 解析成功，但生成的配置为空"));
+            showChainPreview(std::string(u8"// 解析成功，但生成的配置为空"));
         } else {
             showChainPreview(prettyJson(result.config, 0));
         }

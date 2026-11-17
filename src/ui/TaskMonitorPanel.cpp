@@ -319,7 +319,7 @@ void TaskMonitorPanel::onContextCommand(wxCommandEvent& event) {
         const std::size_t n = controller_->clearFinishedTasks();
         refreshNow();
         wxQueueEvent(wxGetTopLevelParent(this), new StatusUpdateEvent(
-            0, "已清理 " + std::to_string(n) + " 条完成记录"));
+            0, u8"已清理 " + std::to_string(n) + u8" 条完成记录"));
         return;
     }
     if (id == ID_TASK_CTX_REMOVE_ONE) {
@@ -331,14 +331,14 @@ void TaskMonitorPanel::onContextCommand(wxCommandEvent& event) {
         if (!ctxTaskId_.empty()) controller_->cancelTask(ctxTaskId_);
         refreshNow();
         wxQueueEvent(wxGetTopLevelParent(this),
-                     new StatusUpdateEvent(0, "已取消排队任务"));
+                     new StatusUpdateEvent(0, u8"已取消排队任务"));
         return;
     }
     if (id == ID_TASK_CTX_CANCEL_ALL) {
         controller_->cancelAllQueuedTasks();
         refreshNow();
         wxQueueEvent(wxGetTopLevelParent(this),
-                     new StatusUpdateEvent(0, "已取消全部排队任务"));
+                     new StatusUpdateEvent(0, u8"已取消全部排队任务"));
         return;
     }
     if (id == ID_TASK_CTX_TERM_ONE) {
@@ -346,7 +346,7 @@ void TaskMonitorPanel::onContextCommand(wxCommandEvent& event) {
         if (!snap.current.taskId.empty()) {
             controller_->cancelTask(snap.current.taskId);
             wxQueueEvent(wxGetTopLevelParent(this), new StatusUpdateEvent(
-                0, std::string("已取消当前任务: ") + task::taskTypeToString(snap.current.type)));
+                0, std::string(u8"已取消当前任务: ") + task::taskTypeToString(snap.current.type)));
         }
         refreshNow();
         return;
@@ -377,7 +377,7 @@ void TaskMonitorPanel::onCancelCurrent(wxCommandEvent&) {
     // that truly stops a batch test, spec §3.5 B3-a).
     controller_->cancelTask(snap.current.taskId);
     wxQueueEvent(wxGetTopLevelParent(this),
-                 new StatusUpdateEvent(0, std::string("已取消当前任务: ") +
+                 new StatusUpdateEvent(0, std::string(u8"已取消当前任务: ") +
                                             task::taskTypeToString(snap.current.type)));
     refreshNow();
 }
@@ -386,7 +386,7 @@ void TaskMonitorPanel::onCancelSelected(wxCommandEvent&) {
     const std::string id = selectedTaskId();
     if (id.empty()) return;
     const task::TaskQueueSnapshot snap = controller_->getTaskQueueSnapshot();
-    std::string label = "任务";
+    std::string label = u8"任务";
     if (snap.current.taskId == id) {
         label = task::taskTypeToString(snap.current.type);
     } else {
@@ -402,12 +402,12 @@ void TaskMonitorPanel::onCancelSelected(wxCommandEvent&) {
     // onComplete OUTSIDE the queue lock (spec §3.4, test T4).
     refreshNow();
     wxQueueEvent(wxGetTopLevelParent(this),
-                 new StatusUpdateEvent(0, "已取消排队任务: " + label));
+                 new StatusUpdateEvent(0, u8"已取消排队任务: " + label));
 }
 
 void TaskMonitorPanel::onCancelAll(wxCommandEvent&) {
     controller_->cancelAllQueuedTasks();
     refreshNow();
     wxQueueEvent(wxGetTopLevelParent(this),
-                 new StatusUpdateEvent(0, "已取消全部排队任务"));
+                 new StatusUpdateEvent(0, u8"已取消全部排队任务"));
 }

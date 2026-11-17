@@ -119,8 +119,8 @@ void BundleChainEditor::refreshBundleList() {
             name = b->name;
             version = b->version;
         }
-        bundleList_->InsertItem(row, wxString(bundleId));
-        bundleList_->SetItem(row, 1, wxString(name));
+        bundleList_->InsertItem(row, wxString::FromUTF8(bundleId));
+        bundleList_->SetItem(row, 1, wxString::FromUTF8(name));
         bundleList_->SetItem(row, 2, version > 0 ? wxString(std::to_string(version)) : wxT("-"));
         ++row;
     }
