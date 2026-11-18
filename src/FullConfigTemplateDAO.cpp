@@ -132,7 +132,6 @@ bool FullConfigTemplateDAO::createTableIfNotExists() const {
         return false;
     }
     
-    Logger::write("[FullConfigTemplateDAO] Created FullConfigTemplateItem table", LogLevel::INFO);
     return true;
 }
 

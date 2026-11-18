@@ -48,7 +48,6 @@ bool ComponentBundleDAO::createTableIfNotExists() const {
         return false;
     }
     
-    Logger::write("[ComponentBundleDAO] Created ComponentBundle table", LogLevel::INFO);
     return migrateDropTemplateTypeColumn();
 }
 

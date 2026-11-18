@@ -110,9 +110,14 @@ private:
 
     // Send a gRPC request (HEADERS + DATA frames) and read the response.
     // Returns true on success; response contains the gRPC response body.
+    // `authority` is the `:authority` pseudo-header value (host:port). It is
+    // mandatory for a conforming gRPC/HTTP-2 server (Xray rejects requests
+    // without it with status 13 "no host or :authority header present"); an
+    // empty value falls back to "localhost".
     bool grpcSendReceive(int sock, const std::string& path,
-                         const std::string& requestPayload,
-                         std::string& response);
+                          const std::string& requestPayload,
+                          std::string& response,
+                          const std::string& authority = "");
 
     // Close a socket gracefully.
     void grpcClose(int sock);

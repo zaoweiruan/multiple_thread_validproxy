@@ -2016,15 +2016,21 @@ bool XrayApi::grpcSendPreface(int sock) {
 
 bool XrayApi::grpcSendReceive(int sock, const std::string& path,
                                const std::string& requestPayload,
-                               std::string& response) {
+                               std::string& response,
+                               const std::string& authority) {
     SOCKET s = static_cast<SOCKET>(sock);
     static const int STREAM_ID = 1;
 
     // ---- Send HEADERS frame ----
+    // HTTP/2 pseudo-headers in canonical order; `:authority` is mandatory
+    // for gRPC (Xray rejects requests without it with status 13
+    // "no host or :authority header present").
+    std::string auth = authority.empty() ? std::string("localhost") : authority;
     std::vector<std::pair<std::string, std::string>> hdr = {
         {":method", "POST"},
-        {":path", path},
         {":scheme", "http"},
+        {":authority", auth},
+        {":path", path},
         {"content-type", "application/grpc"},
         {"te", "trailers"}
     };
@@ -2288,7 +2294,7 @@ bool XrayApi::removeOutboundDirect(const std::string& tag) {
     std::string response;
     ok = grpcSendReceive(sock,
         "/xray.app.proxyman.command.HandlerService/RemoveOutbound",
-         proto, response);
+         proto, response, host + ":" + std::to_string(port));
 
     grpcClose(sock);
 
@@ -2421,7 +2427,7 @@ bool XrayApi::getOutboundStatusDirect(std::vector<OutboundStatus>& out) {
     std::string response;
     ok = grpcSendReceive(sock,
         observatoryStatusPath(),
-        "", response);
+        "", response, host + ":" + std::to_string(port));
     grpcClose(sock);
     if (!ok) {
         Logger::write("[XrayApi] getOutboundStatusDirect FAILED: " + lastError_,
@@ -2613,7 +2619,7 @@ bool XrayApi::addOutboundDirect(const std::string& outboundJson,
     std::string response;
     ok = grpcSendReceive(sock,
         "/xray.app.proxyman.command.HandlerService/AddOutbound",
-         proto, response);
+         proto, response, host + ":" + std::to_string(port));
 
     grpcClose(sock);
 
@@ -2651,7 +2657,7 @@ bool XrayApi::listOutboundsDirect(std::string& output) {
 
     ok = grpcSendReceive(sock,
         "/xray.app.proxyman.command.HandlerService/ListOutbounds",
-         proto, output);
+         proto, output, host + ":" + std::to_string(port));
 
     grpcClose(sock);
 
