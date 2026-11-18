@@ -1,0 +1,53 @@
+# scripts/i18n-allowlist.txt
+#
+# 双语言迁移期间允许保留中文字面量的文件。由 scripts/check-ui-literals.ps1 -Mode cjk 读取。
+# 规则：只减不增。每个阶段完成时删除对应批次的条目；P4 收尾时本文件必须只剩注释。
+# 格式：<相对路径> | <理由> | <复核到期日 YYYY-MM-DD>
+#
+# 基线：2026-11-18，823 条 / 38 文件。
+#   统计方式：字符串感知的单遍词法扫描（行注释 / 块注释 / 原始字符串 R"delim(...)delim" 均跳过）。
+#   更正记录：此前 824 条 / 39 文件中的第 39 个文件是 src/FullConfigTemplateDAO.cpp，
+#   其唯一“命中”来自 src/FullConfigTemplateDAO.cpp:669-671 的普通注释，由旧版扫描脚本
+#   未处理原始字符串导致的引号失步误计；该文件已从清单移除。
+
+# ---- P1 主窗口 ----
+src/ui/MainFrame.cpp | P1 主窗口（规划 88 条，实测 88 条） | 2027-06-30 | 88
+src/ui/StandaloneFloatingWidget.cpp | P1 主窗口（规划 41 条，实测 41 条） | 2027-06-30 | 41
+src/ui/ProxyListPanel.cpp | P1 主窗口（规划 39 条，实测 39 条） | 2027-06-30 | 39
+src/ui/TaskMonitorPanel.cpp | P1 主窗口（规划 30 条，实测 30 条） | 2027-06-30 | 30
+src/ui/SubscriptionPanel.cpp | P1 主窗口（规划 24 条，实测 24 条） | 2027-06-30 | 24
+src/ui/LogPanel.cpp | P1 主窗口（规划 20 条，实测 20 条） | 2027-06-30 | 20
+src/ui/BatchQueuePanel.cpp | P1 主窗口（规划 10 条，实测 10 条） | 2027-06-30 | 10
+src/ui/ComponentListPanel.cpp | P1 主窗口（规划 7 条，实测 7 条） | 2027-06-30 | 7
+src/ui/RefreshCommands.cpp | P1 主窗口（规划 4 条，实测 4 条） | 2027-06-30 | 4
+src/ui/TrayIcon.cpp | P1 主窗口（规划 1 条，实测 1 条） | 2027-06-30 | 1
+# ---- P2 对话框 ----
+src/ui/ConfigDialog.cpp | P2 对话框（规划 265 条，实测 265 条） | 2027-06-30 | 265
+src/ui/SqlQueryManageDialog.cpp | P2 对话框（规划 73 条，实测 73 条） | 2027-06-30 | 73
+src/ui/AddPoolMemberDialog.cpp | P2 对话框（规划 12 条，实测 12 条） | 2027-06-30 | 12
+src/ui/BundleSelectorDialog.cpp | P2 对话框（规划 6 条，实测 6 条） | 2027-06-30 | 6
+src/ui/BundleChainEditor.cpp | P2 对话框（规划 5 条，实测 5 条） | 2027-06-30 | 5
+src/ui/TestOnlineResultDialog.cpp | P2 对话框（规划 5 条，实测 5 条） | 2027-06-30 | 5
+# ---- P3 日志/业务 ----
+src/main_gui.cpp | P3 日志/业务（规划 68 条，实测 68 条） | 2027-06-30 | 68
+src/ui/AppController.cpp | P3 日志/业务（规划 36 条，实测 36 条） | 2027-06-30 | 36
+src/service/CloudSyncService.cpp | P3 日志/业务（规划 25 条，实测 25 条） | 2027-06-30 | 25
+src/task/TaskType.cpp | P3 日志/业务（规划 21 条，实测 21 条） | 2027-06-30 | 21
+src/config/ConflictDetector.cpp | P3 日志/业务（规划 8 条，实测 8 条） | 2027-06-30 | 8
+src/ConfigGenerator.cpp | P3 日志/业务（规划 5 条，实测 5 条） | 2027-06-30 | 5
+src/config/ComponentResolver.cpp | P3 日志/业务（规划 4 条，实测 4 条） | 2027-06-30 | 4
+src/ProfileitemDAO.cpp | P3 日志/业务（规划 3 条，实测 3 条） | 2027-06-30 | 3
+src/main_cli.cpp | P3 日志/业务（规划 3 条，实测 3 条） | 2027-06-30 | 3
+src/net/WebDavCredentials.cpp | P3 日志/业务（规划 3 条，实测 3 条） | 2027-06-30 | 3
+include/DatabaseHelper.h | P3 日志/业务（规划 2 条，实测 2 条） | 2027-06-30 | 2
+src/ProfileExItemDAO.cpp | P3 日志/业务（规划 2 条，实测 2 条） | 2027-06-30 | 2
+src/SubitemDAO.cpp | P3 日志/业务（规划 2 条，实测 2 条） | 2027-06-30 | 2
+src/config/SchemaValidator.cpp | P3 日志/业务（规划 2 条，实测 2 条） | 2027-06-30 | 2
+src/config/StreamSettingsBuilder.cpp | P3 日志/业务（规划 2 条，实测 2 条） | 2027-06-30 | 2
+include/SubitemUpdaterV2.h | P3 日志/业务（规划 1 条，实测 1 条） | 2027-06-30 | 1
+src/AutoTaskManager.cpp | P3 日志/业务（规划 1 条，实测 1 条） | 2027-06-30 | 1
+src/ProxyBatchTester.cpp | P3 日志/业务（规划 1 条，实测 1 条） | 2027-06-30 | 1
+src/config/BundleChainResolver.cpp | P3 日志/业务（规划 1 条，实测 1 条） | 2027-06-30 | 1
+src/config/OutboundBuilderFactory.cpp | P3 日志/业务（规划 1 条，实测 1 条） | 2027-06-30 | 1
+src/config/SingBoxOutboundBuilderFactory.cpp | P3 日志/业务（规划 1 条，实测 1 条） | 2027-06-30 | 1
+src/net/WebDavClient.cpp | P3 日志/业务（规划 1 条，实测 1 条） | 2027-06-30 | 1

@@ -19,13 +19,15 @@
 
 当前程序**只有中文一套文案**：菜单、工具栏、面板、对话框、托盘、悬浮窗、任务名、状态栏、日志均为硬编码中文字面量，少量位置混有英文（如状态栏 `Ready`、`Loaded subscription:`、`Network OK`）。2026-11-17 的 Win7 修复已把所有 UI 非 ASCII 字面量统一为 `L"..."` 宽字面量，并建立 `scripts/check-ui-literals.ps1` + `UiStringEncodingTest` 门禁——这为引入多语言提供了干净前提（UI 文本已经集中在可枚举的字面量上）。
 
-**现状扫描**（`temp/i18n_inventory2.py`，字符串感知的注释剥离；v1.0 的 `split("//")[0]` 会截断含 `//` 的行并跨行吞串，系统性漏计）：
+**现状扫描**（口径 = `scripts/check-ui-literals.ps1` 的单遍词法扫描，与 `UiStringEncodingTest` 同构；行注释 / 块注释 / 原始字符串 `R"delim(...)delim"` 均跳过）：
 
 | 范围 | 含中文的字符串字面量 | 文件数 |
 |---|---|---|
-| `src/**`（含 `src/ui`） | 822 | 38 |
-| `include/**` | 2 | 1 |
-| **合计** | **824** | **39** |
+| `src/**`（含 `src/ui`） | 820 | 36 |
+| `include/**` | 3 | 2 |
+| **合计** | **823** | **38** |
+
+> 口径演进：v1.0 用 `split("//")[0]` 截断 → 701/36；v1.1 用字符串感知剥离 → 824/39；v1.2 修正重复计数 → **823/38**（见附录 D.3：多出的 1 条是 `src/FullConfigTemplateDAO.cpp:669-671` 的普通注释，因旧脚本不识别原始字符串 `R"JSON(...)JSON"` 内的裸引号而失步误计）。
 
 Top 文件：`src/ui/ConfigDialog.cpp` 265、`src/ui/MainFrame.cpp` 88、`src/ui/SqlQueryManageDialog.cpp` 73、`src/main_gui.cpp` 68、`src/ui/StandaloneFloatingWidget.cpp` 41、`src/ui/ProxyListPanel.cpp` 39、`src/ui/AppController.cpp` 36、`src/ui/TaskMonitorPanel.cpp` 30、`src/service/CloudSyncService.cpp` 25、`src/ui/SubscriptionPanel.cpp` 24、`src/task/TaskType.cpp` 21、`src/ui/LogPanel.cpp` 20。
 
@@ -449,7 +451,7 @@ bool setUiLanguage(i18n::Language lang);   // 更新 config_.ui.language 并落�
 
 | 文件 | 内容 |
 |---|---|
-| `resources/i18n/strings.json` | 翻译资产（824 条） |
+| `resources/i18n/strings.json` | 翻译资产（823 条） |
 | `resources/i18n/README.md` | 一行说明：编译期资产，不随包，不是运行时可替换资源 |
 | `include/i18n/Language.h` | 语言枚举与解析 |
 | `include/i18n/StringId.h` | 生成：`StrId` 枚举 |
@@ -469,18 +471,18 @@ bool setUiLanguage(i18n::Language lang);   // 更新 config_.ui.language 并落�
 
 > 不新增 `check-i18n-coverage.ps1`：扩展现有 `scripts/check-ui-literals.ps1`（见 §11）。
 
-### 8.2 修改（按字面量数量，合计 824 / 39 文件）
+### 8.2 修改（按字面量数量，合计 823 / 38 文件）
 
 | 批次 | 文件（中文字面量数） | 小计 |
 |---|---|---|
 | P1 主窗口 | `MainFrame.cpp`(88)、`StandaloneFloatingWidget.cpp`(41)、`ProxyListPanel.cpp`(39)、`TaskMonitorPanel.cpp`(30)、`SubscriptionPanel.cpp`(24)、`LogPanel.cpp`(20)、`BatchQueuePanel.cpp`(10)、`ComponentListPanel.cpp`(7)、`RefreshCommands.cpp`(4)、`TrayIcon.cpp`(1)、`ProxyDetailPanel.cpp`(0，仅替换文案来源) | 264 |
 | P2 对话框 | `ConfigDialog.cpp`(265)、`SqlQueryManageDialog.cpp`(73)、`AddPoolMemberDialog.cpp`(12)、`BundleSelectorDialog.cpp`(6)、`TestOnlineResultDialog.cpp`(5)、`BundleChainEditor.cpp`(5) | 366 |
-| P3 日志/业务/入口 | `main_gui.cpp`(68)、`AppController.cpp`(36)、`CloudSyncService.cpp`(25)、`TaskType.cpp`(21)、`ConflictDetector.cpp`(8)、`ConfigGenerator.cpp`(5)、`ComponentResolver.cpp`(4)、`WebDavCredentials.cpp`(3)、`main_cli.cpp`(3)、`ProfileitemDAO.cpp`(3)、`StreamSettingsBuilder.cpp`(2)、`SchemaValidator.cpp`(2)、`SubitemDAO.cpp`(2)、`ProfileExItemDAO.cpp`(2)、`include/DatabaseHelper.h`(2)、`include/SubitemUpdaterV2.h`(1)、`WebDavClient.cpp`(1)、`SingBoxOutboundBuilderFactory.cpp`(1)、`OutboundBuilderFactory.cpp`(1)、`BundleChainResolver.cpp`(1)、`ProxyBatchTester.cpp`(1)、`FullConfigTemplateDAO.cpp`(1)、`AutoTaskManager.cpp`(1) | 194 |
+| P3 日志/业务/入口 | `main_gui.cpp`(68)、`AppController.cpp`(36)、`CloudSyncService.cpp`(25)、`TaskType.cpp`(21)、`ConflictDetector.cpp`(8)、`ConfigGenerator.cpp`(5)、`ComponentResolver.cpp`(4)、`WebDavCredentials.cpp`(3)、`main_cli.cpp`(3)、`ProfileitemDAO.cpp`(3)、`StreamSettingsBuilder.cpp`(2)、`SchemaValidator.cpp`(2)、`SubitemDAO.cpp`(2)、`ProfileExItemDAO.cpp`(2)、`include/DatabaseHelper.h`(2)、`include/SubitemUpdaterV2.h`(1)、`WebDavClient.cpp`(1)、`SingBoxOutboundBuilderFactory.cpp`(1)、`OutboundBuilderFactory.cpp`(1)、`BundleChainResolver.cpp`(1)、`ProxyBatchTester.cpp`(1)、`AutoTaskManager.cpp`(1) | 193 |
 | 配置与构建 | `ConfigReader.h`、`ConfigReader.cpp`、`ConfigJsonSerializer.cpp`、`ActiveConfigPath.cpp`、`main_gui.cpp`（设置生效路径 + 启动语言 + 横幅）、`main_cli.cpp`（启动语言）、`CMakeLists.txt`、`bin/config.json`、`bin/test_config.json` | — |
 | 测试常量 | `tests/ui/UIIds.h`（新增语言菜单常量 + 英文常量块）、`tests/ui/TestMenuAction.cpp`（`leaves[]` 补云同步两项） | — |
 | 文档 | `docs/INDEX.md`、`docs/plans/project-plans-tracker.md`、`README.md`/`README.en.md`（仅新增一节） | — |
 
-> 三批小计 264 + 366 + 194 = **824**，与 §2.1 总数一致。
+> 三批小计 264 + 366 + 193 = **823**，与 §2.1 总数一致（P1 264 + P2 366 + P3 193）。
 
 ---
 
@@ -492,7 +494,7 @@ bool setUiLanguage(i18n::Language lang);   // 更新 config_.ui.language 并落�
 
 | 任务 | 产出 | 验证 |
 |---|---|---|
-| P0-0 | `check-ui-literals.ps1` 增加 `-Mode cjk` + `-AllowList`；生成基线 allowlist（39 文件，含理由） | 脚本在当前树退出码 0（全部命中 allowlist） |
+| P0-0 | `check-ui-literals.ps1`：注释/字面量识别改为单遍词法扫描（修既有缺陷）+ 增加 `-Mode cjk` + `-AllowList`（含每文件条数上限）；生成基线 allowlist（38 文件，含理由与上限） | 脚本在当前树退出码 0（全部命中 allowlist，823 条）；`-Mode cjk` 无 allowlist 时能报出全部 823 条；把任一行上限减 1 时退出码 1 |
 | P0-1 | `Language.h` + `I18n.h/.cpp` + 空表骨架 + CMake 接入（`core` 库与 `test_i18n`） | 构建 EXIT 0 |
 | P0-2 | `strings.json` 初始化（菜单/状态栏/语言项等种子 ~20 条）+ `gen-i18n.ps1` | 生成成功；`-Check` 通过 |
 | P0-3 | `ui.language` 全链路（AppConfig/Parser/Serializer/`bin/*.json`）+ 启动解析 | `test_config_ui_language` 全绿 |
@@ -518,7 +520,7 @@ bool setUiLanguage(i18n::Language lang);   // 更新 config_.ui.language 并落�
 | P2-2 | `SqlQueryManageDialog`（73 条） | 英文截图 |
 | P2-3 | `AddPoolMemberDialog` / `BundleSelectorDialog` / `TestOnlineResultDialog` / `BundleChainEditor`（28 条） | 英文截图 |
 
-### P3 — 日志与业务层（194 条）
+### P3 — 日志与业务层（193 条）
 
 | 任务 | 文件 | 验证 |
 |---|---|---|
@@ -592,7 +594,7 @@ bool setUiLanguage(i18n::Language lang);   // 更新 config_.ui.language 并落�
 
 | 门禁 | 规则 | 失败处理 |
 |---|---|---|
-| `scripts/check-ui-literals.ps1 -Mode cjk -Root src -AllowList scripts/i18n-allowlist.txt` | `src/**`（自动排除 `src/i18n/**`）不得出现含 CJK 的字符串字面量；allowlist 每项需写理由与到期复核日期，只减不增 | 退出码 1 |
+| `scripts/check-ui-literals.ps1 -Mode cjk -Root src -AllowList scripts/i18n-allowlist.txt` | `src/**`、`include/**`（自动排除 `src/i18n/**`）不得出现含 CJK 的字符串字面量；allowlist 每项需写理由、到期复核日期与**条数上限**，实测超过上限即失败（机制化「只减不增」） | 退出码 1 |
 | `scripts/check-ui-literals.ps1`（既有默认模式） | `src/ui` 窄字节非 ASCII 零违规（保持不变） | 退出码 1 |
 | `scripts/gen-i18n.ps1 -Check` | 生成文件与 `strings.json` 同步 | 退出码 1 |
 | `UiStringEncodingTest`（`tests/test_ui_string_encoding.cpp`） | 保持既有扫描范围与断言 | 失败 |
@@ -601,6 +603,8 @@ bool setUiLanguage(i18n::Language lang);   // 更新 config_.ui.language 并落�
 | `scripts/build-and-test.bat` | UI 变更必跑 | 失败 |
 
 **门禁能力边界（显式记录）**：`-Mode cjk` 只能发现「中文写进了源码」，发现不了「新增的纯英文文案没走表」。该方向由评审检查单兜底：任何新增 UI 文本必须同时新增 `StrId`。`UiStringEncodingTest` 已对 `L"..."` 前缀字面量免检，因此生成的 `StringTable.cpp` 不会误报。
+
+**注释/字面量识别口径（P0-0 已修正）**：`check-ui-literals.ps1` 原实现在每行内用「先匹配字面量、再把第一个字面量外的 `//` 之后截断」的方式剥离行注释，但 span 数组构造写成 `,@($m.Index, $m.Index + $m.Length)`——PowerShell 里逗号优先于 `+`，实际得到三元数组 `@($idx, $idx, $len)`，`$sp[1]` 恒等于 `$idx`，导致**任何含 `//` 的行都被整行截断**（包括 `L"http://..."` 这类字符串内部的 `//`），既有 narrow 门禁因此存在漏报盲区。现改为单遍字符扫描（`Get-StrippedText`）：行注释 / 块注释替换为空格但保留换行（行号不漂移），字符串（含 `\"` 转义）内的 `//`、`/*` 不算注释，原始字符串 `R"delim(...)delim"` 整体抹空（其内部常有裸引号，若原样保留会让后续正则跨行误匹配）。
 
 ---
 
@@ -645,7 +649,7 @@ bool setUiLanguage(i18n::Language lang);   // 更新 config_.ui.language 并落�
 
 | ID | 风险 | 影响 | 缓解 |
 |---|---|---|---|
-| R1 | 824 条替换引入编译错误或漏改 | 进度风险 | 按文件小批次提交，每批构建；allowlist 只减不增；生成器从修正后的扫描结果生成初始资产 |
+| R1 | 823 条替换引入编译错误或漏改 | 进度风险 | 按文件小批次提交，每批构建；allowlist 只减不增；生成器从修正后的扫描结果生成初始资产 |
 | R2 | 英文文案更长导致对话框/工具栏拥挤 | 可用性 | 英文翻译遵循「短标签优先」（`Dedup` 而非 `Remove Duplicate Proxies`）；DPI 巡检；必要时调整最小宽度 |
 | R3 | 配置写入与 worker 线程竞争 | 数据竞争 | 仅 `AppController::saveConfig` 在 `configMutex_` 下写；语言不参与 worker 读取 |
 | R4 | 测试常量与翻译表漂移 | 测试假绿/假红 | `test_i18n` 断言 `UIIds.h` zh 常量 == 表值 |
@@ -677,7 +681,7 @@ bool setUiLanguage(i18n::Language lang);   // 更新 config_.ui.language 并落�
 | P0 | 门禁基线 + 基础设施 + 配置 + 生效路径 + 菜单/重启提示 + 日志横幅 | 1.5 |
 | P1 | 主窗口与长生命周期 UI（264 条） | 2.0 |
 | P2 | 对话框（366 条） | 2.5 |
-| P3 | 日志/业务/入口（194 条）+ 翻译校对 | 1.5 |
+| P3 | 日志/业务/入口（193 条）+ 翻译校对 | 1.5 |
 | P4a | allowlist 清零 + 门禁接入 | 0.5 |
 | P4b | `test_i18n` + `TestLanguageMenu` + 文档 | 0.5 |
 | 缓冲 | R2/R7 触发的返工 | 0.5 |
@@ -763,7 +767,7 @@ id:   <Module>.<Area>.<Name>          → 枚举: StrId::<Module>_<Area>_<Name>
 
 | # | 来源 | 问题 | 修订 |
 |---|---|---|---|
-| 1 | adversarial | 盘点脚本跨行吞串，真实 824 条（ConfigDialog 实际 265） | §2.1 重算；§8.2 重排 264/366/194 |
+| 1 | adversarial | 盘点脚本跨行吞串，真实 824 条（ConfigDialog 实际 265） | §2.1 重算；§8.2 重排 264/366/194（该 824 后被 D.3 更正为 823） |
 | 2 | feasibility / adversarial / coherence | 菜单实为 17 个叶子（云端两项漏计） | §2.3、§7.6、§10.2 改 17 + 2 |
 | 3 | feasibility / adversarial | 语言只写 `MainFrame::config_`，后续「配置…」保存会静默回滚 | 新增 `AppController::setUiLanguage`，唯一写点 |
 | 4 | feasibility | 配置路径三套且都落到 `bin/config.json`，UI 沙箱断言必红 | 新增 `ActiveConfigPath`（§7.4.1） |
@@ -805,3 +809,17 @@ id:   <Module>.<Area>.<Name>          → 枚举: StrId::<Module>_<Area>_<Name>
 | **D3 日志视觉分隔** | 新增 FR-10、§7.7.1、`LogBanner` 组件、AC-11；并说明重启模型下同一面板内不存在混排，分隔线针对跨文件拼接场景 |
 | **D4 默认 zh-CN** | 不变；可发现性由 §7.5 顶层双语标题保证 |
 | **D5 订阅列名** | 固定为 `Name / ValidProxies / TotalProxies / UpdatedTime / ID`（保留 ` ↕`），写入 §7.6 与附录 A |
+
+### D.3 v1.2 实施首日（P0-0）的口径更正
+
+P0-0 落地门禁时发现 `check-ui-literals.ps1` 既有实现有缺陷（详见 §11「注释/字面量识别口径」），修正后重新盘点，基线由 824/39 更正为 **823/38**：
+
+| 项 | 修正前 | 修正后 | 原因 |
+|---|---|---|---|
+| 总数 / 文件 | 824 / 39 | **823 / 38** | `src/FullConfigTemplateDAO.cpp` 的唯一命中是 `:669-671` 的普通注释；旧脚本不识别原始字符串 `R"JSON(...)JSON"` 内的裸引号，引号失步后把注释当成代码 |
+| `src/**` | 822 / 38 | **820 / 36** | 同上（−1 条命中、−1 个文件）＋ `include` 分项修正（见下） |
+| `include/**` | 2 / 1 | **3 / 2** | §8.2 本来就列了 `DatabaseHelper.h`(2) + `SubitemUpdaterV2.h`(1) = 3 条 / 2 文件，§2.1 的汇总行写错 |
+| P3 批次 | 194 | **193** | 移除 `FullConfigTemplateDAO.cpp`(1) |
+| allowlist | 39 行 | **38 行** | 同上；文件头写入更正记录 |
+
+同时确认：`tests/test_ui_string_encoding.cpp` 的 C++ 扫描器**没有**同类缺陷（它本来就是单遍词法扫描，并显式跳过注释、字符字面量与原始字符串），无需改动。
