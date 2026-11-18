@@ -896,6 +896,18 @@ set_target_properties(test_batch_pending PROPERTIES
 )
 add_test(NAME BatchPendingViewTest COMMAND test_batch_pending)
 
+# ── AutoTask state-file path portability (2026-11-18: cross-machine absolute
+#    paths spammed "failed to write state file") ──
+add_executable(test_autotask_state_path tests/test_autotask_state_path.cpp)
+target_include_directories(test_autotask_state_path PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(test_autotask_state_path PRIVATE gtest_main gtest)
+set_target_properties(test_autotask_state_path PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${VALIDPROXY_TEST_DIR}
+)
+add_test(NAME AutoTaskStatePathTest COMMAND test_autotask_state_path)
+
 # ── UI string encoding regression guard (Win7 mojibake / wxMenu asserts) ──
 # Fails when src/ui/** contains narrow (non-L, non-u8) non-ASCII literals:
 # wxString would decode those UTF-8 bytes with the Windows ANSI code page.

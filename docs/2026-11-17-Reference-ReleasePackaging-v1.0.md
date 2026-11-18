@@ -62,7 +62,7 @@ KB2999226 的 Win7 SP1 会加载失败（见
 
 ```powershell
 # 1) 构建（Release / 静态 wx / MSVCRT 工具链）
-cmake --build build-tc-clion-msvcrt-Release --parallel 8 --target validproxy validproxy-cli
+cmake --build build-tc-clion-msvcrt-Release --parallel 6 --target validproxy validproxy-cli
 #    确认版本戳干净（无 -dirty）：工作区需先提交，必要时重跑 cmake -S . -B <builddir>
 
 # 2) 生成发布压缩包（只含 libwinpthread-1.dll）

@@ -170,7 +170,7 @@ CLion 工具名称、参数、已知限制和调试步骤以项目现有 CLion �
 | `计划` / `方案` / `制定计划` / `设计文档` / `design doc` / `spec` / `技术方案` | **writing-plans** | 1. 严格遵循产品/工程视角区分（PRD 与 Spec 隔离）。<br>2. 产出包含输入、输出、边界条件、前置条件的标准 Markdown。 |
 | `实现` / `编码` / `写代码` / `implement` | **test-driven-development** | 1. 强制要求在编写实现代码的同时，或之前，在 `tests/` 目录下提供 Google Test（`TEST_F`）测试用例。 |
 | `测试` / `test` / `单元测试` / `ctest` | **cmake-build** | 1. 执行 `cmake --build build` 编译。<br>2. 执行 `ctest --test-dir build -V` 运行全量测试。 |
-| `构建` / `编译` / `build` / `cmake` / `CI` | **cmake-build** | 1. 按 Debug 模式配置构建：`cmake -B build -G "Ninja" -DCMAKE_BUILD_TYPE=Debug`。<br>2. 并行编译：`cmake --build build --parallel 8`。 |
+| `构建` / `编译` / `build` / `cmake` / `CI` | **cmake-build** | 1. 按 Debug 模式配置构建：`cmake -B build -G "Ninja" -DCMAKE_BUILD_TYPE=Debug`。<br>2. 并行编译：`cmake --build build --parallel 6`。 |
 | `commit` / `提交` / `git` / `分支` / `branch` / `合并` / `merge` / `推送` / `push` / `PR` / `pull request` / `rebase` / `stash` | **git-master** | 1. 严格遵循该技能的分阶段工作流，确保原子提交和版本管理规范。 |
 | `代码审查` / `code review` / `代码评审` / `review` / `PR review` | **requesting-code-review** | 1. 在功能完成并验证测试通过后，提交代码审查。 |
 | `完成` / `complete` / `验证通过` / `verify` / `验证完成` | **verification-before-completion** | 1. 在声称任务完成前必须运行所需验证命令，确认输出后再声明完成。 |
@@ -188,7 +188,7 @@ PowerShell 基础命令（逐条执行并检查退出码；前一步失败时，
 
 ```powershell
 cmake -B build -G "Ninja" -DCMAKE_BUILD_TYPE=Debug
-cmake --build build --parallel 8
+cmake --build build --parallel 6
 ctest --test-dir build -V
 ```
 

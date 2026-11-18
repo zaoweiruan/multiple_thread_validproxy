@@ -97,7 +97,7 @@
 cmake -B build -G "Ninja" -DCMAKE_BUILD_TYPE=Debug
 
 # 2. Parallel build (8 threads)
-cmake --build build --parallel 8
+cmake --build build --parallel 6
 
 # 3. Run
 .\build\validproxy.exe            # GUI entry
@@ -198,11 +198,11 @@ ctest -R DedupTest -V
 ```powershell
 # 1. Sanitizer build (leak/overflow/UB detection)
 cmake -B build -G "Ninja" -DCMAKE_BUILD_TYPE=Debug -DENABLE_SANITIZERS=ON
-cmake --build build --parallel 8 && ctest -V
+cmake --build build --parallel 6 && ctest -V
 
 # 2. Coverage build
 cmake -B build -G "Ninja" -DCMAKE_BUILD_TYPE=Debug -DENABLE_COVERAGE=ON
-cmake --build build --parallel 8 && .\scripts\run_coverage.ps1
+cmake --build build --parallel 6 && .\scripts\run_coverage.ps1
 
 # 3. Static analysis (cppcheck)
 .\scripts\run_static_analysis.ps1

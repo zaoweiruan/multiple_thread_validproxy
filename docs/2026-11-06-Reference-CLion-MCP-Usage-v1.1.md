@@ -258,7 +258,7 @@ await tools.clion.xdebug_remove_breakpoints({ projectPath: proj, breakpoints: [{
 - **UI 门禁**：`UITests` 是独立进程用 UIA 驱动 `validproxy.exe`，跨进程，调试器进不去被测 App 内部；
   以 `scripts/build-and-test.bat`（13/13）为准。`xdebug_attach_to_process` 理论可附加，实测脆弱，仅用于查 App 自身崩溃。
 - **全量回归**：`ctest --test-dir build`（**必须带 `--test-dir build`**，仓库根直接 `ctest` 显示 0 个测试）。
-- **构建**：`cmake --build build --parallel 8`（Ninja，Debug）；CLion 自带 profile 输出到 `cmake-build-debug/`，
+- **构建**：`cmake --build build --parallel 6`（Ninja，Debug）；CLion 自带 profile 输出到 `cmake-build-debug/`，
   与项目规范的 `bin/` + `tests/` 输出目录不同，且缺 `version.h` 会产生假阳性诊断（§5）。
 - **ASAN / 覆盖率 / cppcheck**：仍是 `cmake -DENABLE_SANITIZERS=ON` / `-DENABLE_COVERAGE=ON` / `scripts/run_static_analysis.ps1`。
 

@@ -235,7 +235,7 @@ Agent 会启动 `explore` agent 并行搜索相关代码模式。
 
 ```
 cmake -B build -G "Ninja" -DCMAKE_BUILD_TYPE=Debug
-cmake --build build --parallel 8
+cmake --build build --parallel 6
 ctest -V
 ```
 

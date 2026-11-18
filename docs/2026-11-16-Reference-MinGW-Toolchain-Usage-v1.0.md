@@ -129,9 +129,9 @@ CMake Error at cmake/AbiGuard.cmake:91 (message):
 ## 5. 构建 / 测试
 
 ```powershell
-# 配置 + 构建（--parallel 8）
+# 配置 + 构建（--parallel 6）
 cmake -S . -B build-tc-ucrt -G "Ninja" -DCMAKE_BUILD_TYPE=Debug
-cmake --build build-tc-ucrt --parallel 8
+cmake --build build-tc-ucrt --parallel 6
 
 # 测试（PATH 前置：工具链运行时 + 隔离 bin）
 $env:PATH = "E:\eclipse_workspace\multiple_thread_validproxy\build-tc-ucrt\out\bin;E:\mingw64\bin;" + $env:PATH

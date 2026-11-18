@@ -1,8 +1,11 @@
 #include <gtest/gtest.h>
 
 #include <filesystem>
+#include <fstream>
 
 #include "AutoTaskManager.h"
+#include "AutoTaskStatePath.h"
+#include "Utils.h"
 #include "test_utils.h"
 
 TEST(AutoTaskStepNameTest, stepNameToType) {
@@ -184,6 +187,62 @@ TEST(AutoTaskStatePersistenceTest, cancelledState) {
 // does NOT reset — so the first isCancelled() check breaks out of runSteps()
 // before any DB access, which makes this deterministic with a null db.
 // ============================================================
+// ============================================================
+// Cross-machine state-file portability (2026-11-18)
+// docs/bugfix/2026-11-18-Bugfix-AutoTask-StateFilePathPortability-v1.0.md
+//
+// `bin/config.json` carries `auto_task.state_file` as an absolute path from the
+// machine that wrote it. Copying bin/ to another computer used to make every
+// step log
+//   [ERROR] AutoTask: failed to write state file: E:\...\bin/worker/autotask_state.json
+// because that drive/directory does not exist there. The constructor must fall
+// back to the portable default next to the executable instead.
+// ============================================================
+TEST(AutoTaskStatePathPolicyTest, UnusableConfiguredPathFallsBackToExeDir) {
+    TempDir tmp;
+    // A regular file used as the parent directory: ensureParentDirectory() can
+    // never create it, deterministically (no dependency on which drives exist).
+    const std::string blocker = tmp.path() + "/blocker.txt";
+    {
+        std::ofstream out(blocker, std::ios::binary | std::ios::trunc);
+        out << "not a directory";
+    }
+
+    config::AppConfig cfg;
+    cfg.auto_task.state_file = blocker + "/autotask_state.json";
+
+    LogCapture capture;
+    AutoTaskManager mgr(nullptr, cfg, tmp.path());
+
+    EXPECT_EQ(mgr.getStateFilePath(), AutoTaskManager::defaultStateFilePath());
+    EXPECT_NE(mgr.getStateFilePath().find("/worker/autotask_state.json"), std::string::npos);
+
+    bool foundFallbackWarning = false;
+    const std::vector<LogCapture::Entry> entries = capture.entries();
+    for (const LogCapture::Entry& e : entries) {
+        if (e.message.find("configured state_file is not usable") != std::string::npos) {
+            foundFallbackWarning = true;
+            EXPECT_EQ(static_cast<int>(e.level), static_cast<int>(LogLevel::WARN));
+        }
+    }
+    EXPECT_TRUE(foundFallbackWarning) << "expected exactly one WARN about the fallback";
+}
+
+TEST(AutoTaskStatePathPolicyTest, RelativeConfiguredPathFollowsExeDir) {
+    TempDir tmp;
+    config::AppConfig cfg;
+    cfg.auto_task.state_file = "worker/relative_state.json";
+
+    AutoTaskManager mgr(nullptr, cfg, tmp.path());
+
+    const std::string expected =
+        autotask::defaultStateFilePath(utils::getExecutableDir());
+    const std::string expectedRelative =
+        expected.substr(0, expected.size() - std::string("autotask_state.json").size())
+        + "relative_state.json";
+    EXPECT_EQ(mgr.getStateFilePath(), expectedRelative);
+}
+
 TEST(AutoTaskLogLevelTest, CancelledSummaryIsReportNotError) {
     TempDir tmp;
     config::AppConfig cfg;

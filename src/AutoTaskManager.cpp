@@ -9,6 +9,7 @@
 #include "ProfileExItem.h"
 #include "Utils.h"
 #include "AtomicFileWrite.h"
+#include "AutoTaskStatePath.h"
 
 #include <fstream>
 #include <sstream>
@@ -29,10 +30,22 @@ AutoTaskManager::AutoTaskManager(sqlite3* db,
     , externalCancel_(externalCancel)
     , netMon_(netMon)
 {
-    if (!config_.auto_task.state_file.empty()) {
-        stateFilePath_ = config_.auto_task.state_file;
+    const std::string exeDir = utils::getExecutableDir();
+    const std::string preferred = autotask::resolveStateFilePath(config_.auto_task.state_file, exeDir);
+    if (autotask::ensureParentDirectory(preferred)) {
+        stateFilePath_ = preferred;
     } else {
-        stateFilePath_ = defaultStateFilePath();
+        // The configured path belongs to another machine (absolute drive/dir that
+        // does not exist here). Fall back to the portable default next to the exe
+        // and say it once — otherwise every step spams
+        // "[ERROR] AutoTask: failed to write state file: E:\..." (2026-11-18).
+        stateFilePath_ = autotask::defaultStateFilePath(exeDir);
+        autotask::ensureParentDirectory(stateFilePath_);
+        Logger::write("AutoTask: configured state_file is not usable on this machine ('"
+                          + preferred + "'); using '" + stateFilePath_ + "' instead. "
+                          "Set auto_task.state_file to a relative path (e.g. worker/autotask_state.json) "
+                          "or leave it empty to follow the executable directory.",
+                      LogLevel::WARN);
     }
 }
 
@@ -493,7 +506,13 @@ static StepStatus stringToStepStatus(const std::string& s) {
 }
 
 void AutoTaskManager::writeState() {
-    saveStateFile(stateFilePath_, state_);
+    if (!saveStateFile(stateFilePath_, state_) && !stateWriteErrorLogged_) {
+        // 只报一次：分辨率已由构造函数处理（不可用路径会回退到 exe 旁默认路径），
+        // 这里出现通常是磁盘满/权限问题，逐步骤重复刷 ERROR 没有额外信息。
+        stateWriteErrorLogged_ = true;
+        Logger::write("AutoTask: failed to write state file: " + stateFilePath_
+                          + " (further failures are suppressed)", LogLevel::ERR);
+    }
     // Every persisted state transition is also a monitoring refresh point:
     // the step breakdown published here (PENDING → RUNNING → final status)
     // drives the task monitor's sub-task rows.
@@ -529,7 +548,6 @@ bool AutoTaskManager::saveStateFile(const std::string& filePath, const AutoTaskS
         // half-written checkpoint to the next loadStateFile (resume lost) on
         // any crash in that window (spec 2026-11-06 §2.7).
         if (!utils::writeFileAtomically(filePath, boost::json::serialize(root))) {
-            Logger::write("AutoTask: failed to write state file: " + filePath, LogLevel::ERR);
             return false;
         }
         return true;
@@ -618,12 +636,12 @@ AutoTaskState AutoTaskManager::loadStateFile(const std::string& filePath) {
 }
 
 std::string AutoTaskManager::defaultStateFilePath() {
-    return utils::getExecutableDir() + "/worker/autotask_state.json";
+    return autotask::defaultStateFilePath(utils::getExecutableDir());
 }
 
 std::string AutoTaskManager::getCurrentTimestamp() {
-    auto now = std::chrono::system_clock::now();
-    auto timeT = std::chrono::system_clock::to_time_t(now);
+    const std::chrono::system_clock::time_point now = std::chrono::system_clock::now();
+    const std::time_t timeT = std::chrono::system_clock::to_time_t(now);
     std::tm tm{};
     localtime_s(&tm, &timeT);
     std::ostringstream oss;

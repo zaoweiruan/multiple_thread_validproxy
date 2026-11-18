@@ -226,7 +226,7 @@ UI 层（AppController）通过 service 层委托业务逻辑，解耦 UI 与核
 - CMake + Ninja，C++17（**全栈禁止 `auto` 类型推导**）。
 - 目标平台：Windows（MinGW/GCC）；默认终端 PowerShell。
 - 依赖：Boost、SQLite、Curl、Threads、wxWidgets 3.2+（仅 GUI）、Xray-core。
-- 调试配置：`cmake -B build -G "Ninja" -DCMAKE_BUILD_TYPE=Debug`；并行 `cmake --build build --parallel 8`。
+- 调试配置：`cmake -B build -G "Ninja" -DCMAKE_BUILD_TYPE=Debug`；并行 `cmake --build build --parallel 6`。
 
 ---
 

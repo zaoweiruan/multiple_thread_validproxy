@@ -134,7 +134,7 @@ std::string utils::generateUniqueId();  // 19 位数字, 4|5 开头
 
 ```powershell
 cmake -B build -G "Ninja" -DCMAKE_BUILD_TYPE=Debug -DENABLE_SANITIZERS=ON
-cmake --build build --parallel 8
+cmake --build build --parallel 6
 # 运行单元测试，ASAN/UBSan 会拦截内存泄漏、越界、UB
 ctest -V
 ```
@@ -166,7 +166,7 @@ ctest -V
 
 ```powershell
 cmake -B build -G "Ninja" -DCMAKE_BUILD_TYPE=Debug -DENABLE_COVERAGE=ON
-cmake --build build --parallel 8
+cmake --build build --parallel 6
 .\scripts\run_coverage.ps1
 ```
 

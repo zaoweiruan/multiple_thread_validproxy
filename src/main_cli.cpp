@@ -28,6 +28,7 @@
 #include "ShareLink.h"
 #include "ProxyBatchTester.h"
 #include "Utils.h"
+#include "AutoTaskStatePath.h"
 #include "Logger.h"
 #include "service/CloudSyncService.h"
 #include "service/UploadGate.h"
@@ -1064,8 +1065,9 @@ int main(int argc, char* argv[]) {
         Logger::setFileLevel(Logger::stringToLevel(appConfig->log_file_level));
         Logger::setConsoleLevel(Logger::stringToLevel(appConfig->log_console_level));
 
-        std::string stateFile = !appConfig->auto_task.state_file.empty()
-            ? appConfig->auto_task.state_file : AutoTaskManager::defaultStateFilePath();
+        std::string stateFile = autotask::resolveStateFilePath(
+            appConfig->auto_task.state_file, utils::getExecutableDir());
+        autotask::ensureParentDirectory(stateFile);
 
         AutoTaskState saved = AutoTaskManager::loadStateFile(stateFile);
         if (saved.task_id.empty()) {
@@ -1093,7 +1095,9 @@ int main(int argc, char* argv[]) {
                 step.status = StepStatus::CANCELLED;
             }
         }
-        AutoTaskManager::saveStateFile(stateFile, saved);
+        if (!AutoTaskManager::saveStateFile(stateFile, saved)) {
+            std::cout << "Warning: failed to write auto-task state file: " << stateFile << std::endl;
+        }
         std::cout << "Auto-task cancelled (state marked as cancelled)." << std::endl;
         Logger::close();
         return 0;

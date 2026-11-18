@@ -151,6 +151,8 @@ private:
     UpdateProgressObserver updateProgressObserver_;
 
     std::string stateFilePath_;
+    // 断点写入失败只报一次（2026-11-18：跨机器绝对路径曾导致每一步刷 ERROR）
+    bool stateWriteErrorLogged_{false};
     const NetworkMonitor* netMon_{nullptr};
 };
 

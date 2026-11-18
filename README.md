@@ -95,7 +95,7 @@
 cmake -B build -G "Ninja" -DCMAKE_BUILD_TYPE=Debug
 
 # 2. 并行编译 (8 线程)
-cmake --build build --parallel 8
+cmake --build build --parallel 6
 
 # 3. 运行主程序
 .\build\validproxy.exe            # GUI 入口
@@ -196,11 +196,11 @@ ctest -R DedupTest -V
 ```powershell
 # 1. Sanitizer 构建（内存泄漏/越界/未定义行为）
 cmake -B build -G "Ninja" -DCMAKE_BUILD_TYPE=Debug -DENABLE_SANITIZERS=ON
-cmake --build build --parallel 8 && ctest -V
+cmake --build build --parallel 6 && ctest -V
 
 # 2. 覆盖率构建
 cmake -B build -G "Ninja" -DCMAKE_BUILD_TYPE=Debug -DENABLE_COVERAGE=ON
-cmake --build build --parallel 8 && .\scripts\run_coverage.ps1
+cmake --build build --parallel 6 && .\scripts\run_coverage.ps1
 
 # 3. 静态分析（cppcheck）
 .\scripts\run_static_analysis.ps1
