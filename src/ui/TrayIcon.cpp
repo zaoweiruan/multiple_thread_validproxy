@@ -1,4 +1,5 @@
 #include "TrayIcon.h"
+#include "i18n/I18nWx.h"
 #include "MainFrame.h"
 #include <wx/artprov.h>
 #include <algorithm>
@@ -75,7 +76,7 @@ wxMenu* TrayIcon::CreatePopupMenu() {
     // 菜单精简为仅「退出」——「显示/隐藏」被双击切换取代
     // (Spec: docs/design/2026-09-04-Design-TrayIcon-DoubleClickToggle-v1.0.md)
     wxMenu* menu = new wxMenu();
-    menu->Append(ID_TRAY_EXIT, L"退&出");
+    menu->Append(ID_TRAY_EXIT, i18n::wx(i18n::StrId::Tray_Menu_Exit));
     return menu;
 }
 

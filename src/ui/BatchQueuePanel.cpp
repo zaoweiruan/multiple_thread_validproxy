@@ -1,4 +1,5 @@
 #include "BatchQueuePanel.h"
+#include "i18n/I18nWx.h"
 
 #include <wx/gauge.h>
 
@@ -10,7 +11,7 @@ BatchQueuePanel::BatchQueuePanel(wxWindow* parent, AppController* controller)
     wxBoxSizer* root = new wxBoxSizer(wxVERTICAL);
 
     statusText_ = new wxStaticText(this, ID_BATCH_STATUS_TEXT,
-                                   wxString::FromUTF8(u8"无运行中的批量测试"));
+                                   i18n::wx(i18n::StrId::BatchQueue_Status_Idle));
     wxFont statusFont = statusText_->GetFont();
     statusFont.SetPointSize(statusFont.GetPointSize() + 1);
     statusFont.SetWeight(wxFONTWEIGHT_BOLD);
@@ -25,7 +26,7 @@ BatchQueuePanel::BatchQueuePanel(wxWindow* parent, AppController* controller)
     root->Add(progressRow, 0, wxEXPAND | wxLEFT | wxRIGHT, 6);
 
     queueDetail_ = new wxStaticText(this, ID_BATCH_QUEUE_DETAIL,
-                                    wxString::FromUTF8(u8"主队列剩余 0　高优先级剩余 0　成功 0　失败 0"));
+                                    i18n::wx(i18n::StrId::BatchQueue_Detail_Zero));
     root->Add(queueDetail_, 0, wxALL, 6);
 
     // The pending-proxy list (ID_BATCH_PENDING_COUNT / ID_BATCH_PENDING_LIST)
@@ -48,10 +49,10 @@ void BatchQueuePanel::refreshNow() {
         // sees the final result instead of an instant flip to idle.
         --endingGrace_;
     } else {
-        statusText_->SetLabel(wxString::FromUTF8(u8"无运行中的批量测试"));
+        statusText_->SetLabel(i18n::wx(i18n::StrId::BatchQueue_Status_Idle));
         gauge_->SetValue(0);
         percentText_->SetLabel(wxString("0/0 (0.0%)"));
-        queueDetail_->SetLabel(wxString::FromUTF8(u8"主队列剩余 0　高优先级剩余 0　成功 0　失败 0"));
+        queueDetail_->SetLabel(i18n::wx(i18n::StrId::BatchQueue_Detail_Zero));
         return;
     }
 
@@ -59,21 +60,24 @@ void BatchQueuePanel::refreshNow() {
     if (view.updating) {
         // Update task shares the gauge; "已结束" once the last subscription is
         // done (the panel then keeps this final frame for endingGrace_ ticks).
-        statusText_->SetLabel(wxString::FromUTF8(view.running ? u8"正在更新订阅" : u8"更新已结束"));
+        statusText_->SetLabel((view.running ? i18n::wx(i18n::StrId::BatchQueue_Status_Updating) : i18n::wx(i18n::StrId::BatchQueue_Status_UpdateFinished)));
     } else {
-        statusText_->SetLabel(wxString::FromUTF8(view.running ? u8"运行中" : u8"已结束"));
+        statusText_->SetLabel((view.running ? i18n::wx(i18n::StrId::BatchQueue_Status_Running) : i18n::wx(i18n::StrId::BatchQueue_Status_Finished)));
     }
     gauge_->SetValue(static_cast<int>(view.percent * 10.0));   // range 1000 = 1 decimal
     percentText_->SetLabel(wxString::Format("%d/%d (%.1f%%)", view.processed, view.total, view.percent));
     if (view.updating) {
         // Same gauge, update-task wording (owner 2026-11-06: 更新订阅复用队列
         // 进度条，只显示整体进度).
-        queueDetail_->SetLabel(wxString::Format(
-            wxString::FromUTF8(u8"剩余 %d　成功 %d　失败 %d"),
-            view.remaining, view.success, view.failed));
+        queueDetail_->SetLabel(i18n::wxf(i18n::StrId::BatchQueue_Detail_Updating,
+                  { wxString::Format("%d", view.remaining),
+                    wxString::Format("%d", view.success),
+                    wxString::Format("%d", view.failed) }));
         return;
     }
-    queueDetail_->SetLabel(wxString::Format(
-        wxString::FromUTF8(u8"主队列剩余 %d　高优先级剩余 %d　成功 %d　失败 %d"),
-        view.batchQueueSize, view.insertedQueueSize, view.success, view.failed));
+    queueDetail_->SetLabel(i18n::wxf(i18n::StrId::BatchQueue_Detail_Full,
+                      { wxString::Format("%d", view.batchQueueSize),
+                        wxString::Format("%d", view.insertedQueueSize),
+                        wxString::Format("%d", view.success),
+                        wxString::Format("%d", view.failed) }));
 }

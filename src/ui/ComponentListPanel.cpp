@@ -1,4 +1,5 @@
 #include "ComponentListPanel.h"
+#include "i18n/I18nWx.h"
 
 #include <wx/colour.h>
 #include <wx/sizer.h>
@@ -23,11 +24,11 @@ ComponentListPanel::ComponentListPanel(wxWindow* parent, sqlite3* db)
                            wxLC_REPORT | wxLC_SINGLE_SEL);
 
     list_->InsertColumn(0, "#", wxLIST_FORMAT_LEFT, 30);
-    list_->InsertColumn(1, L"组件类型", wxLIST_FORMAT_LEFT, 95);
-    list_->InsertColumn(2, L"配置节", wxLIST_FORMAT_LEFT, 75);
-    list_->InsertColumn(3, L"组合策略", wxLIST_FORMAT_LEFT, 80);
-    list_->InsertColumn(4, L"来源 Bundle", wxLIST_FORMAT_LEFT, 130);
-    list_->InsertColumn(5, L"状态", wxLIST_FORMAT_LEFT, 60);
+    list_->InsertColumn(1, i18n::wx(i18n::StrId::ComponentList_Column_Type), wxLIST_FORMAT_LEFT, 95);
+    list_->InsertColumn(2, i18n::wx(i18n::StrId::ComponentList_Column_Section), wxLIST_FORMAT_LEFT, 75);
+    list_->InsertColumn(3, i18n::wx(i18n::StrId::ComponentList_Column_Strategy), wxLIST_FORMAT_LEFT, 80);
+    list_->InsertColumn(4, i18n::wx(i18n::StrId::ComponentList_Column_Bundle), wxLIST_FORMAT_LEFT, 130);
+    list_->InsertColumn(5, i18n::wx(i18n::StrId::ComponentList_Column_Status), wxLIST_FORMAT_LEFT, 60);
 
     wxSizer* sizer = new wxBoxSizer(wxVERTICAL);
     sizer->Add(list_, 1, wxEXPAND | wxALL, 4);
@@ -134,10 +135,10 @@ void ComponentListPanel::rebuild() {
         }
 
         if (hasError) {
-            list_->SetItem(row, 5, L"错误");
+            list_->SetItem(row, 5, i18n::wx(i18n::StrId::ComponentList_Status_Error));
             list_->SetItemBackgroundColour(row, wxColour(255, 200, 200));
         } else if (hasWarn) {
-            list_->SetItem(row, 5, L"警告");
+            list_->SetItem(row, 5, i18n::wx(i18n::StrId::ComponentList_Status_Warn));
             list_->SetItemBackgroundColour(row, wxColour(255, 240, 200));
         } else {
             list_->SetItem(row, 5, L"✅");

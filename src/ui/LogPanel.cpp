@@ -1,6 +1,7 @@
 #include "LogPanel.h"
 #include "Events.h"
 #include "LogStatistics.h"
+#include "i18n/I18nWx.h"
 
 #include <wx/textctrl.h>
 #include <wx/sizer.h>
@@ -42,13 +43,13 @@ LogPanel::LogPanel(wxWindow* parent)
     minLevel_ = LogLevel::INFO; // Initialize to match the default selection
     toolSizer->Add(levelFilter_, 0, wxRIGHT, 8);
 
-    clearBtn_ = new wxButton(this, ID_LOG_CLEAR, L"清空日志窗口");
+    clearBtn_ = new wxButton(this, ID_LOG_CLEAR, i18n::wx(i18n::StrId::LogPanel_Button_Clear));
     toolSizer->Add(clearBtn_, 0);
 
-    statsBtn_ = new wxButton(this, ID_LOG_STATISTICS, L"日志统计");
+    statsBtn_ = new wxButton(this, ID_LOG_STATISTICS, i18n::wx(i18n::StrId::LogPanel_Button_Statistics));
     toolSizer->Add(statsBtn_, 0, wxLEFT, 8);
 
-    openBtn_ = new wxButton(this, ID_LOG_OPEN, L"打开日志");
+    openBtn_ = new wxButton(this, ID_LOG_OPEN, i18n::wx(i18n::StrId::LogPanel_Button_Open));
     toolSizer->Add(openBtn_, 0, wxLEFT, 8);
 
     topSizer->Add(toolSizer, 0, wxEXPAND | wxALL, 4);
@@ -140,7 +141,7 @@ void LogPanel::statisticsForFile(const std::string& logPath) {
     }
     statsCurrentPath_ = logPath;
     if (statsDialog_ && statsTextCtrl_) {
-        statsTextCtrl_->SetValue(wxString::FromUTF8(u8"正在解析日志文件...\n" + logPath));
+        statsTextCtrl_->SetValue(i18n::wxf(i18n::StrId::LogPanel_Status_Parsing, { wxString::FromUTF8(logPath) }));
     }
     statsThread_ = std::thread([this, logPath]() {
         LogStatisticsResult result = parseLogFile(logPath);
@@ -159,7 +160,7 @@ void LogPanel::onLogStatisticsResult(LogStatisticsEvent& event) {
     std::string text = buildStatisticsText(result, filePath);
 
     if (!statsDialog_) {
-        statsDialog_ = new wxDialog(this, wxID_ANY, L"日志统计", wxDefaultPosition, wxSize(760, 560),
+        statsDialog_ = new wxDialog(this, wxID_ANY, i18n::wx(i18n::StrId::LogPanel_Button_Statistics), wxDefaultPosition, wxSize(760, 560),
                                     wxDEFAULT_DIALOG_STYLE | wxRESIZE_BORDER);
         wxBoxSizer* dialogSizer = new wxBoxSizer(wxVERTICAL);
         statsTextCtrl_ = new wxTextCtrl(statsDialog_, wxID_ANY, wxEmptyString,
@@ -168,8 +169,8 @@ void LogPanel::onLogStatisticsResult(LogStatisticsEvent& event) {
         dialogSizer->Add(statsTextCtrl_, 1, wxEXPAND | wxALL, 8);
 
         wxBoxSizer* btnSizer = new wxBoxSizer(wxHORIZONTAL);
-        wxButton* selectBtn = new wxButton(statsDialog_, wxID_ANY, L"选择日志文件");
-        wxButton* closeBtn = new wxButton(statsDialog_, wxID_OK, L"关闭");
+        wxButton* selectBtn = new wxButton(statsDialog_, wxID_ANY, i18n::wx(i18n::StrId::LogPanel_Dialog_SelectFile));
+        wxButton* closeBtn = new wxButton(statsDialog_, wxID_OK, i18n::wx(i18n::StrId::LogPanel_Button_Close));
         btnSizer->Add(selectBtn, 0, wxRIGHT, 8);
         btnSizer->Add(closeBtn, 0);
         dialogSizer->Add(btnSizer, 0, wxALIGN_CENTER | wxBOTTOM, 8);
@@ -198,8 +199,8 @@ void LogPanel::onLogStatisticsResult(LogStatisticsEvent& event) {
 }
 
 void LogPanel::onSelectLogFile(wxCommandEvent&) {
-    wxFileDialog fileDialog(this, L"选择日志文件", "", "",
-                            L"日志文件 (*.log;*.txt)|*.log;*.txt|所有文件 (*.*)|*.*",
+    wxFileDialog fileDialog(this, i18n::wx(i18n::StrId::LogPanel_Dialog_SelectFile), "", "",
+                            i18n::wx(i18n::StrId::LogPanel_Dialog_FileFilter),
                             wxFD_OPEN | wxFD_FILE_MUST_EXIST);
     if (fileDialog.ShowModal() == wxID_OK) {
         std::string newPath = fileDialog.GetPath().ToStdString();
@@ -210,34 +211,41 @@ void LogPanel::onSelectLogFile(wxCommandEvent&) {
 std::string LogPanel::buildStatisticsText(const LogStatisticsResult& result,
                                           const std::string& filePath) {
     std::ostringstream oss;
-    oss << L"日志文件: " << filePath << "\n";
-    oss << L"有效日志行: " << result.counts.total << "\n";
-    oss << L"\n===== 级别统计 =====\n";
+    oss << i18n::u8f(i18n::StrId::LogPanel_Stats_File, { filePath }) << "\n";
+    oss << i18n::u8f(i18n::StrId::LogPanel_Stats_ValidLines,
+                     { std::to_string(result.counts.total) })
+        << "\n";
+    oss << i18n::u8(i18n::StrId::LogPanel_Stats_LevelHeader);
     oss << "TRACE : " << result.counts.trace << "\n";
     oss << "DEBUG : " << result.counts.debug << "\n";
     oss << "INFO  : " << result.counts.info << "\n";
     oss << "REPORT: " << result.counts.report << "\n";
     oss << "WARN  : " << result.counts.warn << "\n";
     oss << "ERROR : " << result.counts.error << "\n";
-    oss << L"\n===== WARN 原因明细 (" << result.warnReasons.size() << L" 类) =====\n";
+    oss << i18n::u8f(i18n::StrId::LogPanel_Stats_WarnHeader,
+                     { std::to_string(result.warnReasons.size()) });
     if (result.warnReasons.empty()) {
-        oss << L"(无)\n";
+        oss << i18n::u8(i18n::StrId::LogPanel_Stats_Empty);
     }
     for (size_t i = 0; i < result.warnReasons.size(); ++i) {
-        oss << i + 1 << ". [" << result.warnReasons[i].count << L" 次] "
-            << result.warnReasons[i].reason << "\n";
+        oss << i18n::u8f(i18n::StrId::LogPanel_Stats_ReasonLine,
+                         { std::to_string(i + 1), std::to_string(result.warnReasons[i].count),
+                           result.warnReasons[i].reason })
+            << "\n";
     }
-    oss << L"\n===== ERROR 原因明细 (" << result.errorReasons.size() << L" 类) =====\n";
+    oss << i18n::u8f(i18n::StrId::LogPanel_Stats_ErrorHeader,
+                     { std::to_string(result.errorReasons.size()) });
     if (result.errorReasons.empty()) {
-        oss << L"(无)\n";
+        oss << i18n::u8(i18n::StrId::LogPanel_Stats_Empty);
     }
     for (size_t i = 0; i < result.errorReasons.size(); ++i) {
-        oss << i + 1 << ". [" << result.errorReasons[i].count << L" 次] "
-            << result.errorReasons[i].reason << "\n";
+        oss << i18n::u8f(i18n::StrId::LogPanel_Stats_ReasonLine,
+                         { std::to_string(i + 1), std::to_string(result.errorReasons[i].count),
+                           result.errorReasons[i].reason })
+            << "\n";
     }
     return oss.str();
 }
-
 void LogPanel::setInitialLogLevel(LogLevel level) {
     minLevel_ = level;
     // Sync the wxChoice dropdown to match

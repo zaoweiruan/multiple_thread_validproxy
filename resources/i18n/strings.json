@@ -485,6 +485,181 @@
       "id": "MainFrame.Dialog.AboutText",
       "zh": "{} v{}\\n\\n版本: {}\\nGit Tag: {}\\nGit Commit: {}\\n构建类型: {}\\n构建时间: {}\\n编译器: {}\\n\\n管理并测试您的代理订阅。",
       "en": "{} v{}\\n\\nVersion: {}\\nGit Tag: {}\\nGit Commit: {}\\nBuild type: {}\\nBuild time: {}\\nCompiler: {}\\n\\nManage and test your proxy subscriptions."
+    },
+    {
+      "id": "Tray.Menu.Exit",
+      "zh": "退&出",
+      "en": "E&xit"
+    },
+    {
+      "id": "Refresh.RowsChanged",
+      "zh": "数据已更新，代理列表已刷新",
+      "en": "Data updated; the proxy list has been refreshed"
+    },
+    {
+      "id": "Refresh.ResultsChanged",
+      "zh": "测试结果已更新",
+      "en": "Test results updated"
+    },
+    {
+      "id": "Refresh.RegionResolved",
+      "zh": "地区解析完成，代理列表已刷新",
+      "en": "Region resolution finished; the proxy list has been refreshed"
+    },
+    {
+      "id": "Refresh.DedupDone",
+      "zh": "去重完成，代理列表已刷新",
+      "en": "Deduplication finished; the proxy list has been refreshed"
+    },
+    {
+      "id": "ComponentList.Column.Type",
+      "zh": "组件类型",
+      "en": "Component"
+    },
+    {
+      "id": "ComponentList.Column.Section",
+      "zh": "配置节",
+      "en": "Section"
+    },
+    {
+      "id": "ComponentList.Column.Strategy",
+      "zh": "组合策略",
+      "en": "Strategy"
+    },
+    {
+      "id": "ComponentList.Column.Bundle",
+      "zh": "来源 Bundle",
+      "en": "Source Bundle"
+    },
+    {
+      "id": "ComponentList.Column.Status",
+      "zh": "状态",
+      "en": "Status"
+    },
+    {
+      "id": "ComponentList.Status.Error",
+      "zh": "错误",
+      "en": "Error"
+    },
+    {
+      "id": "ComponentList.Status.Warn",
+      "zh": "警告",
+      "en": "Warning"
+    },
+    {
+      "id": "BatchQueue.Status.Idle",
+      "zh": "无运行中的批量测试",
+      "en": "No batch test is running"
+    },
+    {
+      "id": "BatchQueue.Detail.Zero",
+      "zh": "主队列剩余 0 · 高优先级剩余 0 · 成功 0 · 失败 0",
+      "en": "Primary 0 · High priority 0 · OK 0 · Failed 0"
+    },
+    {
+      "id": "BatchQueue.Status.Updating",
+      "zh": "正在更新订阅",
+      "en": "Updating subscriptions"
+    },
+    {
+      "id": "BatchQueue.Status.UpdateFinished",
+      "zh": "更新已结束",
+      "en": "Update finished"
+    },
+    {
+      "id": "BatchQueue.Status.Running",
+      "zh": "运行中",
+      "en": "Running"
+    },
+    {
+      "id": "BatchQueue.Status.Finished",
+      "zh": "已结束",
+      "en": "Finished"
+    },
+    {
+      "id": "BatchQueue.Detail.Updating",
+      "zh": "剩余 {} · 成功 {} · 失败 {}",
+      "en": "Remaining {} · OK {} · Failed {}"
+    },
+    {
+      "id": "BatchQueue.Detail.Full",
+      "zh": "主队列剩余 {} · 高优先级剩余 {} · 成功 {} · 失败 {}",
+      "en": "Primary {} · High priority {} · OK {} · Failed {}"
+    },
+    {
+      "id": "LogPanel.Button.Clear",
+      "zh": "清空日志窗口",
+      "en": "Clear log window"
+    },
+    {
+      "id": "LogPanel.Button.Statistics",
+      "zh": "日志统计",
+      "en": "Log statistics"
+    },
+    {
+      "id": "LogPanel.Button.Open",
+      "zh": "打开日志",
+      "en": "Open log"
+    },
+    {
+      "id": "LogPanel.Button.Close",
+      "zh": "关闭",
+      "en": "Close"
+    },
+    {
+      "id": "LogPanel.Dialog.Title",
+      "zh": "日志统计",
+      "en": "Log statistics"
+    },
+    {
+      "id": "LogPanel.Dialog.SelectFile",
+      "zh": "选择日志文件",
+      "en": "Select log file"
+    },
+    {
+      "id": "LogPanel.Dialog.FileFilter",
+      "zh": "日志文件 (*.log;*.txt)|*.log;*.txt|所有文件 (*.*)|*.*",
+      "en": "Log files (*.log;*.txt)|*.log;*.txt|All files (*.*)|*.*"
+    },
+    {
+      "id": "LogPanel.Status.Parsing",
+      "zh": "正在解析日志文件...\\n{}",
+      "en": "Parsing log file...\\n{}"
+    },
+    {
+      "id": "LogPanel.Stats.File",
+      "zh": "日志文件: {}",
+      "en": "Log file: {}"
+    },
+    {
+      "id": "LogPanel.Stats.ValidLines",
+      "zh": "有效日志行: {}",
+      "en": "Valid log lines: {}"
+    },
+    {
+      "id": "LogPanel.Stats.LevelHeader",
+      "zh": "\\n===== 级别统计 =====\\n",
+      "en": "\\n===== Level counts =====\\n"
+    },
+    {
+      "id": "LogPanel.Stats.WarnHeader",
+      "zh": "\\n===== WARN 原因明细 ({} 类) =====\\n",
+      "en": "\\n===== WARN reasons ({} kinds) =====\\n"
+    },
+    {
+      "id": "LogPanel.Stats.ErrorHeader",
+      "zh": "\\n===== ERROR 原因明细 ({} 类) =====\\n",
+      "en": "\\n===== ERROR reasons ({} kinds) =====\\n"
+    },
+    {
+      "id": "LogPanel.Stats.Empty",
+      "zh": "(无)\\n",
+      "en": "(none)\\n"
+    },
+    {
+      "id": "LogPanel.Stats.ReasonLine",
+      "zh": "{}. [{} 次] {}",
+      "en": "{}. [{} times] {}"
     }
   ]
 }

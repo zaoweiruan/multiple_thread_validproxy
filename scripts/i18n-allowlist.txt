@@ -15,11 +15,6 @@ src/ui/StandaloneFloatingWidget.cpp | P1 主窗口（规划 41 条，实测 41 �
 src/ui/ProxyListPanel.cpp | P1 主窗口（规划 39 条，实测 39 条） | 2027-06-30 | 39
 src/ui/TaskMonitorPanel.cpp | P1 主窗口（规划 30 条，实测 30 条） | 2027-06-30 | 30
 src/ui/SubscriptionPanel.cpp | P1 主窗口（规划 24 条，实测 24 条） | 2027-06-30 | 24
-src/ui/LogPanel.cpp | P1 主窗口（规划 20 条，实测 20 条） | 2027-06-30 | 20
-src/ui/BatchQueuePanel.cpp | P1 主窗口（规划 10 条，实测 10 条） | 2027-06-30 | 10
-src/ui/ComponentListPanel.cpp | P1 主窗口（规划 7 条，实测 7 条） | 2027-06-30 | 7
-src/ui/RefreshCommands.cpp | P1 主窗口（规划 4 条，实测 4 条） | 2027-06-30 | 4
-src/ui/TrayIcon.cpp | P1 主窗口（规划 1 条，实测 1 条） | 2027-06-30 | 1
 # ---- P2 对话框 ----
 src/ui/ConfigDialog.cpp | P2 对话框（规划 265 条，实测 265 条） | 2027-06-30 | 265
 src/ui/SqlQueryManageDialog.cpp | P2 对话框（规划 73 条，实测 73 条） | 2027-06-30 | 73
