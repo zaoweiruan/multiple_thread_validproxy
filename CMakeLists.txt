@@ -424,6 +424,9 @@ set(CORE_SOURCES
     src/ConfigReader.cpp
     src/Logger.cpp
     src/LoggerInstance.cpp
+    src/i18n/Language.cpp
+    src/i18n/I18n.cpp
+    src/i18n/StringTable.cpp
     src/LogStatistics.cpp
     src/PortManager.cpp
     src/ProfileitemDAO.cpp
@@ -922,6 +925,25 @@ set_target_properties(test_ui_string_encoding PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY_RELEASE ${VALIDPROXY_TEST_DIR}
 )
 add_test(NAME UiStringEncodingTest COMMAND test_ui_string_encoding)
+
+# ── i18n string table + language parsing (bilingual UI) ──
+# 纯 C++（不含 wx），与 CORE_SOURCES 共用同一份生成表。
+add_executable(test_i18n
+    tests/test_i18n.cpp
+    src/i18n/Language.cpp
+    src/i18n/I18n.cpp
+    src/i18n/StringTable.cpp
+    src/Logger.cpp
+    src/LoggerInstance.cpp
+)
+target_include_directories(test_i18n PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(test_i18n PRIVATE gtest_main gtest)
+set_target_properties(test_i18n PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${VALIDPROXY_TEST_DIR}
+)
+add_test(NAME I18nTest COMMAND test_i18n)
 
 add_executable(test_task_cancel_reset tests/test_task_cancel_reset.cpp)
 target_include_directories(test_task_cancel_reset PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
