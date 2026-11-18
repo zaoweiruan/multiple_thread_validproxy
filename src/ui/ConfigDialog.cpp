@@ -247,11 +247,10 @@ ConfigDialog::ConfigDialog(wxWindow* parent, const config::AppConfig& cfg, sqlit
         xrayExecProp->ChangeFlag(wxPGFlags::ShowFullFileName, true);
     }
     {
-        wxFileProperty* assetDirProp = new wxFileProperty(L"xray_location_asset 目录", "proxy_xray_asset_dir", cfg.proxy.xray_asset_dir);
+        wxDirProperty* assetDirProp = new wxDirProperty(L"geoip、geosite文件目录", "proxy_xray_asset_dir", cfg.proxy.xray_asset_dir);
         propGrid_->AppendIn(xrayBackendCat_, assetDirProp);
         propGrid_->SetPropertyAttribute("proxy_xray_asset_dir", wxPG_FILE_SHOW_FULL_PATH, (long)1);
-        assetDirProp->ChangeFlag(wxPGFlags::ShowFullFileName, true);
-        propGrid_->SetPropertyAttribute("proxy_xray_asset_dir", wxPG_DIALOG_TITLE, L"选择 Xray 资源目录");
+        propGrid_->SetPropertyAttribute("proxy_xray_asset_dir", wxPG_DIALOG_TITLE, L"选择 geoip、geosite 文件目录");
     }
 
     // sing-box 后端路径组（use_singbox=true 时可见）——指针存成员供 applyBackendVisibility 使用
@@ -265,10 +264,9 @@ ConfigDialog::ConfigDialog(wxWindow* parent, const config::AppConfig& cfg, sqlit
         propGrid_->SetPropertyAttribute("proxy_singbox_executable", wxPG_DIALOG_TITLE, L"选择 Sing-box 可执行文件");
     }
     {
-        wxFileProperty* sbAssetProp = new wxFileProperty(L"Sing-box资源目录", "proxy_singbox_asset_dir", cfg.proxy.singbox_asset_dir);
+        wxDirProperty* sbAssetProp = new wxDirProperty(L"Sing-box资源目录", "proxy_singbox_asset_dir", cfg.proxy.singbox_asset_dir);
         propGrid_->AppendIn(sbBackendCat_, sbAssetProp);
         propGrid_->SetPropertyAttribute("proxy_singbox_asset_dir", wxPG_FILE_SHOW_FULL_PATH, (long)1);
-        sbAssetProp->ChangeFlag(wxPGFlags::ShowFullFileName, true);
         propGrid_->SetPropertyAttribute("proxy_singbox_asset_dir", wxPG_DIALOG_TITLE, L"选择 Sing-box 资源目录");
     }
 
