@@ -351,6 +351,11 @@ ConfigDialog::ConfigDialog(wxWindow* parent, const config::AppConfig& cfg, sqlit
     propGrid_->Append(new wxBoolProperty(L"解析地区", "autotask_step_resolve_region", false));
     propGrid_->Append(new wxStringProperty(L"任务链", "autotask_chain_display", L""));
     propGrid_->SetPropertyReadOnly("autotask_chain_display");
+    wxFileProperty* stateFileProp = new wxFileProperty(L"断点文件", "autotask_state_file",
+                                                       wxString::FromUTF8(cfg.auto_task.state_file));
+    propGrid_->Append(stateFileProp);
+    propGrid_->SetPropertyAttribute("autotask_state_file", wxPG_FILE_SHOW_FULL_PATH, (long)1);
+    stateFileProp->ChangeFlag(wxPGFlags::ShowFullFileName, true);
     // --- 通知 配置 ---
     propGrid_->Append(new wxPropertyCategory(L"通知"));
     propGrid_->Append(new wxBoolProperty(L"启用通知", "notification_enabled", cfg.notification_enabled));
@@ -544,6 +549,8 @@ void ConfigDialog::loadConfig(const config::AppConfig& cfg) {
     propGrid_->SetPropertyValue("autotask_step_resolve_region", hasResolveRegion);
     stepOrder_ = cfg.auto_task.steps;
     refreshAutoTaskChainDisplay();
+    propGrid_->SetPropertyValue("autotask_state_file",
+                                wxString::FromUTF8(cfg.auto_task.state_file));
 
     // Proxy fields
     propGrid_->SetPropertyValue("proxy_xray_executable", wxString(cfg.proxy.xray_executable));
@@ -720,6 +727,7 @@ bool ConfigDialog::saveConfig() {
     // AutoTask fields
     editedConfig_.auto_task.steps = stepOrder_;
     editedConfig_.auto_task.notify_on_complete = propGrid_->GetPropertyValueAsBool("autotask_notify");
+    editedConfig_.auto_task.state_file = propGrid_->GetPropertyValueAsString("autotask_state_file").ToStdString(wxConvUTF8);
 
     return validateConfig();
 }
