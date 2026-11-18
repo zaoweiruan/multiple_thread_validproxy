@@ -110,9 +110,27 @@ CLI `cancel-task` 同步使用同一解析器，并对写失败给出明确提�
   - `database.path` 指向新机器的库文件；`proxy.xray_executable` 指向新机器的
     `xray.exe`（参见 README「代理内核需自行下载并配置目录」）。
 
-## 8. 关联
+## 9. 审计结论（2026-11-18：运行根目录 / 硬编码绝对目录筛查）
 
-- `include/AutoTaskStatePath.h`（路径解析与父目录探测）
-- `src/AutoTaskManager.cpp`（构造函数回退 + 写失败只报一次）
-- `src/main_cli.cpp`（`cancel-task` 同源解析）
-- `docs/2026-11-17-Reference-ReleasePackaging-v1.0.md`（发布包口径）
+- **默认运行根目录**：✅ 已以 exe 所在目录为根。
+  `ConfigReader::load()` 取 `utils::getExecutableDir()` 作为 `exeDir` 传给所有 section parser；
+  `ConfigPathResolver::resolve()`、`DatabaseConfigParser` / `SyncConfigParser` /
+  `ProxyConfigParser` / `AutoTaskConfigParser` / `StandalonePoolConfigParser` 均对相对
+  路径按 `exeDir` 解析；`AutoTaskManager::defaultStateFilePath()`、
+  `AppController`/`MainFrame`/`ProxyBatchTester` 的 `config/`、`proxies/` 输出，
+  `ShareLinkExportService` 等也全部基于 `utils::getExecutableDir()`。
+  源码（`src/**`、`include/**`）中**无任何**硬编码盘符/绝对路径字面量（仅 `ProcessInspector.h`
+  一行注释示例）。
+- **真正的“硬编码绝对目录”**：仅存在于**运行时数据** `bin/config.json`（由应用在
+  用户调整配置时写出），例如 `database.path`、`sync.source_db/target_db`、
+  `proxy.xray_executable`、`proxy.xray_asset_dir`、`auto_task.state_file`。
+  这不是源码硬编码，但拷贝 `bin/` 到别机时会失效。
+- **本次处理**：
+  - `auto_task.state_file` 已清空为 `""`（本机语义不变：回退到 `<exeDir>/worker/autotask_state.json`），
+    使发布包/拷贝开箱即可用。
+  - 其余机器相关字段（数据库路径、xray/singbox 内核路径与资源目录）保留为当前机器配置；
+    README 已明确它们需按目标机器调整（见 README「环境要求」的代理内核下载提示）。
+  - `bin/test_config.json` / `bin/test_config_empty.json` 为测试夹具，保持原值（测试在 sandbox
+    中生成自己的 config）。
+- **建议**：发布时不要附带 `bin/config.json` 的生产副本；用户首次启动按引导生成。
+  （当前仓库 tracked 的 `bin/config.json` 仍为本机生产配置。）
