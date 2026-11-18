@@ -11,7 +11,6 @@
 #   未处理原始字符串导致的引号失步误计；该文件已从清单移除。
 
 # ---- P1 主窗口 ----
-src/ui/MainFrame.cpp | P1 主窗口（规划 88 条，实测 88 条） | 2027-06-30 | 88
 src/ui/StandaloneFloatingWidget.cpp | P1 主窗口（规划 41 条，实测 41 条） | 2027-06-30 | 41
 src/ui/ProxyListPanel.cpp | P1 主窗口（规划 39 条，实测 39 条） | 2027-06-30 | 39
 src/ui/TaskMonitorPanel.cpp | P1 主窗口（规划 30 条，实测 30 条） | 2027-06-30 | 30

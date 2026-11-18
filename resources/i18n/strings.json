@@ -1,74 +1,490 @@
 {
   "version": 1,
   "strings": [
-    { "id": "MainFrame.Menu.File",        "zh": "&文件", "en": "&File", "note": "顶层菜单，保留 & 助记符" },
-    { "id": "MainFrame.Menu.Proxy",       "zh": "&代理", "en": "&Proxy" },
-    { "id": "MainFrame.Menu.Task",        "zh": "&任务", "en": "&Task" },
-    { "id": "MainFrame.Menu.Settings",    "zh": "&设置", "en": "&Settings" },
-    { "id": "MainFrame.Menu.Language",    "zh": "语言 / Language", "en": "Language", "fixed": true, "note": "英文用户在默认中文界面下的唯一入口，标题本身双语；无 & 助记符" },
-    { "id": "MainFrame.Menu.Help",        "zh": "&帮助", "en": "&Help" },
-
-    { "id": "MainFrame.Menu.ImportSub",   "zh": "导入订阅链接…\tCtrl+I", "en": "Import Subscription URL…\tCtrl+I" },
-    { "id": "MainFrame.Menu.UpdateAll",   "zh": "更新全部订阅\tCtrl+U", "en": "Update All Subscriptions\tCtrl+U" },
-    { "id": "MainFrame.Menu.SyncDb",      "zh": "同步数据库…", "en": "Sync Database…" },
-    { "id": "MainFrame.Menu.CloudPull",   "zh": "从云端同步订阅", "en": "Sync Subscriptions from Cloud" },
-    { "id": "MainFrame.Menu.CloudPush",   "zh": "上传配置与订阅到云端", "en": "Upload Config and Subscriptions to Cloud" },
-    { "id": "MainFrame.Menu.Exit",        "zh": "退出\tAlt+X", "en": "Exit\tAlt+X" },
-    { "id": "MainFrame.Menu.FindProxy",   "zh": "查找首个可用代理\tCtrl+F", "en": "Find First Available Proxy\tCtrl+F" },
-    { "id": "MainFrame.Menu.FindBest",    "zh": "查找最佳代理\tCtrl+Shift+F", "en": "Find Best Proxy\tCtrl+Shift+F" },
-    { "id": "MainFrame.Menu.Dedup",       "zh": "移除重复代理", "en": "Remove Duplicate Proxies" },
-    { "id": "MainFrame.Menu.ExportLinks", "zh": "导出分享链接", "en": "Export Share Links" },
-    { "id": "MainFrame.Menu.GenConfig",   "zh": "生成配置…", "en": "Generate Config…" },
-    { "id": "MainFrame.Menu.StandaloneMon",    "zh": "独立代理监控…\tCtrl+M", "en": "Standalone Proxy Monitor…\tCtrl+M" },
-    { "id": "MainFrame.Menu.StandaloneMonTip", "zh": "显示/隐藏独立代理悬浮窗", "en": "Show/hide the standalone proxy panel" },
-    { "id": "MainFrame.Menu.RunAutoTask",    "zh": "执行自动任务\tCtrl+T", "en": "Run Auto Task\tCtrl+T" },
-    { "id": "MainFrame.Menu.ResumeAutoTask", "zh": "恢复自动任务", "en": "Resume Auto Task" },
-    { "id": "MainFrame.Menu.CancelTask",     "zh": "取消任务", "en": "Cancel Task" },
-    { "id": "MainFrame.Menu.Config",      "zh": "配置…\tCtrl+,", "en": "Preferences…\tCtrl+," },
-    { "id": "MainFrame.Menu.About",       "zh": "关于", "en": "About" },
-
-    { "id": "MainFrame.Menu.LangZh",      "zh": "中文 (Chinese)", "en": "中文 (Chinese)", "fixed": true, "note": "语言项自身不翻译，两侧显示一致" },
-    { "id": "MainFrame.Menu.LangEn",      "zh": "English (English)", "en": "English (English)", "fixed": true },
-
-    { "id": "MainFrame.Toolbar.UpdateAll",    "zh": "更新", "en": "Update", "note": "label 与 shortHelp 同值，共用一条" },
-    { "id": "MainFrame.Toolbar.Test",         "zh": "批量测试", "en": "Test All" },
-    { "id": "MainFrame.Toolbar.TestTip",      "zh": "测试全部代理", "en": "Test all proxies" },
-    { "id": "MainFrame.Toolbar.StopTest",     "zh": "终止当前测试", "en": "Stop Test" },
-    { "id": "MainFrame.Toolbar.StopTestTip",  "zh": "取消测试", "en": "Cancel test" },
-    { "id": "MainFrame.Toolbar.Dedup",        "zh": "清洗", "en": "Dedup" },
-    { "id": "MainFrame.Toolbar.DedupTip",     "zh": "去重", "en": "Remove duplicates" },
-    { "id": "MainFrame.Toolbar.Region",       "zh": "解析地区", "en": "Resolve Regions" },
-    { "id": "MainFrame.Toolbar.RegionTip",    "zh": "批量解析地区", "en": "Resolve regions in bulk" },
-    { "id": "MainFrame.Toolbar.Sync",         "zh": "同步", "en": "Sync", "note": "label 与 shortHelp 同值" },
-    { "id": "MainFrame.Toolbar.Import",       "zh": "添加订阅", "en": "Add Subscription" },
-    { "id": "MainFrame.Toolbar.ImportTip",    "zh": "增加新订阅", "en": "Add a new subscription" },
-    { "id": "MainFrame.Toolbar.AutoTask",     "zh": "自动任务", "en": "Auto Task", "note": "label 与 shortHelp 同值" },
-    { "id": "MainFrame.Toolbar.StandaloneMon",    "zh": "悬浮窗", "en": "Panel" },
-    { "id": "MainFrame.Toolbar.StandaloneMonTip", "zh": "监控代理", "en": "Monitor proxies" },
-    { "id": "MainFrame.Toolbar.Config",       "zh": "配置", "en": "Preferences", "note": "label 与 shortHelp 同值" },
-    { "id": "MainFrame.Toolbar.DetailToggle",    "zh": "详情", "en": "Details" },
-    { "id": "MainFrame.Toolbar.DetailToggleTip", "zh": "切换详情面板", "en": "Toggle details panel" },
-
-    { "id": "MainFrame.Search.Proxy",     "zh": "代理", "en": "Proxy", "note": "搜索目标下拉项" },
-    { "id": "MainFrame.Search.Sub",       "zh": "订阅", "en": "Subscription" },
-
-    { "id": "MainFrame.Status.Ready",     "zh": "Ready", "en": "Ready", "note": "现状即英文，中文模式必须逐字不变" },
-
-    { "id": "MainFrame.BottomView.Group",    "zh": "监控", "en": "Monitor", "note": "wxRadioBox 组标题，同时是中文 UI 测试定位锚点" },
-    { "id": "MainFrame.BottomView.Tasks",    "zh": "任务", "en": "Tasks" },
-    { "id": "MainFrame.BottomView.Progress", "zh": "任务进度", "en": "Progress" },
-    { "id": "MainFrame.BottomView.Log",      "zh": "日志", "en": "Log" },
-
-    { "id": "Subscription.Column.Enabled", "zh": "启用", "en": "On", "note": "toggle 列，无排序指示" },
-    { "id": "Subscription.Column.Name",    "zh": "名称 ↕", "en": "Name ↕" },
-    { "id": "Subscription.Column.Valid",   "zh": "有效 ↕", "en": "ValidProxies ↕" },
-    { "id": "Subscription.Column.Total",   "zh": "代理数 ↕", "en": "TotalProxies ↕" },
-    { "id": "Subscription.Column.Updated", "zh": "更新 ↕", "en": "UpdatedTime ↕" },
-    { "id": "Subscription.Column.Id",      "zh": "ID ↕", "en": "ID ↕" },
-
-    { "id": "MainFrame.Message.LanguageTitle",     "zh": "语言", "en": "Language", "note": "语言相关提示框标题" },
-    { "id": "MainFrame.Message.RestartToApply",    "zh": "语言设置已保存，重启程序后生效。", "en": "Language saved. Restart the application to apply it." },
-    { "id": "MainFrame.Message.LanguageSaveFailed", "zh": "语言设置未能保存到配置文件，本次选择不会在重启后生效。", "en": "Failed to save the language setting; it will not apply after restart." },
-    { "id": "MainFrame.Status.LanguagePendingRestart", "zh": "界面语言已设为 {}，重启后生效", "en": "UI language set to {}; restart to apply" }
+    {
+      "id": "MainFrame.Menu.File",
+      "zh": "&文件",
+      "en": "&File",
+      "note": "顶层菜单，保留 & 助记符"
+    },
+    {
+      "id": "MainFrame.Menu.Proxy",
+      "zh": "&代理",
+      "en": "&Proxy"
+    },
+    {
+      "id": "MainFrame.Menu.Task",
+      "zh": "&任务",
+      "en": "&Task"
+    },
+    {
+      "id": "MainFrame.Menu.Settings",
+      "zh": "&设置",
+      "en": "&Settings"
+    },
+    {
+      "id": "MainFrame.Menu.Language",
+      "zh": "语言 / Language",
+      "en": "Language",
+      "fixed": true,
+      "note": "英文用户在默认中文界面下的唯一入口，标题本身双语；无 & 助记符"
+    },
+    {
+      "id": "MainFrame.Menu.Help",
+      "zh": "&帮助",
+      "en": "&Help"
+    },
+    {
+      "id": "MainFrame.Menu.ImportSub",
+      "zh": "导入订阅链接…\tCtrl+I",
+      "en": "Import Subscription URL…\tCtrl+I"
+    },
+    {
+      "id": "MainFrame.Menu.UpdateAll",
+      "zh": "更新全部订阅\tCtrl+U",
+      "en": "Update All Subscriptions\tCtrl+U"
+    },
+    {
+      "id": "MainFrame.Menu.SyncDb",
+      "zh": "同步数据库…",
+      "en": "Sync Database…"
+    },
+    {
+      "id": "MainFrame.Menu.CloudPull",
+      "zh": "从云端同步订阅",
+      "en": "Sync Subscriptions from Cloud"
+    },
+    {
+      "id": "MainFrame.Menu.CloudPush",
+      "zh": "上传配置与订阅到云端",
+      "en": "Upload Config and Subscriptions to Cloud"
+    },
+    {
+      "id": "MainFrame.Menu.Exit",
+      "zh": "退出\tAlt+X",
+      "en": "Exit\tAlt+X"
+    },
+    {
+      "id": "MainFrame.Menu.FindProxy",
+      "zh": "查找首个可用代理\tCtrl+F",
+      "en": "Find First Available Proxy\tCtrl+F"
+    },
+    {
+      "id": "MainFrame.Menu.FindBest",
+      "zh": "查找最佳代理\tCtrl+Shift+F",
+      "en": "Find Best Proxy\tCtrl+Shift+F"
+    },
+    {
+      "id": "MainFrame.Menu.Dedup",
+      "zh": "移除重复代理",
+      "en": "Remove Duplicate Proxies"
+    },
+    {
+      "id": "MainFrame.Menu.ExportLinks",
+      "zh": "导出分享链接",
+      "en": "Export Share Links"
+    },
+    {
+      "id": "MainFrame.Menu.GenConfig",
+      "zh": "生成配置…",
+      "en": "Generate Config…"
+    },
+    {
+      "id": "MainFrame.Menu.StandaloneMon",
+      "zh": "独立代理监控…\tCtrl+M",
+      "en": "Standalone Proxy Monitor…\tCtrl+M"
+    },
+    {
+      "id": "MainFrame.Menu.StandaloneMonTip",
+      "zh": "显示/隐藏独立代理悬浮窗",
+      "en": "Show/hide the standalone proxy panel"
+    },
+    {
+      "id": "MainFrame.Menu.RunAutoTask",
+      "zh": "执行自动任务\tCtrl+T",
+      "en": "Run Auto Task\tCtrl+T"
+    },
+    {
+      "id": "MainFrame.Menu.ResumeAutoTask",
+      "zh": "恢复自动任务",
+      "en": "Resume Auto Task"
+    },
+    {
+      "id": "MainFrame.Menu.CancelTask",
+      "zh": "取消任务",
+      "en": "Cancel Task"
+    },
+    {
+      "id": "MainFrame.Menu.Config",
+      "zh": "配置…\tCtrl+,",
+      "en": "Preferences…\tCtrl+,"
+    },
+    {
+      "id": "MainFrame.Menu.About",
+      "zh": "关于",
+      "en": "About"
+    },
+    {
+      "id": "MainFrame.Menu.LangZh",
+      "zh": "中文 (Chinese)",
+      "en": "中文 (Chinese)",
+      "fixed": true,
+      "note": "语言项自身不翻译，两侧显示一致"
+    },
+    {
+      "id": "MainFrame.Menu.LangEn",
+      "zh": "English (English)",
+      "en": "English (English)",
+      "fixed": true
+    },
+    {
+      "id": "MainFrame.Toolbar.UpdateAll",
+      "zh": "更新",
+      "en": "Update",
+      "note": "label 与 shortHelp 同值，共用一条"
+    },
+    {
+      "id": "MainFrame.Toolbar.Test",
+      "zh": "批量测试",
+      "en": "Test All"
+    },
+    {
+      "id": "MainFrame.Toolbar.TestTip",
+      "zh": "测试全部代理",
+      "en": "Test all proxies"
+    },
+    {
+      "id": "MainFrame.Toolbar.StopTest",
+      "zh": "终止当前测试",
+      "en": "Stop Test"
+    },
+    {
+      "id": "MainFrame.Toolbar.StopTestTip",
+      "zh": "取消测试",
+      "en": "Cancel test"
+    },
+    {
+      "id": "MainFrame.Toolbar.Dedup",
+      "zh": "清洗",
+      "en": "Dedup"
+    },
+    {
+      "id": "MainFrame.Toolbar.DedupTip",
+      "zh": "去重",
+      "en": "Remove duplicates"
+    },
+    {
+      "id": "MainFrame.Toolbar.Region",
+      "zh": "解析地区",
+      "en": "Resolve Regions"
+    },
+    {
+      "id": "MainFrame.Toolbar.RegionTip",
+      "zh": "批量解析地区",
+      "en": "Resolve regions in bulk"
+    },
+    {
+      "id": "MainFrame.Toolbar.Sync",
+      "zh": "同步",
+      "en": "Sync",
+      "note": "label 与 shortHelp 同值"
+    },
+    {
+      "id": "MainFrame.Toolbar.Import",
+      "zh": "添加订阅",
+      "en": "Add Subscription"
+    },
+    {
+      "id": "MainFrame.Toolbar.ImportTip",
+      "zh": "增加新订阅",
+      "en": "Add a new subscription"
+    },
+    {
+      "id": "MainFrame.Toolbar.AutoTask",
+      "zh": "自动任务",
+      "en": "Auto Task",
+      "note": "label 与 shortHelp 同值"
+    },
+    {
+      "id": "MainFrame.Toolbar.StandaloneMon",
+      "zh": "悬浮窗",
+      "en": "Panel"
+    },
+    {
+      "id": "MainFrame.Toolbar.StandaloneMonTip",
+      "zh": "监控代理",
+      "en": "Monitor proxies"
+    },
+    {
+      "id": "MainFrame.Toolbar.Config",
+      "zh": "配置",
+      "en": "Preferences",
+      "note": "label 与 shortHelp 同值"
+    },
+    {
+      "id": "MainFrame.Toolbar.DetailToggle",
+      "zh": "详情",
+      "en": "Details"
+    },
+    {
+      "id": "MainFrame.Toolbar.DetailToggleTip",
+      "zh": "切换详情面板",
+      "en": "Toggle details panel"
+    },
+    {
+      "id": "MainFrame.Search.Proxy",
+      "zh": "代理",
+      "en": "Proxy",
+      "note": "搜索目标下拉项"
+    },
+    {
+      "id": "MainFrame.Search.Sub",
+      "zh": "订阅",
+      "en": "Subscription"
+    },
+    {
+      "id": "MainFrame.Status.Ready",
+      "zh": "Ready",
+      "en": "Ready",
+      "note": "现状即英文，中文模式必须逐字不变"
+    },
+    {
+      "id": "MainFrame.BottomView.Group",
+      "zh": "监控",
+      "en": "Monitor",
+      "note": "wxRadioBox 组标题，同时是中文 UI 测试定位锚点"
+    },
+    {
+      "id": "MainFrame.BottomView.Tasks",
+      "zh": "任务",
+      "en": "Tasks"
+    },
+    {
+      "id": "MainFrame.BottomView.Progress",
+      "zh": "任务进度",
+      "en": "Progress"
+    },
+    {
+      "id": "MainFrame.BottomView.Log",
+      "zh": "日志",
+      "en": "Log"
+    },
+    {
+      "id": "Subscription.Column.Enabled",
+      "zh": "启用",
+      "en": "On",
+      "note": "toggle 列，无排序指示"
+    },
+    {
+      "id": "Subscription.Column.Name",
+      "zh": "名称 ↕",
+      "en": "Name ↕"
+    },
+    {
+      "id": "Subscription.Column.Valid",
+      "zh": "有效 ↕",
+      "en": "ValidProxies ↕"
+    },
+    {
+      "id": "Subscription.Column.Total",
+      "zh": "代理数 ↕",
+      "en": "TotalProxies ↕"
+    },
+    {
+      "id": "Subscription.Column.Updated",
+      "zh": "更新 ↕",
+      "en": "UpdatedTime ↕"
+    },
+    {
+      "id": "Subscription.Column.Id",
+      "zh": "ID ↕",
+      "en": "ID ↕"
+    },
+    {
+      "id": "MainFrame.Message.LanguageTitle",
+      "zh": "语言",
+      "en": "Language",
+      "note": "语言相关提示框标题"
+    },
+    {
+      "id": "MainFrame.Message.RestartToApply",
+      "zh": "语言设置已保存，重启程序后生效。",
+      "en": "Language saved. Restart the application to apply it."
+    },
+    {
+      "id": "MainFrame.Message.LanguageSaveFailed",
+      "zh": "语言设置未能保存到配置文件，本次选择不会在重启后生效。",
+      "en": "Failed to save the language setting; it will not apply after restart."
+    },
+    {
+      "id": "MainFrame.Status.LanguagePendingRestart",
+      "zh": "界面语言已设为 {}，重启后生效",
+      "en": "UI language set to {}; restart to apply"
+    },
+    {
+      "id": "MainFrame.Toolbar.StopUpdateTip",
+      "zh": "停止更新",
+      "en": "Stop updating"
+    },
+    {
+      "id": "MainFrame.Toolbar.StopFindTip",
+      "zh": "取消查找",
+      "en": "Cancel search"
+    },
+    {
+      "id": "MainFrame.Toolbar.StopSyncTip",
+      "zh": "停止同步",
+      "en": "Stop syncing"
+    },
+    {
+      "id": "MainFrame.Toolbar.StopAutoTaskTip",
+      "zh": "停止自动任务",
+      "en": "Stop auto task"
+    },
+    {
+      "id": "MainFrame.Toolbar.StopRegionTip",
+      "zh": "取消地区解析",
+      "en": "Cancel region resolution"
+    },
+    {
+      "id": "MainFrame.Status.QueueBadge",
+      "zh": "排队: {}",
+      "en": "Queued: {}"
+    },
+    {
+      "id": "MainFrame.Dialog.CloudSyncTitle",
+      "zh": "云端同步",
+      "en": "Cloud Sync"
+    },
+    {
+      "id": "MainFrame.Status.ConfigFailedSuffix",
+      "zh": "；config 失败：",
+      "en": "; config failed: "
+    },
+    {
+      "id": "MainFrame.Dialog.UploadDisabled",
+      "zh": "上传功能未启用：环境变量 VALIDPROXY_UPLOAD_TOKEN 缺失或与当前值不符。",
+      "en": "Upload is disabled: the VALIDPROXY_UPLOAD_TOKEN environment variable is missing or does not match."
+    },
+    {
+      "id": "MainFrame.Dialog.UploadTitle",
+      "zh": "上传到云端",
+      "en": "Upload to Cloud"
+    },
+    {
+      "id": "MainFrame.Dialog.UploadConfirm",
+      "zh": "将把当前 config.json 与订阅列表上传到云端，可能覆盖云端已有文件。\\n\\n是否继续？",
+      "en": "This will upload the current config.json and subscription list to the cloud, possibly overwriting existing files.\\n\\nContinue?"
+    },
+    {
+      "id": "MainFrame.Status.QueuedDedup",
+      "zh": "已加入队列：移除重复代理",
+      "en": "Queued: remove duplicate proxies"
+    },
+    {
+      "id": "MainFrame.Status.ExportedLinks",
+      "zh": "导出{}个有效代理至文件{}",
+      "en": "Exported {} valid proxies to {}"
+    },
+    {
+      "id": "MainFrame.Status.NoValidProxy",
+      "zh": "没有有效代理可导出。",
+      "en": "No valid proxies to export."
+    },
+    {
+      "id": "MainFrame.Status.ExportFailed",
+      "zh": "导出分享链接失败。",
+      "en": "Failed to export share links."
+    },
+    {
+      "id": "MainFrame.Dialog.MonitorDisabled",
+      "zh": "监控代理进程未在配置中启用",
+      "en": "Proxy process monitoring is not enabled in the configuration"
+    },
+    {
+      "id": "MainFrame.Dialog.NoticeTitle",
+      "zh": "提示",
+      "en": "Notice"
+    },
+    {
+      "id": "MainFrame.Dialog.BusySaveConfig",
+      "zh": "操作进行中，无法保存配置",
+      "en": "An operation is in progress; the configuration cannot be saved"
+    },
+    {
+      "id": "MainFrame.Dialog.BusyTitle",
+      "zh": "操作进行中",
+      "en": "Operation in progress"
+    },
+    {
+      "id": "MainFrame.Dialog.BusySwitchDb",
+      "zh": "操作进行中，无法切换数据库",
+      "en": "An operation is in progress; the database cannot be switched"
+    },
+    {
+      "id": "MainFrame.Dialog.BusyQueueSwitchDb",
+      "zh": "任务队列有排队任务，为避免新旧库混跑，请先清理队列再切换数据库",
+      "en": "The task queue still has pending tasks; clear the queue before switching databases to avoid mixing old and new data"
+    },
+    {
+      "id": "MainFrame.Dialog.TaskRunningTitle",
+      "zh": "任务进行中",
+      "en": "Task in progress"
+    },
+    {
+      "id": "MainFrame.Status.QueuedAutoTask",
+      "zh": "已加入队列：自动任务，前方还有 {} 个任务",
+      "en": "Queued: auto task, {} ahead"
+    },
+    {
+      "id": "MainFrame.Status.AutoTaskStarted",
+      "zh": "自动任务已开始",
+      "en": "Auto task started"
+    },
+    {
+      "id": "MainFrame.Status.QueuedResumeAutoTask",
+      "zh": "已加入队列：恢复自动任务，前方还有 {} 个任务",
+      "en": "Queued: resume auto task, {} ahead"
+    },
+    {
+      "id": "MainFrame.Status.ResumeAutoTaskStarted",
+      "zh": "恢复自动任务已开始",
+      "en": "Resume auto task started"
+    },
+    {
+      "id": "MainFrame.Status.QueuedTestAll",
+      "zh": "已加入队列：全部测试 (TEST_ALL)，前方还有 {} 个任务",
+      "en": "Queued: test all (TEST_ALL), {} ahead"
+    },
+    {
+      "id": "MainFrame.Status.Cancelled",
+      "zh": "操作已取消",
+      "en": "Operation cancelled"
+    },
+    {
+      "id": "MainFrame.Status.QueuedResolveRegion",
+      "zh": "已加入队列：批量解析地区，前方还有 {} 个任务",
+      "en": "Queued: resolve regions, {} ahead"
+    },
+    {
+      "id": "MainFrame.Status.ResolveRegionStarted",
+      "zh": "批量解析地区已开始",
+      "en": "Region resolution started"
+    },
+    {
+      "id": "MainFrame.Status.Syncing",
+      "zh": "同步中…",
+      "en": "Syncing…"
+    },
+    {
+      "id": "MainFrame.Dialog.AboutTitle",
+      "zh": "关于 validproxy",
+      "en": "About validproxy"
+    },
+    {
+      "id": "MainFrame.Dialog.AboutText",
+      "zh": "{} v{}\\n\\n版本: {}\\nGit Tag: {}\\nGit Commit: {}\\n构建类型: {}\\n构建时间: {}\\n编译器: {}\\n\\n管理并测试您的代理订阅。",
+      "en": "{} v{}\\n\\nVersion: {}\\nGit Tag: {}\\nGit Commit: {}\\nBuild type: {}\\nBuild time: {}\\nCompiler: {}\\n\\nManage and test your proxy subscriptions."
+    }
   ]
 }

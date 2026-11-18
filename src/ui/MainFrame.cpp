@@ -756,22 +756,22 @@ void MainFrame::setOperationState(OperationType op) {
         tb->EnableTool(ID_TOOL_CANCEL, true);
         switch (op) {
             case OperationType::TEST:
-                tb->SetToolShortHelp(ID_TOOL_CANCEL, L"取消测试");
+                tb->SetToolShortHelp(ID_TOOL_CANCEL, i18n::wx(i18n::StrId::MainFrame_Toolbar_StopTestTip));
                 break;
             case OperationType::UPDATE:
-                tb->SetToolShortHelp(ID_TOOL_CANCEL, L"停止更新");
+                tb->SetToolShortHelp(ID_TOOL_CANCEL, i18n::wx(i18n::StrId::MainFrame_Toolbar_StopUpdateTip));
                 break;
             case OperationType::FIND:
-                tb->SetToolShortHelp(ID_TOOL_CANCEL, L"取消查找");
+                tb->SetToolShortHelp(ID_TOOL_CANCEL, i18n::wx(i18n::StrId::MainFrame_Toolbar_StopFindTip));
                 break;
             case OperationType::SYNC:
-                tb->SetToolShortHelp(ID_TOOL_CANCEL, L"停止同步");
+                tb->SetToolShortHelp(ID_TOOL_CANCEL, i18n::wx(i18n::StrId::MainFrame_Toolbar_StopSyncTip));
                 break;
             case OperationType::AUTOTASK:
-                tb->SetToolShortHelp(ID_TOOL_CANCEL, L"停止自动任务");
+                tb->SetToolShortHelp(ID_TOOL_CANCEL, i18n::wx(i18n::StrId::MainFrame_Toolbar_StopAutoTaskTip));
                 break;
             case OperationType::RESOLVE_REGION:
-                tb->SetToolShortHelp(ID_TOOL_CANCEL, L"取消地区解析");
+                tb->SetToolShortHelp(ID_TOOL_CANCEL, i18n::wx(i18n::StrId::MainFrame_Toolbar_StopRegionTip));
                 break;
             default:
                 break;
@@ -808,41 +808,41 @@ void MainFrame::initMenuBar() {
     wxMenuBar* bar = new wxMenuBar;
 
     wxMenu* fileMenu = new wxMenu;
-    fileMenu->Append(ID_MENU_IMPORT_SUB,  L"导入订阅链接…\tCtrl+I");
-    fileMenu->Append(ID_MENU_UPDATE_ALL,  L"更新全部订阅\tCtrl+U");
-    fileMenu->Append(ID_MENU_SYNC_DB,     L"同步数据库…");
-    fileMenu->Append(ID_MENU_CLOUD_PULL, L"从云端同步订阅");
-    fileMenu->Append(ID_MENU_CLOUD_PUSH, L"上传配置与订阅到云端");
+    fileMenu->Append(ID_MENU_IMPORT_SUB,  i18n::wx(i18n::StrId::MainFrame_Menu_ImportSub));
+    fileMenu->Append(ID_MENU_UPDATE_ALL,  i18n::wx(i18n::StrId::MainFrame_Menu_UpdateAll));
+    fileMenu->Append(ID_MENU_SYNC_DB,     i18n::wx(i18n::StrId::MainFrame_Menu_SyncDb));
+    fileMenu->Append(ID_MENU_CLOUD_PULL, i18n::wx(i18n::StrId::MainFrame_Menu_CloudPull));
+    fileMenu->Append(ID_MENU_CLOUD_PUSH, i18n::wx(i18n::StrId::MainFrame_Menu_CloudPush));
     // Upload can overwrite the remote copy, so it is gated: the item is only
     // enabled when VALIDPROXY_UPLOAD_TOKEN matches the value baked in at build
     // time. Evaluated once at startup, and re-checked in the handler.
     fileMenu->Enable(ID_MENU_CLOUD_PUSH, service::isUploadEnabled());
     fileMenu->AppendSeparator();
-    fileMenu->Append(ID_MENU_EXIT,        L"退出\tAlt+X");
-    bar->Append(fileMenu, L"&文件");
+    fileMenu->Append(ID_MENU_EXIT,        i18n::wx(i18n::StrId::MainFrame_Menu_Exit));
+    bar->Append(fileMenu, i18n::wx(i18n::StrId::MainFrame_Menu_File));
 
     proxyMenu_ = new wxMenu;
-    proxyMenu_->Append(ID_MENU_FIND_PROXY, L"查找首个可用代理\tCtrl+F");
-    proxyMenu_->Append(ID_MENU_FIND_BEST,  L"查找最佳代理\tCtrl+Shift+F");
+    proxyMenu_->Append(ID_MENU_FIND_PROXY, i18n::wx(i18n::StrId::MainFrame_Menu_FindProxy));
+    proxyMenu_->Append(ID_MENU_FIND_BEST,  i18n::wx(i18n::StrId::MainFrame_Menu_FindBest));
     proxyMenu_->AppendSeparator();
-    proxyMenu_->Append(ID_MENU_DEDUP,      L"移除重复代理");
-    proxyMenu_->Append(ID_MENU_EXPORT,     L"导出分享链接");
-    proxyMenu_->Append(ID_MENU_GEN_CONFIG, L"生成配置…");
+    proxyMenu_->Append(ID_MENU_DEDUP,      i18n::wx(i18n::StrId::MainFrame_Menu_Dedup));
+    proxyMenu_->Append(ID_MENU_EXPORT,     i18n::wx(i18n::StrId::MainFrame_Menu_ExportLinks));
+    proxyMenu_->Append(ID_MENU_GEN_CONFIG, i18n::wx(i18n::StrId::MainFrame_Menu_GenConfig));
     proxyMenu_->AppendSeparator();
-    proxyMenu_->Append(ID_MENU_STANDALONE_MON, L"独立代理监控…\tCtrl+M", L"显示/隐藏独立代理悬浮窗", wxITEM_CHECK);
+    proxyMenu_->Append(ID_MENU_STANDALONE_MON, i18n::wx(i18n::StrId::MainFrame_Menu_StandaloneMon), i18n::wx(i18n::StrId::MainFrame_Menu_StandaloneMonTip), wxITEM_CHECK);
     proxyMenu_->Check(ID_MENU_STANDALONE_MON, config_.proxy_process_monitor.enabled);
-    bar->Append(proxyMenu_, L"&代理");
+    bar->Append(proxyMenu_, i18n::wx(i18n::StrId::MainFrame_Menu_Proxy));
 
     wxMenu* taskMenu = new wxMenu;
-    taskMenu->Append(ID_MENU_AUTOTASK_RUN,  L"执行自动任务\tCtrl+T");
-    taskMenu->Append(ID_MENU_AUTOTASK_RESUME, L"恢复自动任务");
+    taskMenu->Append(ID_MENU_AUTOTASK_RUN,  i18n::wx(i18n::StrId::MainFrame_Menu_RunAutoTask));
+    taskMenu->Append(ID_MENU_AUTOTASK_RESUME, i18n::wx(i18n::StrId::MainFrame_Menu_ResumeAutoTask));
     taskMenu->AppendSeparator();
-    taskMenu->Append(ID_TOOL_CANCEL, L"取消任务");
-    bar->Append(taskMenu, L"&任务");
+    taskMenu->Append(ID_TOOL_CANCEL, i18n::wx(i18n::StrId::MainFrame_Menu_CancelTask));
+    bar->Append(taskMenu, i18n::wx(i18n::StrId::MainFrame_Menu_Task));
 
     wxMenu* settingsMenu = new wxMenu;
-    settingsMenu->Append(ID_MENU_CONFIG, L"配置…\tCtrl+,");
-    bar->Append(settingsMenu, L"&设置");
+    settingsMenu->Append(ID_MENU_CONFIG, i18n::wx(i18n::StrId::MainFrame_Menu_Config));
+    bar->Append(settingsMenu, i18n::wx(i18n::StrId::MainFrame_Menu_Settings));
 
     wxMenu* languageMenu = new wxMenu;
     languageMenu->AppendRadioItem(ID_MENU_LANGUAGE_ZH, i18n::wx(i18n::StrId::MainFrame_Menu_LangZh));
@@ -857,8 +857,8 @@ void MainFrame::initMenuBar() {
     bar->Append(languageMenu, i18n::wx(i18n::StrId::MainFrame_Menu_Language));
 
     wxMenu* helpMenu = new wxMenu;
-    helpMenu->Append(ID_MENU_ABOUT, L"关于");
-    bar->Append(helpMenu, L"&帮助");
+    helpMenu->Append(ID_MENU_ABOUT, i18n::wx(i18n::StrId::MainFrame_Menu_About));
+    bar->Append(helpMenu, i18n::wx(i18n::StrId::MainFrame_Menu_Help));
 
     // Keep menuBar_ for later SetMenuBar call (after AUI init + Update()).
     // Direct SetMenuBar inside initMenuBar causes intermittent hang on wxMSW 3.2.5/MinGW.
@@ -874,28 +874,28 @@ void MainFrame::initToolBar() {
 
     // Note: wxAuiToolBar::AddTool uses different signature than wxToolBar
     // format: AddTool(id, label, bitmap, shortHelp)
-    m_toolbar->AddTool(ID_TOOL_UPDATE_ALL, L"更新", ToolbarIcons::load("tool_update1"), L"更新");
-    m_toolbar->AddTool(ID_TOOL_TEST, L"批量测试", ToolbarIcons::load("tool_test"), L"测试全部代理");
-    m_toolbar->AddTool(ID_TOOL_CANCEL, L"终止当前测试", ToolbarIcons::load("tool_cancel"), L"取消测试");
+    m_toolbar->AddTool(ID_TOOL_UPDATE_ALL, i18n::wx(i18n::StrId::MainFrame_Toolbar_UpdateAll), ToolbarIcons::load("tool_update1"), i18n::wx(i18n::StrId::MainFrame_Toolbar_UpdateAll));
+    m_toolbar->AddTool(ID_TOOL_TEST, i18n::wx(i18n::StrId::MainFrame_Toolbar_Test), ToolbarIcons::load("tool_test"), i18n::wx(i18n::StrId::MainFrame_Toolbar_TestTip));
+    m_toolbar->AddTool(ID_TOOL_CANCEL, i18n::wx(i18n::StrId::MainFrame_Toolbar_StopTest), ToolbarIcons::load("tool_cancel"), i18n::wx(i18n::StrId::MainFrame_Toolbar_StopTestTip));
     m_toolbar->EnableTool(ID_TOOL_CANCEL, false);  // disabled until operation starts
-    m_toolbar->AddTool(ID_TOOL_DEDUP, L"清洗", ToolbarIcons::load("tool_dedup"), L"去重");
-    m_toolbar->AddTool(ID_TOOL_REGION, L"解析地区", ToolbarIcons::load("parsingregion"), L"批量解析地区");
-    m_toolbar->AddTool(ID_TOOL_SYNC, L"同步", ToolbarIcons::load("tool_synchronize"), L"同步");
-    m_toolbar->AddTool(ID_TOOL_IMPORT, L"添加订阅", ToolbarIcons::load("tool_import"), L"增加新订阅");
-    m_toolbar->AddTool(ID_TOOL_AUTOTASK, L"自动任务", ToolbarIcons::load("tool_pipeline"), L"自动任务");
-    m_toolbar->AddTool(ID_TOOL_STANDALONE_MON, L"悬浮窗", ToolbarIcons::load("tool_monitoring_proxy_process"), L"监控代理", wxITEM_CHECK);
+    m_toolbar->AddTool(ID_TOOL_DEDUP, i18n::wx(i18n::StrId::MainFrame_Toolbar_Dedup), ToolbarIcons::load("tool_dedup"), i18n::wx(i18n::StrId::MainFrame_Toolbar_DedupTip));
+    m_toolbar->AddTool(ID_TOOL_REGION, i18n::wx(i18n::StrId::MainFrame_Toolbar_Region), ToolbarIcons::load("parsingregion"), i18n::wx(i18n::StrId::MainFrame_Toolbar_RegionTip));
+    m_toolbar->AddTool(ID_TOOL_SYNC, i18n::wx(i18n::StrId::MainFrame_Toolbar_Sync), ToolbarIcons::load("tool_synchronize"), i18n::wx(i18n::StrId::MainFrame_Toolbar_Sync));
+    m_toolbar->AddTool(ID_TOOL_IMPORT, i18n::wx(i18n::StrId::MainFrame_Toolbar_Import), ToolbarIcons::load("tool_import"), i18n::wx(i18n::StrId::MainFrame_Toolbar_ImportTip));
+    m_toolbar->AddTool(ID_TOOL_AUTOTASK, i18n::wx(i18n::StrId::MainFrame_Toolbar_AutoTask), ToolbarIcons::load("tool_pipeline"), i18n::wx(i18n::StrId::MainFrame_Toolbar_AutoTask));
+    m_toolbar->AddTool(ID_TOOL_STANDALONE_MON, i18n::wx(i18n::StrId::MainFrame_Toolbar_StandaloneMon), ToolbarIcons::load("tool_monitoring_proxy_process"), i18n::wx(i18n::StrId::MainFrame_Toolbar_StandaloneMonTip), wxITEM_CHECK);
     m_toolbar->ToggleTool(ID_TOOL_STANDALONE_MON, config_.proxy_process_monitor.enabled);
-    m_toolbar->AddTool(ID_TOOL_CONFIG, L"配置", ToolbarIcons::load("tool_config"), L"配置");
+    m_toolbar->AddTool(ID_TOOL_CONFIG, i18n::wx(i18n::StrId::MainFrame_Toolbar_Config), ToolbarIcons::load("tool_config"), i18n::wx(i18n::StrId::MainFrame_Toolbar_Config));
 
     // ── Search box: left-shifted by 150px from center ──
     m_toolbar->AddSpacer(70);  // small gap after tools, then search (shifted ~150px left)
 
     // Search target toggle: "代理" (search proxy list) or "订阅" (search subscriptions)
-    wxString searchTargets[] = { L"代理", L"订阅" };
+    wxString searchTargets[] = { i18n::wx(i18n::StrId::MainFrame_Search_Proxy), i18n::wx(i18n::StrId::MainFrame_Search_Sub) };
     m_searchTargetChoice = new wxChoice(m_toolbar, ID_SEARCH_TARGET,
                                         wxDefaultPosition, wxSize(60, 25));
-    m_searchTargetChoice->Append(L"代理");
-    m_searchTargetChoice->Append(L"订阅");
+    m_searchTargetChoice->Append(i18n::wx(i18n::StrId::MainFrame_Search_Proxy));
+    m_searchTargetChoice->Append(i18n::wx(i18n::StrId::MainFrame_Search_Sub));
     m_searchTargetChoice->SetSelection(0);
     m_toolbar->AddControl(m_searchTargetChoice);
 
@@ -911,9 +911,9 @@ void MainFrame::initToolBar() {
     m_toolbar->AddStretchSpacer(1);  // Push toggle detail to right edge
 
     // Toggle detail panel button (rightmost)
-    m_toggleDetailItem = m_toolbar->AddTool(ID_TOOL_DETAIL_TOGGLE, L"详情",
+    m_toggleDetailItem = m_toolbar->AddTool(ID_TOOL_DETAIL_TOGGLE, i18n::wx(i18n::StrId::MainFrame_Toolbar_DetailToggle),
                                              ToolbarIcons::load("tool_dockarrow"),
-                                             L"切换详情面板");
+                                             i18n::wx(i18n::StrId::MainFrame_Toolbar_DetailToggleTip));
 
     m_toolbar->Realize();
 }
@@ -976,10 +976,10 @@ void MainFrame::initPanels() {
     // 「任务进度」 2026-11-06): 0=任务 1=任务进度 2=日志, default 任务. The
     // caption is 「监控」 (was 视图).
     bottomViewRadio_ = new wxRadioBox(
-        bottomPanel_, ID_BOTTOM_VIEW_RADIO, wxString::FromUTF8(u8"监控"),
+        bottomPanel_, ID_BOTTOM_VIEW_RADIO, i18n::wx(i18n::StrId::MainFrame_BottomView_Group),
         wxDefaultPosition, wxDefaultSize,
-        { wxString::FromUTF8(u8"任务"), wxString::FromUTF8(u8"任务进度"),
-          wxString::FromUTF8(u8"日志") },
+        { i18n::wx(i18n::StrId::MainFrame_BottomView_Tasks), i18n::wx(i18n::StrId::MainFrame_BottomView_Progress),
+          i18n::wx(i18n::StrId::MainFrame_BottomView_Log) },
         3,                       // 1 row x 3 cols (majorDimension, wxRA_SPECIFY_COLS)
         wxRA_SPECIFY_COLS);
     bottomViewRadio_->SetSelection(0);
@@ -1155,7 +1155,7 @@ void MainFrame::updateQueueBadge() {
         queueBadge_->SetLabel(wxString());
         queueBadge_->Hide();
     } else {
-        queueBadge_->SetLabel(wxString::Format(L"排队: %ld", depth));
+        queueBadge_->SetLabel(i18n::wxf(i18n::StrId::MainFrame_Status_QueueBadge, { wxString::Format("%ld", depth) }));
         queueBadge_->Show();
     }
     bottomPanel_->Layout();
@@ -1284,7 +1284,7 @@ void runCloudOperationAsync(MainFrame* frame, sqlite3* db, const std::string& lo
         std::string credError;
         if (!net::WebDavCredentialsStore::load(credentials, credError)) {
             frame->CallAfter([frame, credError]() {
-                wxMessageBox(wxString::FromUTF8(credError.c_str()), L"云端同步",
+                wxMessageBox(wxString::FromUTF8(credError.c_str()), i18n::wx(i18n::StrId::MainFrame_Dialog_CloudSyncTitle),
                              wxOK | wxICON_WARNING, frame);
             });
             return;
@@ -1299,7 +1299,7 @@ void runCloudOperationAsync(MainFrame* frame, sqlite3* db, const std::string& lo
         if (push) {
             const service::CloudSyncResult cfgResult = sync.pushConfig();
             primary = sync.pushSubscriptions();
-            message = primary.detail + (cfgResult.ok ? "" : (u8"；config 失败：" + cfgResult.error));
+            message = primary.detail + (cfgResult.ok ? "" : (i18n::u8(i18n::StrId::MainFrame_Status_ConfigFailedSuffix) + cfgResult.error));
             primary.ok = primary.ok && cfgResult.ok;
         } else {
             primary = sync.pullSubscriptions();
@@ -1309,7 +1309,7 @@ void runCloudOperationAsync(MainFrame* frame, sqlite3* db, const std::string& lo
         const bool ok = primary.ok;
         frame->CallAfter([frame, message, ok]() {
             static_cast<wxFrame*>(frame)->SetStatusText(wxString::FromUTF8(message.c_str()));
-            wxMessageBox(wxString::FromUTF8(message.c_str()), L"云端同步",
+            wxMessageBox(wxString::FromUTF8(message.c_str()), i18n::wx(i18n::StrId::MainFrame_Dialog_CloudSyncTitle),
                          wxOK | (ok ? wxICON_INFORMATION : wxICON_ERROR), frame);
         });
     }).detach();
@@ -1327,12 +1327,12 @@ void MainFrame::onMenuCloudPush(wxCommandEvent&) {
     // Defense in depth: the menu item is greyed out at startup, but the gate is
     // re-evaluated here so a stale enable state can never trigger an upload.
     if (!service::isUploadEnabled()) {
-        wxMessageBox(L"上传功能未启用：环境变量 VALIDPROXY_UPLOAD_TOKEN 缺失或与当前值不符。",
-                     L"上传到云端", wxOK | wxICON_WARNING, this);
+        wxMessageBox(i18n::wx(i18n::StrId::MainFrame_Dialog_UploadDisabled),
+                     i18n::wx(i18n::StrId::MainFrame_Dialog_UploadTitle), wxOK | wxICON_WARNING, this);
         return;
     }
-    const wxString confirm = L"将把当前 config.json 与订阅列表上传到云端，可能覆盖云端已有文件。\n\n是否继续？";
-    if (wxMessageBox(confirm, L"上传到云端", wxYES_NO | wxICON_QUESTION, this) != wxYES) {
+    const wxString confirm = i18n::wx(i18n::StrId::MainFrame_Dialog_UploadConfirm);
+    if (wxMessageBox(confirm, i18n::wx(i18n::StrId::MainFrame_Dialog_UploadTitle), wxYES_NO | wxICON_QUESTION, this) != wxYES) {
         return;
     }
     const std::string localConfigPath =
@@ -1368,7 +1368,7 @@ void MainFrame::onMenuDedup(wxCommandEvent&) {
     // OUTSIDE TaskQueue, racing the batch/update workers over profileitem/
     // subitem. The queue serialises it; DEDUP_OK/DEDUP_FAIL status events
     // drive onStatusUpdate (OK = non-modal status-bar text, FAIL = modal).
-    setStatusNotice(L"已加入队列：移除重复代理");
+    setStatusNotice(i18n::wx(i18n::StrId::MainFrame_Status_QueuedDedup));
     controller_->deduplicateAsync(this);
 }
 
@@ -1377,11 +1377,11 @@ void MainFrame::onMenuExportShareLink(wxCommandEvent&) {
     bool ok = std::get<0>(exportResult);
     int count = std::get<1>(exportResult);
     if (ok && count > 0) {
-        setStatusText(0, wxString::Format(L"导出%d个有效代理至文件%s", count, std::get<2>(exportResult)));
+        setStatusText(0, i18n::wxf(i18n::StrId::MainFrame_Status_ExportedLinks, { wxString::Format("%d", count), wxString::FromUTF8(std::get<2>(exportResult).c_str()) }));
     } else if (ok) {
-        setStatusText(0, L"没有有效代理可导出。");
+        setStatusText(0, i18n::wx(i18n::StrId::MainFrame_Status_NoValidProxy));
     } else {
-        setStatusText(0, L"导出分享链接失败。");
+        setStatusText(0, i18n::wx(i18n::StrId::MainFrame_Status_ExportFailed));
     }
 }
 
@@ -1397,7 +1397,7 @@ void MainFrame::onMenuGenerateConfig(wxCommandEvent&) {
 
 void MainFrame::onMenuStandaloneMonitor(wxCommandEvent&) {
     if (!config_.proxy_process_monitor.enabled) {
-        wxMessageBox(L"监控代理进程未在配置中启用", L"提示",
+        wxMessageBox(i18n::wx(i18n::StrId::MainFrame_Dialog_MonitorDisabled), i18n::wx(i18n::StrId::MainFrame_Dialog_NoticeTitle),
                      wxOK | wxICON_INFORMATION);
         return;
     }
@@ -1487,7 +1487,7 @@ void MainFrame::onMenuConfig(wxCommandEvent&) {
         // true — the old !isOnlineProbeRunning() clause would have bypassed
         // the save guard there, so we now check isRunning() alone.
         if (controller_->isRunning()) {
-            wxMessageBox(L"操作进行中，无法保存配置", L"操作进行中", wxOK | wxICON_WARNING);
+            wxMessageBox(i18n::wx(i18n::StrId::MainFrame_Dialog_BusySaveConfig), i18n::wx(i18n::StrId::MainFrame_Dialog_BusyTitle), wxOK | wxICON_WARNING);
             return;
         }
         bool dbPathChanged = !cfg.database_path.empty() && cfg.database_path != config_.database_path;
@@ -1514,7 +1514,7 @@ void MainFrame::onMenuConfig(wxCommandEvent&) {
                 controller_->isRunning(), controller_->isOnlineProbeRunning());
             if (dbSwitchDecision ==
                 db_switch_policy::Decision::RefuseUserOperation) {
-                wxMessageBox(L"操作进行中，无法切换数据库", L"操作进行中", wxOK | wxICON_WARNING);
+                wxMessageBox(i18n::wx(i18n::StrId::MainFrame_Dialog_BusySwitchDb), i18n::wx(i18n::StrId::MainFrame_Dialog_BusyTitle), wxOK | wxICON_WARNING);
                 return;
             }
             // Queue check independent of the decision: queued tasks exist
@@ -1522,8 +1522,8 @@ void MainFrame::onMenuConfig(wxCommandEvent&) {
             // worker picks them up), so BOTH Allow and QuiesceProbe can still
             // carry a backlog.
             if (controller_->getTaskQueueSnapshot().queueDepth > 0) {
-                wxMessageBox(L"任务队列有排队任务，为避免新旧库混跑，请先清理队列再切换数据库",
-                             L"任务进行中", wxOK | wxICON_WARNING);
+                wxMessageBox(i18n::wx(i18n::StrId::MainFrame_Dialog_BusyQueueSwitchDb),
+                             i18n::wx(i18n::StrId::MainFrame_Dialog_TaskRunningTitle), wxOK | wxICON_WARNING);
                 return;
             }
         }
@@ -1683,8 +1683,8 @@ void MainFrame::onMenuAutoTask(wxCommandEvent&) {
     // timer), not what the last click enqueued.
     const std::size_t ahead = controller_->getTaskQueueSnapshot().queueDepth;
     setStatusNotice(ahead > 0
-        ? wxString::Format(L"已加入队列：自动任务，前方还有 %zu 个任务", ahead)
-        : wxString(L"自动任务已开始"));
+        ? i18n::wxf(i18n::StrId::MainFrame_Status_QueuedAutoTask, { wxString::Format("%zu", ahead) })
+        : i18n::wx(i18n::StrId::MainFrame_Status_AutoTaskStarted));
     controller_->runAutoTaskAsync(this);
 }
 
@@ -1692,34 +1692,25 @@ void MainFrame::onMenuAutoTaskResume(wxCommandEvent&) {
     // Same queued semantics as onMenuAutoTask (spec §2.5-G4).
     const std::size_t ahead = controller_->getTaskQueueSnapshot().queueDepth;
     setStatusNotice(ahead > 0
-        ? wxString::Format(L"已加入队列：恢复自动任务，前方还有 %zu 个任务", ahead)
-        : wxString(L"恢复自动任务已开始"));
+        ? i18n::wxf(i18n::StrId::MainFrame_Status_QueuedResumeAutoTask, { wxString::Format("%zu", ahead) })
+        : i18n::wx(i18n::StrId::MainFrame_Status_ResumeAutoTaskStarted));
     controller_->resumeAutoTaskAsync(this);
 }
 
 void MainFrame::onMenuAbout(wxCommandEvent&) {
-    wxString info;
-    info.Printf(
-        L"%hs v%hs\n\n"
-        L"\u7248\u672C: %hs\n"
-        L"Git Tag: %hs\n"
-        L"Git Commit: %hs\n"
-        L"\u6784\u5EFA\u7C7B\u578B: %hs\n"
-        L"\u6784\u5EFA\u65F6\u95F4: %hs\n"
-        L"\u7F16\u8BD1\u5668: %hs\n\n"
-        L"\u7BA1\u7406\u5E76\u6D4B\u8BD5\u60A8\u7684\u4EE3\u7406\u8BA2\u9605\u3002",
-        APP_NAME,
-        APP_VERSION,
-        APP_VERSION_FULL,
-        APP_GIT_TAG,
-        APP_GIT_COMMIT,
-        APP_BUILD_TYPE,
-        APP_BUILD_TIME,
-        __VERSION__
-    );
+    const wxString info = i18n::wxf(
+        i18n::StrId::MainFrame_Dialog_AboutText,
+        { wxString::FromUTF8(APP_NAME),
+          wxString::FromUTF8(APP_VERSION),
+          wxString::FromUTF8(APP_VERSION_FULL),
+          wxString::FromUTF8(APP_GIT_TAG),
+          wxString::FromUTF8(APP_GIT_COMMIT),
+          wxString::FromUTF8(APP_BUILD_TYPE),
+          wxString::FromUTF8(APP_BUILD_TIME),
+          wxString::FromUTF8(__VERSION__) });
 
     wxMessageBox(info,
-                 L"\u5173\u4E8E validproxy",
+                 i18n::wx(i18n::StrId::MainFrame_Dialog_AboutTitle),
                  wxOK | wxICON_INFORMATION,
                  this);
 }
@@ -1746,7 +1737,7 @@ void MainFrame::onToolTest(wxCommandEvent& event) {
     if (!controller_) { (void)event; return; }
     const std::size_t ahead = controller_->getTaskQueueSnapshot().queueDepth;
     setStatusNotice(ahead > 0
-        ? wxString::Format(L"已加入队列：全部测试 (TEST_ALL)，前方还有 %zu 个任务", ahead)
+        ? i18n::wxf(i18n::StrId::MainFrame_Status_QueuedTestAll, { wxString::Format("%zu", ahead) })
         : wxString(L"Testing all proxies…"));
     controller_->testAllProxiesAsync(this);
     (void)event;
@@ -1757,7 +1748,7 @@ void MainFrame::onToolCancel(wxCommandEvent&) {
         controller_->cancelTest();
     }
     setOperationState(OperationType::NONE);
-    setStatusText(0, L"操作已取消");
+    setStatusText(0, i18n::wx(i18n::StrId::MainFrame_Status_Cancelled));
 }
 
 void MainFrame::onToolRegion(wxCommandEvent& event) {
@@ -1767,8 +1758,8 @@ void MainFrame::onToolRegion(wxCommandEvent& event) {
     // (ProxyListPanel::onBatchResolveRegion), full scope: subId = "".
     const std::size_t ahead = controller_->getTaskQueueSnapshot().queueDepth;
     setStatusNotice(ahead > 0
-        ? wxString::Format(L"已加入队列：批量解析地区，前方还有 %zu 个任务", ahead)
-        : wxString(L"批量解析地区已开始"));
+        ? i18n::wxf(i18n::StrId::MainFrame_Status_QueuedResolveRegion, { wxString::Format("%zu", ahead) })
+        : i18n::wx(i18n::StrId::MainFrame_Status_ResolveRegionStarted));
     controller_->resolveRegionsBatchAsync(this, "");
     (void)event;
 }
@@ -1787,7 +1778,7 @@ void MainFrame::onToolConfig(wxCommandEvent& event) {
 
 void MainFrame::onToolSync(wxCommandEvent&) {
     setOperationState(OperationType::SYNC);
-    setStatusText(0, L"同步中…");
+    setStatusText(0, i18n::wx(i18n::StrId::MainFrame_Status_Syncing));
     if (controller_) {
         controller_->syncDatabasesAsync(this);
     }
