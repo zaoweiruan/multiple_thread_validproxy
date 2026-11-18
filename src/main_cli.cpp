@@ -22,6 +22,8 @@
 #include "ConfigGenerator.h"
 #include "ProxyFinder.h"
 #include "ConfigReader.h"
+#include "config/ActiveConfigPath.h"
+#include "i18n/I18n.h"
 #include "XrayApi.h"
 #include "XrayManager.h"
 #include "SubitemUpdaterV2.h"
@@ -545,6 +547,9 @@ int main(int argc, char* argv[]) {
         }
     }
     
+    // publish process-level effective config path (-c/--config)
+    config::setActiveConfigPath(configPath);
+
     if (commandMode == "test-all") {
         return runDefaultTest(configPath, exeDir, logDir, "test-all");
     }

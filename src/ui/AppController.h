@@ -17,6 +17,8 @@
 #include <cstdint>
 
 #include "ConfigReader.h"
+#include "config/ActiveConfigPath.h"
+#include "i18n/Language.h"
 #include "Subitem.h"
 #include "Profileitem.h"
 #include "ProfileExItem.h"
@@ -112,6 +114,9 @@ public:
 // Config
    config::AppConfig getConfig() const { return config_; }
    bool saveConfig(const config::AppConfig& cfg);
+// 语言唯一写点：更新 config_.ui.language 并落盘，返回保存是否成功。
+// 不影响 worker 数据路径，不需要 isRunning() 守卫。
+bool setUiLanguage(i18n::Language lang);
    bool isRunning() const { return isRunning_.load() || taskQueue_.isBusy(); }
     // True while a queue task is running OR QUEUED. The synchronous-DB-write
     // gates (编辑订阅确认/删除订阅/删除代理) use this instead of isRunning(): a

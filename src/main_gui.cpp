@@ -5,6 +5,9 @@
 #include "Utils.h"
 #include "Logger.h"
 #include "ConfigReader.h"
+#include "config/ActiveConfigPath.h"
+#include "i18n/I18n.h"
+#include "i18n/LogBanner.h"
 #include "CrashHandler.h"
 #include "XrayManager.h"
 #include "version.h"
@@ -518,6 +521,22 @@ int main(int argc, char* argv[]) {
         Logger::close();
         return 1;
     }
+
+    // 发布进程级生效配置路径（-c/--config），保证 saveConfig / ConfigDialog 落到同一文件。
+    config::setActiveConfigPath(configPath);
+
+    // 启动语言：仅 config.ui.language → 内置 zh-CN；无环境变量覆盖层。
+    {
+        i18n::Language startupLang = i18n::Language::ZhCN;
+        if (!i18n::parseLanguage(appConfig->ui.language, startupLang)) {
+            startupLang = i18n::Language::ZhCN;
+        }
+        i18n::setLanguage(startupLang);
+    }
+
+    // 会话语言横幅 + 跨会话语言变更分隔线（语言中立，写入本日志文件开头）。
+    i18n::LogBanner::writeSessionBanner(logDir.string(), Logger::getFilePath(),
+                                       i18n::languageCode(i18n::language()));
 
     // Apply config-specified log levels
     Logger::setFileEnabled(appConfig->log_enabled);

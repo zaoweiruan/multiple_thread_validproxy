@@ -24,6 +24,7 @@
 #include "config/sections/NotificationConfigParser.h"
 #include "config/sections/SyncConfigParser.h"
 #include "config/sections/AutoTaskConfigParser.h"
+#include "config/sections/UiConfigParser.h"
 #include "config/sections/NetworkMonitorConfigParser.h"
 #include "config/sections/ProxyConfigParser.h"
 #include "config/sections/ProxyProcessMonitorConfigParser.h"
@@ -84,6 +85,7 @@ std::optional<AppConfig> ConfigReader::load(const std::string& configPath) {
     IndependentProbeConfigParser().parse(jv, config);
     StandalonePoolConfigParser().parse(jv, config, exeDir);
     PortConfigParser().parse(jv, config);   // 2-arg form: port.* holds no exeDir-resolvable paths
+UiConfigParser().parse(jv, config, exeDir);
 
     // Step 5: Log SQL queries
     if (!config.sql_query.empty())

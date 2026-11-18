@@ -16,6 +16,7 @@
 #include "AppController.h"
 #include "Events.h"
 #include "Logger.h"
+#include "i18n/I18nWx.h"
 #include "Profileitem.h"
 #include "RefreshCommands.h"
 #include "ToolbarIcons.h"
@@ -26,6 +27,7 @@
 #include "UiControlIds.h"
 #include "version.h"
 #include "config/ConfigPathResolver.h"
+#include "config/ActiveConfigPath.h"
 
 #include <wx/sizer.h>
 #include <wx/splitter.h>
@@ -52,6 +54,8 @@ enum {
     ID_MENU_SYNC_DB       = wxID_HIGHEST + 101,
     ID_MENU_CLOUD_PULL   = wxID_HIGHEST + 191,
     ID_MENU_CLOUD_PUSH   = wxID_HIGHEST + 192,
+    ID_MENU_LANGUAGE_ZH  = wxID_HIGHEST + 193,
+    ID_MENU_LANGUAGE_EN  = wxID_HIGHEST + 194,
     ID_MENU_EXIT          = wxID_HIGHEST + 102,
     ID_MENU_UPDATE_ALL    = wxID_HIGHEST + 103,
 
@@ -108,6 +112,8 @@ EVT_MENU(ID_MENU_CLOUD_PUSH, MainFrame::onMenuCloudPush)
     EVT_MENU(ID_MENU_EXPORT,      MainFrame::onMenuExportShareLink)
     EVT_MENU(ID_MENU_GEN_CONFIG,  MainFrame::onMenuGenerateConfig)
     EVT_MENU(ID_MENU_CONFIG,      MainFrame::onMenuConfig)
+    EVT_MENU(ID_MENU_LANGUAGE_ZH, MainFrame::onMenuLanguage)
+    EVT_MENU(ID_MENU_LANGUAGE_EN, MainFrame::onMenuLanguage)
     EVT_MENU(ID_MENU_AUTOTASK_RUN, MainFrame::onMenuAutoTask)
     EVT_MENU(ID_MENU_AUTOTASK_RESUME, MainFrame::onMenuAutoTaskResume)
     EVT_MENU(ID_MENU_ABOUT,       MainFrame::onMenuAbout)
@@ -838,6 +844,18 @@ void MainFrame::initMenuBar() {
     settingsMenu->Append(ID_MENU_CONFIG, L"配置…\tCtrl+,");
     bar->Append(settingsMenu, L"&设置");
 
+    wxMenu* languageMenu = new wxMenu;
+    languageMenu->AppendRadioItem(ID_MENU_LANGUAGE_ZH, i18n::wx(i18n::StrId::MainFrame_Menu_LangZh));
+    languageMenu->AppendRadioItem(ID_MENU_LANGUAGE_EN, i18n::wx(i18n::StrId::MainFrame_Menu_LangEn));
+    {
+        i18n::Language current = i18n::Language::ZhCN;
+        if (!i18n::parseLanguage(config_.ui.language, current)) {
+            current = i18n::Language::ZhCN;
+        }
+        languageMenu->Check(current == i18n::Language::ZhCN ? ID_MENU_LANGUAGE_ZH : ID_MENU_LANGUAGE_EN, true);
+    }
+    bar->Append(languageMenu, i18n::wx(i18n::StrId::MainFrame_Menu_Language));
+
     wxMenu* helpMenu = new wxMenu;
     helpMenu->Append(ID_MENU_ABOUT, L"关于");
     bar->Append(helpMenu, L"&帮助");
@@ -1400,14 +1418,62 @@ void MainFrame::syncFloatingWidgetControls() {
     }
 }
 
+void MainFrame::onMenuLanguage(wxCommandEvent& event) {
+    i18n::Language target = (event.GetId() == ID_MENU_LANGUAGE_ZH)
+                                ? i18n::Language::ZhCN
+                                : i18n::Language::EnUS;
+
+    i18n::Language current = i18n::Language::ZhCN;
+    if (!i18n::parseLanguage(config_.ui.language, current)) {
+        current = i18n::Language::ZhCN;
+    }
+
+    if (target == current) {
+        const int keepId = (current == i18n::Language::ZhCN) ? ID_MENU_LANGUAGE_ZH : ID_MENU_LANGUAGE_EN;
+        menuBar_->Check(keepId, true);
+        return;
+    }
+
+    const bool saved = controller_->setUiLanguage(target);
+    if (saved) {
+        config_ = controller_->getConfig();
+    } else {
+        config_ = controller_->getConfig();
+    }
+
+    i18n::Language effective = i18n::Language::ZhCN;
+    if (!i18n::parseLanguage(config_.ui.language, effective)) {
+        effective = i18n::Language::ZhCN;
+    }
+    menuBar_->Check(ID_MENU_LANGUAGE_ZH, effective == i18n::Language::ZhCN);
+    menuBar_->Check(ID_MENU_LANGUAGE_EN, effective == i18n::Language::EnUS);
+
+    const wxString title = i18n::wx(i18n::StrId::MainFrame_Message_LanguageTitle);
+    if (saved) {
+        wxMessageBox(i18n::wx(i18n::StrId::MainFrame_Message_RestartToApply),
+                     title, wxOK | wxICON_INFORMATION, this);
+        Logger::write(i18n::u8f(i18n::StrId::MainFrame_Status_LanguagePendingRestart,
+                                { i18n::languageCode(target) }),
+                      LogLevel::INFO);
+        if (statusBar_) {
+            statusBar_->SetStatusText(
+                i18n::wxf(i18n::StrId::MainFrame_Status_LanguagePendingRestart,
+                          { wxString(i18n::languageCode(target)) }),
+                0);
+        }
+    } else {
+        wxMessageBox(i18n::wx(i18n::StrId::MainFrame_Message_LanguageSaveFailed),
+                     title, wxOK | wxICON_WARNING, this);
+    }
+}
+
 void MainFrame::onMenuConfig(wxCommandEvent&) {
     if (configDialog_) {
         delete configDialog_;
         configDialog_ = nullptr;
     }
-    // 获取 config.json 路径
-    std::string configPath = config::ConfigPathResolver(config::ConfigPathResolver::detectExeDir())
-                                .defaultConfigPath();
+    // 使用进程级生效配置路径（-c/--config），避免与 saveConfig 写不同文件。
+    std::string configPath = config::activeConfigPath();
     configDialog_ = new ConfigDialog(this, controller_->getConfig(), db_, configPath);
     if (configDialog_->ShowModal() == wxID_OK) {
         config::AppConfig cfg = configDialog_->getConfig();

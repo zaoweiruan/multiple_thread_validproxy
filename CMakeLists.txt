@@ -422,11 +422,13 @@ set(CORE_SOURCES
     src/CrashHandler.cpp
     src/ConfigGenerator.cpp
     src/ConfigReader.cpp
+    src/config/ActiveConfigPath.cpp
     src/Logger.cpp
     src/LoggerInstance.cpp
     src/i18n/Language.cpp
     src/i18n/I18n.cpp
     src/i18n/StringTable.cpp
+    src/i18n/LogBanner.cpp
     src/LogStatistics.cpp
     src/PortManager.cpp
     src/ProfileitemDAO.cpp

@@ -158,6 +158,13 @@ boost::json::object ConfigJsonSerializer::serialize(const AppConfig& config) con
     ipObj["enabled"] = config.independent_probe.enabled;
     root["independent_probe"] = ipObj;
 
+    // ui
+    {
+        boost::json::object uiObj;
+        uiObj["language"] = config.ui.language;
+        root["ui"] = uiObj;
+    }
+
     // standalone_pool
     {
         boost::json::object spObj;

@@ -133,6 +133,11 @@ struct AppConfig {
 
     StandalonePoolConfig standalone_pool;
 
+    // UI configuration (bilingual UI, Spec 2026-11-18).
+    struct {
+        std::string language = "zh-CN";
+    } ui;
+
         // TIME_WAIT semantics rollback switch (Spec StandalonePortImmediateRebind, P0-1).
         // Published once by AppController into utils::setTimeWaitBlocking(); NEVER read
         // on the probing hot path (ConfigReader::load() is disk IO per call).

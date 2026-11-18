@@ -91,6 +91,7 @@ private:
     void onMenuExportShareLink(wxCommandEvent& event);
     void onMenuGenerateConfig(wxCommandEvent& event);
     void onMenuConfig(wxCommandEvent& event);
+void onMenuLanguage(wxCommandEvent& event);
     void onMenuAutoTask(wxCommandEvent& event);
     void onMenuAutoTaskResume(wxCommandEvent& event);
     void onMenuAbout(wxCommandEvent& event);

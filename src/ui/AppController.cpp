@@ -176,9 +176,23 @@ bool AppController::saveConfig(const config::AppConfig& cfg) {
     // 同步 ECH 开关：否则「配置窗口勾选 ECH → 立即启动独立代理」用的仍是旧值
     // （setEchEnabled 只在 ConfigReader::load() 里下发，即只在进程启动时）。
     config::setEchEnabled(config_.proxy.ech_enabled);
-    // Persist to config.json so changes survive restart
-    std::string configPath = config::ConfigReader::getDefaultConfigPath();
+    // Persist to config.json so changes survive restart.
+    // 使用进程级生效路径（-c/--config），避免把沙箱写入 bin/config.json。
+    std::string configPath = config::activeConfigPath();
     return config::ConfigReader::save(configPath, cfg);
+}
+
+bool AppController::setUiLanguage(i18n::Language lang) {
+    std::lock_guard<std::mutex> lock(configMutex_);
+    config::AppConfig cfg = config_;
+    cfg.ui.language = i18n::languageCode(lang);
+    config_ = cfg;
+    const std::string path = config::activeConfigPath();
+    const bool saved = config::ConfigReader::save(path, config_);
+    if (!saved) {
+        Logger::write("[AppController] failed to save ui.language to " + path, LogLevel::WARN);
+    }
+    return saved;
 }
 
 // ---------------------------------------------------------------
