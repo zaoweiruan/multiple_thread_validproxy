@@ -92,7 +92,15 @@ CLI `cancel-task` 同步使用同一解析器，并对写失败给出明确提�
 
 ### 6.1 全量回归
 
-（本文件提交时补记实际结果）
+`ctest --test-dir build-tc-clion-msvcrt-Release --output-on-failure` → **74/76 通过**
+（318 s，EXIT 8）。失败两项均为既有问题、与本次改动无关：
+
+- `44 - LogStatisticsEventTest`（`0xC0000139`）：测试 exe 未嵌 Common Controls v6 manifest，
+  加载到 comctl32 5.82 缺 `GetWindowSubclass`（见
+  `docs/bugfix/2026-11-17-Bugfix-Win7-UIEncoding-MenuAssertCrash-v1.0.md` §5.1）。
+- `64 - UI_FLOATINGWIDGET`：既有已知 flaky（桌面 UWP 覆盖窗口导致采样漂移）。
+
+新增 `AutoTaskStatePathTest`（#76 套件内）通过。
 
 ## 7. 换机部署建议（文档口径）
 
