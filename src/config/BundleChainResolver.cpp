@@ -1,4 +1,5 @@
 #include "config/BundleChainResolver.h"
+#include "i18n/I18n.h"
 
 #include <algorithm>
 #include <regex>
@@ -91,7 +92,7 @@ BundleChainResolveResult BundleChainResolver::resolveBundleChain(const BundleCha
         const std::optional<ComponentBundle> bundle = loadBundle(bundleId);
         if (!bundle.has_value()) {
             result.success = false;
-            result.errorMessage = "Bundle 不存在: " + bundleId;
+            result.errorMessage = i18n::u8(i18n::StrId::BundleChain_BundleNotFound) + bundleId;
             return result;
         }
 

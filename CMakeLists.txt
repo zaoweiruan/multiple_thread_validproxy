@@ -2286,3 +2286,26 @@ add_test(NAME UI_BOTTOMVIEW COMMAND UITests "[bottomview]")
                 "VALIDPROXY_APP_EXE=${_UI_APP_EXE};VALIDPROXY_APP_ROOT=${_UI_APP_ROOT}")
     endif()
 endif()
+
+# -- i18n 字符串表兜底链接 -------------------------------------------------
+# 业务层（config / DAO / net / task）大量使用 i18n::u8 / i18n::w，而部分单元
+# 测试只编译被测源文件、不走 CORE_SOURCES。这里为所有测试可执行文件统一补
+# 一个静态库；已经通过 CORE_SOURCES 自行定义这些符号的目标不会再从库里
+# 拉取同名成员（静态库按需提取），因此不会产生重复定义。
+if(NOT TARGET i18n_core)
+    add_library(i18n_core STATIC
+        src/i18n/Language.cpp
+        src/i18n/I18n.cpp
+        src/i18n/StringTable.cpp)
+    target_include_directories(i18n_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+endif()
+
+get_property(_vp_targets DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
+foreach(_vp_t ${_vp_targets})
+    if(_vp_t MATCHES "^test_" OR _vp_t STREQUAL "UITests")
+        get_target_property(_vp_type ${_vp_t} TYPE)
+        if(_vp_type STREQUAL "EXECUTABLE")
+            target_link_libraries(${_vp_t} PRIVATE i18n_core)
+        endif()
+    endif()
+endforeach()

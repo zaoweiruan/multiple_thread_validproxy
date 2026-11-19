@@ -524,6 +524,22 @@ enum class StrId : int {
     ConfigDialog_ButTemplateConfigCould = 514,
     ConfigDialog_PartialSuccess = 515,
     ConfigDialog_SaveFailedSeeLog = 516,
+    ComponentResolver_UnknownComponentType = 517,
+    ComponentResolver_DuplicateSingletonComponent = 518,
+    ComponentResolver_KeepingLastOne = 519,
+    ComponentResolver_DuplicateArrayComponentTag = 520,
+    ConflictDetector_DuplicateSingletonComponentDefinition = 521,
+    ConflictDetector_CrossBundleOverrideAllowed = 522,
+    ConflictDetector_DuplicateWithinSameBundle = 523,
+    ConflictDetector_DuplicateArrayComponentTag = 524,
+    ConflictDetector_RoutingMissingInbound = 525,
+    ConflictDetector_RoutingMissingOutbound = 526,
+    SchemaValidator_JSONSyntaxError = 527,
+    SchemaValidator_RootMustBeObject = 528,
+    StreamSettings_RealityPublicKeyRequired = 529,
+    StreamSettings_RealitySniRequired = 530,
+    BundleChain_BundleNotFound = 531,
+    Outbound_UnsupportedProtocol = 532,
     Count
 };
 

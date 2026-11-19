@@ -2600,6 +2600,86 @@
       "id": "ConfigDialog.SaveFailedSeeLog",
       "zh": "保存失败，请查看日志",
       "en": "Save failed; see the log"
+    },
+    {
+      "id": "ComponentResolver.UnknownComponentType",
+      "zh": "未知组件类型: ",
+      "en": "Unknown component type: "
+    },
+    {
+      "id": "ComponentResolver.DuplicateSingletonComponent",
+      "zh": "单例组件重复: ",
+      "en": "Duplicate singleton component: "
+    },
+    {
+      "id": "ComponentResolver.KeepingLastOne",
+      "zh": " (保留最后一个)",
+      "en": " (keeping the last one)"
+    },
+    {
+      "id": "ComponentResolver.DuplicateArrayComponentTag",
+      "zh": "数组组件 tag 重复: ",
+      "en": "Duplicate array component tag: "
+    },
+    {
+      "id": "ConflictDetector.DuplicateSingletonComponentDefinition",
+      "zh": "单例组件重复定义: ",
+      "en": "Duplicate singleton component definition: "
+    },
+    {
+      "id": "ConflictDetector.CrossBundleOverrideAllowed",
+      "zh": " (跨包覆盖，允许)",
+      "en": " (cross-bundle override, allowed)"
+    },
+    {
+      "id": "ConflictDetector.DuplicateWithinSameBundle",
+      "zh": " (同包重复，错误)",
+      "en": " (duplicate within the same bundle, error)"
+    },
+    {
+      "id": "ConflictDetector.DuplicateArrayComponentTag",
+      "zh": "数组组件 tag 重复: ",
+      "en": "Duplicate array component tag: "
+    },
+    {
+      "id": "ConflictDetector.RoutingMissingInbound",
+      "zh": "Routing 规则引用不存在的 inbound: ",
+      "en": "Routing rule references a missing inbound: "
+    },
+    {
+      "id": "ConflictDetector.RoutingMissingOutbound",
+      "zh": "Routing 规则引用不存在的 outbound: ",
+      "en": "Routing rule references a missing outbound: "
+    },
+    {
+      "id": "SchemaValidator.JSONSyntaxError",
+      "zh": "JSON 语法错误: ",
+      "en": "JSON syntax error: "
+    },
+    {
+      "id": "SchemaValidator.RootMustBeObject",
+      "zh": "根节点必须是 JSON 对象 { ... }",
+      "en": "The root node must be a JSON object { ... }"
+    },
+    {
+      "id": "StreamSettings.RealityPublicKeyRequired",
+      "zh": "REALITY配置错误：publicKey不能为空",
+      "en": "REALITY configuration error: publicKey must not be empty"
+    },
+    {
+      "id": "StreamSettings.RealitySniRequired",
+      "zh": "REALITY配置错误：sni(serverName)不能为空",
+      "en": "REALITY configuration error: sni (serverName) must not be empty"
+    },
+    {
+      "id": "BundleChain.BundleNotFound",
+      "zh": "Bundle 不存在: ",
+      "en": "Bundle not found: "
+    },
+    {
+      "id": "Outbound.UnsupportedProtocol",
+      "zh": "不支持的协议类型: ",
+      "en": "Unsupported protocol type: "
     }
   ]
 }

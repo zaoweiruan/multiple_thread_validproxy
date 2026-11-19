@@ -1,4 +1,5 @@
 #include "config/StreamSettingsBuilder.h"
+#include "i18n/I18n.h"
 #include "Profileitem.h"
 #include <sstream>
 #include <algorithm>
@@ -103,10 +104,10 @@ boost::json::object StreamSettingsBuilder::build(const db::models::Profileitem& 
         } else if (security == "reality") {
             boost::json::object realitySettings;
             if (p.publickey.empty()) {
-                throw std::runtime_error("REALITY配置错误：publicKey不能为空");
+                throw std::runtime_error(i18n::u8(i18n::StrId::StreamSettings_RealityPublicKeyRequired));
             }
             if (p.sni.empty()) {
-                throw std::runtime_error("REALITY配置错误：sni(serverName)不能为空");
+                throw std::runtime_error(i18n::u8(i18n::StrId::StreamSettings_RealitySniRequired));
             }
 
             realitySettings["publicKey"] = p.publickey;

@@ -1,4 +1,5 @@
 #include "config/ConflictDetector.h"
+#include "i18n/I18n.h"
 #include <algorithm>
 #include <cstdio>
 #include <fstream>
@@ -85,7 +86,7 @@ std::vector<Conflict> ConflictDetector::detect(
                 conflict.type = ConflictType::SINGLETON_CONFLICT;
                 conflict.component1 = typeName;
                 conflict.component2 = typeName;
-                conflict.message = "单例组件重复定义: " + typeName;
+                conflict.message = i18n::u8(i18n::StrId::ConflictDetector_DuplicateSingletonComponentDefinition) + typeName;
                 conflict.index1 = sources[indices[0]].sourceIndex;
                 conflict.index2 = sources[indices[i]].sourceIndex;
                 conflict.sourceBundle1 = sources[indices[0]].sourceBundleId;
@@ -95,10 +96,10 @@ std::vector<Conflict> ConflictDetector::detect(
                 // 跨包覆盖允许（WARN），同包重复错误（ERROR）
                 if (isCrossBundle) {
                     conflict.severity = ConflictSeverity::WARN;
-                    conflict.message += " (跨包覆盖，允许)";
+                    conflict.message += i18n::u8(i18n::StrId::ConflictDetector_CrossBundleOverrideAllowed);
                 } else {
                     conflict.severity = ConflictSeverity::ERROR;
-                    conflict.message += " (同包重复，错误)";
+                    conflict.message += i18n::u8(i18n::StrId::ConflictDetector_DuplicateWithinSameBundle);
                 }
                 dbg("all fields set");
             }
@@ -145,7 +146,7 @@ std::vector<Conflict> ConflictDetector::detect(
                 conflict.type = ConflictType::TAG_CONFLICT;
                 conflict.component1 = typeName + ":" + tag;
                 conflict.component2 = typeName + ":" + tag;
-                conflict.message = "数组组件 tag 重复: " + tag;
+                conflict.message = i18n::u8(i18n::StrId::ConflictDetector_DuplicateArrayComponentTag) + tag;
                 conflict.index1 = sources[tagIndices[0]].sourceIndex;
                 conflict.index2 = sources[tagIndices[i]].sourceIndex;
                 conflict.sourceBundle1 = sources[tagIndices[0]].sourceBundleId;
@@ -155,10 +156,10 @@ std::vector<Conflict> ConflictDetector::detect(
                 // 跨包覆盖允许（WARN），同包重复错误（ERROR）
                 if (isCrossBundle) {
                     conflict.severity = ConflictSeverity::WARN;
-                    conflict.message += " (跨包覆盖，允许)";
+                    conflict.message += i18n::u8(i18n::StrId::ConflictDetector_CrossBundleOverrideAllowed);
                 } else {
                     conflict.severity = ConflictSeverity::ERROR;
-                    conflict.message += " (同包重复，错误)";
+                    conflict.message += i18n::u8(i18n::StrId::ConflictDetector_DuplicateWithinSameBundle);
                 }
             }
         }
@@ -218,7 +219,7 @@ std::vector<Conflict> ConflictDetector::detectDependencies(
                                     conflict.severity = ConflictSeverity::WARN;
                                     conflict.component1 = "routing";
                                     conflict.component2 = "inbound";
-                                    conflict.message = "Routing 规则引用不存在的 inbound: " + tag;
+                                    conflict.message = i18n::u8(i18n::StrId::ConflictDetector_RoutingMissingInbound) + tag;
                                     conflict.index1 = static_cast<int>(i);
                                     conflict.index2 = -1;
                                     conflict.isCrossBundle = false;
@@ -240,7 +241,7 @@ std::vector<Conflict> ConflictDetector::detectDependencies(
                             conflict.severity = ConflictSeverity::WARN;
                             conflict.component1 = "routing";
                             conflict.component2 = "outbound";
-                            conflict.message = "Routing 规则引用不存在的 outbound: " + tag;
+                            conflict.message = i18n::u8(i18n::StrId::ConflictDetector_RoutingMissingOutbound) + tag;
                             conflict.index1 = static_cast<int>(i);
                             conflict.index2 = -1;
                             conflict.isCrossBundle = false;

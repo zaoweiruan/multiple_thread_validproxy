@@ -1,4 +1,5 @@
 #include "config/OutboundBuilderFactory.h"
+#include "i18n/I18n.h"
 #include "config/outbound/VLESSOutboundBuilder.h"
 #include "config/outbound/VMessOutboundBuilder.h"
 #include "config/outbound/SSOutboundBuilder.h"
@@ -53,7 +54,7 @@ boost::json::object OutboundBuilderFactory::create(const db::models::Profileitem
             return builder.build(profile, tag);
         }
         default:
-            throw std::runtime_error("不支持的协议类型: " + profile.configtype);
+            throw std::runtime_error(i18n::u8(i18n::StrId::Outbound_UnsupportedProtocol) + profile.configtype);
     }
 }
 

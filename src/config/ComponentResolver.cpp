@@ -1,4 +1,5 @@
 #include "config/ComponentResolver.h"
+#include "i18n/I18n.h"
 #include <algorithm>
 #include <sstream>
 #include <regex>
@@ -49,7 +50,7 @@ ResolveResult ComponentResolver::resolve(
         // Get component metadata
         const ComponentMetadata* metadata = ComponentRegistry::instance().getMetadata(comp.type);
         if (!metadata) {
-            result.errorMessage = "未知组件类型: " + ComponentRegistry::instance().typeToString(comp.type);
+            result.errorMessage = i18n::u8(i18n::StrId::ComponentResolver_UnknownComponentType) + ComponentRegistry::instance().typeToString(comp.type);
             return result;
         }
         
@@ -123,7 +124,7 @@ std::vector<ResolverConflict> ComponentResolver::detectConflicts(
                 conflict.component1 = comps[0].id.empty() ? typeName : comps[0].id;
                 conflict.component2 = comps[i].id.empty() ? typeName : comps[i].id;
                 conflict.componentType = typeName;
-                conflict.message = "单例组件重复: " + typeName + " (保留最后一个)";
+                conflict.message = i18n::u8(i18n::StrId::ComponentResolver_DuplicateSingletonComponent) + typeName + i18n::u8(i18n::StrId::ComponentResolver_KeepingLastOne);
                 conflict.isCrossPackage = false;
                 conflicts.push_back(conflict);
             }
@@ -146,7 +147,7 @@ std::vector<ResolverConflict> ComponentResolver::detectConflicts(
                         conflict.component2 = comp.id.empty() ? 
                             (typeName + ":" + tag) : comp.id;
                         conflict.componentType = typeName;
-                        conflict.message = "数组组件 tag 重复: " + tag;
+                        conflict.message = i18n::u8(i18n::StrId::ComponentResolver_DuplicateArrayComponentTag) + tag;
                         conflict.isCrossPackage = false;
                         conflicts.push_back(conflict);
                     } else {

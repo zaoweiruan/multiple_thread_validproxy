@@ -1,4 +1,5 @@
 #include "config/SchemaValidator.h"
+#include "i18n/I18n.h"
 
 #include <set>
 
@@ -25,13 +26,13 @@ bool SchemaValidator::parseAndValidateComponentBundle(const std::string& json,
     boost::system::error_code ec;
     boost::json::value parsed = boost::json::parse(json, ec);
     if (ec) {
-        error = "JSON 语法错误: " + ec.message();
+        error = i18n::u8(i18n::StrId::SchemaValidator_JSONSyntaxError) + ec.message();
         return false;
     }
     // 合法 JSON 也未必是对象（数组/字符串/数字都能解析成功），
     // 必须在 as_object() 之前判型，否则同样抛异常。
     if (!parsed.is_object()) {
-        error = "根节点必须是 JSON 对象 { ... }";
+        error = i18n::u8(i18n::StrId::SchemaValidator_RootMustBeObject);
         return false;
     }
     if (!validateComponentBundle(parsed, error)) {

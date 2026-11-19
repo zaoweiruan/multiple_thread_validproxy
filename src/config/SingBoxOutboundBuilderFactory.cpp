@@ -1,4 +1,5 @@
 #include "config/SingBoxOutboundBuilderFactory.h"
+#include "i18n/I18n.h"
 #include "config/outbound/SingBoxVLESSOutboundBuilder.h"
 #include "config/outbound/SingBoxVMessOutboundBuilder.h"
 #include "config/outbound/SingBoxSSOutboundBuilder.h"
@@ -51,7 +52,7 @@ boost::json::object SingBoxOutboundBuilderFactory::create(const db::models::Prof
             return outbound;
         }
         default:
-            throw std::runtime_error("不支持的协议类型: " + profile.configtype);
+            throw std::runtime_error(i18n::u8(i18n::StrId::Outbound_UnsupportedProtocol) + profile.configtype);
     }
 }
 
