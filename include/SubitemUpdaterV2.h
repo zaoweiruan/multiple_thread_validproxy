@@ -20,6 +20,7 @@
 #include "update/SubscriptionUpdater.h"
 #include "update/Deduplicator.h"
 #include "update/Importer.h"
+#include "i18n/I18n.h"
 
 class NetworkMonitor;
 
@@ -50,7 +51,10 @@ public:
     };
     // Synthetic subId/remarks for the trailing post-update dedup row.
     static constexpr const char* kDedupStepId = "dedup";
-    static constexpr const char* kDedupStepName = "清洗";
+    // 展示名随界面语言变化，故用函数取 i18n 表，不能是 constexpr 常量。
+    static const char* dedupStepName() {
+        return i18n::u8(i18n::StrId::Update_DedupStepName);
+    }
     // Invoked synchronously on the run() thread with the full snapshot after
     // every transition. The receiver must be thread-safe and non-blocking.
     using StepObserver = std::function<void(const std::vector<UpdateStepInfo>&)>;

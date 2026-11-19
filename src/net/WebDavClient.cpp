@@ -1,5 +1,6 @@
 // src/net/WebDavClient.cpp
 #include "net/WebDavClient.h"
+#include "i18n/I18n.h"
 
 #include <cctype>
 #include <cstdio>
@@ -193,7 +194,7 @@ DavResponse WebDavClient::perform(const std::string& method, const std::string& 
     DavResponse response;
     CurlEasyHandle handle;
     if (!handle.valid()) {
-        response.error = "curl 初始化失败";
+        response.error = i18n::u8(i18n::StrId::WebDavClient_CurlInitialisationFailed);
         return response;
     }
 

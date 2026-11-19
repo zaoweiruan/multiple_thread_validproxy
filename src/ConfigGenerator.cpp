@@ -1,5 +1,6 @@
 ﻿#include "ConfigGenerator.h"
 #include "config/ProfileConfigRepository.h"
+#include "i18n/I18n.h"
 #include "config/OutboundBuilderFactory.h"
 #include "config/XrayConfigAssembler.h"
 #include "config/ConfigBuilder.h"
@@ -41,21 +42,21 @@ XrayConfig ConfigGenerator::generateConfig(const db::models::Profileitem& profil
     
     // Fallback: legacy JSON generation (no DB required)
     if (profile.address.empty()) {
-        throw std::runtime_error("代理地址不能为空");
+        throw std::runtime_error(i18n::u8(i18n::StrId::ConfigGenerator_ProxyAddressMustEmpty));
     }
     if (std::stoi(profile.port) <= 0 || std::stoi(profile.port) > 65535) {
-        throw std::runtime_error("无效的端口号: " + profile.port);
+        throw std::runtime_error(i18n::u8(i18n::StrId::ConfigGenerator_InvalidPortNumber) + profile.port);
     }
     if (profile.id.empty()) {
-        throw std::runtime_error("代理ID/密码不能为空");
+        throw std::runtime_error(i18n::u8(i18n::StrId::ConfigGenerator_ProxyIDPasswordMust));
     }
     
     if (profile.streamsecurity == "reality") {
         if (profile.publickey.empty()) {
-            throw std::runtime_error("REALITY配置缺少publicKey");
+            throw std::runtime_error(i18n::u8(i18n::StrId::ConfigGenerator_REALITYConfigurationMissingPublicKey));
         }
         if (profile.sni.empty()) {
-            throw std::runtime_error("REALITY配置缺少sni(serverName)");
+            throw std::runtime_error(i18n::u8(i18n::StrId::ConfigGenerator_REALITYConfigurationMissingSni));
         }
     }
     

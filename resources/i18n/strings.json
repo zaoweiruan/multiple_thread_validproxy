@@ -2680,6 +2680,286 @@
       "id": "Outbound.UnsupportedProtocol",
       "zh": "不支持的协议类型: ",
       "en": "Unsupported protocol type: "
+    },
+    {
+      "id": "TaskType.None",
+      "zh": "无任务 (NONE)",
+      "en": "No task (NONE)"
+    },
+    {
+      "id": "TaskType.UpdateSubscription",
+      "zh": "更新订阅 (UPDATE_SUBSCRIPTION)",
+      "en": "Update subscription (UPDATE_SUBSCRIPTION)"
+    },
+    {
+      "id": "TaskType.UpdateAll",
+      "zh": "更新全部订阅 (UPDATE_ALL)",
+      "en": "Update all subscriptions (UPDATE_ALL)"
+    },
+    {
+      "id": "TaskType.TestSubscription",
+      "zh": "测试订阅 (TEST_SUBSCRIPTION)",
+      "en": "Test subscription (TEST_SUBSCRIPTION)"
+    },
+    {
+      "id": "TaskType.TestSingleProxy",
+      "zh": "测试单个代理 (TEST_SINGLE_PROXY)",
+      "en": "Test a single proxy (TEST_SINGLE_PROXY)"
+    },
+    {
+      "id": "TaskType.TestAll",
+      "zh": "批量测试 (TEST_ALL)",
+      "en": "Test all (TEST_ALL)"
+    },
+    {
+      "id": "TaskType.TestBatch",
+      "zh": "批量测试容器 (TEST_BATCH)",
+      "en": "Test batch container (TEST_BATCH)"
+    },
+    {
+      "id": "TaskType.TestOnline",
+      "zh": "测试在线代理 (TEST_ONLINE)",
+      "en": "Test online proxies (TEST_ONLINE)"
+    },
+    {
+      "id": "TaskType.FindFirst",
+      "zh": "查找首个可用代理 (FIND_FIRST)",
+      "en": "Find the first working proxy (FIND_FIRST)"
+    },
+    {
+      "id": "TaskType.FindBest",
+      "zh": "查找最佳代理 (FIND_BEST)",
+      "en": "Find the best proxy (FIND_BEST)"
+    },
+    {
+      "id": "TaskType.FindByIndex",
+      "zh": "按编号查找代理 (FIND_BY_INDEX)",
+      "en": "Find a proxy by index (FIND_BY_INDEX)"
+    },
+    {
+      "id": "TaskType.Dedup",
+      "zh": "移除重复代理 (DEDUP)",
+      "en": "Remove duplicate proxies (DEDUP)"
+    },
+    {
+      "id": "TaskType.SyncDb",
+      "zh": "同步数据库 (SYNC_DB)",
+      "en": "Synchronise the database (SYNC_DB)"
+    },
+    {
+      "id": "TaskType.ExportShareLinks",
+      "zh": "导出分享链接 (EXPORT_SHARE_LINKS)",
+      "en": "Export share links (EXPORT_SHARE_LINKS)"
+    },
+    {
+      "id": "TaskType.ResolveRegion",
+      "zh": "批量解析地区 (RESOLVE_REGION)",
+      "en": "Resolve regions in bulk (RESOLVE_REGION)"
+    },
+    {
+      "id": "TaskType.ResolveSingleRegion",
+      "zh": "解析单个地区 (RESOLVE_SINGLE_REGION)",
+      "en": "Resolve a single region (RESOLVE_SINGLE_REGION)"
+    },
+    {
+      "id": "TaskType.GenerateConfig",
+      "zh": "生成配置 (GENERATE_CONFIG)",
+      "en": "Generate configuration (GENERATE_CONFIG)"
+    },
+    {
+      "id": "TaskType.AutoTask",
+      "zh": "自动任务 (AUTO_TASK)",
+      "en": "Auto task (AUTO_TASK)"
+    },
+    {
+      "id": "TaskType.ProbePoolMembers",
+      "zh": "探活池成员 (PROBE_POOL_MEMBERS)",
+      "en": "Probe pool members (PROBE_POOL_MEMBERS)"
+    },
+    {
+      "id": "TaskType.ProbeMember",
+      "zh": "探活单个池成员 (PROBE_MEMBER)",
+      "en": "Probe a single pool member (PROBE_MEMBER)"
+    },
+    {
+      "id": "TaskType.Unknown",
+      "zh": "未知任务 (UNKNOWN)",
+      "en": "Unknown task (UNKNOWN)"
+    },
+    {
+      "id": "CloudSync.SubscriptionsJsonValidJSON",
+      "zh": "subscriptions.json 不是合法 JSON: ",
+      "en": "subscriptions.json is not valid JSON: "
+    },
+    {
+      "id": "CloudSync.TopLevelSubscriptionsJson",
+      "zh": "subscriptions.json 顶层必须是对象",
+      "en": "The top level of subscriptions.json must be an object"
+    },
+    {
+      "id": "CloudSync.SubscriptionsJsonMissingItems",
+      "zh": "subscriptions.json 缺少 items 数组",
+      "en": "subscriptions.json is missing the items array"
+    },
+    {
+      "id": "CloudSync.CannotCreateCloudDirectory",
+      "zh": "无法在云端创建目录（MKCOL {}）",
+      "en": "Cannot create the cloud directory (MKCOL {})"
+    },
+    {
+      "id": "CloudSync.CredentialsRejected",
+      "zh": "WebDAV 凭据被拒绝（HTTP {}）",
+      "en": "WebDAV credentials rejected (HTTP {})"
+    },
+    {
+      "id": "CloudSync.CannotAccessCloudDirectory",
+      "zh": "无法访问云端目录（PROPFIND {}）",
+      "en": "Cannot access the cloud directory (PROPFIND {})"
+    },
+    {
+      "id": "CloudSync.LocalConfigJsonAlready",
+      "zh": "本地 config.json 已存在，跳过云端拉取",
+      "en": "A local config.json already exists; skipping the cloud pull"
+    },
+    {
+      "id": "CloudSync.ThereNoConfigJson",
+      "zh": "云端没有 config.json",
+      "en": "There is no config.json in the cloud"
+    },
+    {
+      "id": "CloudSync.FailedDownloadConfigJson",
+      "zh": "下载 config.json 失败（HTTP {}）",
+      "en": "Failed to download config.json (HTTP {})"
+    },
+    {
+      "id": "CloudSync.CloudConfigJsonValid",
+      "zh": "云端 config.json 不是合法 JSON 对象",
+      "en": "The cloud config.json is not a valid JSON object"
+    },
+    {
+      "id": "CloudSync.CannotWriteLocalConfig",
+      "zh": "无法写入本地 config.json",
+      "en": "Cannot write the local config.json"
+    },
+    {
+      "id": "CloudSync.PulledConfigJsonCloud",
+      "zh": "已从云端拉取 config.json",
+      "en": "Pulled config.json from the cloud"
+    },
+    {
+      "id": "CloudSync.ThereNoSubscriptionsJson",
+      "zh": "云端没有 subscriptions.json",
+      "en": "There is no subscriptions.json in the cloud"
+    },
+    {
+      "id": "CloudSync.FailedDownloadSubscriptionsJson",
+      "zh": "下载 subscriptions.json 失败（HTTP {}）",
+      "en": "Failed to download subscriptions.json (HTTP {})"
+    },
+    {
+      "id": "CloudSync.FailedWriteSubscriptionId",
+      "zh": "写入订阅失败（Id={}）",
+      "en": "Failed to write the subscription (Id={})"
+    },
+    {
+      "id": "CloudSync.SubscriptionSyncCompleteAdded",
+      "zh": "订阅同步完成：新增 {}，更新 {}",
+      "en": "Subscription sync complete: added {}, updated {}"
+    },
+    {
+      "id": "CloudSync.LocalConfigJsonMissing",
+      "zh": "本地 config.json 不存在或不可读",
+      "en": "The local config.json is missing or unreadable"
+    },
+    {
+      "id": "CloudSync.FailedUploadConfigJson",
+      "zh": "上传 config.json 失败（HTTP {}）",
+      "en": "Failed to upload config.json (HTTP {})"
+    },
+    {
+      "id": "CloudSync.ConfigJsonUploaded",
+      "zh": "config.json 已上传",
+      "en": "config.json uploaded"
+    },
+    {
+      "id": "CloudSync.FailedUploadSubscriptionsJson",
+      "zh": "上传 subscriptions.json 失败（HTTP {}）",
+      "en": "Failed to upload subscriptions.json (HTTP {})"
+    },
+    {
+      "id": "CloudSync.SubscriptionsUploaded",
+      "zh": "订阅已上传：{} 条",
+      "en": "Subscriptions uploaded: {} entries"
+    },
+    {
+      "id": "AutoTask.ResolveRegionsPrefix",
+      "zh": "解析地区: ",
+      "en": "Resolve regions: "
+    },
+    {
+      "id": "ProxyBatchTester.FailedInjectXrayOutbound",
+      "zh": "] 注入xray outbound 错误: ",
+      "en": "] failed to inject the Xray outbound: "
+    },
+    {
+      "id": "ConfigGenerator.ProxyAddressMustEmpty",
+      "zh": "代理地址不能为空",
+      "en": "The proxy address must not be empty"
+    },
+    {
+      "id": "ConfigGenerator.InvalidPortNumber",
+      "zh": "无效的端口号: ",
+      "en": "Invalid port number: "
+    },
+    {
+      "id": "ConfigGenerator.ProxyIDPasswordMust",
+      "zh": "代理ID/密码不能为空",
+      "en": "The proxy ID / password must not be empty"
+    },
+    {
+      "id": "ConfigGenerator.REALITYConfigurationMissingPublicKey",
+      "zh": "REALITY配置缺少publicKey",
+      "en": "The REALITY configuration is missing publicKey"
+    },
+    {
+      "id": "ConfigGenerator.REALITYConfigurationMissingSni",
+      "zh": "REALITY配置缺少sni(serverName)",
+      "en": "The REALITY configuration is missing sni (serverName)"
+    },
+    {
+      "id": "Db.SqlError",
+      "zh": "SQL错误: ",
+      "en": "SQL error: "
+    },
+    {
+      "id": "Db.OpenFailed",
+      "zh": "无法打开数据库: ",
+      "en": "Cannot open the database: "
+    },
+    {
+      "id": "WebDavCredentials.WebDAVCredentialsConfiguredRun",
+      "zh": "WebDAV 凭据未配置：请先运行 scripts/provision_webdav_secret.py 并重新构建",
+      "en": "WebDAV credentials are not configured: run scripts/provision_webdav_secret.py and rebuild first"
+    },
+    {
+      "id": "WebDavCredentials.WebDAVCredentialsCannotParsed",
+      "zh": "WebDAV 凭据无法解析：resources/webdav_secret.inc 可能已损坏",
+      "en": "WebDAV credentials cannot be parsed: resources/webdav_secret.inc may be corrupted"
+    },
+    {
+      "id": "WebDavCredentials.WebDAVCredentialsIncompleteAccount",
+      "zh": "WebDAV 凭据不完整（账号或应用密码为空）",
+      "en": "WebDAV credentials are incomplete (account or app password is empty)"
+    },
+    {
+      "id": "WebDavClient.CurlInitialisationFailed",
+      "zh": "curl 初始化失败",
+      "en": "curl initialisation failed"
+    },
+    {
+      "id": "Update.DedupStepName",
+      "zh": "清洗",
+      "en": "Cleanup"
     }
   ]
 }

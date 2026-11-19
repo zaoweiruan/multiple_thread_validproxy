@@ -4,6 +4,7 @@
 
 #include <string>
 
+#include "i18n/I18n.h"
 #include "task/TaskType.h"
 
 namespace {
@@ -74,10 +75,24 @@ TEST(TaskTypeLabelTest, CoversEveryEnumerator) {
 }
 
 TEST(TaskTypeLabelTest, TestAllLabelMatchesSpecExample) {
+    i18n::setLanguage(i18n::Language::ZhCN);
     EXPECT_STREQ(task::taskTypeToString(task::TaskType::TEST_ALL), "批量测试 (TEST_ALL)");
+
+    // 英文界面下同一枚举返回英文描述，枚举名保持不变（Spec FR-7 / D5）。
+    i18n::setLanguage(i18n::Language::EnUS);
+    EXPECT_STREQ(task::taskTypeToString(task::TaskType::TEST_ALL), "Test all (TEST_ALL)");
+
+    i18n::setLanguage(i18n::Language::ZhCN);
 }
 
 TEST(TaskTypeLabelTest, UnknownEnumeratorFallsBack) {
+    i18n::setLanguage(i18n::Language::ZhCN);
     EXPECT_STREQ(task::taskTypeToString(static_cast<task::TaskType>(9999)),
                  "未知任务 (UNKNOWN)");
+
+    i18n::setLanguage(i18n::Language::EnUS);
+    EXPECT_STREQ(task::taskTypeToString(static_cast<task::TaskType>(9999)),
+                 "Unknown task (UNKNOWN)");
+
+    i18n::setLanguage(i18n::Language::ZhCN);
 }

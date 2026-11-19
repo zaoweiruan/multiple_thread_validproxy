@@ -1,4 +1,5 @@
 #include "Profileitem.h"
+#include "i18n/I18n.h"
 #include "Logger.h"
 #include <sqlite3.h>
 #include <string>
@@ -15,7 +16,7 @@ std::vector<Profileitem> ProfileitemDAO::getAll(const std::string& sql) {
 
     sqlite3_stmt* stmt = nullptr;
     if (sqlite3_prepare_v2(db_, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
-      Logger::write("SQL错误: " + std::string(sqlite3_errmsg(db_)), LogLevel::ERR);
+      Logger::write(i18n::u8(i18n::StrId::Db_SqlError) + std::string(sqlite3_errmsg(db_)), LogLevel::ERR);
       return result;
     }
 
@@ -34,7 +35,7 @@ std::unordered_map<std::string, int> ProfileitemDAO::countBySubId() {
 
     sqlite3_stmt* stmt = nullptr;
     if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
-      Logger::write("SQL错误: " + std::string(sqlite3_errmsg(db_)), LogLevel::ERR);
+      Logger::write(i18n::u8(i18n::StrId::Db_SqlError) + std::string(sqlite3_errmsg(db_)), LogLevel::ERR);
       return result;
     }
 
@@ -59,7 +60,7 @@ std::unordered_map<std::string, int> ProfileitemDAO::countValidBySubId() {
 
     sqlite3_stmt* stmt = nullptr;
     if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
-      Logger::write("SQL错误: " + std::string(sqlite3_errmsg(db_)), LogLevel::ERR);
+      Logger::write(i18n::u8(i18n::StrId::Db_SqlError) + std::string(sqlite3_errmsg(db_)), LogLevel::ERR);
       return result;
     }
 

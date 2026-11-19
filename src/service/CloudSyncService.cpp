@@ -1,5 +1,6 @@
 // src/service/CloudSyncService.cpp
 #include "service/CloudSyncService.h"
+#include "i18n/I18n.h"
 
 #include <boost/json.hpp>
 
@@ -210,16 +211,16 @@ bool CloudSyncService::decodeSubscriptions(const std::string& json,
     boost::system::error_code ec;
     boost::json::value root = boost::json::parse(json, ec);
     if (ec) {
-        error = "subscriptions.json 不是合法 JSON: " + ec.message();
+        error = i18n::u8(i18n::StrId::CloudSync_SubscriptionsJsonValidJSON) + ec.message();
         return false;
     }
     if (!root.is_object()) {
-        error = "subscriptions.json 顶层必须是对象";
+        error = i18n::u8(i18n::StrId::CloudSync_TopLevelSubscriptionsJson);
         return false;
     }
     const boost::json::value* itemsVal = root.as_object().if_contains("items");
     if (itemsVal == nullptr || !itemsVal->is_array()) {
-        error = "subscriptions.json 缺少 items 数组";
+        error = i18n::u8(i18n::StrId::CloudSync_SubscriptionsJsonMissingItems);
         return false;
     }
 
@@ -315,14 +316,17 @@ bool CloudSyncService::ensureRemoteDir(std::string& error) const {
         if (created.ok() || created.status == 405) {  // 405 = already exists
             return true;
         }
-        error = "无法在云端创建目录（MKCOL " + std::to_string(created.status) + "）";
+        error = i18n::u8f(i18n::StrId::CloudSync_CannotCreateCloudDirectory,
+                          { std::to_string(created.status) });
         return false;
     }
     if (response.status == 401 || response.status == 403) {
-        error = "WebDAV 凭据被拒绝（HTTP " + std::to_string(response.status) + "）";
+        error = i18n::u8f(i18n::StrId::CloudSync_CredentialsRejected,
+                          { std::to_string(response.status) });
         return false;
     }
-    error = "无法访问云端目录（PROPFIND " + std::to_string(response.status) + "）" +
+    error = i18n::u8f(i18n::StrId::CloudSync_CannotAccessCloudDirectory,
+                          { std::to_string(response.status) }) +
             (response.error.empty() ? "" : ": " + response.error);
     return false;
 }
@@ -334,7 +338,7 @@ CloudSyncResult CloudSyncService::pullConfigOnly(net::WebDavClient& client,
     std::error_code ec;
     if (fs::exists(localConfigPath, ec) && !ec) {
         result.ok = true;
-        result.detail = "本地 config.json 已存在，跳过云端拉取";
+        result.detail = i18n::u8(i18n::StrId::CloudSync_LocalConfigJsonAlready);
         return result;
     }
 
@@ -344,37 +348,39 @@ CloudSyncResult CloudSyncService::pullConfigOnly(net::WebDavClient& client,
         if (!probe.ok() && probe.status == 404) {
             const net::DavResponse created = client.mkcol(dir);
             if (!created.ok() && created.status != 405) {
-                result.error = "无法在云端创建目录（MKCOL " +
-                               std::to_string(created.status) + "）";
+                result.error = i18n::u8f(i18n::StrId::CloudSync_CannotCreateCloudDirectory,
+                                 { std::to_string(created.status) });
                 return result;
             }
         } else if (!probe.ok() && (probe.status == 401 || probe.status == 403)) {
-            result.error = "WebDAV 凭据被拒绝（HTTP " + std::to_string(probe.status) + "）";
+            result.error = i18n::u8f(i18n::StrId::CloudSync_CredentialsRejected,
+                                 { std::to_string(probe.status) });
             return result;
         }
     }
 
     const net::DavResponse response = client.get(remotePathFor(remoteDir, kConfigFileName));
     if (response.status == 404) {
-        result.error = "云端没有 config.json";
+        result.error = i18n::u8(i18n::StrId::CloudSync_ThereNoConfigJson);
         return result;
     }
     if (!response.ok()) {
-        result.error = "下载 config.json 失败（HTTP " + std::to_string(response.status) + "）";
+        result.error = i18n::u8f(i18n::StrId::CloudSync_FailedDownloadConfigJson,
+                                 { std::to_string(response.status) });
         return result;
     }
     boost::system::error_code jsonEc;
     boost::json::value parsed = boost::json::parse(response.body, jsonEc);
     if (jsonEc || !parsed.is_object()) {
-        result.error = "云端 config.json 不是合法 JSON 对象";
+        result.error = i18n::u8(i18n::StrId::CloudSync_CloudConfigJsonValid);
         return result;
     }
     if (!utils::writeFileAtomically(localConfigPath, response.body)) {
-        result.error = "无法写入本地 config.json";
+        result.error = i18n::u8(i18n::StrId::CloudSync_CannotWriteLocalConfig);
         return result;
     }
     result.ok = true;
-    result.detail = "已从云端拉取 config.json";
+    result.detail = i18n::u8(i18n::StrId::CloudSync_PulledConfigJsonCloud);
     Logger::write("cloud sync: config.json pulled from remote", LogLevel::REPORT);
     return result;
 }
@@ -394,12 +400,12 @@ CloudSyncResult CloudSyncService::pullSubscriptions() {
     const net::DavResponse response =
             client_.get(remotePathFor(remoteDir_, kSubsFileName));
     if (response.status == 404) {
-        result.error = "云端没有 subscriptions.json";
+        result.error = i18n::u8(i18n::StrId::CloudSync_ThereNoSubscriptionsJson);
         return result;
     }
     if (!response.ok()) {
-        result.error = "下载 subscriptions.json 失败（HTTP " +
-                       std::to_string(response.status) + "）";
+        result.error = i18n::u8f(i18n::StrId::CloudSync_FailedDownloadSubscriptionsJson,
+                                 { std::to_string(response.status) });
         return result;
     }
 
@@ -421,7 +427,8 @@ CloudSyncResult CloudSyncService::pullSubscriptions() {
         const bool existed =
                 std::find(localIds.begin(), localIds.end(), rec.id) != localIds.end();
         if (!subDao_.upsertSubitem(toSubitem(rec))) {
-            result.error = "写入订阅失败（Id=" + rec.id + "）";
+            result.error = i18n::u8f(i18n::StrId::CloudSync_FailedWriteSubscriptionId,
+                                     { rec.id });
             return result;
         }
         if (existed) {
@@ -432,8 +439,9 @@ CloudSyncResult CloudSyncService::pullSubscriptions() {
     }
 
     result.ok = true;
-    result.detail = "订阅同步完成：新增 " + std::to_string(result.added) + "，更新 " +
-                    std::to_string(result.updated);
+    result.detail = i18n::u8f(
+            i18n::StrId::CloudSync_SubscriptionSyncCompleteAdded,
+            { std::to_string(result.added), std::to_string(result.updated) });
     Logger::write("cloud sync: " + result.detail, LogLevel::REPORT);
     return result;
 }
@@ -443,7 +451,7 @@ CloudSyncResult CloudSyncService::pushConfig() {
     bool readOk = false;
     const std::string body = readWholeFile(localConfigPath_, readOk);
     if (!readOk) {
-        result.error = "本地 config.json 不存在或不可读";
+        result.error = i18n::u8(i18n::StrId::CloudSync_LocalConfigJsonMissing);
         return result;
     }
     std::string dirError;
@@ -454,11 +462,12 @@ CloudSyncResult CloudSyncService::pushConfig() {
     const net::DavResponse response =
             client_.put(remotePathFor(remoteDir_, kConfigFileName), body);
     if (!response.ok()) {
-        result.error = "上传 config.json 失败（HTTP " + std::to_string(response.status) + "）";
+        result.error = i18n::u8f(i18n::StrId::CloudSync_FailedUploadConfigJson,
+                                 { std::to_string(response.status) });
         return result;
     }
     result.ok = true;
-    result.detail = "config.json 已上传";
+    result.detail = i18n::u8(i18n::StrId::CloudSync_ConfigJsonUploaded);
     Logger::write("cloud sync: config.json pushed", LogLevel::REPORT);
     return result;
 }
@@ -481,13 +490,14 @@ CloudSyncResult CloudSyncService::pushSubscriptions() {
     const net::DavResponse response =
             client_.put(remotePathFor(remoteDir_, kSubsFileName), body);
     if (!response.ok()) {
-        result.error = "上传 subscriptions.json 失败（HTTP " +
-                       std::to_string(response.status) + "）";
+        result.error = i18n::u8f(i18n::StrId::CloudSync_FailedUploadSubscriptionsJson,
+                                 { std::to_string(response.status) });
         return result;
     }
     result.ok = true;
     result.added = static_cast<int>(records.size());
-    result.detail = "订阅已上传：" + std::to_string(records.size()) + " 条";
+    result.detail = i18n::u8f(i18n::StrId::CloudSync_SubscriptionsUploaded,
+                              { std::to_string(records.size()) });
     Logger::write("cloud sync: " + result.detail, LogLevel::REPORT);
     return result;
 }

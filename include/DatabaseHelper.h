@@ -6,6 +6,7 @@
 #include <sqlite3.h>
 #include <iostream>
 #include "Logger.h"
+#include "i18n/I18n.h"
 
 namespace db {
 
@@ -29,7 +30,7 @@ public:
     }
     if (sqlite3_open_v2(db_path_.c_str(), &db_, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX, nullptr) != SQLITE_OK) {
       std::string errMsg = db_ ? sqlite3_errmsg(db_) : "database handle is null or invalid";
-      Logger::write("无法打开数据库: " + errMsg, LogLevel::ERR);
+      Logger::write(i18n::u8(i18n::StrId::Db_OpenFailed) + errMsg, LogLevel::ERR);
       return false;
     }
     return true;
@@ -41,7 +42,7 @@ public:
     char* err_msg = nullptr;
     if (sqlite3_exec(db_, sql.c_str(), nullptr, nullptr, &err_msg) != SQLITE_OK) {
       if (err_msg) {
-        Logger::write("SQL错误: " + std::string(err_msg), LogLevel::ERR);
+        Logger::write(i18n::u8(i18n::StrId::Db_SqlError) + std::string(err_msg), LogLevel::ERR);
         sqlite3_free(err_msg);
       }
       return false;

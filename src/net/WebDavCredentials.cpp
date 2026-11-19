@@ -1,5 +1,6 @@
 // src/net/WebDavCredentials.cpp
 #include "net/WebDavCredentials.h"
+#include "i18n/I18n.h"
 
 #include <cctype>
 #include <cstddef>
@@ -158,15 +159,15 @@ bool WebDavCredentialsStore::load(WebDavCredentials& out, std::string& error) {
 
     const std::string blob = kWebDavSecretBlob != nullptr ? kWebDavSecretBlob : "";
     if (trim(blob).empty()) {
-        error = "WebDAV 凭据未配置：请先运行 scripts/provision_webdav_secret.py 并重新构建";
+        error = i18n::u8(i18n::StrId::WebDavCredentials_WebDAVCredentialsConfiguredRun);
         return false;
     }
     if (!decodeBlob(blob, kBlobKey, out.user, out.password)) {
-        error = "WebDAV 凭据无法解析：resources/webdav_secret.inc 可能已损坏";
+        error = i18n::u8(i18n::StrId::WebDavCredentials_WebDAVCredentialsCannotParsed);
         return false;
     }
     if (!out.usable()) {
-        error = "WebDAV 凭据不完整（账号或应用密码为空）";
+        error = i18n::u8(i18n::StrId::WebDavCredentials_WebDAVCredentialsIncompleteAccount);
         return false;
     }
     return true;

@@ -1,4 +1,5 @@
 #include "Profileexitem.h"
+#include "i18n/I18n.h"
 #include "Logger.h"
 #include "Utils.h"
 #include <sqlite3.h>
@@ -43,7 +44,7 @@ std::vector<ProfileExItem> ProfileExItemDAO::getAll() {
 
     sqlite3_stmt* stmt = nullptr;
     if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
-      Logger::write("SQL错误: " + std::string(sqlite3_errmsg(db_)), LogLevel::ERR);
+      Logger::write(i18n::u8(i18n::StrId::Db_SqlError) + std::string(sqlite3_errmsg(db_)), LogLevel::ERR);
       return result;
     }
 
@@ -60,7 +61,7 @@ std::optional<ProfileExItem> ProfileExItemDAO::getByIndexId(const std::string& i
 
     sqlite3_stmt* stmt = nullptr;
     if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
-      Logger::write("SQL错误: " + std::string(sqlite3_errmsg(db_)), LogLevel::ERR);
+      Logger::write(i18n::u8(i18n::StrId::Db_SqlError) + std::string(sqlite3_errmsg(db_)), LogLevel::ERR);
       return std::nullopt;
     }
 

@@ -1,4 +1,5 @@
 #include <cstdlib>
+#include "i18n/I18n.h"
 #include "Subitem.h"
 #include "Logger.h"
 #include <sqlite3.h>
@@ -14,7 +15,7 @@ std::vector<Subitem> SubitemDAO::getAll() {
 
     sqlite3_stmt* stmt = nullptr;
     if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
-      Logger::write("SQL错误: " + std::string(sqlite3_errmsg(db_)), LogLevel::ERR);
+      Logger::write(i18n::u8(i18n::StrId::Db_SqlError) + std::string(sqlite3_errmsg(db_)), LogLevel::ERR);
       return result;
     }
 
@@ -32,7 +33,7 @@ std::vector<Subitem> SubitemDAO::getEnabledSubscriptions() {
 
     sqlite3_stmt* stmt = nullptr;
     if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
-      Logger::write("SQL错误: " + std::string(sqlite3_errmsg(db_)), LogLevel::ERR);
+      Logger::write(i18n::u8(i18n::StrId::Db_SqlError) + std::string(sqlite3_errmsg(db_)), LogLevel::ERR);
       return result;
     }
 

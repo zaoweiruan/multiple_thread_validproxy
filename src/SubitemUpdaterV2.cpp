@@ -205,7 +205,7 @@ bool SubitemUpdaterV2::run() {
     if (config_.dedup_after_update && config_.dedup_enabled) {
         UpdateStepInfo dedupRow;
         dedupRow.subId = kDedupStepId;
-        dedupRow.remarks = kDedupStepName;
+        dedupRow.remarks = dedupStepName();
         dedupRow.status = UpdateStepStatus::PENDING;
         dedupStepTracked_ = true;
         updateSteps_.push_back(dedupRow);

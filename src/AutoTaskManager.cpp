@@ -1,4 +1,5 @@
 #include "AutoTaskManager.h"
+#include "i18n/I18n.h"
 #include "NetworkMonitor.h"
 #include "SubitemUpdaterV2.h"
 #include "ProxyBatchTester.h"
@@ -384,7 +385,7 @@ bool AutoTaskManager::stepResolveRegions() {
             p.step_name = "resolve_region";
             p.step_status = StepStatus::RUNNING;
             p.percent = total > 0 ? (processed * 100) / total : 0;
-            p.message = "解析地区: " + region + " (" + std::to_string(processed) + "/" + std::to_string(total) + ")";
+            p.message = i18n::u8(i18n::StrId::AutoTask_ResolveRegionsPrefix) + region + " (" + std::to_string(processed) + "/" + std::to_string(total) + ")";
             progressCb_(p);
         }
     });

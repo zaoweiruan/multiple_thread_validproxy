@@ -184,7 +184,7 @@ TEST(UpdateBreakdown, PublishesRowsAndReachesTerminalStates) {
     EXPECT_EQ(d->status, RowStatus::SUCCESS);
     // Remarks travel with the row (display name source).
     EXPECT_EQ(a->remarks, "SubscriptionA");
-    EXPECT_EQ(d->remarks, update::SubitemUpdaterV2::kDedupStepName);
+    EXPECT_EQ(d->remarks, update::SubitemUpdaterV2::dedupStepName());
 }
 
 TEST(UpdateBreakdown, CancelBeforeStartSweepsRowsToCancelled) {

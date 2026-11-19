@@ -1,4 +1,5 @@
 #include "ProxyBatchTester.h"
+#include "i18n/I18n.h"
 #include "SqlQuery.h"
 #include "ConfigGenerator.h"
 #include "Utils.h"
@@ -546,7 +547,7 @@ std::string xrayApiAddr = "127.0.0.1:" + std::to_string(apiPort);
             if (!addSuccess) {
                 // requirement); the raw Xray output dump below stays at DEBUG.
                 std::string displayErr = injectError.empty() ? xrayApi.getLastError() : injectError;
-                Logger::write("[Worker-" + std::to_string(workerId) + "] 注入xray outbound 错误: " + displayErr, LogLevel::ERR);
+                Logger::write("[Worker-" + std::to_string(workerId) + i18n::u8(i18n::StrId::ProxyBatchTester_FailedInjectXrayOutbound) + displayErr, LogLevel::ERR);
                 Logger::write("[Worker-" + std::to_string(workerId) + "] XRAY_ERROR - " + profile.indexid + " (tag=" + tag + ") - " + displayErr, LogLevel::ERR);
                 if (addResult.length() > 300) {
                     Logger::write("  Xray output: " + addResult.substr(0, 300) + "...", LogLevel::DEBUG);
