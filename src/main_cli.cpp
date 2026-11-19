@@ -64,12 +64,47 @@ public:
     }
 };
 
+// show-sub 表格列宽（UTF-8 字节数，与 std::setw 口径一致）。
+const int kSubTableRemarks = 40;
+const int kSubTableId = 20;
+const int kSubTableUrl = 50;
+const int kSubTableCount = 9;    // 容纳 “代理数”(9 字节) 与 “Proxies”
+const int kSubTableEnabled = 8;  // 容纳 “启用”(6 字节) 与 “Enabled”
+
+void printSubTableHeader() {
+    std::cout << std::left << std::setw(kSubTableRemarks) << "remarks" << " | "
+              << std::setw(kSubTableId) << "id" << " | "
+              << std::setw(kSubTableUrl) << "url" << " | "
+              << std::right << std::setw(kSubTableCount)
+              << i18n::u8(i18n::StrId::Cli_SubHeaderProxies) << " | "
+              << std::setw(kSubTableEnabled)
+              << i18n::u8(i18n::StrId::Cli_SubHeaderEnabled) << "\n";
+}
+
+void printSubTableRule() {
+    std::cout << std::string(kSubTableRemarks, '-') << "-+-"
+              << std::string(kSubTableId, '-') << "-+-"
+              << std::string(kSubTableUrl, '-') << "-+-"
+              << std::string(kSubTableCount, '-') << "-+-"
+              << std::string(kSubTableEnabled, '-') << "\n";
+}
+
 void logInfo(const std::string& msg, LogLevel level = LogLevel::INFO) {
     Logger::write(msg, level);
 }
 
 void logError(const std::string& msg, LogLevel level = LogLevel::ERR) {
     Logger::write(msg, level);
+}
+
+// CLI 的启动语言：与 main_gui 共用同一套解析（config.ui.language → 内置 zh-CN）。
+// 每个命令在配置加载成功后、输出人可读提示前调用一次（Spec §7.2）。
+static std::optional<config::AppConfig> loadConfig(const std::string& configPath) {
+    std::optional<config::AppConfig> cfg = config::ConfigReader::load(configPath);
+    if (cfg) {
+        i18n::setLanguage(i18n::resolveStartupLanguage(cfg->ui.language));
+    }
+    return cfg;
 }
 
 static bool openDatabase(const config::AppConfig& config, sqlite3*& db, const std::string& context) {
@@ -200,7 +235,7 @@ static int runDefaultTest(const std::string& configPath, const std::string& exeD
     // Init Logger before config loading, so config load errors are visible
     Logger::init(logDir.string(), logMode);
 
-    std::optional<config::AppConfig> appConfig = config::ConfigReader::load(configPath);
+    std::optional<config::AppConfig> appConfig = loadConfig(configPath);
     if (appConfig) utils::setTimeWaitBlocking(appConfig->port.time_wait_blocking);
     if (!appConfig) {
         logError("Failed to load config from: " + configPath);
@@ -345,7 +380,7 @@ static int runCloudSync(const std::string& mode, const std::string& configPath,
     const std::string remoteDir = readWebDavRemoteDir(configPath);
     net::WebDavClient client(credentials, "https://dav.jianguoyun.com/dav/");
 
-    std::optional<config::AppConfig> appConfig = config::ConfigReader::load(configPath);
+    std::optional<config::AppConfig> appConfig = loadConfig(configPath);
     if (!appConfig && mode != "cloudpullconfig") {
         logError("Failed to load config from: " + configPath);
         Logger::close();
@@ -563,7 +598,7 @@ int main(int argc, char* argv[]) {
     
     if (commandMode == "generator") {
         Logger::init(logDir.string(), commandMode);
-        std::optional<config::AppConfig> appConfig = config::ConfigReader::load(configPath);
+        std::optional<config::AppConfig> appConfig = loadConfig(configPath);
         if (appConfig) utils::setTimeWaitBlocking(appConfig->port.time_wait_blocking);
         if (!appConfig) {
             logError("Failed to load config from: " + configPath);
@@ -625,7 +660,7 @@ int main(int argc, char* argv[]) {
     if (commandMode == "show-sub") {
         Logger::init(logDir.string(), commandMode);
         
-        std::optional<config::AppConfig> appConfig = config::ConfigReader::load(configPath);
+        std::optional<config::AppConfig> appConfig = loadConfig(configPath);
         if (appConfig) utils::setTimeWaitBlocking(appConfig->port.time_wait_blocking);
         if (!appConfig) {
             logError("Failed to load config from: " + configPath);
@@ -656,14 +691,15 @@ int main(int argc, char* argv[]) {
         std::vector<db::models::Subitem> subs = subDao.getAll();
         
         std::cout << "\n=== Subscriptions ===" << std::endl;
-        std::cout << "remarks                                    | id                    | url                                               | 代理数 | 启用\n";
-        std::cout << "-----------------------------------------+-----------------------+---------------------------------------------------+--------+----\n";
+        printSubTableHeader();
         
         for (const db::models::Subitem& sub : subs) {
             std::string remarks = sub.remarks;
             std::string id = sub.id;
             std::string url = sub.url;
-            std::string enabled = (sub.enabled == "1") ? "是" : "否";
+            const char* enabled = (sub.enabled == "1")
+                                      ? i18n::u8(i18n::StrId::Cli_Yes)
+                                      : i18n::u8(i18n::StrId::Cli_No);
             
             if (remarks.length() > 40) remarks = remarks.substr(0, 37) + "...";
             if (id.length() > 20) id = id.substr(0, 17) + "...";
@@ -679,14 +715,14 @@ int main(int argc, char* argv[]) {
                 sqlite3_finalize(cntStmt);
             }
             
-            std::cout << std::left << std::setw(40) << remarks << " | "
-                     << std::setw(20) << id << " | "
-                     << std::setw(50) << url << " | "
-                     << std::right << std::setw(6) << proxyCount << " | "
-                     << std::setw(4) << enabled << "\n";
+            std::cout << std::left << std::setw(kSubTableRemarks) << remarks << " | "
+                     << std::setw(kSubTableId) << id << " | "
+                     << std::setw(kSubTableUrl) << url << " | "
+                     << std::right << std::setw(kSubTableCount) << proxyCount << " | "
+                     << std::setw(kSubTableEnabled) << enabled << "\n";
         }
         
-        std::cout << "-----------------------------------------+-----------------------+---------------------------------------------------+--------+----\n";
+        printSubTableRule();
         std::cout << "Total: " << subs.size() << " subscriptions\n";
         
         std::cout << "\n=== ProfileItem Statistics ===" << std::endl;
@@ -729,7 +765,7 @@ int main(int argc, char* argv[]) {
     if (commandMode == "find-proxy" || commandMode == "findminproxy") {
         Logger::init(logDir.string(), commandMode);
         
-        std::optional<config::AppConfig> appConfig = config::ConfigReader::load(configPath);
+        std::optional<config::AppConfig> appConfig = loadConfig(configPath);
         if (appConfig) utils::setTimeWaitBlocking(appConfig->port.time_wait_blocking);
         if (!appConfig) {
             logError("Failed to load config from: " + configPath);
@@ -803,7 +839,7 @@ int main(int argc, char* argv[]) {
     if (commandMode == "tourl") {
         Logger::init(logDir.string(), commandMode);
         
-        std::optional<config::AppConfig> appConfig = config::ConfigReader::load(configPath);
+        std::optional<config::AppConfig> appConfig = loadConfig(configPath);
         if (appConfig) utils::setTimeWaitBlocking(appConfig->port.time_wait_blocking);
         if (!appConfig) {
             logError("Failed to load config from: " + configPath);
@@ -901,7 +937,7 @@ int main(int argc, char* argv[]) {
     if (commandMode == "sync") {
         Logger::init(logDir.string(), commandMode);
         
-        std::optional<config::AppConfig> appConfig = config::ConfigReader::load(configPath);
+        std::optional<config::AppConfig> appConfig = loadConfig(configPath);
         if (appConfig) utils::setTimeWaitBlocking(appConfig->port.time_wait_blocking);
         if (!appConfig) {
             logError("Failed to load config from: " + configPath);
@@ -943,7 +979,7 @@ int main(int argc, char* argv[]) {
         
         sqlite3* db = nullptr;
         
-        std::optional<config::AppConfig> appConfig = config::ConfigReader::load(configPath);
+        std::optional<config::AppConfig> appConfig = loadConfig(configPath);
         if (appConfig) utils::setTimeWaitBlocking(appConfig->port.time_wait_blocking);
         if (!appConfig) {
             logError("Failed to load config from: " + configPath);
@@ -996,7 +1032,7 @@ int main(int argc, char* argv[]) {
     if (commandMode == "auto-task") {
         Logger::init(logDir.string(), commandMode);
 
-        std::optional<config::AppConfig> appConfig = config::ConfigReader::load(configPath);
+        std::optional<config::AppConfig> appConfig = loadConfig(configPath);
         if (appConfig) utils::setTimeWaitBlocking(appConfig->port.time_wait_blocking);
         if (!appConfig) {
             logError("Failed to load config from: " + configPath);
@@ -1059,7 +1095,7 @@ int main(int argc, char* argv[]) {
 
     if (commandMode == "cancel-task") {
         Logger::init(logDir.string(), commandMode);
-        std::optional<config::AppConfig> appConfig = config::ConfigReader::load(configPath);
+        std::optional<config::AppConfig> appConfig = loadConfig(configPath);
         if (appConfig) utils::setTimeWaitBlocking(appConfig->port.time_wait_blocking);
         if (!appConfig) {
             logError("Failed to load config from: " + configPath);
@@ -1111,7 +1147,7 @@ int main(int argc, char* argv[]) {
     if (commandMode == "resume-task") {
         Logger::init(logDir.string(), commandMode);
 
-        std::optional<config::AppConfig> appConfig = config::ConfigReader::load(configPath);
+        std::optional<config::AppConfig> appConfig = loadConfig(configPath);
         if (appConfig) utils::setTimeWaitBlocking(appConfig->port.time_wait_blocking);
         if (!appConfig) {
             logError("Failed to load config from: " + configPath);
@@ -1159,7 +1195,7 @@ int main(int argc, char* argv[]) {
     if (commandMode == "dedup") {
         Logger::init(logDir.string(), commandMode);
         
-        std::optional<config::AppConfig> appConfig = config::ConfigReader::load(configPath);
+        std::optional<config::AppConfig> appConfig = loadConfig(configPath);
         if (appConfig) utils::setTimeWaitBlocking(appConfig->port.time_wait_blocking);
         if (!appConfig) {
             logError("Failed to load config from: " + configPath);
@@ -1195,7 +1231,7 @@ int main(int argc, char* argv[]) {
     if (commandMode == "decompose") {
         Logger::init(logDir.string(), commandMode);
         
-        std::optional<config::AppConfig> appConfig = config::ConfigReader::load(configPath);
+        std::optional<config::AppConfig> appConfig = loadConfig(configPath);
         if (appConfig) utils::setTimeWaitBlocking(appConfig->port.time_wait_blocking);
         if (!appConfig) {
             logError("Failed to load config from: " + configPath);
@@ -1237,7 +1273,7 @@ int main(int argc, char* argv[]) {
     if (commandMode == "rebuildbundles") {
         Logger::init(logDir.string(), commandMode);
 
-        std::optional<config::AppConfig> appConfig = config::ConfigReader::load(configPath);
+        std::optional<config::AppConfig> appConfig = loadConfig(configPath);
         if (appConfig) utils::setTimeWaitBlocking(appConfig->port.time_wait_blocking);
         if (!appConfig) {
             logError("Failed to load config from: " + configPath);
@@ -1279,7 +1315,7 @@ int main(int argc, char* argv[]) {
     if (commandMode == "syncmaterialize") {
         Logger::init(logDir.string(), commandMode);
 
-        std::optional<config::AppConfig> appConfig = config::ConfigReader::load(configPath);
+        std::optional<config::AppConfig> appConfig = loadConfig(configPath);
         if (!appConfig) utils::setTimeWaitBlocking(appConfig->port.time_wait_blocking);
         if (!appConfig) {
             logError("Failed to load config from: " + configPath);
@@ -1318,7 +1354,7 @@ int main(int argc, char* argv[]) {
     if (!singleSubId.empty()) {
         Logger::init(logDir.string(), commandMode.empty() ? "test" : commandMode);
         
-        std::optional<config::AppConfig> appConfig = config::ConfigReader::load(configPath);
+        std::optional<config::AppConfig> appConfig = loadConfig(configPath);
         if (appConfig) utils::setTimeWaitBlocking(appConfig->port.time_wait_blocking);
         if (!appConfig) {
             logError("Failed to load config from: " + configPath);

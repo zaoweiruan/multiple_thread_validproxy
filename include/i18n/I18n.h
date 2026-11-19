@@ -15,12 +15,17 @@ namespace i18n {
 void setLanguage(Language lang);
 Language language();
 
+// 启动语言解析：config.ui.language → 内置 zh-CN（不探测系统语言，见 Spec §5 / D4）。
+// main_gui / main_cli 启动路径共用，保证两边解析规则一致。
+Language resolveStartupLanguage(const std::string& configured);
+
 // 返回静态存储的指针，永不解引用悬垂；越界或空项返回 L"(missing translation)"。
 const wchar_t* w(StrId id);
 const char* u8(StrId id);
 
 // 按顺序替换 `{}`：参数不足保留剩余 `{}`，多余参数忽略，参数内 `{}` 不二次替换。
 std::string u8f(StrId id, std::initializer_list<std::string> args);
+std::wstring wf(StrId id, std::initializer_list<std::wstring> args);
 
 }  // namespace i18n
 

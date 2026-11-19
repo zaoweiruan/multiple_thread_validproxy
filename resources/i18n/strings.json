@@ -2960,6 +2960,311 @@
       "id": "Update.DedupStepName",
       "zh": "清洗",
       "en": "Cleanup"
+    },
+    {
+      "id": "Startup.Title.DbUnavailable",
+      "zh": "数据库不可用",
+      "en": "Database unavailable"
+    },
+    {
+      "id": "Startup.Title.RestoreBackup",
+      "zh": "恢复数据库备份",
+      "en": "Restore Database Backup"
+    },
+    {
+      "id": "Startup.Title.CreateDatabase",
+      "zh": "创建新数据库",
+      "en": "Create New Database"
+    },
+    {
+      "id": "Startup.Title.RebuildDatabase",
+      "zh": "备份后重建数据库",
+      "en": "Back Up and Rebuild Database"
+    },
+    {
+      "id": "Startup.ProgressTitle",
+      "zh": "数据库初始化",
+      "en": "Database initialisation"
+    },
+    {
+      "id": "Startup.DbBusy",
+      "zh": "数据库正被其他实例占用：\n{}\n\n请关闭其他正在运行的实例后重新启动。",
+      "en": "The database is in use by another instance:\n{}\n\nClose the other running instance and start again."
+    },
+    {
+      "id": "Startup.DbDirNotWritable",
+      "zh": "数据库文件有效，但所在目录不可写：\n{}\n\nSQLite 的 WAL 模式需要在该目录创建 -shm/-wal 文件。请授予该目录写权限后重新启动。",
+      "en": "The database file is valid, but its directory is not writable:\n{}\n\nSQLite WAL mode needs to create -shm/-wal files in that directory. Grant write access to the directory and start again."
+    },
+    {
+      "id": "Startup.DbPathInaccessible",
+      "zh": "无法访问数据库路径：\n{}\n\n{}",
+      "en": "Cannot access the database path:\n{}\n\n{}"
+    },
+    {
+      "id": "Startup.RecoverPrompt",
+      "zh": "上次数据库重建未完成：\n{}\n\n发现备份：\n{}\n\n是否用该备份恢复？",
+      "en": "The last database rebuild did not finish:\n{}\n\nBackup found:\n{}\n\nRestore from this backup?"
+    },
+    {
+      "id": "Startup.RestoreFailed",
+      "zh": "无法从备份恢复：\n{}",
+      "en": "Cannot restore from the backup:\n{}"
+    },
+    {
+      "id": "Startup.Restored",
+      "zh": "已从备份恢复：{}\n\n注意：其中的数据可能早于你记忆中的状态。",
+      "en": "Restored from the backup: {}\n\nNote: the data may be older than you remember."
+    },
+    {
+      "id": "Startup.CreateRefused",
+      "zh": "无法在该位置创建数据库：\n{}",
+      "en": "Cannot create the database at that location:\n{}"
+    },
+    {
+      "id": "Startup.CreatePromptSame",
+      "zh": "数据库不可用：{}\n当前配置路径：{}\n\n说明：\n  - 将在原路径创建一个空数据库，不含任何订阅或代理\n  - 不会改写 config.json，路径保持不变\n\n是否在原路径创建新数据库？",
+      "en": "Database unavailable: {}\nCurrent configuration path: {}\n\nNotes:\n  - An empty database is created at the original path, with no subscriptions or proxies\n  - config.json is left untouched and the path stays the same\n\nCreate a new database at the original path?"
+    },
+    {
+      "id": "Startup.CreatePromptOther",
+      "zh": "数据库不可用：{}\n当前配置路径：{}\n将创建到：{}\n\n说明：\n  - 将创建一个空数据库，不含任何订阅或代理\n  - 确认后将改写 config.json 的 database.path\n  - 原配置路径不会被删除，仍保持不可用\n\n是否创建新数据库？",
+      "en": "Database unavailable: {}\nCurrent configuration path: {}\nWill be created at: {}\n\nNotes:\n  - An empty database is created, with no subscriptions or proxies\n  - After confirmation config.json database.path is rewritten\n  - The original path is not deleted and stays unusable\n\nCreate a new database?"
+    },
+    {
+      "id": "Startup.FixConfigPath",
+      "zh": "请修正 config.json 的 database.path 后重新启动。",
+      "en": "Fix database.path in config.json and start again."
+    },
+    {
+      "id": "Startup.Creating",
+      "zh": "正在创建数据库…",
+      "en": "Creating the database…"
+    },
+    {
+      "id": "Startup.CreateFailed",
+      "zh": "创建数据库失败：\n{}\n\n{}",
+      "en": "Failed to create the database:\n{}\n\n{}"
+    },
+    {
+      "id": "Startup.ConfigNotUpdated",
+      "zh": "数据库已创建，但 config.json 未能更新：\n\n{}\n\n请手工把 database.path 改为：\n{}",
+      "en": "The database was created, but config.json could not be updated:\n\n{}\n\nSet database.path manually to:\n{}"
+    },
+    {
+      "id": "Startup.Created",
+      "zh": "已就绪数据库：\n{}\n\n新建的库是空的（无订阅、无代理），请导入订阅。",
+      "en": "Database ready:\n{}\n\nThe new database is empty (no subscriptions, no proxies); import a subscription."
+    },
+    {
+      "id": "Startup.RebuildHeadMissingTables",
+      "zh": "数据库缺少必需的表/列，结构不可用",
+      "en": "The database is missing required tables/columns and its structure is unusable"
+    },
+    {
+      "id": "Startup.RebuildHeadWalPending",
+      "zh": "数据库主文件为空，但存在未合并的 -wal（SQLite 无法回放）",
+      "en": "The main database file is empty but an unmerged -wal exists (SQLite cannot replay it)"
+    },
+    {
+      "id": "Startup.RebuildHeadNotSqlite",
+      "zh": "文件不是有效的 SQLite 数据库",
+      "en": "The file is not a valid SQLite database"
+    },
+    {
+      "id": "Startup.RebuildPrompt",
+      "zh": "{}：{}\n将备份的文件：{}\n\n说明：\n  - 备份后会在 {} 重建一个空数据库（原文件完整保留在备份里，可手工恢复）\n  - 新数据库不含任何订阅或代理\n\n是否备份并重建？（默认：否）",
+      "en": "{}: {}\nFile to back up: {}\n\nNotes:\n  - After the backup an empty database is rebuilt at {}\n    (the original file is kept intact in the backup and can be restored manually)\n  - The new database contains no subscriptions or proxies\n\nBack up and rebuild? (default: No)"
+    },
+    {
+      "id": "Startup.WalCannotRecover",
+      "zh": "该数据库的 -wal 未合并，无法自动恢复。\n请保留原文件并联系支持，或手工处理后再启动。",
+      "en": "The -wal file of this database was not merged, so it cannot be recovered automatically.\nKeep the original file and contact support, or handle it manually before starting again."
+    },
+    {
+      "id": "Startup.BackingUp",
+      "zh": "正在备份数据库…",
+      "en": "Backing up the database…"
+    },
+    {
+      "id": "Startup.BackupFailed",
+      "zh": "备份失败，原文件未改动：\n{}",
+      "en": "Backup failed; the original file is unchanged:\n{}"
+    },
+    {
+      "id": "Startup.Rebuilding",
+      "zh": "正在重建数据库…",
+      "en": "Rebuilding the database…"
+    },
+    {
+      "id": "Startup.RebuildFailedRestored",
+      "zh": "重建失败：\n{}\n\n已把备份还原回原路径。",
+      "en": "Rebuild failed:\n{}\n\nThe backup was restored to the original path."
+    },
+    {
+      "id": "Startup.RebuildFailedManual",
+      "zh": "重建失败：\n{}\n\n备份未能还原，请手工从以下文件恢复：\n{}",
+      "en": "Rebuild failed:\n{}\n\nThe backup could not be restored; recover manually from:\n{}"
+    },
+    {
+      "id": "Startup.Rebuilt",
+      "zh": "已重建数据库：\n{}\n\n旧库已备份并保留在：\n{}",
+      "en": "Database rebuilt:\n{}\n\nThe old database was backed up and kept at:\n{}"
+    },
+    {
+      "id": "Startup.InternalLoop",
+      "zh": "数据库初始化陷入重复状态，已中止。",
+      "en": "Database initialisation entered a repeated state and was aborted."
+    },
+    {
+      "id": "AppController.StandaloneExistsConfirm",
+      "zh": "已发现使用该配置的独立代理进程仍在运行。\n是否关闭旧进程后重新启动？",
+      "en": "A standalone proxy process using this configuration is still running.\nClose the old process and restart?"
+    },
+    {
+      "id": "AppController.StandaloneExistsTitle",
+      "zh": "独立代理已存在",
+      "en": "Standalone proxy already running"
+    },
+    {
+      "id": "AppController.StartFailedPrefix",
+      "zh": "[StandaloneProxy] 启动失败: CreateProcess 返回值=0(FALSE), GetLastError=",
+      "en": "[StandaloneProxy] start failed: CreateProcess returned 0 (FALSE), GetLastError="
+    },
+    {
+      "id": "AppController.CrashReasonHint",
+      "zh": "; xray/sing-box 输出（含崩溃原因）见独立代理控制台窗口",
+      "en": "; see the standalone proxy console window for xray/sing-box output (including the crash reason)"
+    },
+    {
+      "id": "AppController.CrashedBeforePort",
+      "zh": "代理进程闪崩（SOCKS 端口从未就绪）。崩溃原因见独立代理控制台窗口",
+      "en": "The proxy process crashed (the SOCKS port never became ready). See the standalone proxy console window for the crash reason."
+    },
+    {
+      "id": "AppController.PortNotReady",
+      "zh": "代理进程已启动，但 SOCKS 端口在超时内未就绪。",
+      "en": "The proxy process started, but the SOCKS port did not become ready before the timeout."
+    },
+    {
+      "id": "AppController.StartFailedTitle",
+      "zh": "代理启动失败",
+      "en": "Proxy Start Failed"
+    },
+    {
+      "id": "AppController.CrashedBeforeTest",
+      "zh": "代理进程在连通性验证前闪崩。崩溃原因见独立代理控制台窗口",
+      "en": "The proxy process crashed before the connectivity check. See the standalone proxy console window for the crash reason."
+    },
+    {
+      "id": "AppController.ConnectivityFailedConfirm",
+      "zh": "代理已启动但连通性验证失败，是否关闭该进程？",
+      "en": "The proxy started but the connectivity check failed. Close the process?"
+    },
+    {
+      "id": "AppController.ConnectivityFailedTitle",
+      "zh": "连通性验证失败",
+      "en": "Connectivity Check Failed"
+    },
+    {
+      "id": "AppController.ProcessExited",
+      "zh": "进程已退出",
+      "en": "Process exited"
+    },
+    {
+      "id": "AppController.DbSyncDone",
+      "zh": "数据库同步完成",
+      "en": "Database sync complete"
+    },
+    {
+      "id": "AppController.DbSyncFailed",
+      "zh": "数据库同步失败，请查看日志",
+      "en": "Database sync failed; see the log"
+    },
+    {
+      "id": "AppController.RegionResolving",
+      "zh": "地区解析: ",
+      "en": "Resolving regions: "
+    },
+    {
+      "id": "AppController.RegionBatchDone",
+      "zh": "批量地区解析完成: {} 个代理",
+      "en": "Region resolution complete: {} proxies"
+    },
+    {
+      "id": "AppController.RegionDoneNoNew",
+      "zh": "地区解析完成（无新结果）",
+      "en": "Region resolution complete (no new results)"
+    },
+    {
+      "id": "AppController.RegionError",
+      "zh": "地区解析错误: ",
+      "en": "Region resolution error: "
+    },
+    {
+      "id": "AppController.RegionSingleResolving",
+      "zh": "正在解析单个代理地区...",
+      "en": "Resolving the region of a single proxy..."
+    },
+    {
+      "id": "AppController.RegionQueryFailed",
+      "zh": "查询代理失败",
+      "en": "Failed to query the proxy"
+    },
+    {
+      "id": "AppController.ProxyNotFound",
+      "zh": "代理未找到或无效",
+      "en": "Proxy not found or invalid"
+    },
+    {
+      "id": "AppController.ApiRequestFailed",
+      "zh": "API请求失败",
+      "en": "API request failed"
+    },
+    {
+      "id": "AppController.RegionUnresolved",
+      "zh": "无法解析地区",
+      "en": "Cannot resolve the region"
+    },
+    {
+      "id": "AppController.RegionResolved",
+      "zh": "解析成功: {}",
+      "en": "Resolved: {}"
+    },
+    {
+      "id": "AppController.RegionResolveError",
+      "zh": "解析错误: ",
+      "en": "Resolve error: "
+    },
+    {
+      "id": "AppController.UpdateSubscriptionProgress",
+      "zh": "更新订阅 {}/{}",
+      "en": "Updating subscriptions {}/{}"
+    },
+    {
+      "id": "AppController.AutoTaskProgress",
+      "zh": "自动任务 [{}/{}] {}",
+      "en": "Auto task [{}/{}] {}"
+    },
+    {
+      "id": "Cli.SubHeaderProxies",
+      "zh": "代理数",
+      "en": "Proxies"
+    },
+    {
+      "id": "Cli.SubHeaderEnabled",
+      "zh": "启用",
+      "en": "Enabled"
+    },
+    {
+      "id": "Cli.Yes",
+      "zh": "是",
+      "en": "Yes"
+    },
+    {
+      "id": "Cli.No",
+      "zh": "否",
+      "en": "No"
     }
   ]
 }

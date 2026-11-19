@@ -55,6 +55,14 @@ Language language() {
                : Language::ZhCN;
 }
 
+Language resolveStartupLanguage(const std::string& configured) {
+    Language parsed = Language::ZhCN;
+    if (!parseLanguage(configured, parsed)) {
+        return Language::ZhCN;
+    }
+    return parsed;
+}
+
 const wchar_t* w(StrId id) {
     if (!isInRange(id)) {
         reportMissing("w", static_cast<int>(id));
@@ -89,6 +97,31 @@ std::string u8f(StrId id, std::initializer_list<std::string> args) {
         out.append(pattern, pos, hole - pos);
         if (next == args.end()) {
             out.append("{}");
+        } else {
+            out.append(*next);
+            ++next;
+        }
+        pos = hole + 2;
+    }
+    return out;
+}
+
+std::wstring wf(StrId id, std::initializer_list<std::wstring> args) {
+    const std::wstring pattern(w(id));
+    std::wstring out;
+    out.reserve(pattern.size() + 16);
+
+    std::initializer_list<std::wstring>::const_iterator next = args.begin();
+    std::size_t pos = 0;
+    while (pos < pattern.size()) {
+        std::size_t hole = pattern.find(L"{}", pos);
+        if (hole == std::wstring::npos) {
+            out.append(pattern, pos, std::wstring::npos);
+            break;
+        }
+        out.append(pattern, pos, hole - pos);
+        if (next == args.end()) {
+            out.append(L"{}");
         } else {
             out.append(*next);
             ++next;

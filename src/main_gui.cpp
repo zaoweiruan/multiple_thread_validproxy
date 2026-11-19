@@ -102,7 +102,8 @@ public:
             wc.lpszClassName = kClass;
             wc.hCursor = LoadCursorW(nullptr, IDC_WAIT);
             RegisterClassW(&wc);
-            hwnd_ = CreateWindowExW(WS_EX_TOPMOST | WS_EX_TOOLWINDOW, kClass, L"数据库初始化",
+            hwnd_ = CreateWindowExW(WS_EX_TOPMOST | WS_EX_TOOLWINDOW, kClass,
+                                    i18n::w(i18n::StrId::Startup_ProgressTitle),
                                     WS_POPUP | WS_BORDER, 200, 200, 320, 70, nullptr,
                                     nullptr, GetModuleHandleW(nullptr), nullptr);
             if (hwnd_ != nullptr) {
@@ -228,17 +229,15 @@ bool bootstrapDatabase(const std::string& exeDir, const std::string& configPath,
             case service::DbStartupAction::Abort: {
                 std::wstring text;
                 if (insp.probe == service::DbProbe::BusyOrLocked) {
-                    text = L"数据库正被其他实例占用：\n" + utf8ToWide(dbPath) +
-                           L"\n\n请关闭其他正在运行的实例后重新启动。";
+                    text = i18n::wf(i18n::StrId::Startup_DbBusy, { utf8ToWide(dbPath) });
                 } else if (insp.probe == service::DbProbe::WALReadOnlyBlocked) {
-                    text = L"数据库文件有效，但所在目录不可写：\n" + utf8ToWide(dbPath) +
-                           L"\n\nSQLite 的 WAL 模式需要在该目录创建 -shm/-wal 文件。"
-                           L"请授予该目录写权限后重新启动。";
+                    text = i18n::wf(i18n::StrId::Startup_DbDirNotWritable,
+                                   { utf8ToWide(dbPath) });
                 } else {
-                    text = L"无法访问数据库路径：\n" + utf8ToWide(dbPath) + L"\n\n" +
-                           utf8ToWide(insp.detail);
+                    text = i18n::wf(i18n::StrId::Startup_DbPathInaccessible,
+                                   { utf8ToWide(dbPath), utf8ToWide(insp.detail) });
                 }
-                showError(text, L"数据库不可用");
+                showError(text, i18n::w(i18n::StrId::Startup_Title_DbUnavailable));
                 Logger::write("database bootstrap aborted: probe=" +
                                       std::to_string(static_cast<int>(insp.probe)) +
                                       " path=" + utils::toWindowsPath(dbPath),
@@ -247,10 +246,12 @@ bool bootstrapDatabase(const std::string& exeDir, const std::string& configPath,
             }
 
             case service::DbStartupAction::PromptRecover: {
-                const std::wstring text =
-                        L"上次数据库重建未完成：\n" + utf8ToWide(dbPath) + L"\n\n发现备份：\n" +
-                        utf8ToWide(insp.backupPath) + L"\n\n是否用该备份恢复？";
-                if (!askYesNo(text, L"恢复数据库备份", /*defaultNo=*/true)) {
+                const std::wstring text = i18n::wf(
+                        i18n::StrId::Startup_RecoverPrompt,
+                        { utf8ToWide(dbPath), utf8ToWide(insp.backupPath) });
+                if (!askYesNo(text,
+                              i18n::w(i18n::StrId::Startup_Title_RestoreBackup),
+                              /*defaultNo=*/true)) {
                     // Rename to .orphan so it can never be mistaken for recovered data.
                     const std::string orphan =
                             insp.backupPath.substr(0, insp.backupPath.find(".bak.")) +
@@ -266,12 +267,14 @@ bool bootstrapDatabase(const std::string& exeDir, const std::string& configPath,
                 std::string err;
                 if (!service::DatabaseBootstrap::restoreFromBackup(insp.backupPath, dbPath,
                                                                    err)) {
-                    showError(L"无法从备份恢复：\n" + utf8ToWide(err), L"恢复数据库备份");
+                    showError(i18n::wf(i18n::StrId::Startup_RestoreFailed,
+                                                { utf8ToWide(err) }),
+                              i18n::w(i18n::StrId::Startup_Title_RestoreBackup));
                     return false;
                 }
-                showInfo(L"已从备份恢复：\n" + utf8ToWide(insp.backupPath) +
-                                 L"\n\n注意：其中的数据可能早于你记忆中的状态。",
-                         L"恢复数据库备份");
+                showInfo(i18n::wf(i18n::StrId::Startup_Restored,
+                                          { utf8ToWide(insp.backupPath) }),
+                         i18n::w(i18n::StrId::Startup_Title_RestoreBackup));
                 appConfig.database_path = dbPath;
                 continue;
             }
@@ -281,8 +284,9 @@ bool bootstrapDatabase(const std::string& exeDir, const std::string& configPath,
                 std::string gateError;
                 if (!service::DatabaseBootstrap::mayCreateAt(exeDir, dbPath, target,
                                                              gateError)) {
-                    showError(L"无法在该位置创建数据库：\n" + utf8ToWide(gateError),
-                              L"创建新数据库");
+                    showError(i18n::wf(i18n::StrId::Startup_CreateRefused,
+                                              { utf8ToWide(gateError) }),
+                              i18n::w(i18n::StrId::Startup_Title_CreateDatabase));
                     Logger::write("database bootstrap: mayCreateAt refused: " + gateError,
                                   LogLevel::ERR);
                     return false;
@@ -291,24 +295,19 @@ bool bootstrapDatabase(const std::string& exeDir, const std::string& configPath,
                 const bool samePath = (target == dbPath);
                 std::wstring text;
                 if (samePath) {
-                    text = L"数据库不可用：" + utf8ToWide(insp.detail) +
-                           L"\n当前配置路径：" + utf8ToWide(dbPath) +
-                           L"\n\n说明：\n  · 将在原路径创建一个空数据库，不含任何订阅或代理"
-                           L"\n  · 不会改写 config.json，路径保持不变"
-                           L"\n\n是否在原路径创建新数据库？";
+                    text = i18n::wf(i18n::StrId::Startup_CreatePromptSame,
+                                   { utf8ToWide(insp.detail), utf8ToWide(dbPath) });
                 } else {
-                    text = L"数据库不可用：" + utf8ToWide(insp.detail) +
-                           L"\n当前配置路径：" + utf8ToWide(dbPath) +
-                           L"\n将创建到：" + utf8ToWide(target) +
-                           L"\n\n说明：\n  · 将创建一个空数据库，不含任何订阅或代理"
-                           L"\n  · 确认后将改写 config.json 的 database.path"
-                           L"\n  · 原配置路径不会被删除，仍保持不可用"
-                           L"\n\n是否创建新数据库？";
+                    text = i18n::wf(i18n::StrId::Startup_CreatePromptOther,
+                                   { utf8ToWide(insp.detail), utf8ToWide(dbPath),
+                                     utf8ToWide(target) });
                 }
 
-                if (!autoCreate && !askYesNo(text, L"创建新数据库", /*defaultNo=*/false)) {
-                    showInfo(L"请修正 config.json 的 database.path 后重新启动。",
-                             L"创建新数据库");
+                if (!autoCreate &&
+                    !askYesNo(text, i18n::w(i18n::StrId::Startup_Title_CreateDatabase),
+                              /*defaultNo=*/false)) {
+                    showInfo(i18n::w(i18n::StrId::Startup_FixConfigPath),
+                             i18n::w(i18n::StrId::Startup_Title_CreateDatabase));
                     return false;
                 }
 
@@ -316,13 +315,14 @@ bool bootstrapDatabase(const std::string& exeDir, const std::string& configPath,
                 bool created = false;
                 {
                     ProgressWindow progress;
-                    progress.show(L"正在创建数据库…");
+                    progress.show(i18n::w(i18n::StrId::Startup_Creating));
                     created = service::DatabaseBootstrap::create(target, createError);
                 }
                 if (!created) {
-                    showError(L"创建数据库失败：\n" + utf8ToWide(target) + L"\n\n" +
-                                      utf8ToWide(createError),
-                              L"创建新数据库");
+                    showError(i18n::wf(
+                                      i18n::StrId::Startup_CreateFailed,
+                                      { utf8ToWide(target), utf8ToWide(createError) }),
+                              i18n::w(i18n::StrId::Startup_Title_CreateDatabase));
                     Logger::write("database bootstrap: create failed: " + createError,
                                   LogLevel::ERR);
                     return false;
@@ -334,11 +334,9 @@ bool bootstrapDatabase(const std::string& exeDir, const std::string& configPath,
                         Logger::write("database bootstrap: config rewrite failed: " +
                                               rewriteError,
                                       LogLevel::WARN);
-                        showInfo(L"数据库已创建，但 config.json 未能更新：\n\n" +
-                                         utf8ToWide(rewriteError) +
-                                         L"\n\n请手工把 database.path 改为：\n" +
-                                         utf8ToWide(target),
-                                 L"创建新数据库");
+                        showInfo(i18n::wf(i18n::StrId::Startup_ConfigNotUpdated,
+                                          { utf8ToWide(rewriteError), utf8ToWide(target) }),
+                                 i18n::w(i18n::StrId::Startup_Title_CreateDatabase));
                     }
                 }
                 appConfig.database_path = target;
@@ -346,9 +344,8 @@ bool bootstrapDatabase(const std::string& exeDir, const std::string& configPath,
                                       " (probe=" +
                                       std::to_string(static_cast<int>(insp.probe)) + ")",
                               LogLevel::REPORT);
-                showInfo(L"已就绪数据库：\n" + utf8ToWide(target) +
-                                 L"\n\n新建的库是空的（无订阅、无代理），请导入订阅。",
-                         L"创建新数据库");
+                showInfo(i18n::wf(i18n::StrId::Startup_Created, { utf8ToWide(target) }),
+                         i18n::w(i18n::StrId::Startup_Title_CreateDatabase));
                 continue;
             }
 
@@ -357,27 +354,26 @@ bool bootstrapDatabase(const std::string& exeDir, const std::string& configPath,
 
                 std::wstring head;
                 if (insp.probe == service::DbProbe::MissingCoreTables) {
-                    head = L"数据库缺少必需的表/列，结构不可用";
+                    head = i18n::w(i18n::StrId::Startup_RebuildHeadMissingTables);
                 } else if (insp.probe == service::DbProbe::WalPending) {
-                    head = L"数据库主文件为空，但存在未合并的 -wal（SQLite 无法回放）";
+                    head = i18n::w(i18n::StrId::Startup_RebuildHeadWalPending);
                 } else {
-                    head = L"文件不是有效的 SQLite 数据库";
+                    head = i18n::w(i18n::StrId::Startup_RebuildHeadNotSqlite);
                 }
 
                 std::string target = service::DatabaseBootstrap::defaultTargetPath(
                         exeDir, dbPath);
-                const std::wstring text =
-                        head + L"：" + utf8ToWide(insp.detail) + L"\n将备份的文件：" +
-                        utf8ToWide(victim) + L"\n\n说明：\n  · 备份后会在 " +
-                        utf8ToWide(target) +
-                        L" 重建一个空数据库（原文件完整保留在备份里，可手工恢复）"
-                        L"\n  · 新数据库不含任何订阅或代理\n\n是否备份并重建？（默认：否）";
+                const std::wstring text = i18n::wf(
+                        i18n::StrId::Startup_RebuildPrompt,
+                        { head, utf8ToWide(insp.detail), utf8ToWide(victim),
+                          utf8ToWide(target) });
 
-                if (!autoRebuild && !askYesNo(text, L"备份后重建数据库", /*defaultNo=*/true)) {
+                if (!autoRebuild &&
+                    !askYesNo(text, i18n::w(i18n::StrId::Startup_Title_RebuildDatabase),
+                              /*defaultNo=*/true)) {
                     if (insp.probe == service::DbProbe::WalPending) {
-                        showInfo(L"该数据库的 -wal 未合并，无法自动恢复。\n"
-                                 L"请保留原文件并联系支持，或手工处理后再启动。",
-                                 L"备份后重建数据库");
+                        showInfo(i18n::w(i18n::StrId::Startup_WalCannotRecover),
+                                 i18n::w(i18n::StrId::Startup_Title_RebuildDatabase));
                     }
                     return false;
                 }
@@ -385,24 +381,27 @@ bool bootstrapDatabase(const std::string& exeDir, const std::string& configPath,
                 std::string bak;
                 {
                     ProgressWindow progress;
-                    progress.show(L"正在备份数据库…");
+                    progress.show(i18n::w(i18n::StrId::Startup_BackingUp));
                     if (!service::DatabaseBootstrap::backupFile(victim, bak)) {
-                        showError(L"备份失败，原文件未改动：\n" + utf8ToWide(victim),
-                                  L"备份后重建数据库");
+                        showError(i18n::wf(i18n::StrId::Startup_BackupFailed,
+                                                  { utf8ToWide(victim) }),
+                                  i18n::w(i18n::StrId::Startup_Title_RebuildDatabase));
                         return false;
                     }
 
-                    progress.show(L"正在重建数据库…");
+                    progress.show(i18n::w(i18n::StrId::Startup_Rebuilding));
                     std::string createError;
                     if (!service::DatabaseBootstrap::create(target, createError)) {
                         std::string restoreError;
                         const bool restored = service::DatabaseBootstrap::restoreFromBackup(
                                 bak, victim, restoreError);
-                        showError(L"重建失败：\n" + utf8ToWide(createError) +
-                                          (restored ? L"\n\n已把备份还原回原路径。"
-                                                    : L"\n\n备份未能还原，请手工从以下文件恢复：\n" +
-                                                              utf8ToWide(bak)),
-                                  L"备份后重建数据库");
+                        showError(restored
+                                          ? i18n::wf(i18n::StrId::Startup_RebuildFailedRestored,
+                                                     { utf8ToWide(createError) })
+                                          : i18n::wf(i18n::StrId::Startup_RebuildFailedManual,
+                                                     { utf8ToWide(createError),
+                                                       utf8ToWide(bak) }),
+                                  i18n::w(i18n::StrId::Startup_Title_RebuildDatabase));
                         return false;
                     }
                 }
@@ -421,15 +420,16 @@ bool bootstrapDatabase(const std::string& exeDir, const std::string& configPath,
                 Logger::write("database bootstrap: rebuilt " + utils::toWindowsPath(target) +
                                       " from " + utils::toWindowsPath(bak),
                               LogLevel::REPORT);
-                showInfo(L"已重建数据库：\n" + utf8ToWide(target) +
-                                 L"\n\n旧库已备份并保留在：\n" + utf8ToWide(bak),
-                         L"备份后重建数据库");
+                showInfo(i18n::wf(i18n::StrId::Startup_Rebuilt,
+                                          { utf8ToWide(target), utf8ToWide(bak) }),
+                         i18n::w(i18n::StrId::Startup_Title_RebuildDatabase));
                 continue;
             }
         }
     }
 
-    showError(L"数据库初始化陷入重复状态，已中止。", L"数据库不可用");
+    showError(i18n::w(i18n::StrId::Startup_InternalLoop),
+              i18n::w(i18n::StrId::Startup_Title_DbUnavailable));
     return false;
 }
 
@@ -526,13 +526,7 @@ int main(int argc, char* argv[]) {
     config::setActiveConfigPath(configPath);
 
     // 启动语言：仅 config.ui.language → 内置 zh-CN；无环境变量覆盖层。
-    {
-        i18n::Language startupLang = i18n::Language::ZhCN;
-        if (!i18n::parseLanguage(appConfig->ui.language, startupLang)) {
-            startupLang = i18n::Language::ZhCN;
-        }
-        i18n::setLanguage(startupLang);
-    }
+    i18n::setLanguage(i18n::resolveStartupLanguage(appConfig->ui.language));
 
     // 会话语言横幅 + 跨会话语言变更分隔线（语言中立，写入本日志文件开头）。
     i18n::LogBanner::writeSessionBanner(logDir.string(), Logger::getFilePath(),
@@ -568,7 +562,7 @@ int main(int argc, char* argv[]) {
     if (!db) {
         std::wstring errMsg = L"Failed to open database.\n\nDatabase path:\n" +
                               utf8ToWide(utils::toWindowsPath(appConfig->database_path));
-        showError(errMsg, L"数据库不可用");
+        showError(errMsg, i18n::w(i18n::StrId::Startup_Title_DbUnavailable));
         Logger::close();
         return 1;
     }
