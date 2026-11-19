@@ -1704,6 +1704,7 @@ if(wxWidgets_FOUND)
     add_executable(test_log_statistics_event
         tests/test_log_statistics_event.cpp
         src/ui/Events.cpp
+        tests/wx_test_manifest.rc
     )
     target_include_directories(test_log_statistics_event PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include
@@ -1713,12 +1714,9 @@ if(wxWidgets_FOUND)
         gtest_main gtest
         wx::wxbase
         wx::wxcore
-        # NOTE: wxcore pulls in comctl32!GetWindowSubclass (delay-loaded), which
-        # requires a Common Controls v6 manifest. Test executables do not embed
-        # src/ui/app.manifest, so on this Release tree the exe dies at load with
-        # 0xC0000139 (STATUS_ENTRYPOINT_NOT_FOUND) against comctl32 5.82.
-        # Pre-existing test-infra gap, unrelated to the app itself (see
-        # docs/bugfix/2026-11-17-Bugfix-Win7-UIEncoding-MenuAssertCrash-v1.0.md §5.1).
+        # NOTE: wxcore pulls in comctl32!GetWindowSubclass (a v6-only export).
+        # The Common Controls v6 manifest is embedded via tests/wx_test_manifest.rc;
+        # without it this exe dies at load with 0xC0000139 against comctl32 5.82.
     )
     target_compile_definitions(test_log_statistics_event PRIVATE HAS_WXWIDGETS=1)
     set_target_properties(test_log_statistics_event PROPERTIES
@@ -1734,6 +1732,7 @@ endif()
 if(wxWidgets_FOUND)
     add_executable(test_unified_monitor_rows
         tests/test_unified_monitor_rows.cpp
+        tests/wx_test_manifest.rc
     )
     target_include_directories(test_unified_monitor_rows PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include

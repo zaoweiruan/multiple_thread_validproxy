@@ -6,6 +6,7 @@
 
 #include <wx/sizer.h>
 #include <wx/dataview.h>
+#include <wx/dcclient.h>
 #include <wx/menu.h>
 #include <wx/msgdlg.h>
 #include <wx/textdlg.h>
@@ -36,6 +37,19 @@ enum {
     ID_SUB_REFRESH,
     ID_SUB_DELETE_PROXIES,
 };
+
+// 列宽：英文列名（ValidProxies / TotalProxies / UpdatedTime）明显长于中文，
+// 固定像素宽会在英文界面把表头截断（Spec 2026-11-18 AC-8）。这里按控件字体实测
+// 表头文案宽度，不足 base 时仍用 base 保持中文模式的既有观感。
+static int columnWidthFor(wxWindow* window, const wxString& label, int base) {
+    wxClientDC dc(window);
+    dc.SetFont(window->GetFont());
+    int textWidth = 0;
+    int textHeight = 0;
+    dc.GetTextExtent(label, &textWidth, &textHeight);
+    const int padded = textWidth + 24;   // 排序箭头 + 左右内边距
+    return padded > base ? padded : base;
+}
 
 // -------------------------------------------------------------------
 wxBEGIN_EVENT_TABLE(SubscriptionPanel, wxPanel)
@@ -68,13 +82,27 @@ SubscriptionPanel::SubscriptionPanel(wxWindow* parent, AppController* controller
     model_->DecRef(); // AssociateModel took ownership
 
     // Columns — Append[Toggle|Text]Column(label, model_column, mode, width, ...)
+    // 宽度取「表头文案实测宽度」与设计值的较大者：中文用设计值，英文列名更长时自动放宽。
+    const wxString colEnabled = i18n::wx(i18n::StrId::Subscription_Column_Enabled);
+    const wxString colName = i18n::wx(i18n::StrId::Subscription_Column_Name);
+    const wxString colValid = i18n::wx(i18n::StrId::Subscription_Column_Valid);
+    const wxString colTotal = i18n::wx(i18n::StrId::Subscription_Column_Total);
+    const wxString colUpdated = i18n::wx(i18n::StrId::Subscription_Column_Updated);
+    const wxString colId = i18n::wx(i18n::StrId::Subscription_Column_Id);
+
     listCtrl_->AppendTextColumn("#", 0, wxDATAVIEW_CELL_INERT, 30);
-    listCtrl_->AppendToggleColumn(i18n::wx(i18n::StrId::Subscription_Column_Enabled), 1, wxDATAVIEW_CELL_ACTIVATABLE, 30);
-    listCtrl_->AppendTextColumn(i18n::wx(i18n::StrId::Subscription_Column_Name), 2, wxDATAVIEW_CELL_INERT, 200);  // Changed to INERT to prevent editing
-    listCtrl_->AppendTextColumn(i18n::wx(i18n::StrId::Subscription_Column_Valid), 3, wxDATAVIEW_CELL_INERT, 60, wxALIGN_RIGHT);
-    listCtrl_->AppendTextColumn(i18n::wx(i18n::StrId::Subscription_Column_Total), 4, wxDATAVIEW_CELL_INERT, 70, wxALIGN_RIGHT);
-    listCtrl_->AppendTextColumn(i18n::wx(i18n::StrId::Subscription_Column_Updated), 5, wxDATAVIEW_CELL_INERT, 130);
-    listCtrl_->AppendTextColumn(i18n::wx(i18n::StrId::Subscription_Column_Id), 6, wxDATAVIEW_CELL_INERT, 60);
+    listCtrl_->AppendToggleColumn(colEnabled, 1, wxDATAVIEW_CELL_ACTIVATABLE,
+                                  columnWidthFor(listCtrl_, colEnabled, 30));
+    listCtrl_->AppendTextColumn(colName, 2, wxDATAVIEW_CELL_INERT,
+                                columnWidthFor(listCtrl_, colName, 200));  // INERT：禁止编辑
+    listCtrl_->AppendTextColumn(colValid, 3, wxDATAVIEW_CELL_INERT,
+                                columnWidthFor(listCtrl_, colValid, 60), wxALIGN_RIGHT);
+    listCtrl_->AppendTextColumn(colTotal, 4, wxDATAVIEW_CELL_INERT,
+                                columnWidthFor(listCtrl_, colTotal, 70), wxALIGN_RIGHT);
+    listCtrl_->AppendTextColumn(colUpdated, 5, wxDATAVIEW_CELL_INERT,
+                                columnWidthFor(listCtrl_, colUpdated, 130));
+    listCtrl_->AppendTextColumn(colId, 6, wxDATAVIEW_CELL_INERT,
+                                columnWidthFor(listCtrl_, colId, 60));
 
     sizer->Add(listCtrl_, 1, wxEXPAND | wxALL, 2);
 

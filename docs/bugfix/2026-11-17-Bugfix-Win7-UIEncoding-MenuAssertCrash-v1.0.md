@@ -89,6 +89,10 @@ Win10/11 上因为多数是偶数长度片段，仅表现为乱码；Win7 用户
   （cdb 模块加载序列已证实）。属该 Release/静态 wx 构建目录的测试基建缺口；
   该 target 源码（`tests/test_log_statistics_event.cpp`、`src/ui/Events.cpp`）本次未改动。
   尝试过去掉 `wx::wxcore` 以规避，但测试文件本身使用 `wx/wx.h`，链接失败，已回滚。
+  **已修复（2026-11-19，双语言分支）**：新增共享资源 `tests/wx_test_manifest.rc`
+  （`1 24 "src/ui/app.manifest"`），并加入 `test_log_statistics_event` 与
+  `test_unified_monitor_rows` 两个链接 `wx::wxcore` 的测试 target；
+  `ctest -E "^UI_"` 61/61 全通过（含 `LogStatisticsEventTest`、`UnifiedMonitorRowsTest`）。
 - `63 - UI_FLOATINGWIDGET`（仅第一轮失败，第二轮通过）：既有已知 flaky；第一轮失败由桌面上
   的 UWP 覆盖窗口（探针命中 `Windows.UI.Core.CoreWindow`）导致悬浮球位置采样漂移。
 

@@ -1,0 +1,14 @@
+// -------------------------------------------------------------------
+// tests/wx_test_manifest.rc — Common Controls v6 manifest for wx test exes
+//
+// wxcore 3.3.x imports comctl32!GetWindowSubclass (a v6-only export). A test
+// executable that links wx::wxcore but ships no manifest makes Windows load
+// the legacy comctl32 v5.82 from System32, which lacks that export, so the
+// process dies at load with 0xC0000139 (STATUS_ENTRYPOINT_NOT_FOUND) and the
+// ctest entry reports an obscure exit code instead of a test failure.
+//
+// The GUI exe embeds the same manifest via src/ui/icons.rc; test_proxy_list_model
+// predates this shared file with tests/test_proxy_list_model.rc.
+// -------------------------------------------------------------------
+
+1 24 "src/ui/app.manifest"
