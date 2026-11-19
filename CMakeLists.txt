@@ -1192,7 +1192,9 @@ add_executable(test_config_reader tests/test_config_reader.cpp tests/test_config
     src/config/ConfigJsonParser.cpp src/config/ConfigJsonSerializer.cpp
     src/config/ConfigValidator.cpp
     # ConfigReader::load() 下发 config::setEchEnabled()，实现位于此文件
-    src/config/StreamSettingsBuilder.cpp)
+    src/config/StreamSettingsBuilder.cpp
+    # UiConfigParser 归一化 ui.language 需要 i18n::parseLanguage / languageCode
+    src/i18n/Language.cpp)
 target_include_directories(test_config_reader PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(test_config_reader PRIVATE gtest_main gtest ${VCPKG_ROOT}/installed/x64-mingw-static/lib/libboost_json-gcc14-mt-x64-1_91.a -lws2_32)
 set_target_properties(test_config_reader PROPERTIES
@@ -1203,7 +1205,8 @@ set_target_properties(test_config_reader PROPERTIES
 add_test(NAME ConfigReaderTest COMMAND test_config_reader)
 
 # -- RefreshCommands unit tests (command constants + status text mapping, pure functions) --
-add_executable(test_refresh_commands tests/test_refresh_commands.cpp src/ui/RefreshCommands.cpp)
+add_executable(test_refresh_commands tests/test_refresh_commands.cpp src/ui/RefreshCommands.cpp
+    src/i18n/Language.cpp src/i18n/I18n.cpp src/i18n/StringTable.cpp)
 target_include_directories(test_refresh_commands PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(test_refresh_commands PRIVATE gtest_main gtest)
 set_target_properties(test_refresh_commands PROPERTIES
@@ -1349,6 +1352,8 @@ add_executable(test_config_generator
     src/FullConfigTemplateDAO.cpp
     src/SqlQuery.cpp
     src/ProfileitemDAO.cpp
+    # ConfigReader → UiConfigParser 依赖 i18n::parseLanguage / languageCode
+    src/i18n/Language.cpp
 
     src/utils/DnsCache.cpp
     src/utils/Base64Utils.cpp
@@ -1401,6 +1406,7 @@ add_executable(test_standalone_proxy_pool
     tests/TestStandaloneProxyPool.cpp
     src/ConfigGenerator.cpp
     src/ConfigReader.cpp
+    src/i18n/Language.cpp
     src/StandaloneProxyPool.cpp
     src/PortManager.cpp
     src/ProxyHealthEvaluator.cpp
@@ -1480,6 +1486,7 @@ add_executable(test_proxy_probe_pool
     src/XrayApi.cpp
     src/PortManager.cpp
     src/ConfigReader.cpp
+    src/i18n/Language.cpp
     src/FullConfigTemplateDAO.cpp
     src/SqlQuery.cpp
     src/config/ConfigBuilder.cpp
@@ -1609,6 +1616,7 @@ add_test(NAME OutboundPayloadTest COMMAND test_outbound_payload)
 add_executable(test_proxy_batch_query tests/test_proxy_batch_query.cpp src/test/ProxyBatchQuery.cpp
     src/ConfigGenerator.cpp src/ProfileitemDAO.cpp src/utils/DnsCache.cpp src/ProfileExItemDAO.cpp
     src/ConfigReader.cpp src/FullConfigTemplateDAO.cpp src/SqlQuery.cpp src/config/ConfigBuilder.cpp
+    src/i18n/Language.cpp
     src/config/StepRegistry.cpp src/config/ConfigPipeline.cpp src/config/StepHandlers.cpp
     src/config/ConfigFileStore.cpp src/config/ConfigPathResolver.cpp
     src/config/ConfigJsonParser.cpp src/config/ConfigJsonSerializer.cpp src/config/ConfigValidator.cpp
@@ -1834,6 +1842,7 @@ add_executable(test_xray_instance_stderr
     tests/test_xray_instance_stderr.cpp
     src/XrayInstance.cpp
     src/ConfigReader.cpp
+    src/i18n/Language.cpp
     src/FullConfigTemplateDAO.cpp
     src/SqlQuery.cpp
     src/config/ConfigBuilder.cpp
@@ -1916,6 +1925,7 @@ add_executable(test_xray_manager_startup
     src/XrayInstance.cpp
     src/PortManager.cpp
     src/ConfigReader.cpp
+    src/i18n/Language.cpp
     src/FullConfigTemplateDAO.cpp
     src/SqlQuery.cpp
     src/config/ConfigBuilder.cpp
@@ -2095,6 +2105,7 @@ add_test(NAME ProcessInspectorTest COMMAND test_process_inspector)
 add_executable(test_region_batch_resolver tests/test_region_batch_resolver.cpp
     src/RegionBatchResolver.cpp src/ConfigGenerator.cpp src/ProfileitemDAO.cpp
     src/ConfigReader.cpp src/FullConfigTemplateDAO.cpp src/SqlQuery.cpp src/config/ConfigBuilder.cpp
+    src/i18n/Language.cpp
     src/config/StepRegistry.cpp src/config/ConfigPipeline.cpp src/config/StepHandlers.cpp
     # ConfigPipeline.cpp 调用的 StepToComponentMapper::convertAll 实现在此文件
     src/config/StepToComponentMapper.cpp

@@ -1,4 +1,5 @@
 #include "ConfigDialog.h"
+#include "i18n/I18nWx.h"
 
 #include <windows.h>
 
@@ -119,18 +120,18 @@ std::string prettyJsonOrRaw(const std::string& json) {
 wxString sqlSchemeDisplayValue(sqlite3* db, int id, const std::string& rawSql) {
     if (id > 0) {
         if (!db) {
-            return wxString::Format(L"（方案 #%d，数据库未连接）", id);
+            return wxString::Format(i18n::wx(i18n::StrId::ConfigDialog_TemplateDatabaseConnected), id);
         }
         const db::SqlQueryItem item = db::SqlQueryDAO::getById(db, id);
         if (item.id > 0) {
             return wxString::FromUTF8(item.name.c_str());
         }
-        return wxString::Format(L"（方案 #%d 不存在，点击重新选择）", id);
+        return wxString::Format(i18n::wx(i18n::StrId::ConfigDialog_TemplateNoLongerExists), id);
     }
     if (!rawSql.empty()) {
-        return L"（自定义 SQL，点击选择方案）";
+        return i18n::wx(i18n::StrId::ConfigDialog_CustomSQLClickChoose);
     }
-    return L"（未选择方案，点击选择）";
+    return i18n::wx(i18n::StrId::ConfigDialog_NoTemplateSelectedClick);
 }
 
 } // namespace
@@ -151,7 +152,7 @@ wxEND_EVENT_TABLE()
 // -------------------------------------------------------------------
 ConfigDialog::ConfigDialog(wxWindow* parent, const config::AppConfig& cfg, sqlite3* db,
                            const std::string& configPath)
-    : wxDialog(parent, wxID_ANY, L"配置编辑器",
+    : wxDialog(parent, wxID_ANY, i18n::wx(i18n::StrId::ConfigDialog_ConfigurationEditor),
                 wxDefaultPosition, wxSize(1500, 950),
                 wxDEFAULT_DIALOG_STYLE | wxRESIZE_BORDER)
     , db_(nullptr)
@@ -198,15 +199,15 @@ ConfigDialog::ConfigDialog(wxWindow* parent, const config::AppConfig& cfg, sqlit
                                    wxPG_DEFAULT_STYLE | wxPG_BOLD_MODIFIED);
 
     // --- 数据库 配置 ---
-    propGrid_->Append(new wxPropertyCategory(L"数据库"));
-    wxFileProperty* dbPathProp = new wxFileProperty(L"路径", "database_path", cfg.database_path);
+    propGrid_->Append(new wxPropertyCategory(i18n::wx(i18n::StrId::ConfigDialog_Database)));
+    wxFileProperty* dbPathProp = new wxFileProperty(i18n::wx(i18n::StrId::ConfigDialog_Path), "database_path", cfg.database_path);
     propGrid_->Append(dbPathProp);
     propGrid_->SetPropertyAttribute("database_path", wxPG_FILE_SHOW_FULL_PATH, (long)1);
     // wxWidgets 3.3.3 bug: wxPGPropertyFlags_ShowFullFileName maps to Reserved_1,
     // but ValueToString checks wxPGFlags::ShowFullFileName — set the correct flag directly.
     dbPathProp->ChangeFlag(wxPGFlags::ShowFullFileName, true);
-    propGrid_->Append(new wxStringProperty(L"SQL 查询", "sql_query", L""));
-    propGrid_->Append(new wxStringProperty(L"按 SubId 查询", "sql_by_subid", L""));
+    propGrid_->Append(new wxStringProperty(i18n::wx(i18n::StrId::ConfigDialog_SQLQuery), "sql_query", L""));
+    propGrid_->Append(new wxStringProperty(i18n::wx(i18n::StrId::ConfigDialog_QuerySubId), "sql_by_subid", L""));
     // 方案 ID 不再单独显示：配置值显示 SQL 方案库中的方案名称，
     // 点击值区域即可打开 SQL 方案库进行新增 / 编辑 / 保存 / 选择。
     propGrid_->SetPropertyReadOnly("sql_query");
@@ -215,107 +216,107 @@ ConfigDialog::ConfigDialog(wxWindow* parent, const config::AppConfig& cfg, sqlit
     propGrid_->Bind(wxEVT_PG_SELECTED, &ConfigDialog::onSqlPropertySelected, this);
 
     // --- 工作线程配置 (原 Xray) ---
-    propGrid_->Append(new wxPropertyCategory(L"工作线程配置"));
-    propGrid_->Append(new wxIntProperty(L"工作数", "xray_workers", cfg.xray_workers));
-    propGrid_->Append(new wxIntProperty(L"起始端口", "xray_start_port", cfg.xray_start_port));
-    propGrid_->Append(new wxIntProperty(L"API 端口", "xray_api_port", cfg.xray_api_port));
+    propGrid_->Append(new wxPropertyCategory(i18n::wx(i18n::StrId::ConfigDialog_WorkerThreads)));
+    propGrid_->Append(new wxIntProperty(i18n::wx(i18n::StrId::ConfigDialog_Workers), "xray_workers", cfg.xray_workers));
+    propGrid_->Append(new wxIntProperty(i18n::wx(i18n::StrId::ConfigDialog_BasePort), "xray_start_port", cfg.xray_start_port));
+    propGrid_->Append(new wxIntProperty(i18n::wx(i18n::StrId::ConfigDialog_APIPort), "xray_api_port", cfg.xray_api_port));
 
     // --- 代理后端选择（原「代理配置」，解决 P3：后端路径条件化可见） ---
-    propGrid_->Append(new wxPropertyCategory(L"代理后端选择"));
+    propGrid_->Append(new wxPropertyCategory(i18n::wx(i18n::StrId::ConfigDialog_ProxyBackend)));
     {
-        wxBoolProperty* useSbProp = new wxBoolProperty(L"使用sing-box为代理终端", "proxy_use_singbox", cfg.proxy.use_singbox);
+        wxBoolProperty* useSbProp = new wxBoolProperty(i18n::wx(i18n::StrId::ConfigDialog_UseSingBoxProxy), "proxy_use_singbox", cfg.proxy.use_singbox);
         propGrid_->Append(useSbProp);
     }
-    propGrid_->Append(new wxIntProperty(L"SOCKS 监听端口", "proxy_socks_base_port", cfg.proxy.socks_base_port));
+    propGrid_->Append(new wxIntProperty(i18n::wx(i18n::StrId::ConfigDialog_SOCKSListenPort), "proxy_socks_base_port", cfg.proxy.socks_base_port));
       // TIME_WAIT 是否算作端口占用（2026-10-12 Spec StandalonePortImmediateRebind，Task 1 / P0-1）
       // true = 恢复旧行为：TIME_WAIT 残留也算占用（会触发顺延）；false = 新行为（默认）
-      propGrid_->Append(new wxBoolProperty(L"TIME_WAIT 视为端口占用（回滚开关）", "port_time_wait_blocking", cfg.port.time_wait_blocking));
+      propGrid_->Append(new wxBoolProperty(i18n::wx(i18n::StrId::ConfigDialog_TreatTIMEWAITPort), "port_time_wait_blocking", cfg.port.time_wait_blocking));
       // 独立代理 API 端口（2026-10-12 Spec StandalonePortImmediateRebind）
       // 原为硬编码 10085 且不校验可用性；被占用时启动会自动向后顺延 32 个端口
-      propGrid_->Append(new wxIntProperty(L"独立代理 API 端口", "proxy_api_base_port", cfg.proxy.api_base_port));
+      propGrid_->Append(new wxIntProperty(i18n::wx(i18n::StrId::ConfigDialog_StandaloneProxyAPIPort), "proxy_api_base_port", cfg.proxy.api_base_port));
       // 是否启用 ECH（2026-10-14 Spec EchSwitch）：
       //   false = 生成配置时不输出 echConfigList；true = 输出并把值中空格替换为 '+'
-      propGrid_->Append(new wxBoolProperty(L"是否启用 ECH", "proxy_ech_enabled", cfg.proxy.ech_enabled));
+      propGrid_->Append(new wxBoolProperty(i18n::wx(i18n::StrId::ConfigDialog_EnableECH), "proxy_ech_enabled", cfg.proxy.ech_enabled));
 
     // Xray 后端路径组（use_singbox=false 时可见）——指针存成员供 applyBackendVisibility 使用
-    xrayBackendCat_ = new wxPropertyCategory(L"Xray 后端路径");
+    xrayBackendCat_ = new wxPropertyCategory(i18n::wx(i18n::StrId::ConfigDialog_XrayBackendPaths));
     propGrid_->Append(xrayBackendCat_);
     {
-        wxFileProperty* xrayExecProp = new wxFileProperty(L"xray执行文件", "proxy_xray_executable", cfg.proxy.xray_executable);
+        wxFileProperty* xrayExecProp = new wxFileProperty(i18n::wx(i18n::StrId::ConfigDialog_XrayExecutable), "proxy_xray_executable", cfg.proxy.xray_executable);
         propGrid_->AppendIn(xrayBackendCat_, xrayExecProp);
         propGrid_->SetPropertyAttribute("proxy_xray_executable", wxPG_FILE_SHOW_FULL_PATH, (long)1);
         xrayExecProp->ChangeFlag(wxPGFlags::ShowFullFileName, true);
     }
     {
-        wxDirProperty* assetDirProp = new wxDirProperty(L"geoip、geosite文件目录", "proxy_xray_asset_dir", cfg.proxy.xray_asset_dir);
+        wxDirProperty* assetDirProp = new wxDirProperty(i18n::wx(i18n::StrId::ConfigDialog_GeoipGeositeDirectory), "proxy_xray_asset_dir", cfg.proxy.xray_asset_dir);
         propGrid_->AppendIn(xrayBackendCat_, assetDirProp);
         propGrid_->SetPropertyAttribute("proxy_xray_asset_dir", wxPG_FILE_SHOW_FULL_PATH, (long)1);
-        propGrid_->SetPropertyAttribute("proxy_xray_asset_dir", wxPG_DIALOG_TITLE, L"选择 geoip、geosite 文件目录");
+        propGrid_->SetPropertyAttribute("proxy_xray_asset_dir", wxPG_DIALOG_TITLE, i18n::wx(i18n::StrId::ConfigDialog_ChooseGeoipGeositeDirectory));
     }
 
     // sing-box 后端路径组（use_singbox=true 时可见）——指针存成员供 applyBackendVisibility 使用
-    sbBackendCat_ = new wxPropertyCategory(L"sing-box 后端路径");
+    sbBackendCat_ = new wxPropertyCategory(i18n::wx(i18n::StrId::ConfigDialog_SingBoxBackendPaths));
     propGrid_->Append(sbBackendCat_);
     {
-        wxFileProperty* sbExecProp = new wxFileProperty(L"Sing-box执行文件", "proxy_singbox_executable", cfg.proxy.singbox_executable);
+        wxFileProperty* sbExecProp = new wxFileProperty(i18n::wx(i18n::StrId::ConfigDialog_SingBoxExecutable), "proxy_singbox_executable", cfg.proxy.singbox_executable);
         propGrid_->AppendIn(sbBackendCat_, sbExecProp);
         propGrid_->SetPropertyAttribute("proxy_singbox_executable", wxPG_FILE_SHOW_FULL_PATH, (long)1);
         sbExecProp->ChangeFlag(wxPGFlags::ShowFullFileName, true);
-        propGrid_->SetPropertyAttribute("proxy_singbox_executable", wxPG_DIALOG_TITLE, L"选择 Sing-box 可执行文件");
+        propGrid_->SetPropertyAttribute("proxy_singbox_executable", wxPG_DIALOG_TITLE, i18n::wx(i18n::StrId::ConfigDialog_ChooseSingBoxExecutable));
     }
     {
-        wxDirProperty* sbAssetProp = new wxDirProperty(L"Sing-box资源目录", "proxy_singbox_asset_dir", cfg.proxy.singbox_asset_dir);
+        wxDirProperty* sbAssetProp = new wxDirProperty(i18n::wx(i18n::StrId::ConfigDialog_SingBoxResourceDirectory), "proxy_singbox_asset_dir", cfg.proxy.singbox_asset_dir);
         propGrid_->AppendIn(sbBackendCat_, sbAssetProp);
         propGrid_->SetPropertyAttribute("proxy_singbox_asset_dir", wxPG_FILE_SHOW_FULL_PATH, (long)1);
-        propGrid_->SetPropertyAttribute("proxy_singbox_asset_dir", wxPG_DIALOG_TITLE, L"选择 Sing-box 资源目录");
+        propGrid_->SetPropertyAttribute("proxy_singbox_asset_dir", wxPG_DIALOG_TITLE, i18n::wx(i18n::StrId::ConfigDialog_ChooseSingBoxResource));
     }
 
     // --- 测试 配置 ---
-    propGrid_->Append(new wxPropertyCategory(L"测试"));
-    propGrid_->Append(new wxStringProperty(L"测试 URL", "test_url", cfg.test_url));
-    propGrid_->Append(new wxIntProperty(L"超时(毫秒)", "test_timeout_ms", cfg.test_timeout_ms));
+    propGrid_->Append(new wxPropertyCategory(i18n::wx(i18n::StrId::ConfigDialog_Testing)));
+    propGrid_->Append(new wxStringProperty(i18n::wx(i18n::StrId::ConfigDialog_TestURL), "test_url", cfg.test_url));
+    propGrid_->Append(new wxIntProperty(i18n::wx(i18n::StrId::ConfigDialog_TimeoutMs), "test_timeout_ms", cfg.test_timeout_ms));
 
     // --- 日志 配置 ---
-    propGrid_->Append(new wxPropertyCategory(L"日志"));
+    propGrid_->Append(new wxPropertyCategory(i18n::wx(i18n::StrId::ConfigDialog_Logging)));
     // log_enabled removed - always true (default)
     // log_network_failures removed (Spec 附录A): the flag only gated 3 batch-test
     // startup INFO lines; output is now controlled purely by log levels (DEBUG).
     wxArrayString levelChoices;
     levelChoices.Add("TRACE"); levelChoices.Add("DEBUG"); levelChoices.Add("INFO");
     levelChoices.Add("REPORT"); levelChoices.Add("WARN"); levelChoices.Add("ERROR");
-    propGrid_->Append(new wxEnumProperty(L"控制台级别", "log_console_level", levelChoices));
-    propGrid_->Append(new wxEnumProperty(L"文件级别", "log_file_level", levelChoices));
+    propGrid_->Append(new wxEnumProperty(i18n::wx(i18n::StrId::ConfigDialog_ConsoleLevel), "log_console_level", levelChoices));
+    propGrid_->Append(new wxEnumProperty(i18n::wx(i18n::StrId::ConfigDialog_FileLevel), "log_file_level", levelChoices));
 
     // --- 网络监控 配置 ---
-    propGrid_->Append(new wxPropertyCategory(L"网络监控"));
-    propGrid_->Append(new wxBoolProperty(L"启用", "network_monitor_enabled", cfg.network_monitor.enabled));
-    propGrid_->Append(new wxStringProperty(L"检测URL(逗号分隔)", "network_monitor_checkUrls", ""));
-    propGrid_->Append(new wxIntProperty(L"检测间隔(毫秒)", "network_monitor_interval", cfg.network_monitor.checkIntervalMs));
-    propGrid_->Append(new wxIntProperty(L"检测超时(毫秒)", "network_monitor_timeout", cfg.network_monitor.checkTimeoutMs));
+    propGrid_->Append(new wxPropertyCategory(i18n::wx(i18n::StrId::ConfigDialog_NetworkMonitor)));
+    propGrid_->Append(new wxBoolProperty(i18n::wx(i18n::StrId::ConfigDialog_Enabled), "network_monitor_enabled", cfg.network_monitor.enabled));
+    propGrid_->Append(new wxStringProperty(i18n::wx(i18n::StrId::ConfigDialog_CheckURLsCommaSeparated), "network_monitor_checkUrls", ""));
+    propGrid_->Append(new wxIntProperty(i18n::wx(i18n::StrId::ConfigDialog_CheckIntervalMs), "network_monitor_interval", cfg.network_monitor.checkIntervalMs));
+    propGrid_->Append(new wxIntProperty(i18n::wx(i18n::StrId::ConfigDialog_CheckTimeoutMs), "network_monitor_timeout", cfg.network_monitor.checkTimeoutMs));
     // The "最大探测次数" property was removed on 2026-10-19 (D2): the network
     // monitor no longer cancels anything, so there is no grace window to tune.
 
     // --- 订阅 配置 ---
-    propGrid_->Append(new wxPropertyCategory(L"订阅"));
-    propGrid_->Append(new wxStringProperty(L"加速器URL", "accelerator_url", cfg.accelerator_url));
-    propGrid_->Append(new wxBoolProperty(L"加速器", "update_method_accelerator", false));
-    propGrid_->Append(new wxBoolProperty(L"代理", "update_method_proxy", false));
-    propGrid_->Append(new wxBoolProperty(L"直连", "update_method_direct", false));
-    propGrid_->Append(new wxStringProperty(L"更新方式", "update_method_display", L""));
+    propGrid_->Append(new wxPropertyCategory(i18n::wx(i18n::StrId::ConfigDialog_Subscriptions)));
+    propGrid_->Append(new wxStringProperty(i18n::wx(i18n::StrId::ConfigDialog_AcceleratorURL), "accelerator_url", cfg.accelerator_url));
+    propGrid_->Append(new wxBoolProperty(i18n::wx(i18n::StrId::ConfigDialog_Accelerator), "update_method_accelerator", false));
+    propGrid_->Append(new wxBoolProperty(i18n::wx(i18n::StrId::ConfigDialog_Proxy), "update_method_proxy", false));
+    propGrid_->Append(new wxBoolProperty(i18n::wx(i18n::StrId::ConfigDialog_Direct), "update_method_direct", false));
+    propGrid_->Append(new wxStringProperty(i18n::wx(i18n::StrId::ConfigDialog_UpdateMode), "update_method_display", L""));
     propGrid_->SetPropertyReadOnly("update_method_display");
-    propGrid_->Append(new wxBoolProperty(L"检查自动更新", "check_auto_update_interval",
+    propGrid_->Append(new wxBoolProperty(i18n::wx(i18n::StrId::ConfigDialog_CheckAutoUpdates), "check_auto_update_interval",
                                          cfg.check_auto_update_interval));
-    propGrid_->Append(new wxIntProperty(L"连接超时(毫秒)", "subscription_connect_timeout_ms",
+    propGrid_->Append(new wxIntProperty(i18n::wx(i18n::StrId::ConfigDialog_ConnectTimeoutMs), "subscription_connect_timeout_ms",
                                        cfg.subscription_connect_timeout_ms));
-    propGrid_->Append(new wxIntProperty(L"请求超时(毫秒)", "subscription_timeout_ms",
+    propGrid_->Append(new wxIntProperty(i18n::wx(i18n::StrId::ConfigDialog_RequestTimeoutMs), "subscription_timeout_ms",
                                        cfg.subscription_timeout_ms));
 
     // --- 清洗 配置 ---
-    propGrid_->Append(new wxPropertyCategory(L"清洗"));
-    propGrid_->Append(new wxBoolProperty(L"更新后清洗", "dedup_after_update", cfg.dedup_after_update));
-    propGrid_->Append(new wxBoolProperty(L"启用黑名单", "blacklist_enabled", cfg.blacklist_enabled));
-    propGrid_->Append(new wxStringProperty(L"黑名单订阅ID", "blacklist_subid", cfg.blacklist_subid));
-    propGrid_->Append(new wxIntProperty(L"黑名单阈值", "blacklist_threshold",
+    propGrid_->Append(new wxPropertyCategory(i18n::wx(i18n::StrId::ConfigDialog_Cleanup)));
+    propGrid_->Append(new wxBoolProperty(i18n::wx(i18n::StrId::ConfigDialog_CleanUpAfterUpdate), "dedup_after_update", cfg.dedup_after_update));
+    propGrid_->Append(new wxBoolProperty(i18n::wx(i18n::StrId::ConfigDialog_EnableBlacklist), "blacklist_enabled", cfg.blacklist_enabled));
+    propGrid_->Append(new wxStringProperty(i18n::wx(i18n::StrId::ConfigDialog_BlacklistSubscriptionID), "blacklist_subid", cfg.blacklist_subid));
+    propGrid_->Append(new wxIntProperty(i18n::wx(i18n::StrId::ConfigDialog_BlacklistThreshold), "blacklist_threshold",
                                        cfg.blacklist_threshold));
     // dedup_subids: 逗号分隔的订阅ID列表
     {
@@ -324,73 +325,73 @@ ConfigDialog::ConfigDialog(wxWindow* parent, const config::AppConfig& cfg, sqlit
             if (i > 0) subids += ",";
             subids += cfg.dedup_subids[i];
         }
-        propGrid_->Append(new wxStringProperty(L"保护订阅ID列表(逗号分隔)", "dedup_subids", subids));
+        propGrid_->Append(new wxStringProperty(i18n::wx(i18n::StrId::ConfigDialog_ProtectedSubscriptionIDsComma), "dedup_subids", subids));
     }
 
     // --- 同步 配置 ---
-    propGrid_->Append(new wxPropertyCategory(L"同步"));
-    wxFileProperty* srcDbProp = new wxFileProperty(L"源数据库", "sync_source_db", cfg.sync.source_db);
-    wxFileProperty* tgtDbProp = new wxFileProperty(L"目标数据库", "sync_target_db", cfg.sync.target_db);
+    propGrid_->Append(new wxPropertyCategory(i18n::wx(i18n::StrId::ConfigDialog_Sync)));
+    wxFileProperty* srcDbProp = new wxFileProperty(i18n::wx(i18n::StrId::ConfigDialog_SourceDatabase), "sync_source_db", cfg.sync.source_db);
+    wxFileProperty* tgtDbProp = new wxFileProperty(i18n::wx(i18n::StrId::ConfigDialog_TargetDatabase), "sync_target_db", cfg.sync.target_db);
     propGrid_->Append(srcDbProp);
     propGrid_->Append(tgtDbProp);
     propGrid_->SetPropertyAttribute("sync_source_db", wxPG_FILE_SHOW_FULL_PATH, (long)1);
     srcDbProp->ChangeFlag(wxPGFlags::ShowFullFileName, true);
     propGrid_->SetPropertyAttribute("sync_target_db", wxPG_FILE_SHOW_FULL_PATH, (long)1);
     tgtDbProp->ChangeFlag(wxPGFlags::ShowFullFileName, true);
-    propGrid_->Append(new wxBoolProperty(L"跳过保护订阅", "sync_skip_subids", cfg.sync.sync_skip_subids));
+    propGrid_->Append(new wxBoolProperty(i18n::wx(i18n::StrId::ConfigDialog_SkipProtectedSubscriptions), "sync_skip_subids", cfg.sync.sync_skip_subids));
 
     // --- 自动任务 配置 ---
-    propGrid_->Append(new wxPropertyCategory(L"自动任务"));
-    propGrid_->Append(new wxBoolProperty(L"全部更新", "autotask_step_update_all", false));
-    propGrid_->Append(new wxBoolProperty(L"全部测试", "autotask_step_test_all", false));
-    propGrid_->Append(new wxBoolProperty(L"清洗", "autotask_step_dedup", false));
-    propGrid_->Append(new wxBoolProperty(L"同步", "autotask_step_sync", false));
-    propGrid_->Append(new wxBoolProperty(L"导出", "autotask_step_export", false));
-    propGrid_->Append(new wxBoolProperty(L"解析地区", "autotask_step_resolve_region", false));
-    propGrid_->Append(new wxStringProperty(L"任务链", "autotask_chain_display", L""));
+    propGrid_->Append(new wxPropertyCategory(i18n::wx(i18n::StrId::ConfigDialog_AutoTasks)));
+    propGrid_->Append(new wxBoolProperty(i18n::wx(i18n::StrId::ConfigDialog_UpdateAll), "autotask_step_update_all", false));
+    propGrid_->Append(new wxBoolProperty(i18n::wx(i18n::StrId::ConfigDialog_TestAll), "autotask_step_test_all", false));
+    propGrid_->Append(new wxBoolProperty(i18n::wx(i18n::StrId::ConfigDialog_Cleanup), "autotask_step_dedup", false));
+    propGrid_->Append(new wxBoolProperty(i18n::wx(i18n::StrId::ConfigDialog_Sync), "autotask_step_sync", false));
+    propGrid_->Append(new wxBoolProperty(i18n::wx(i18n::StrId::ConfigDialog_Export), "autotask_step_export", false));
+    propGrid_->Append(new wxBoolProperty(i18n::wx(i18n::StrId::ConfigDialog_ResolveRegions), "autotask_step_resolve_region", false));
+    propGrid_->Append(new wxStringProperty(i18n::wx(i18n::StrId::ConfigDialog_TaskChain), "autotask_chain_display", L""));
     propGrid_->SetPropertyReadOnly("autotask_chain_display");
-    wxFileProperty* stateFileProp = new wxFileProperty(L"断点文件", "autotask_state_file",
+    wxFileProperty* stateFileProp = new wxFileProperty(i18n::wx(i18n::StrId::ConfigDialog_CheckpointFile), "autotask_state_file",
                                                        wxString::FromUTF8(cfg.auto_task.state_file));
     propGrid_->Append(stateFileProp);
     propGrid_->SetPropertyAttribute("autotask_state_file", wxPG_FILE_SHOW_FULL_PATH, (long)1);
     stateFileProp->ChangeFlag(wxPGFlags::ShowFullFileName, true);
     // --- 通知 配置 ---
-    propGrid_->Append(new wxPropertyCategory(L"通知"));
-    propGrid_->Append(new wxBoolProperty(L"启用通知", "notification_enabled", cfg.notification_enabled));
-    propGrid_->Append(new wxBoolProperty(L"更新时通知", "notification_on_update", cfg.notification_on_update));
-    propGrid_->Append(new wxBoolProperty(L"测试时通知", "notification_on_test", cfg.notification_on_test));
-    propGrid_->Append(new wxBoolProperty(L"任务完成通知", "autotask_notify", cfg.auto_task.notify_on_complete));
+    propGrid_->Append(new wxPropertyCategory(i18n::wx(i18n::StrId::ConfigDialog_Notifications)));
+    propGrid_->Append(new wxBoolProperty(i18n::wx(i18n::StrId::ConfigDialog_EnableNotifications), "notification_enabled", cfg.notification_enabled));
+    propGrid_->Append(new wxBoolProperty(i18n::wx(i18n::StrId::ConfigDialog_NotifyUpdate), "notification_on_update", cfg.notification_on_update));
+    propGrid_->Append(new wxBoolProperty(i18n::wx(i18n::StrId::ConfigDialog_NotifyTest), "notification_on_test", cfg.notification_on_test));
+    propGrid_->Append(new wxBoolProperty(i18n::wx(i18n::StrId::ConfigDialog_NotifyWhenTaskCompletes), "autotask_notify", cfg.auto_task.notify_on_complete));
 
     // --- 监控悬浮窗 配置（原「监控代理进程」，解决 P5） ---
-    propGrid_->Append(new wxPropertyCategory(L"监控悬浮窗"));
-    propGrid_->Append(new wxBoolProperty(L"启用", "proxy_process_monitor_enabled", cfg.proxy_process_monitor.enabled));
-    propGrid_->Append(new wxIntProperty(L"检测间隔(毫秒)", "proxy_process_monitor_check_interval_ms", cfg.proxy_process_monitor.checkIntervalMs));
+    propGrid_->Append(new wxPropertyCategory(i18n::wx(i18n::StrId::ConfigDialog_MonitorFloatingWindow)));
+    propGrid_->Append(new wxBoolProperty(i18n::wx(i18n::StrId::ConfigDialog_Enabled), "proxy_process_monitor_enabled", cfg.proxy_process_monitor.enabled));
+    propGrid_->Append(new wxIntProperty(i18n::wx(i18n::StrId::ConfigDialog_CheckIntervalMs), "proxy_process_monitor_check_interval_ms", cfg.proxy_process_monitor.checkIntervalMs));
 
     // --- 健康度评估 配置（新增父分类，2026-09-17 评审层级树） ---
-    wxPropertyCategory* healthCat = new wxPropertyCategory(L"健康度评估");
+    wxPropertyCategory* healthCat = new wxPropertyCategory(i18n::wx(i18n::StrId::ConfigDialog_HealthEvaluation));
     propGrid_->Append(healthCat);
 
     // 独立代理评估 子分类（解决 P2）：周期探活开关 + ProxyScorer 三权重
-    wxPropertyCategory* indepEvalCat = new wxPropertyCategory(L"独立代理评估");
+    wxPropertyCategory* indepEvalCat = new wxPropertyCategory(i18n::wx(i18n::StrId::ConfigDialog_StandaloneProxyEvaluation));
     propGrid_->AppendIn(healthCat, indepEvalCat);
-    propGrid_->AppendIn(indepEvalCat, new wxBoolProperty(L"周期探活", "independent_probe_enabled", cfg.independent_probe.enabled));
-    propGrid_->AppendIn(indepEvalCat, new wxFloatProperty(L"延迟权重(0.0-1.0)", "scoring_delay_weight", cfg.proxy.scoring_delay_weight));
-    propGrid_->AppendIn(indepEvalCat, new wxFloatProperty(L"稳定性权重(0.0-1.0)", "scoring_stability_weight", cfg.proxy.scoring_stability_weight));
-    propGrid_->AppendIn(indepEvalCat, new wxFloatProperty(L"历史权重(0.0-1.0)", "scoring_history_weight", cfg.proxy.scoring_history_weight));
+    propGrid_->AppendIn(indepEvalCat, new wxBoolProperty(i18n::wx(i18n::StrId::ConfigDialog_PeriodicProbing), "independent_probe_enabled", cfg.independent_probe.enabled));
+    propGrid_->AppendIn(indepEvalCat, new wxFloatProperty(i18n::wx(i18n::StrId::ConfigDialog_DelayWeight00), "scoring_delay_weight", cfg.proxy.scoring_delay_weight));
+    propGrid_->AppendIn(indepEvalCat, new wxFloatProperty(i18n::wx(i18n::StrId::ConfigDialog_StabilityWeight00), "scoring_stability_weight", cfg.proxy.scoring_stability_weight));
+    propGrid_->AppendIn(indepEvalCat, new wxFloatProperty(i18n::wx(i18n::StrId::ConfigDialog_HistoryWeight00), "scoring_history_weight", cfg.proxy.scoring_history_weight));
 
     // 代理池评估 子分类（解决 P1/P4/P6）：evaluate.* 六项
-    wxPropertyCategory* poolEvalCat = new wxPropertyCategory(L"代理池评估");
+    wxPropertyCategory* poolEvalCat = new wxPropertyCategory(i18n::wx(i18n::StrId::ConfigDialog_ProxyPoolEvaluation));
     propGrid_->AppendIn(healthCat, poolEvalCat);
-    propGrid_->AppendIn(poolEvalCat, new wxIntProperty(L"评估间隔(秒)", "pool_eval_interval", cfg.standalone_pool.evaluate.intervalSec));
-    propGrid_->AppendIn(poolEvalCat, new wxBoolProperty(L"报告健康结果", "pool_eval_report_health", cfg.standalone_pool.evaluate.reportHealth));
-    propGrid_->AppendIn(poolEvalCat, new wxBoolProperty(L"自动剔除失效成员", "pool_eval_auto_prune", cfg.standalone_pool.evaluate.autoPruneDead));
-    propGrid_->AppendIn(poolEvalCat, new wxIntProperty(L"剔除阈值(连续失败次数)", "pool_eval_prune_streak", cfg.standalone_pool.evaluate.pruneFailStreak));
-    propGrid_->AppendIn(poolEvalCat, new wxBoolProperty(L"自动优化(预留记录式)", "pool_eval_auto_optimize", cfg.standalone_pool.evaluate.autoOptimize));
+    propGrid_->AppendIn(poolEvalCat, new wxIntProperty(i18n::wx(i18n::StrId::ConfigDialog_EvaluationInterval), "pool_eval_interval", cfg.standalone_pool.evaluate.intervalSec));
+    propGrid_->AppendIn(poolEvalCat, new wxBoolProperty(i18n::wx(i18n::StrId::ConfigDialog_ReportHealthResults), "pool_eval_report_health", cfg.standalone_pool.evaluate.reportHealth));
+    propGrid_->AppendIn(poolEvalCat, new wxBoolProperty(i18n::wx(i18n::StrId::ConfigDialog_AutoRemoveDeadMembers), "pool_eval_auto_prune", cfg.standalone_pool.evaluate.autoPruneDead));
+    propGrid_->AppendIn(poolEvalCat, new wxIntProperty(i18n::wx(i18n::StrId::ConfigDialog_RemovalThresholdConsecutiveFailures), "pool_eval_prune_streak", cfg.standalone_pool.evaluate.pruneFailStreak));
+    propGrid_->AppendIn(poolEvalCat, new wxBoolProperty(i18n::wx(i18n::StrId::ConfigDialog_AutoOptimizeRecordBased), "pool_eval_auto_optimize", cfg.standalone_pool.evaluate.autoOptimize));
     // 探针 worker 数：0 = 禁用常驻探针池（ProxyProbePool::start 的 workerCount<=0 分支），
     // 1-N = 常驻 Xray 探针 worker 数（spec PoolConfigDialogAdjust）。
     // 注意：worker 数在池启动时一次性读取（StandaloneProxyPool.cpp:46 构造探针池），
     // 运行期修改需重启池后才生效。
-    propGrid_->AppendIn(poolEvalCat, new wxIntProperty(L"探针 worker 数(0=禁用, 重启池后生效)", "pool_eval_probe_workers", cfg.standalone_pool.evaluate.probeWorkers));
+    propGrid_->AppendIn(poolEvalCat, new wxIntProperty(i18n::wx(i18n::StrId::ConfigDialog_ProbeWorkers0Disabled), "pool_eval_probe_workers", cfg.standalone_pool.evaluate.probeWorkers));
 
     // --- 代理池配置（拆分，解决 P1/P4/P6：pool 本体 + observatory） ---
     // 方案甲：mode / observatory.type / observatory.samplingCount 三个预留字段（零运行时
@@ -398,28 +399,28 @@ ConfigDialog::ConfigDialog(wxWindow* parent, const config::AppConfig& cfg, sqlit
     // 端口为期望值：实际监听端口由 PortManager 在池启动时分配（见 spec §4.1 脚注）。
     // 观测探测地址：恒被 test.url 覆盖（AppController::startProxyPool 用 test_url
     // 填充 probeUrl），后端字段保留作极端兜底但不暴露 UI（spec PoolConfigDialogAdjust）。
-    propGrid_->Append(new wxPropertyCategory(L"代理池配置"));
-    propGrid_->Append(new wxBoolProperty(L"启用", "pool_enabled", cfg.standalone_pool.enabled));
-    propGrid_->Append(new wxIntProperty(L"SOCKS 端口(期望值)", "pool_socks_port", cfg.standalone_pool.socksPort));
-    propGrid_->Append(new wxIntProperty(L"API 端口(期望值)", "pool_api_port", cfg.standalone_pool.apiPort));
+    propGrid_->Append(new wxPropertyCategory(i18n::wx(i18n::StrId::ConfigDialog_ProxyPool)));
+    propGrid_->Append(new wxBoolProperty(i18n::wx(i18n::StrId::ConfigDialog_Enabled), "pool_enabled", cfg.standalone_pool.enabled));
+    propGrid_->Append(new wxIntProperty(i18n::wx(i18n::StrId::ConfigDialog_SOCKSPortExpected), "pool_socks_port", cfg.standalone_pool.socksPort));
+    propGrid_->Append(new wxIntProperty(i18n::wx(i18n::StrId::ConfigDialog_APIPortExpected), "pool_api_port", cfg.standalone_pool.apiPort));
     {
         // balancerStrategy 白名单必须与 StandalonePoolConfigParser.h 一致
         wxArrayString strategyChoices;
         strategyChoices.Add(L"random");
         strategyChoices.Add(L"leastPing");
         strategyChoices.Add(L"leastLoad");
-        propGrid_->Append(new wxEnumProperty(L"均衡策略", "pool_balancer_strategy", strategyChoices));
+        propGrid_->Append(new wxEnumProperty(i18n::wx(i18n::StrId::ConfigDialog_BalancingStrategy), "pool_balancer_strategy", strategyChoices));
         propGrid_->SetPropertyValue("pool_balancer_strategy", wxString(cfg.standalone_pool.balancerStrategy));
     }
-    propGrid_->Append(new wxIntProperty(L"观测间隔(秒)", "pool_obs_interval", cfg.standalone_pool.observatory.intervalSec));
-    propGrid_->Append(new wxIntProperty(L"观测超时(秒)", "pool_obs_timeout", cfg.standalone_pool.observatory.timeoutSec));
+    propGrid_->Append(new wxIntProperty(i18n::wx(i18n::StrId::ConfigDialog_ObservationInterval), "pool_obs_interval", cfg.standalone_pool.observatory.intervalSec));
+    propGrid_->Append(new wxIntProperty(i18n::wx(i18n::StrId::ConfigDialog_ObservationTimeout), "pool_obs_timeout", cfg.standalone_pool.observatory.timeoutSec));
 
     propGrid_->SetPropertyAttributeAll(wxPG_BOOL_USE_CHECKBOX, true);
 
     configTabSizer->Add(propGrid_, 1, wxEXPAND | wxALL, 8);
     configTab->SetSizer(configTabSizer);
 
-    notebook_->AddPage(configTab, L"应用配置");
+    notebook_->AddPage(configTab, i18n::wx(i18n::StrId::ConfigDialog_Application));
 
     // === Tab 2: 模板配置 ===
     createTemplateTab();
@@ -629,8 +630,8 @@ bool ConfigDialog::saveConfig() {
     {
         std::string accelUrl = propGrid_->GetPropertyValueAsString("accelerator_url").ToStdString();
         if (!accelUrl.empty() && !utils::isValidUrlFormat(accelUrl)) {
-            wxMessageBox(L"加速器 URL 格式无效，请确认包含 http:// 或 https:// 开头且域名有效",
-                         L"URL 格式错误", wxOK | wxICON_WARNING);
+            wxMessageBox(i18n::wx(i18n::StrId::ConfigDialog_InvalidAcceleratorURLMust),
+                         i18n::wx(i18n::StrId::ConfigDialog_InvalidURL), wxOK | wxICON_WARNING);
             accelUrl.clear();
             propGrid_->SetPropertyValue("accelerator_url", "");
         }
@@ -748,12 +749,12 @@ static const char* stepNameForProp(const wxString& propName) {
 }
 
 static const wchar_t* stepDisplayName(const std::string& step) {
-    if (step == "update_all") return L"全部更新";
-    if (step == "test_all")   return L"全部测试";
-    if (step == "dedup")      return L"清洗";
-    if (step == "sync")       return L"同步";
-    if (step == "export")            return L"导出";
-    if (step == "resolve_region")    return L"解析地区";
+    if (step == "update_all") return i18n::wx(i18n::StrId::ConfigDialog_UpdateAll);
+    if (step == "test_all")   return i18n::wx(i18n::StrId::ConfigDialog_TestAll);
+    if (step == "dedup")      return i18n::wx(i18n::StrId::ConfigDialog_Cleanup);
+    if (step == "sync")       return i18n::wx(i18n::StrId::ConfigDialog_Sync);
+    if (step == "export")            return i18n::wx(i18n::StrId::ConfigDialog_Export);
+    if (step == "resolve_region")    return i18n::wx(i18n::StrId::ConfigDialog_ResolveRegions);
     return L"";
 }
 
@@ -770,18 +771,18 @@ void ConfigDialog::refreshUpdateMethodDisplay() {
     wxString display;
     if (propGrid_->GetPropertyValueAsBool("update_method_accelerator")) {
         if (!display.empty()) display += L" → ";
-        display += L"加速器";
+        display += i18n::wx(i18n::StrId::ConfigDialog_Accelerator);
     }
     if (propGrid_->GetPropertyValueAsBool("update_method_proxy")) {
         if (!display.empty()) display += L" → ";
-        display += L"代理";
+        display += i18n::wx(i18n::StrId::ConfigDialog_Proxy);
     }
     if (propGrid_->GetPropertyValueAsBool("update_method_direct")) {
         if (!display.empty()) display += L" → ";
-        display += L"直连";
+        display += i18n::wx(i18n::StrId::ConfigDialog_Direct);
     }
     if (display.empty()) {
-        display = L"(无)";
+        display = i18n::wx(i18n::StrId::ConfigDialog_None);
     }
     propGrid_->SetPropertyValue("update_method_display", display);
 }
@@ -844,53 +845,53 @@ bool ConfigDialog::validateConfig() {
     if (editedConfig_.network_monitor.enabled) {
         for (const std::string& url : editedConfig_.network_monitor.checkUrls) {
             if (!utils::isValidUrlFormat(url)) {
-                wxMessageBox(L"网络监控检测URL格式无效: " + wxString(url), L"URL格式错误", wxOK | wxICON_WARNING);
+                wxMessageBox(i18n::wx(i18n::StrId::ConfigDialog_InvalidNetworkMonitorCheck) + wxString(url), i18n::wx(i18n::StrId::ConfigDialog_InvalidURL2), wxOK | wxICON_WARNING);
                 return false;
             }
         }
         if (editedConfig_.network_monitor.checkUrls.empty()) {
-            wxMessageBox(L"网络监控启用时必须配置至少一个检测URL", L"验证错误", wxOK | wxICON_ERROR);
+            wxMessageBox(i18n::wx(i18n::StrId::ConfigDialog_LeastOneCheckURL), i18n::wx(i18n::StrId::ConfigDialog_ValidationError), wxOK | wxICON_ERROR);
             return false;
         }
     }
     // ProxyProcessMonitor validation
     if (editedConfig_.proxy_process_monitor.checkIntervalMs < 5000 ||
         editedConfig_.proxy_process_monitor.checkIntervalMs > 300000) {
-        wxMessageBox(L"代理进程监控检测间隔必须在 5000 到 300000 毫秒之间", L"验证错误", wxOK | wxICON_ERROR);
+        wxMessageBox(i18n::wx(i18n::StrId::ConfigDialog_ProxyProcessMonitorInterval), i18n::wx(i18n::StrId::ConfigDialog_ValidationError), wxOK | wxICON_ERROR);
         return false;
     }
 
     // StandalonePool validation — 仅在启用时强制（关闭时不校验数值细节）
     if (editedConfig_.standalone_pool.enabled) {
         if (editedConfig_.standalone_pool.socksPort < 1024 || editedConfig_.standalone_pool.socksPort > 65535) {
-            wxMessageBox(L"代理池 SOCKS 端口必须在 1024 到 65535 之间", L"验证错误", wxOK | wxICON_ERROR);
+            wxMessageBox(i18n::wx(i18n::StrId::ConfigDialog_ProxyPoolSOCKSPort), i18n::wx(i18n::StrId::ConfigDialog_ValidationError), wxOK | wxICON_ERROR);
             return false;
         }
         if (editedConfig_.standalone_pool.apiPort < 1024 || editedConfig_.standalone_pool.apiPort > 65535) {
-            wxMessageBox(L"代理池 API 端口必须在 1024 到 65535 之间", L"验证错误", wxOK | wxICON_ERROR);
+            wxMessageBox(i18n::wx(i18n::StrId::ConfigDialog_ProxyPoolAPIPort), i18n::wx(i18n::StrId::ConfigDialog_ValidationError), wxOK | wxICON_ERROR);
             return false;
         }
         if (editedConfig_.standalone_pool.observatory.intervalSec < 1 || editedConfig_.standalone_pool.observatory.intervalSec > 300) {
-            wxMessageBox(L"观测间隔必须在 1 到 300 秒之间", L"验证错误", wxOK | wxICON_ERROR);
+            wxMessageBox(i18n::wx(i18n::StrId::ConfigDialog_ObservationIntervalMustBetween), i18n::wx(i18n::StrId::ConfigDialog_ValidationError), wxOK | wxICON_ERROR);
             return false;
         }
         if (editedConfig_.standalone_pool.observatory.timeoutSec < 1 || editedConfig_.standalone_pool.observatory.timeoutSec > 60) {
-            wxMessageBox(L"观测超时必须在 1 到 60 秒之间", L"验证错误", wxOK | wxICON_ERROR);
+            wxMessageBox(i18n::wx(i18n::StrId::ConfigDialog_ObservationTimeoutMustBetween), i18n::wx(i18n::StrId::ConfigDialog_ValidationError), wxOK | wxICON_ERROR);
             return false;
         }
         // observatory.destination 不暴露 UI：恒被 test.url 覆盖（spec PoolConfigDialogAdjust），
         // 后端保留透传，不再校验格式。
         if (editedConfig_.standalone_pool.evaluate.intervalSec < 1 || editedConfig_.standalone_pool.evaluate.intervalSec > 600) {
-            wxMessageBox(L"评估间隔必须在 1 到 600 秒之间", L"验证错误", wxOK | wxICON_ERROR);
+            wxMessageBox(i18n::wx(i18n::StrId::ConfigDialog_EvaluationIntervalMustBetween), i18n::wx(i18n::StrId::ConfigDialog_ValidationError), wxOK | wxICON_ERROR);
             return false;
         }
         if (editedConfig_.standalone_pool.evaluate.pruneFailStreak < 1) {
-            wxMessageBox(L"剔除阈值必须大于等于 1", L"验证错误", wxOK | wxICON_ERROR);
+            wxMessageBox(i18n::wx(i18n::StrId::ConfigDialog_RemovalThresholdMustLeast), i18n::wx(i18n::StrId::ConfigDialog_ValidationError), wxOK | wxICON_ERROR);
             return false;
         }
         if (editedConfig_.standalone_pool.evaluate.probeWorkers < 0 ||
             editedConfig_.standalone_pool.evaluate.probeWorkers > 64) {
-            wxMessageBox(L"探针 worker 数必须在 0 到 64 之间（0=禁用探针池）", L"验证错误",
+            wxMessageBox(i18n::wx(i18n::StrId::ConfigDialog_NumberProbeWorkersMust), i18n::wx(i18n::StrId::ConfigDialog_ValidationError),
                          wxOK | wxICON_ERROR);
             return false;
         }
@@ -902,7 +903,7 @@ bool ConfigDialog::validateConfig() {
         const double sw = editedConfig_.proxy.scoring_stability_weight;
         const double hw = editedConfig_.proxy.scoring_history_weight;
         if (dw < 0.0 || dw > 1.0 || sw < 0.0 || sw > 1.0 || hw < 0.0 || hw > 1.0) {
-            wxMessageBox(L"代理评分权重必须在 0.0 到 1.0 之间", L"验证错误", wxOK | wxICON_ERROR);
+            wxMessageBox(i18n::wx(i18n::StrId::ConfigDialog_ProxyScoringWeightsMust), i18n::wx(i18n::StrId::ConfigDialog_ValidationError), wxOK | wxICON_ERROR);
             return false;
         }
     }
@@ -1029,7 +1030,7 @@ void ConfigDialog::openSqlLibraryForProperty(const wxString& propertyName) {
         return;
     }
     if (!db_) {
-        wxMessageBox(L"数据库未连接，无法打开 SQL 方案库。", L"SQL 方案库",
+        wxMessageBox(i18n::wx(i18n::StrId::ConfigDialog_DatabaseConnectedCannotOpen), i18n::wx(i18n::StrId::ConfigDialog_SQLTemplates),
                      wxOK | wxICON_ERROR, this);
         return;
     }
@@ -1048,7 +1049,7 @@ void ConfigDialog::openSqlLibraryForProperty(const wxString& propertyName) {
 
     const db::SqlQueryItem item = db::SqlQueryDAO::getById(db_, selectedId);
     if (item.id <= 0) {
-        wxMessageBox(L"所选 SQL 方案已不存在，请刷新后重试。", L"SQL 方案库",
+        wxMessageBox(i18n::wx(i18n::StrId::ConfigDialog_SelectedSQLTemplateNo), i18n::wx(i18n::StrId::ConfigDialog_SQLTemplates),
                      wxOK | wxICON_WARNING, this);
         return;
     }
@@ -1091,11 +1092,11 @@ void ConfigDialog::createTemplateTab() {
     wxBoxSizer* leftColSizer = new wxBoxSizer(wxVERTICAL);
 
     wxBoxSizer* toolSizer = new wxBoxSizer(wxHORIZONTAL);
-    toolSizer->Add(new wxStaticText(templateConfigPanel, wxID_ANY, L"模板列表:"), 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 4);
+    toolSizer->Add(new wxStaticText(templateConfigPanel, wxID_ANY, i18n::wx(i18n::StrId::ConfigDialog_Templates)), 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 4);
 
-    wxButton* btnSave = new wxButton(templateConfigPanel, wxID_ANY, L"重新生成");
+    wxButton* btnSave = new wxButton(templateConfigPanel, wxID_ANY, i18n::wx(i18n::StrId::ConfigDialog_Regenerate));
     btnSave->Bind(wxEVT_BUTTON, &ConfigDialog::onTemplateSave, this);
-    wxButton* btnRefresh = new wxButton(templateConfigPanel, wxID_ANY, L"刷新");
+    wxButton* btnRefresh = new wxButton(templateConfigPanel, wxID_ANY, i18n::wx(i18n::StrId::ConfigDialog_Refresh));
     btnRefresh->Bind(wxEVT_BUTTON, &ConfigDialog::onTemplateRefresh, this);
     // 标题在左、按钮靠右
     toolSizer->AddStretchSpacer(1);
@@ -1108,11 +1109,11 @@ void ConfigDialog::createTemplateTab() {
                                     wxDefaultPosition, wxDefaultSize,
                                     wxLC_REPORT);
     templateList_->InsertColumn(0, L"ID", wxLIST_FORMAT_LEFT, 120);
-    templateList_->InsertColumn(1, L"类型", wxLIST_FORMAT_CENTER, 60);
-    templateList_->InsertColumn(2, L"父模板", wxLIST_FORMAT_LEFT, 100);
-    templateList_->InsertColumn(3, L"备注", wxLIST_FORMAT_LEFT, 220);
-    templateList_->InsertColumn(4, L"启用", wxLIST_FORMAT_CENTER, 45);
-    templateList_->InsertColumn(5, L"状态", wxLIST_FORMAT_CENTER, 50);
+    templateList_->InsertColumn(1, i18n::wx(i18n::StrId::ConfigDialog_Type), wxLIST_FORMAT_CENTER, 60);
+    templateList_->InsertColumn(2, i18n::wx(i18n::StrId::ConfigDialog_ParentTemplate), wxLIST_FORMAT_LEFT, 100);
+    templateList_->InsertColumn(3, i18n::wx(i18n::StrId::ConfigDialog_Remarks), wxLIST_FORMAT_LEFT, 220);
+    templateList_->InsertColumn(4, i18n::wx(i18n::StrId::ConfigDialog_Enabled), wxLIST_FORMAT_CENTER, 45);
+    templateList_->InsertColumn(5, i18n::wx(i18n::StrId::ConfigDialog_Status), wxLIST_FORMAT_CENTER, 50);
     // 选中事件只绑定到本控件（不能走事件表的 wxID_ANY，否则会捕获其它列表的选中事件）
     templateList_->Bind(wxEVT_LIST_ITEM_SELECTED, [this](wxListEvent& e) { onTemplateSelection(e); });
     leftColSizer->Add(templateList_, 1, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, 8);
@@ -1125,8 +1126,7 @@ void ConfigDialog::createTemplateTab() {
     wxBoxSizer* rightColSizer = new wxBoxSizer(wxVERTICAL);
     rightColSizer->Add(
         new wxStaticText(templateConfigPanel, wxID_ANY,
-                         L"生成的配置（只读，由组件链解析产生；"
-                         L"请到「组件包配置」/「组件链编辑」修改后重新解析）:"),
+                         i18n::wx(i18n::StrId::ConfigDialog_GeneratedConfigurationReadOnly)),
         0, wxLEFT | wxBOTTOM, 8);
     templateEditor_ = new wxTextCtrl(templateConfigPanel, wxID_ANY, L"",
                                       wxDefaultPosition, wxDefaultSize,
@@ -1136,7 +1136,7 @@ void ConfigDialog::createTemplateTab() {
     templateConfigSizer->Add(rightColSizer, 1, wxEXPAND);
 
     templateConfigPanel->SetSizer(templateConfigSizer);
-    templateSubNotebook_->AddPage(templateConfigPanel, L"模板配置");
+    templateSubNotebook_->AddPage(templateConfigPanel, i18n::wx(i18n::StrId::ConfigDialog_Templates2));
 
     // === 子 Tab 2: 组件链编辑（阶段 8）===
     // 置于「组件包配置」之前：链编辑是「改包→串链→看结果」的上游操作，
@@ -1149,7 +1149,7 @@ void ConfigDialog::createTemplateTab() {
     mainSizer->Add(templateSubNotebook_, 1, wxEXPAND | wxALL, 8);
 
     templateTab->SetSizer(mainSizer);
-    notebook_->AddPage(templateTab, L"模板配置");
+    notebook_->AddPage(templateTab, i18n::wx(i18n::StrId::ConfigDialog_Templates2));
 }
 
 void ConfigDialog::loadTemplates() {
@@ -1166,7 +1166,7 @@ void ConfigDialog::loadTemplates() {
         int row = templateList_->InsertItem(templates_.size() - 1, wxString::FromUTF8(item.id));
         wxString coreTypeStr = (item.coreType == 2) ? L"Xray" : (item.coreType == 24) ? L"SingBox" : wxString::Format(L"%d", item.coreType);
         templateList_->SetItem(row, 1, coreTypeStr);
-        templateList_->SetItem(row, 2, item.parentId.empty() ? L"(基础)" : wxString::FromUTF8(item.parentId));
+        templateList_->SetItem(row, 2, item.parentId.empty() ? i18n::wx(i18n::StrId::ConfigDialog_Base) : wxString::FromUTF8(item.parentId));
         templateList_->SetItem(row, 3, wxString::FromUTF8(item.remarks));
         templateList_->SetItem(row, 4, item.enabled ? L"✓" : L"✗");
         wxString syncStr = dao.isTemplateInSync(item.id) ? L"✅" : (item.bundleChain.empty() ? L"✅" : L"⚠️");
@@ -1202,19 +1202,18 @@ void ConfigDialog::onTemplateSave(wxCommandEvent& event) {
 
     long sel = templateList_->GetNextItem(-1, wxLIST_NEXT_ALL, wxLIST_STATE_SELECTED);
     if (sel < 0 || sel >= static_cast<long>(templates_.size())) {
-        wxMessageBox(L"请先选择要重新生成的模板", L"提示", wxOK | wxICON_INFORMATION);
+        wxMessageBox(i18n::wx(i18n::StrId::ConfigDialog_SelectTemplateRegenerateFirst), i18n::wx(i18n::StrId::ConfigDialog_Notice), wxOK | wxICON_INFORMATION);
         return;
     }
 
     const std::string templateId = templates_[sel].id;
     config::TemplateDecomposer decomposer(db_);
     if (decomposer.syncConfigFromChain(templateId)) {
-        wxMessageBox(L"已按组件链重新生成 " + wxString(templateId) + L" 的配置",
-                     L"成功", wxOK | wxICON_INFORMATION);
+        wxMessageBox(i18n::wx(i18n::StrId::ConfigDialog_Regenerated) + wxString(templateId) + i18n::wx(i18n::StrId::ConfigDialog_ComponentChain),
+                     i18n::wx(i18n::StrId::ConfigDialog_Success), wxOK | wxICON_INFORMATION);
     } else {
-        wxMessageBox(L"该模板没有可用的组件链，无法生成配置。"
-                     L"请先到「组件链编辑」为其添加 Bundle。",
-                     L"提示", wxOK | wxICON_INFORMATION);
+        wxMessageBox(i18n::wx(i18n::StrId::ConfigDialog_TemplateNoUsableComponent),
+                     i18n::wx(i18n::StrId::ConfigDialog_Notice), wxOK | wxICON_INFORMATION);
     }
     loadTemplates();
 }
@@ -1246,32 +1245,32 @@ void ConfigDialog::createBundleTab() {
 
     // === 左侧：组件包列表 ===
     wxBoxSizer* leftSizer = new wxBoxSizer(wxVERTICAL);
-    leftSizer->Add(new wxStaticText(bundleTab, wxID_ANY, L"组件包列表:"), 0, wxLEFT | wxBOTTOM, 8);
+    leftSizer->Add(new wxStaticText(bundleTab, wxID_ANY, i18n::wx(i18n::StrId::ConfigDialog_ComponentBundles)), 0, wxLEFT | wxBOTTOM, 8);
 
     bundleList_ = new wxListCtrl(bundleTab, wxID_ANY,
                                   wxDefaultPosition, wxSize(280, -1),
                                   wxLC_REPORT);
     bundleList_->InsertColumn(0, L"ID", wxLIST_FORMAT_LEFT, 140);
-    bundleList_->InsertColumn(1, L"核心", wxLIST_FORMAT_CENTER, 60);
-    bundleList_->InsertColumn(2, L"类型", wxLIST_FORMAT_CENTER, 80);
-    bundleList_->InsertColumn(3, L"组件数", wxLIST_FORMAT_CENTER, 60);
-    bundleList_->InsertColumn(4, L"版本", wxLIST_FORMAT_CENTER, 50);
-    bundleList_->InsertColumn(5, L"启用", wxLIST_FORMAT_CENTER, 50);
+    bundleList_->InsertColumn(1, i18n::wx(i18n::StrId::ConfigDialog_Core), wxLIST_FORMAT_CENTER, 60);
+    bundleList_->InsertColumn(2, i18n::wx(i18n::StrId::ConfigDialog_Type), wxLIST_FORMAT_CENTER, 80);
+    bundleList_->InsertColumn(3, i18n::wx(i18n::StrId::ConfigDialog_Components), wxLIST_FORMAT_CENTER, 60);
+    bundleList_->InsertColumn(4, i18n::wx(i18n::StrId::ConfigDialog_Version), wxLIST_FORMAT_CENTER, 50);
+    bundleList_->InsertColumn(5, i18n::wx(i18n::StrId::ConfigDialog_Enabled), wxLIST_FORMAT_CENTER, 50);
     bundleList_->Bind(wxEVT_LIST_ITEM_SELECTED, [this](wxListEvent& e) { onBundleSelection(e); });
     leftSizer->Add(bundleList_, 1, wxEXPAND | wxALL, 8);
 
     // 按钮栏
     wxBoxSizer* btnSizer = new wxBoxSizer(wxHORIZONTAL);
-    wxButton* btnNew = new wxButton(bundleTab, wxID_ANY, L"新增");
+    wxButton* btnNew = new wxButton(bundleTab, wxID_ANY, i18n::wx(i18n::StrId::ConfigDialog_New));
     btnNew->Bind(wxEVT_BUTTON, [this](wxCommandEvent& e) { onBundleNew(e); });
     btnSizer->Add(btnNew, 0, wxRIGHT, 4);
-    wxButton* btnRefresh = new wxButton(bundleTab, wxID_ANY, L"刷新");
+    wxButton* btnRefresh = new wxButton(bundleTab, wxID_ANY, i18n::wx(i18n::StrId::ConfigDialog_Refresh));
     btnRefresh->Bind(wxEVT_BUTTON, [this](wxCommandEvent& e) { onBundleRefresh(e); });
     btnSizer->Add(btnRefresh, 0, wxRIGHT, 4);
-    wxButton* btnDelete = new wxButton(bundleTab, wxID_ANY, L"删除");
+    wxButton* btnDelete = new wxButton(bundleTab, wxID_ANY, i18n::wx(i18n::StrId::ConfigDialog_Delete));
     btnDelete->Bind(wxEVT_BUTTON, [this](wxCommandEvent& e) { onBundleDelete(e); });
     btnSizer->Add(btnDelete, 0, wxRIGHT, 4);
-    wxButton* btnSave = new wxButton(bundleTab, wxID_ANY, L"保存");
+    wxButton* btnSave = new wxButton(bundleTab, wxID_ANY, i18n::wx(i18n::StrId::ConfigDialog_Save));
     btnSave->Bind(wxEVT_BUTTON, [this](wxCommandEvent& e) { onBundleSave(e); });
     btnSizer->Add(btnSave, 0);
     leftSizer->Add(btnSizer, 0, wxEXPAND | wxALL, 8);
@@ -1282,7 +1281,7 @@ void ConfigDialog::createBundleTab() {
     wxBoxSizer* editorRowSizer = new wxBoxSizer(wxHORIZONTAL);
 
     wxBoxSizer* rightSizer = new wxBoxSizer(wxVERTICAL);
-    rightSizer->Add(new wxStaticText(bundleTab, wxID_ANY, L"JSON 配置:"), 0, wxLEFT | wxBOTTOM, 8);
+    rightSizer->Add(new wxStaticText(bundleTab, wxID_ANY, i18n::wx(i18n::StrId::ConfigDialog_JSONConfiguration)), 0, wxLEFT | wxBOTTOM, 8);
     bundleEditor_ = new wxTextCtrl(bundleTab, wxID_ANY, L"",
                                     wxDefaultPosition, wxDefaultSize,
                                     wxTE_MULTILINE | wxTE_WORDWRAP | wxTE_DONTWRAP);
@@ -1295,7 +1294,7 @@ void ConfigDialog::createBundleTab() {
 
     // 组件类型表：内容由 ComponentRegistry 运行时生成，避免与代码漂移
     wxStaticText* typeLabel = new wxStaticText(bundleTab, wxID_ANY,
-                                               L"组件类型（ComponentType）:");
+                                               i18n::wx(i18n::StrId::ConfigDialog_ComponentTypesComponentType));
     typeLabel->SetFont(wxFont(9, wxFONTFAMILY_DEFAULT, wxFONTSTYLE_NORMAL, wxFONTWEIGHT_BOLD));
     tableSizer->Add(typeLabel, 0, wxLEFT | wxTOP, 8);
 
@@ -1304,24 +1303,24 @@ void ConfigDialog::createBundleTab() {
     // 抢占大部分纵向空间，占位符表被挤到只剩两三行。
     bundleTypeTable_ = new wxListCtrl(bundleTab, wxID_ANY, wxDefaultPosition, wxSize(360, -1),
                                       wxLC_REPORT | wxLC_SINGLE_SEL | wxLC_NO_HEADER);
-    bundleTypeTable_->InsertColumn(0, L"枚举", wxLIST_FORMAT_LEFT, 150);
-    bundleTypeTable_->InsertColumn(1, L"值", wxLIST_FORMAT_CENTER, 40);
-    bundleTypeTable_->InsertColumn(2, L"Xray 节", wxLIST_FORMAT_LEFT, 110);
-    bundleTypeTable_->InsertColumn(3, L"SingBox 节", wxLIST_FORMAT_LEFT, 110);
-    bundleTypeTable_->InsertColumn(4, L"策略", wxLIST_FORMAT_CENTER, 70);
+    bundleTypeTable_->InsertColumn(0, i18n::wx(i18n::StrId::ConfigDialog_Enum), wxLIST_FORMAT_LEFT, 150);
+    bundleTypeTable_->InsertColumn(1, i18n::wx(i18n::StrId::ConfigDialog_Value), wxLIST_FORMAT_CENTER, 40);
+    bundleTypeTable_->InsertColumn(2, i18n::wx(i18n::StrId::ConfigDialog_XraySection), wxLIST_FORMAT_LEFT, 110);
+    bundleTypeTable_->InsertColumn(3, i18n::wx(i18n::StrId::ConfigDialog_SingBoxSection), wxLIST_FORMAT_LEFT, 110);
+    bundleTypeTable_->InsertColumn(4, i18n::wx(i18n::StrId::ConfigDialog_Strategy), wxLIST_FORMAT_CENTER, 70);
     tableSizer->Add(bundleTypeTable_, 1, wxEXPAND | wxALL, 8);
 
     // 占位符表：与 ConfigBuilder::variablesToMap() 一一对应
     wxStaticText* varLabel = new wxStaticText(bundleTab, wxID_ANY,
-                                              L"占位符（运行时由 ConfigBuilder 替换）:");
+                                              i18n::wx(i18n::StrId::ConfigDialog_PlaceholdersReplacedConfigBuilderRuntime));
     varLabel->SetFont(wxFont(9, wxFONTFAMILY_DEFAULT, wxFONTSTYLE_NORMAL, wxFONTWEIGHT_BOLD));
     tableSizer->Add(varLabel, 0, wxLEFT | wxTOP, 8);
 
     // 同样用 wxSize(360, -1)，与组件类型表等分纵向空间
     bundleVarTable_ = new wxListCtrl(bundleTab, wxID_ANY, wxDefaultPosition, wxSize(360, -1),
                                      wxLC_REPORT | wxLC_SINGLE_SEL | wxLC_NO_HEADER);
-    bundleVarTable_->InsertColumn(0, L"占位符", wxLIST_FORMAT_LEFT, 200);
-    bundleVarTable_->InsertColumn(1, L"说明", wxLIST_FORMAT_LEFT, 300);
+    bundleVarTable_->InsertColumn(0, i18n::wx(i18n::StrId::ConfigDialog_Placeholder), wxLIST_FORMAT_LEFT, 200);
+    bundleVarTable_->InsertColumn(1, i18n::wx(i18n::StrId::ConfigDialog_Description), wxLIST_FORMAT_LEFT, 300);
     tableSizer->Add(bundleVarTable_, 1, wxEXPAND | wxALL, 8);
 
     editorRowSizer->Add(tableSizer, 0, wxEXPAND);
@@ -1332,7 +1331,7 @@ void ConfigDialog::createBundleTab() {
     populateBundleVarTable();
 
     bundleTab->SetSizer(mainSizer);
-    templateSubNotebook_->AddPage(bundleTab, L"组件包配置");
+    templateSubNotebook_->AddPage(bundleTab, i18n::wx(i18n::StrId::ConfigDialog_ComponentBundles2));
 }
 
 void ConfigDialog::populateBundleTypeTable() {
@@ -1350,10 +1349,10 @@ void ConfigDialog::populateBundleTypeTable() {
         const wxString enumName = componentTypeName(*it);
 
         const wxString xraySection = meta->configSection.empty()
-                                         ? wxString(L"（无）")
+                                         ? wxString(i18n::wx(i18n::StrId::ConfigDialog_None2))
                                          : wxString::FromUTF8(meta->configSection.c_str());
         const wxString sbSection = meta->singboxSection.empty()
-                                       ? wxString(L"（无）")
+                                       ? wxString(i18n::wx(i18n::StrId::ConfigDialog_None2))
                                        : wxString::FromUTF8(meta->singboxSection.c_str());
 
         wxString strategy;
@@ -1378,14 +1377,14 @@ void ConfigDialog::populateBundleVarTable() {
     // 顺序与说明对齐 ConfigBuilder::variablesToMap()（src/config/ConfigBuilder.cpp:35-46）
     struct VarRow { const wchar_t* name; const wchar_t* desc; };
     static const VarRow kVars[] = {
-        { L"${socksPort}",          L"SOCKS 入站端口（int）" },
-        { L"${apiPort}",             L"API 端口（int，仅 Xray）" },
-        { L"${probeUrl}",            L"探测 URL（string）" },
-        { L"${observatoryInterval}", L"Observatory 间隔（int，毫秒）" },
-        { L"${balancerStrategy}",    L"负载均衡策略（string）" },
-        { L"${enableObservatory}",   L"启用 observatory（\"true\"/\"false\"）" },
-        { L"${enableCnDirect}",      L"启用 CN 直连分流（\"true\"/\"false\"）" },
-        { L"${blockQuic}",           L"阻断 QUIC（\"true\"/\"false\"）" }
+        { L"${socksPort}",          i18n::wx(i18n::StrId::ConfigDialog_SOCKSInboundPortInt) },
+        { L"${apiPort}",             i18n::wx(i18n::StrId::ConfigDialog_APIPortIntXray) },
+        { L"${probeUrl}",            i18n::wx(i18n::StrId::ConfigDialog_ProbeURLString) },
+        { L"${observatoryInterval}", i18n::wx(i18n::StrId::ConfigDialog_ObservatoryIntervalIntMs) },
+        { L"${balancerStrategy}",    i18n::wx(i18n::StrId::ConfigDialog_LoadBalancingStrategyString) },
+        { L"${enableObservatory}",   i18n::wx(i18n::StrId::ConfigDialog_EnableObservatoryTrueFalse) },
+        { L"${enableCnDirect}",      i18n::wx(i18n::StrId::ConfigDialog_EnableCNDirectRouting) },
+        { L"${blockQuic}",           i18n::wx(i18n::StrId::ConfigDialog_BlockQUICTrueFalse) }
     };
     const int count = static_cast<int>(sizeof(kVars) / sizeof(kVars[0]));
 
@@ -1410,10 +1409,10 @@ void ConfigDialog::loadBundles() {
                               : wxString::Format(L"%d", static_cast<int>(bundle.coreType));
         bundleList_->SetItem(row, 1, coreTypeStr);
 
-        wxString typeStr = (bundle.templateType == config::TemplateType::BASE) ? L"基础"
-                          : (bundle.templateType == config::TemplateType::TEST) ? L"测试"
-                          : (bundle.templateType == config::TemplateType::STANDALONE) ? L"独立"
-                          : (bundle.templateType == config::TemplateType::POOL) ? L"池"
+        wxString typeStr = (bundle.templateType == config::TemplateType::BASE) ? i18n::wx(i18n::StrId::ConfigDialog_Base2)
+                          : (bundle.templateType == config::TemplateType::TEST) ? i18n::wx(i18n::StrId::ConfigDialog_Testing)
+                          : (bundle.templateType == config::TemplateType::STANDALONE) ? i18n::wx(i18n::StrId::ConfigDialog_Standalone)
+                          : (bundle.templateType == config::TemplateType::POOL) ? i18n::wx(i18n::StrId::ConfigDialog_Pool)
                           : wxString::Format(L"%d", static_cast<int>(bundle.templateType));
         bundleList_->SetItem(row, 2, typeStr);
 
@@ -1486,11 +1485,11 @@ void ConfigDialog::onBundleNew(wxCommandEvent& event) {
     if (!bundleEditor_ || !db_) return;
 
     // 1. 输入 ID
-    wxTextEntryDialog idDlg(this, L"请输入新组件包的 ID：", L"新增组件包", L"xray_CUSTOM");
+    wxTextEntryDialog idDlg(this, i18n::wx(i18n::StrId::ConfigDialog_EnterIDNewComponent), i18n::wx(i18n::StrId::ConfigDialog_NewComponentBundle), L"xray_CUSTOM");
     if (idDlg.ShowModal() != wxID_OK) return;
     const std::string newId = idDlg.GetValue().Trim(true).Trim(false).ToStdString();
     if (newId.empty()) {
-        wxMessageBox(L"组件包 ID 不能为空", L"提示", wxOK | wxICON_INFORMATION);
+        wxMessageBox(i18n::wx(i18n::StrId::ConfigDialog_ComponentBundleIDCannot), i18n::wx(i18n::StrId::ConfigDialog_Notice), wxOK | wxICON_INFORMATION);
         return;
     }
 
@@ -1498,8 +1497,8 @@ void ConfigDialog::onBundleNew(wxCommandEvent& event) {
 
     // 2. 唯一性校验
     if (dao.getById(newId).has_value()) {
-        wxMessageBox(L"组件包 '" + wxString(newId) + L"' 已存在，请换一个 ID",
-                     L"提示", wxOK | wxICON_INFORMATION);
+        wxMessageBox(i18n::wx(i18n::StrId::ConfigDialog_ComponentBundle) + wxString(newId) + i18n::wx(i18n::StrId::ConfigDialog_AlreadyExistsChooseAnother),
+                     i18n::wx(i18n::StrId::ConfigDialog_Notice), wxOK | wxICON_INFORMATION);
         return;
     }
 
@@ -1507,7 +1506,7 @@ void ConfigDialog::onBundleNew(wxCommandEvent& event) {
     wxArrayString coreChoices;
     coreChoices.Add(L"Xray");
     coreChoices.Add(L"SingBox");
-    wxSingleChoiceDialog coreDlg(this, L"请选择该组件包适用的核心：", L"核心类型", coreChoices);
+    wxSingleChoiceDialog coreDlg(this, i18n::wx(i18n::StrId::ConfigDialog_ChooseCoreComponentBundle), i18n::wx(i18n::StrId::ConfigDialog_CoreType), coreChoices);
     coreDlg.SetSelection(0);
     if (coreDlg.ShowModal() != wxID_OK) return;
     const bool isSingBox = (coreDlg.GetSelection() == 1);
@@ -1522,19 +1521,19 @@ void ConfigDialog::onBundleNew(wxCommandEvent& event) {
     const std::vector<config::ComponentType>& allTypes =
         config::ComponentRegistry::instance().getAllTypes();
     wxArrayString typeChoices;
-    typeChoices.Add(L"暂不添加组件（components 为空数组）");
+    typeChoices.Add(i18n::wx(i18n::StrId::ConfigDialog_DoAddComponentsYet));
     for (std::vector<config::ComponentType>::const_iterator it = allTypes.begin();
          it != allTypes.end(); ++it) {
         const config::ComponentMetadata* meta =
             config::ComponentRegistry::instance().getMetadata(*it);
         const wxString section = (meta != nullptr && !meta->configSection.empty())
                                      ? wxString::FromUTF8(meta->configSection.c_str())
-                                     : wxString(L"（无配置节）");
+                                     : wxString(i18n::wx(i18n::StrId::ConfigDialog_NoConfigurationSection));
         typeChoices.Add(wxString::Format(L"%s  —  %s", componentTypeName(*it), section));
     }
     wxSingleChoiceDialog typeDlg(this,
-                                 L"请选择要预置的组件类型（会自动填好 type 字段）：",
-                                 L"初始组件类型", typeChoices);
+                                 i18n::wx(i18n::StrId::ConfigDialog_ChooseComponentTypePrefill),
+                                 i18n::wx(i18n::StrId::ConfigDialog_InitialComponentType), typeChoices);
     typeDlg.SetSelection(0);
     if (typeDlg.ShowModal() != wxID_OK) return;
     const bool addInitialComponent = (typeDlg.GetSelection() > 0);
@@ -1564,7 +1563,7 @@ void ConfigDialog::onBundleNew(wxCommandEvent& event) {
     }
 
     if (!dao.save(bundle)) {
-        wxMessageBox(L"创建失败，请查看日志", L"错误", wxOK | wxICON_ERROR);
+        wxMessageBox(i18n::wx(i18n::StrId::ConfigDialog_CreationFailedSeeLog), i18n::wx(i18n::StrId::ConfigDialog_Error), wxOK | wxICON_ERROR);
         return;
     }
 
@@ -1619,8 +1618,8 @@ void ConfigDialog::onBundleNew(wxCommandEvent& event) {
     config::TemplateDecomposer decomposer(db_);
     decomposer.syncConfigsFromChains(newId);
 
-    wxMessageBox(L"已创建组件包 '" + wxString(newId) + L"'，请在右侧编辑 JSON 后点「保存」",
-                 L"成功", wxOK | wxICON_INFORMATION);
+    wxMessageBox(i18n::wx(i18n::StrId::ConfigDialog_CreatedComponentBundle) + wxString(newId) + i18n::wx(i18n::StrId::ConfigDialog_EditJSONRightThen),
+                 i18n::wx(i18n::StrId::ConfigDialog_Success), wxOK | wxICON_INFORMATION);
 }
 
 void ConfigDialog::onBundleSave(wxCommandEvent& event) {
@@ -1628,7 +1627,7 @@ void ConfigDialog::onBundleSave(wxCommandEvent& event) {
 
     long sel = bundleList_->GetNextItem(-1, wxLIST_NEXT_ALL, wxLIST_STATE_SELECTED);
     if (sel < 0 || sel >= static_cast<long>(bundles_.size())) {
-        wxMessageBox(L"请先选择要保存的组件包", L"提示", wxOK | wxICON_INFORMATION);
+        wxMessageBox(i18n::wx(i18n::StrId::ConfigDialog_SelectComponentBundleSave), i18n::wx(i18n::StrId::ConfigDialog_Notice), wxOK | wxICON_INFORMATION);
         return;
     }
 
@@ -1642,8 +1641,8 @@ void ConfigDialog::onBundleSave(wxCommandEvent& event) {
     if (!config::SchemaValidator::parseAndValidateComponentBundle(
             bundleEditor_->GetValue().ToStdString(), parseResult, schemaError)) {
         wxMessageBox(wxString::FromUTF8(schemaError.c_str())
-                         + L"\n\n未保存，请修正后重试。",
-                     L"校验失败", wxOK | wxICON_ERROR);
+                         + i18n::wx(i18n::StrId::ConfigDialog_NNotSavedFixProblems),
+                     i18n::wx(i18n::StrId::ConfigDialog_ValidationFailed), wxOK | wxICON_ERROR);
         return;
     }
 
@@ -1658,10 +1657,9 @@ void ConfigDialog::onBundleSave(wxCommandEvent& event) {
     }
     if (selectedCount != 1) {
         wxMessageBox(wxString::Format(
-            L"当前有 %d 个组件包处于选中状态，请只选中一个再保存。\n"
-            L"（列表支持 Ctrl/Shift 多选，会造成保存对象与编辑器内容不一致）",
+            i18n::wx(i18n::StrId::ConfigDialog_ComponentBundlesSelectedSelect),
             selectedCount),
-            L"提示", wxOK | wxICON_INFORMATION);
+            i18n::wx(i18n::StrId::ConfigDialog_Notice), wxOK | wxICON_INFORMATION);
         return;
     }
 
@@ -1675,9 +1673,9 @@ void ConfigDialog::onBundleSave(wxCommandEvent& event) {
         if (bundle.id != bundles_[sel].id) {
             for (std::size_t i = 0; i < bundles_.size(); ++i) {
                 if (bundles_[i].id == bundle.id) {
-                    wxMessageBox(L"组件包 ID 已存在：" + wxString::FromUTF8(bundle.id.c_str())
-                                     + L"\n请换一个未被占用的 ID。\n\n未保存。",
-                                 L"校验失败", wxOK | wxICON_ERROR);
+                    wxMessageBox(i18n::wx(i18n::StrId::ConfigDialog_ComponentBundleIDAlready) + wxString::FromUTF8(bundle.id.c_str())
+                                     + i18n::wx(i18n::StrId::ConfigDialog_NChooseUnusedIDNNot),
+                                 i18n::wx(i18n::StrId::ConfigDialog_ValidationFailed), wxOK | wxICON_ERROR);
                     return;
                 }
             }
@@ -1742,31 +1740,31 @@ void ConfigDialog::onBundleSave(wxCommandEvent& event) {
             // Config 停在旧值，需要用户到「组件链编辑」里改引用。
             const std::vector<db::FullConfigTemplateItem> dependents =
                 db::FullConfigTemplateDAO(db_).getByBundleId(oldId);
-            msg = wxString::Format(L"组件包 ID 已由 '%s' 改为 '%s'。\n\n",
+            msg = wxString::Format(i18n::wx(i18n::StrId::ConfigDialog_ComponentBundleIDChanged),
                                    wxString::FromUTF8(oldId.c_str()),
                                    wxString::FromUTF8(bundle.id.c_str()));
             if (dependents.empty()) {
-                msg += L"没有模板引用旧 ID，已同步 "
-                     + wxString::Format(L"%d", synced) + L" 个模板。";
+                msg += i18n::wx(i18n::StrId::ConfigDialog_NoTemplateReferencesOld)
+                     + wxString::Format(L"%d", synced) + i18n::wx(i18n::StrId::ConfigDialog_Templates3);
             } else {
                 msg += wxString::Format(
-                    L"⚠ 以下 %d 个模板仍引用旧 ID，其组件链已无法解析，需到「组件链编辑」更新引用：\n",
+                    i18n::wx(i18n::StrId::ConfigDialog_FollowingTemplatesStillReference),
                     static_cast<int>(dependents.size()));
                 for (std::size_t i = 0; i < dependents.size(); ++i) {
                     msg += L"  · " + wxString::FromUTF8(dependents[i].id.c_str()) + L"\n";
                 }
             }
         } else {
-            msg = wxString::Format(L"组件包已保存，已同步 %d 个模板的 Config。", synced);
+            msg = wxString::Format(i18n::wx(i18n::StrId::ConfigDialog_ComponentBundleSavedSynchronised), synced);
         }
 
         loadBundles();
         // 模板列表的 ✅/⚠️ 状态列由 loadTemplates() 计算（isTemplateInSync），
         // 组件包版本变化后必须刷新，否则状态指示停留在旧值。
         loadTemplates();
-        wxMessageBox(msg, L"成功", wxOK | (renamed ? wxICON_WARNING : wxICON_INFORMATION));
+        wxMessageBox(msg, i18n::wx(i18n::StrId::ConfigDialog_Success), wxOK | (renamed ? wxICON_WARNING : wxICON_INFORMATION));
     } else {
-        wxMessageBox(L"保存失败", L"错误", wxOK | wxICON_ERROR);
+        wxMessageBox(i18n::wx(i18n::StrId::ConfigDialog_SaveFailed), i18n::wx(i18n::StrId::ConfigDialog_Error), wxOK | wxICON_ERROR);
     }
 }
 
@@ -1775,12 +1773,12 @@ void ConfigDialog::onBundleDelete(wxCommandEvent& event) {
 
     long sel = bundleList_->GetNextItem(-1, wxLIST_NEXT_ALL, wxLIST_STATE_SELECTED);
     if (sel < 0 || sel >= static_cast<long>(bundles_.size())) {
-        wxMessageBox(L"请先选择要删除的组件包", L"提示", wxOK | wxICON_INFORMATION);
+        wxMessageBox(i18n::wx(i18n::StrId::ConfigDialog_SelectComponentBundleDelete), i18n::wx(i18n::StrId::ConfigDialog_Notice), wxOK | wxICON_INFORMATION);
         return;
     }
 
-    wxString confirmMsg = wxString::Format(L"确定要删除组件包 '%s' 吗？", bundles_[sel].id.c_str());
-    if (wxMessageBox(confirmMsg, L"确认删除", wxYES_NO | wxICON_QUESTION) != wxYES) {
+    wxString confirmMsg = wxString::Format(i18n::wx(i18n::StrId::ConfigDialog_DeleteComponentBundle), bundles_[sel].id.c_str());
+    if (wxMessageBox(confirmMsg, i18n::wx(i18n::StrId::ConfigDialog_ConfirmDelete), wxYES_NO | wxICON_QUESTION) != wxYES) {
         return;
     }
 
@@ -1797,21 +1795,20 @@ void ConfigDialog::onBundleDelete(wxCommandEvent& event) {
         loadBundles();
         loadTemplates();
 
-        wxString msg = wxString::Format(L"已删除，已同步 %d 个模板的 Config。", synced);
+        wxString msg = wxString::Format(i18n::wx(i18n::StrId::ConfigDialog_DeletedSynchronisedConfigTemplates), synced);
         if (!dependents.empty()) {
             msg += wxString::Format(
-                L"\n\n⚠ 以下 %d 个模板的组件链仍引用已删除的 '%s'，其链已无法解析，"
-                L"需到「组件链编辑」移除该 Bundle：\n",
+                i18n::wx(i18n::StrId::ConfigDialog_ChainsFollowingTemplatesStill),
                 static_cast<int>(dependents.size()),
                 wxString::FromUTF8(deletedId.c_str()));
             for (std::size_t i = 0; i < dependents.size(); ++i) {
                 msg += L"  · " + wxString::FromUTF8(dependents[i].id.c_str()) + L"\n";
             }
         }
-        wxMessageBox(msg, L"成功",
+        wxMessageBox(msg, i18n::wx(i18n::StrId::ConfigDialog_Success),
                      wxOK | (dependents.empty() ? wxICON_INFORMATION : wxICON_WARNING));
     } else {
-        wxMessageBox(L"删除失败", L"错误", wxOK | wxICON_ERROR);
+        wxMessageBox(i18n::wx(i18n::StrId::ConfigDialog_DeleteFailed), i18n::wx(i18n::StrId::ConfigDialog_Error), wxOK | wxICON_ERROR);
     }
 }
 
@@ -1853,19 +1850,19 @@ void ConfigDialog::createChainEditTab() {
         componentListPanel_->setConflictStatus(result.conflicts);
         wxString statusText;
         if (result.success) {
-            statusText = wxString::Format(L"解析成功：%d 个组件，%d 个冲突",
+            statusText = wxString::Format(i18n::wx(i18n::StrId::ConfigDialog_ResolvedComponentsConflicts),
                 static_cast<int>(result.components.size()),
                 static_cast<int>(result.conflicts.size()));
         } else {
-            statusText = L"解析失败：" + wxString::FromUTF8(result.errorMessage);
+            statusText = i18n::wx(i18n::StrId::ConfigDialog_ResolveFailed) + wxString::FromUTF8(result.errorMessage);
         }
         chainStatus_->SetLabel(statusText);
 
         // 配置预览（resolveToConfig 填充 result.config）
         if (!result.success) {
-            showChainPreview(std::string(u8"// 解析失败：") + result.errorMessage);
+            showChainPreview(std::string(i18n::u8(i18n::StrId::ConfigDialog_ResolveFailed2)) + result.errorMessage);
         } else if (result.config.is_null()) {
-            showChainPreview(std::string(u8"// 解析成功，但生成的配置为空"));
+            showChainPreview(std::string(i18n::u8(i18n::StrId::ConfigDialog_ResolvedButGeneratedConfiguration)));
         } else {
             showChainPreview(prettyJson(result.config, 0));
         }
@@ -1899,11 +1896,11 @@ void ConfigDialog::createChainEditTab() {
     wxPanel* headerPanel1 = new wxPanel(editPanel);
     headerPanel1->SetMinSize(wxSize(-1, kHeaderHeight));
     {
-        wxButton* btnAddBundle = new wxButton(headerPanel1, wxID_ANY, L"添加 Bundle");
+        wxButton* btnAddBundle = new wxButton(headerPanel1, wxID_ANY, i18n::wx(i18n::StrId::ConfigDialog_AddBundle));
         btnAddBundle->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { chainEditor_->triggerAddBundle(); });
-        wxButton* btnRemoveBundle = new wxButton(headerPanel1, wxID_ANY, L"移除");
+        wxButton* btnRemoveBundle = new wxButton(headerPanel1, wxID_ANY, i18n::wx(i18n::StrId::ConfigDialog_Remove));
         btnRemoveBundle->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { chainEditor_->triggerRemoveBundle(); });
-        wxButton* btnResolve = new wxButton(headerPanel1, wxID_ANY, L"解析");
+        wxButton* btnResolve = new wxButton(headerPanel1, wxID_ANY, i18n::wx(i18n::StrId::ConfigDialog_Resolve));
         btnResolve->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { chainEditor_->triggerResolve(); });
         wxBoxSizer* hs = new wxBoxSizer(wxHORIZONTAL);
         hs->Add(btnAddBundle, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 6);
@@ -1927,8 +1924,8 @@ void ConfigDialog::createChainEditTab() {
     wxPanel* headerPanel3 = new wxPanel(editPanel);
     headerPanel3->SetMinSize(wxSize(-1, kHeaderHeight));
     {
-        wxStaticText* previewLabel = new wxStaticText(headerPanel3, wxID_ANY, L"配置预览:");
-        wxButton* editSaveBtn = new wxButton(headerPanel3, wxID_ANY, L"保存链");
+        wxStaticText* previewLabel = new wxStaticText(headerPanel3, wxID_ANY, i18n::wx(i18n::StrId::ConfigDialog_ConfigurationPreview));
+        wxButton* editSaveBtn = new wxButton(headerPanel3, wxID_ANY, i18n::wx(i18n::StrId::ConfigDialog_SaveChain));
         editSaveBtn->Bind(wxEVT_BUTTON, &ConfigDialog::onChainSave, this);
         wxBoxSizer* hs = new wxBoxSizer(wxHORIZONTAL);
         hs->Add(previewLabel, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 8);
@@ -1957,7 +1954,7 @@ void ConfigDialog::createChainEditTab() {
 
     // ---------- 「当前模板」行（需求 3：置于三个表头之上）----------
     wxStaticText* templateLabel = new wxStaticText(editPanel, wxID_ANY,
-        L"当前模板：（未选择）");
+        i18n::wx(i18n::StrId::ConfigDialog_CurrentTemplateNoneSelected));
     templateLabel->SetFont(wxFont(9, wxFONTFAMILY_DEFAULT, wxFONTSTYLE_NORMAL,
                                   wxFONTWEIGHT_BOLD));
     chainTemplateLabel_ = templateLabel;
@@ -1973,7 +1970,7 @@ void ConfigDialog::createChainEditTab() {
     mainSizer->Add(editPanel, 1, wxEXPAND | wxALL, 4);
     chainTab->SetSizer(mainSizer);
 
-    templateSubNotebook_->AddPage(chainTab, L"组件链编辑");
+    templateSubNotebook_->AddPage(chainTab, i18n::wx(i18n::StrId::ConfigDialog_ChainEditor));
 }
 
 void ConfigDialog::showChainPreview(const std::string& jsonText) {
@@ -1993,7 +1990,7 @@ void ConfigDialog::syncChainEditorFromSelection() {
         const db::FullConfigTemplateItem& item = templates_[sel];
         // 「当前模板」标签随选中项刷新：id + 备注（备注为空时只显示 id）
         if (chainTemplateLabel_ != nullptr) {
-            wxString label = wxString::Format(L"当前模板：%s",
+            wxString label = wxString::Format(i18n::wx(i18n::StrId::ConfigDialog_CurrentTemplate),
                                               wxString::FromUTF8(item.id.c_str()));
             if (!item.remarks.empty()) {
                 label += wxString::Format(L"（%s）",
@@ -2027,7 +2024,7 @@ void ConfigDialog::syncChainEditorFromSelection() {
     } else {
         chainEditor_->clear();
         if (chainTemplateLabel_ != nullptr) {
-            chainTemplateLabel_->SetLabel(L"当前模板：（未选择）");
+            chainTemplateLabel_->SetLabel(i18n::wx(i18n::StrId::ConfigDialog_CurrentTemplateNoneSelected));
         }
     }
     componentListPanel_->clear();
@@ -2043,14 +2040,14 @@ void ConfigDialog::onChainSave(wxCommandEvent& event) {
     }
     long sel = templateList_->GetNextItem(-1, wxLIST_NEXT_ALL, wxLIST_STATE_SELECTED);
     if (sel < 0 || sel >= static_cast<long>(templates_.size())) {
-        wxMessageBox(L"请先在左侧模板列表中选择要保存的模板", L"提示",
+        wxMessageBox(i18n::wx(i18n::StrId::ConfigDialog_SelectTemplateLeftList), i18n::wx(i18n::StrId::ConfigDialog_Notice),
                      wxOK | wxICON_INFORMATION);
         return;
     }
 
     const config::BundleChain chain = chainEditor_->getChain();
     if (chain.bundleIds.empty()) {
-        wxMessageBox(L"组件链为空（未添加任何 Bundle），无法保存", L"提示",
+        wxMessageBox(i18n::wx(i18n::StrId::ConfigDialog_ComponentChainEmptyNo), i18n::wx(i18n::StrId::ConfigDialog_Notice),
                      wxOK | wxICON_INFORMATION);
         return;
     }
@@ -2063,12 +2060,12 @@ void ConfigDialog::onChainSave(wxCommandEvent& event) {
     // 组件包」的坏链当成无冲突放行，随后物化拿不到任何组件却报成功。
     if (!result.success) {
         wxMessageBox(wxString::FromUTF8(result.errorMessage.c_str())
-                         + L"\n\n请在「组件链编辑」中移除该 Bundle 后再保存。",
-                     L"校验失败", wxOK | wxICON_ERROR);
+                         + i18n::wx(i18n::StrId::ConfigDialog_NRemoveBundleChainEditor),
+                     i18n::wx(i18n::StrId::ConfigDialog_ValidationFailed), wxOK | wxICON_ERROR);
         return;
     }
     if (ComponentListPanel::hasErrors(result.conflicts)) {
-        wxMessageBox(L"组件链存在 ERROR 级冲突，请先修复后再保存", L"错误",
+        wxMessageBox(i18n::wx(i18n::StrId::ConfigDialog_ComponentChainERRORLevel), i18n::wx(i18n::StrId::ConfigDialog_Error),
                      wxOK | wxICON_ERROR);
         return;
     }
@@ -2112,16 +2109,16 @@ void ConfigDialog::onChainSave(wxCommandEvent& event) {
         // 物化失败时必须如实告知：链已落库但 Config 未更新，
         // 此时「模板与链解析结果不同」的状态会持续存在，不能报「成功」误导用户。
         if (synced) {
-            wxMessageBox(L"组件链已保存到模板 " + wxString(templates_[sel].id)
-                         + L"，并已同步该模板的 Config",
-                         L"成功", wxOK | wxICON_INFORMATION);
+            wxMessageBox(i18n::wx(i18n::StrId::ConfigDialog_ComponentChainSavedTemplate) + wxString(templates_[sel].id)
+                         + i18n::wx(i18n::StrId::ConfigDialog_TemplateConfigSynchronised),
+                         i18n::wx(i18n::StrId::ConfigDialog_Success), wxOK | wxICON_INFORMATION);
         } else {
-            wxMessageBox(L"组件链已保存到模板 " + wxString(templates_[sel].id)
-                         + L"，但该模板的 Config 未能重新生成（请查看日志）。",
-                         L"部分成功", wxOK | wxICON_WARNING);
+            wxMessageBox(i18n::wx(i18n::StrId::ConfigDialog_ComponentChainSavedTemplate) + wxString(templates_[sel].id)
+                         + i18n::wx(i18n::StrId::ConfigDialog_ButTemplateConfigCould),
+                         i18n::wx(i18n::StrId::ConfigDialog_PartialSuccess), wxOK | wxICON_WARNING);
         }
         syncChainEditorFromSelection();
     } else {
-        wxMessageBox(L"保存失败，请查看日志", L"错误", wxOK | wxICON_ERROR);
+        wxMessageBox(i18n::wx(i18n::StrId::ConfigDialog_SaveFailedSeeLog), i18n::wx(i18n::StrId::ConfigDialog_Error), wxOK | wxICON_ERROR);
     }
 }

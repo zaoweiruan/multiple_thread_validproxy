@@ -373,8 +373,8 @@
     },
     {
       "id": "MainFrame.Dialog.UploadConfirm",
-      "zh": "将把当前 config.json 与订阅列表上传到云端，可能覆盖云端已有文件。\\n\\n是否继续？",
-      "en": "This will upload the current config.json and subscription list to the cloud, possibly overwriting existing files.\\n\\nContinue?"
+      "zh": "将把当前 config.json 与订阅列表上传到云端，可能覆盖云端已有文件。\n\n是否继续？",
+      "en": "This will upload the current config.json and subscription list to the cloud, possibly overwriting existing files.\n\nContinue?"
     },
     {
       "id": "MainFrame.Status.QueuedDedup",
@@ -483,8 +483,8 @@
     },
     {
       "id": "MainFrame.Dialog.AboutText",
-      "zh": "{} v{}\\n\\n版本: {}\\nGit Tag: {}\\nGit Commit: {}\\n构建类型: {}\\n构建时间: {}\\n编译器: {}\\n\\n管理并测试您的代理订阅。",
-      "en": "{} v{}\\n\\nVersion: {}\\nGit Tag: {}\\nGit Commit: {}\\nBuild type: {}\\nBuild time: {}\\nCompiler: {}\\n\\nManage and test your proxy subscriptions."
+      "zh": "{} v{}\n\n版本: {}\nGit Tag: {}\nGit Commit: {}\n构建类型: {}\n构建时间: {}\n编译器: {}\n\n管理并测试您的代理订阅。",
+      "en": "{} v{}\n\nVersion: {}\nGit Tag: {}\nGit Commit: {}\nBuild type: {}\nBuild time: {}\nCompiler: {}\n\nManage and test your proxy subscriptions."
     },
     {
       "id": "Tray.Menu.Exit",
@@ -623,8 +623,8 @@
     },
     {
       "id": "LogPanel.Status.Parsing",
-      "zh": "正在解析日志文件...\\n{}",
-      "en": "Parsing log file...\\n{}"
+      "zh": "正在解析日志文件...\n{}",
+      "en": "Parsing log file...\n{}"
     },
     {
       "id": "LogPanel.Stats.File",
@@ -638,23 +638,23 @@
     },
     {
       "id": "LogPanel.Stats.LevelHeader",
-      "zh": "\\n===== 级别统计 =====\\n",
-      "en": "\\n===== Level counts =====\\n"
+      "zh": "\n===== 级别统计 =====\n",
+      "en": "\n===== Level counts =====\n"
     },
     {
       "id": "LogPanel.Stats.WarnHeader",
-      "zh": "\\n===== WARN 原因明细 ({} 类) =====\\n",
-      "en": "\\n===== WARN reasons ({} kinds) =====\\n"
+      "zh": "\n===== WARN 原因明细 ({} 类) =====\n",
+      "en": "\n===== WARN reasons ({} kinds) =====\n"
     },
     {
       "id": "LogPanel.Stats.ErrorHeader",
-      "zh": "\\n===== ERROR 原因明细 ({} 类) =====\\n",
-      "en": "\\n===== ERROR reasons ({} kinds) =====\\n"
+      "zh": "\n===== ERROR 原因明细 ({} 类) =====\n",
+      "en": "\n===== ERROR reasons ({} kinds) =====\n"
     },
     {
       "id": "LogPanel.Stats.Empty",
-      "zh": "(无)\\n",
-      "en": "(none)\\n"
+      "zh": "(无)\n",
+      "en": "(none)\n"
     },
     {
       "id": "LogPanel.Stats.ReasonLine",
@@ -1550,6 +1550,1056 @@
       "id": "SqlQuery.Message.ScopeMismatch",
       "zh": "当前配置需要「{}」范围的方案，选中的方案是「{}」范围。",
       "en": "The current configuration requires a \"{}\" template, but the selected one has scope \"{}\"."
+    },
+    {
+      "id": "ConfigDialog.TemplateDatabaseConnected",
+      "zh": "（方案 #%d，数据库未连接）",
+      "en": "(template #%d, database not connected)"
+    },
+    {
+      "id": "ConfigDialog.TemplateNoLongerExists",
+      "zh": "（方案 #%d 不存在，点击重新选择）",
+      "en": "(template #%d no longer exists; click to choose again)"
+    },
+    {
+      "id": "ConfigDialog.CustomSQLClickChoose",
+      "zh": "（自定义 SQL，点击选择方案）",
+      "en": "(custom SQL; click to choose a template)"
+    },
+    {
+      "id": "ConfigDialog.NoTemplateSelectedClick",
+      "zh": "（未选择方案，点击选择）",
+      "en": "(no template selected; click to choose)"
+    },
+    {
+      "id": "ConfigDialog.ConfigurationEditor",
+      "zh": "配置编辑器",
+      "en": "Configuration editor"
+    },
+    {
+      "id": "ConfigDialog.Database",
+      "zh": "数据库",
+      "en": "Database"
+    },
+    {
+      "id": "ConfigDialog.Path",
+      "zh": "路径",
+      "en": "Path"
+    },
+    {
+      "id": "ConfigDialog.SQLQuery",
+      "zh": "SQL 查询",
+      "en": "SQL query"
+    },
+    {
+      "id": "ConfigDialog.QuerySubId",
+      "zh": "按 SubId 查询",
+      "en": "Query by SubId"
+    },
+    {
+      "id": "ConfigDialog.WorkerThreads",
+      "zh": "工作线程配置",
+      "en": "Worker threads"
+    },
+    {
+      "id": "ConfigDialog.Workers",
+      "zh": "工作数",
+      "en": "Workers"
+    },
+    {
+      "id": "ConfigDialog.BasePort",
+      "zh": "起始端口",
+      "en": "Base port"
+    },
+    {
+      "id": "ConfigDialog.APIPort",
+      "zh": "API 端口",
+      "en": "API port"
+    },
+    {
+      "id": "ConfigDialog.ProxyBackend",
+      "zh": "代理后端选择",
+      "en": "Proxy backend"
+    },
+    {
+      "id": "ConfigDialog.UseSingBoxProxy",
+      "zh": "使用sing-box为代理终端",
+      "en": "Use sing-box as the proxy backend"
+    },
+    {
+      "id": "ConfigDialog.SOCKSListenPort",
+      "zh": "SOCKS 监听端口",
+      "en": "SOCKS listen port"
+    },
+    {
+      "id": "ConfigDialog.TreatTIMEWAITPort",
+      "zh": "TIME_WAIT 视为端口占用（回滚开关）",
+      "en": "Treat TIME_WAIT as port in use (rollback switch)"
+    },
+    {
+      "id": "ConfigDialog.StandaloneProxyAPIPort",
+      "zh": "独立代理 API 端口",
+      "en": "Standalone proxy API port"
+    },
+    {
+      "id": "ConfigDialog.EnableECH",
+      "zh": "是否启用 ECH",
+      "en": "Enable ECH"
+    },
+    {
+      "id": "ConfigDialog.XrayBackendPaths",
+      "zh": "Xray 后端路径",
+      "en": "Xray backend paths"
+    },
+    {
+      "id": "ConfigDialog.XrayExecutable",
+      "zh": "xray执行文件",
+      "en": "xray executable"
+    },
+    {
+      "id": "ConfigDialog.GeoipGeositeDirectory",
+      "zh": "geoip、geosite文件目录",
+      "en": "geoip / geosite directory"
+    },
+    {
+      "id": "ConfigDialog.ChooseGeoipGeositeDirectory",
+      "zh": "选择 geoip、geosite 文件目录",
+      "en": "Choose the geoip / geosite directory"
+    },
+    {
+      "id": "ConfigDialog.SingBoxBackendPaths",
+      "zh": "sing-box 后端路径",
+      "en": "sing-box backend paths"
+    },
+    {
+      "id": "ConfigDialog.SingBoxExecutable",
+      "zh": "Sing-box执行文件",
+      "en": "sing-box executable"
+    },
+    {
+      "id": "ConfigDialog.ChooseSingBoxExecutable",
+      "zh": "选择 Sing-box 可执行文件",
+      "en": "Choose the sing-box executable"
+    },
+    {
+      "id": "ConfigDialog.SingBoxResourceDirectory",
+      "zh": "Sing-box资源目录",
+      "en": "sing-box resource directory"
+    },
+    {
+      "id": "ConfigDialog.ChooseSingBoxResource",
+      "zh": "选择 Sing-box 资源目录",
+      "en": "Choose the sing-box resource directory"
+    },
+    {
+      "id": "ConfigDialog.Testing",
+      "zh": "测试",
+      "en": "Testing"
+    },
+    {
+      "id": "ConfigDialog.TestURL",
+      "zh": "测试 URL",
+      "en": "Test URL"
+    },
+    {
+      "id": "ConfigDialog.TimeoutMs",
+      "zh": "超时(毫秒)",
+      "en": "Timeout (ms)"
+    },
+    {
+      "id": "ConfigDialog.Logging",
+      "zh": "日志",
+      "en": "Logging"
+    },
+    {
+      "id": "ConfigDialog.ConsoleLevel",
+      "zh": "控制台级别",
+      "en": "Console level"
+    },
+    {
+      "id": "ConfigDialog.FileLevel",
+      "zh": "文件级别",
+      "en": "File level"
+    },
+    {
+      "id": "ConfigDialog.NetworkMonitor",
+      "zh": "网络监控",
+      "en": "Network monitor"
+    },
+    {
+      "id": "ConfigDialog.Enabled",
+      "zh": "启用",
+      "en": "Enabled"
+    },
+    {
+      "id": "ConfigDialog.CheckURLsCommaSeparated",
+      "zh": "检测URL(逗号分隔)",
+      "en": "Check URLs (comma separated)"
+    },
+    {
+      "id": "ConfigDialog.CheckIntervalMs",
+      "zh": "检测间隔(毫秒)",
+      "en": "Check interval (ms)"
+    },
+    {
+      "id": "ConfigDialog.CheckTimeoutMs",
+      "zh": "检测超时(毫秒)",
+      "en": "Check timeout (ms)"
+    },
+    {
+      "id": "ConfigDialog.Subscriptions",
+      "zh": "订阅",
+      "en": "Subscriptions"
+    },
+    {
+      "id": "ConfigDialog.AcceleratorURL",
+      "zh": "加速器URL",
+      "en": "Accelerator URL"
+    },
+    {
+      "id": "ConfigDialog.Accelerator",
+      "zh": "加速器",
+      "en": "Accelerator"
+    },
+    {
+      "id": "ConfigDialog.Proxy",
+      "zh": "代理",
+      "en": "Proxy"
+    },
+    {
+      "id": "ConfigDialog.Direct",
+      "zh": "直连",
+      "en": "Direct"
+    },
+    {
+      "id": "ConfigDialog.UpdateMode",
+      "zh": "更新方式",
+      "en": "Update mode"
+    },
+    {
+      "id": "ConfigDialog.CheckAutoUpdates",
+      "zh": "检查自动更新",
+      "en": "Check for auto updates"
+    },
+    {
+      "id": "ConfigDialog.ConnectTimeoutMs",
+      "zh": "连接超时(毫秒)",
+      "en": "Connect timeout (ms)"
+    },
+    {
+      "id": "ConfigDialog.RequestTimeoutMs",
+      "zh": "请求超时(毫秒)",
+      "en": "Request timeout (ms)"
+    },
+    {
+      "id": "ConfigDialog.Cleanup",
+      "zh": "清洗",
+      "en": "Cleanup"
+    },
+    {
+      "id": "ConfigDialog.CleanUpAfterUpdate",
+      "zh": "更新后清洗",
+      "en": "Clean up after update"
+    },
+    {
+      "id": "ConfigDialog.EnableBlacklist",
+      "zh": "启用黑名单",
+      "en": "Enable blacklist"
+    },
+    {
+      "id": "ConfigDialog.BlacklistSubscriptionID",
+      "zh": "黑名单订阅ID",
+      "en": "Blacklist subscription ID"
+    },
+    {
+      "id": "ConfigDialog.BlacklistThreshold",
+      "zh": "黑名单阈值",
+      "en": "Blacklist threshold"
+    },
+    {
+      "id": "ConfigDialog.ProtectedSubscriptionIDsComma",
+      "zh": "保护订阅ID列表(逗号分隔)",
+      "en": "Protected subscription IDs (comma separated)"
+    },
+    {
+      "id": "ConfigDialog.Sync",
+      "zh": "同步",
+      "en": "Sync"
+    },
+    {
+      "id": "ConfigDialog.SourceDatabase",
+      "zh": "源数据库",
+      "en": "Source database"
+    },
+    {
+      "id": "ConfigDialog.TargetDatabase",
+      "zh": "目标数据库",
+      "en": "Target database"
+    },
+    {
+      "id": "ConfigDialog.SkipProtectedSubscriptions",
+      "zh": "跳过保护订阅",
+      "en": "Skip protected subscriptions"
+    },
+    {
+      "id": "ConfigDialog.AutoTasks",
+      "zh": "自动任务",
+      "en": "Auto tasks"
+    },
+    {
+      "id": "ConfigDialog.UpdateAll",
+      "zh": "全部更新",
+      "en": "Update all"
+    },
+    {
+      "id": "ConfigDialog.TestAll",
+      "zh": "全部测试",
+      "en": "Test all"
+    },
+    {
+      "id": "ConfigDialog.Export",
+      "zh": "导出",
+      "en": "Export"
+    },
+    {
+      "id": "ConfigDialog.ResolveRegions",
+      "zh": "解析地区",
+      "en": "Resolve regions"
+    },
+    {
+      "id": "ConfigDialog.TaskChain",
+      "zh": "任务链",
+      "en": "Task chain"
+    },
+    {
+      "id": "ConfigDialog.CheckpointFile",
+      "zh": "断点文件",
+      "en": "Checkpoint file"
+    },
+    {
+      "id": "ConfigDialog.Notifications",
+      "zh": "通知",
+      "en": "Notifications"
+    },
+    {
+      "id": "ConfigDialog.EnableNotifications",
+      "zh": "启用通知",
+      "en": "Enable notifications"
+    },
+    {
+      "id": "ConfigDialog.NotifyUpdate",
+      "zh": "更新时通知",
+      "en": "Notify on update"
+    },
+    {
+      "id": "ConfigDialog.NotifyTest",
+      "zh": "测试时通知",
+      "en": "Notify on test"
+    },
+    {
+      "id": "ConfigDialog.NotifyWhenTaskCompletes",
+      "zh": "任务完成通知",
+      "en": "Notify when a task completes"
+    },
+    {
+      "id": "ConfigDialog.MonitorFloatingWindow",
+      "zh": "监控悬浮窗",
+      "en": "Monitor floating window"
+    },
+    {
+      "id": "ConfigDialog.HealthEvaluation",
+      "zh": "健康度评估",
+      "en": "Health evaluation"
+    },
+    {
+      "id": "ConfigDialog.StandaloneProxyEvaluation",
+      "zh": "独立代理评估",
+      "en": "Standalone proxy evaluation"
+    },
+    {
+      "id": "ConfigDialog.PeriodicProbing",
+      "zh": "周期探活",
+      "en": "Periodic probing"
+    },
+    {
+      "id": "ConfigDialog.DelayWeight00",
+      "zh": "延迟权重(0.0-1.0)",
+      "en": "Delay weight (0.0-1.0)"
+    },
+    {
+      "id": "ConfigDialog.StabilityWeight00",
+      "zh": "稳定性权重(0.0-1.0)",
+      "en": "Stability weight (0.0-1.0)"
+    },
+    {
+      "id": "ConfigDialog.HistoryWeight00",
+      "zh": "历史权重(0.0-1.0)",
+      "en": "History weight (0.0-1.0)"
+    },
+    {
+      "id": "ConfigDialog.ProxyPoolEvaluation",
+      "zh": "代理池评估",
+      "en": "Proxy pool evaluation"
+    },
+    {
+      "id": "ConfigDialog.EvaluationInterval",
+      "zh": "评估间隔(秒)",
+      "en": "Evaluation interval (s)"
+    },
+    {
+      "id": "ConfigDialog.ReportHealthResults",
+      "zh": "报告健康结果",
+      "en": "Report health results"
+    },
+    {
+      "id": "ConfigDialog.AutoRemoveDeadMembers",
+      "zh": "自动剔除失效成员",
+      "en": "Auto-remove dead members"
+    },
+    {
+      "id": "ConfigDialog.RemovalThresholdConsecutiveFailures",
+      "zh": "剔除阈值(连续失败次数)",
+      "en": "Removal threshold (consecutive failures)"
+    },
+    {
+      "id": "ConfigDialog.AutoOptimizeRecordBased",
+      "zh": "自动优化(预留记录式)",
+      "en": "Auto-optimize (record-based)"
+    },
+    {
+      "id": "ConfigDialog.ProbeWorkers0Disabled",
+      "zh": "探针 worker 数(0=禁用, 重启池后生效)",
+      "en": "Probe workers (0 = disabled, applies after pool restart)"
+    },
+    {
+      "id": "ConfigDialog.ProxyPool",
+      "zh": "代理池配置",
+      "en": "Proxy pool"
+    },
+    {
+      "id": "ConfigDialog.SOCKSPortExpected",
+      "zh": "SOCKS 端口(期望值)",
+      "en": "SOCKS port (expected)"
+    },
+    {
+      "id": "ConfigDialog.APIPortExpected",
+      "zh": "API 端口(期望值)",
+      "en": "API port (expected)"
+    },
+    {
+      "id": "ConfigDialog.BalancingStrategy",
+      "zh": "均衡策略",
+      "en": "Balancing strategy"
+    },
+    {
+      "id": "ConfigDialog.ObservationInterval",
+      "zh": "观测间隔(秒)",
+      "en": "Observation interval (s)"
+    },
+    {
+      "id": "ConfigDialog.ObservationTimeout",
+      "zh": "观测超时(秒)",
+      "en": "Observation timeout (s)"
+    },
+    {
+      "id": "ConfigDialog.Application",
+      "zh": "应用配置",
+      "en": "Application"
+    },
+    {
+      "id": "ConfigDialog.InvalidAcceleratorURLMust",
+      "zh": "加速器 URL 格式无效，请确认包含 http:// 或 https:// 开头且域名有效",
+      "en": "Invalid accelerator URL; it must start with http:// or https:// and contain a valid host name"
+    },
+    {
+      "id": "ConfigDialog.InvalidURL",
+      "zh": "URL 格式错误",
+      "en": "Invalid URL"
+    },
+    {
+      "id": "ConfigDialog.None",
+      "zh": "(无)",
+      "en": "(none)"
+    },
+    {
+      "id": "ConfigDialog.InvalidNetworkMonitorCheck",
+      "zh": "网络监控检测URL格式无效: ",
+      "en": "Invalid network monitor check URL: "
+    },
+    {
+      "id": "ConfigDialog.InvalidURL2",
+      "zh": "URL格式错误",
+      "en": "Invalid URL"
+    },
+    {
+      "id": "ConfigDialog.LeastOneCheckURL",
+      "zh": "网络监控启用时必须配置至少一个检测URL",
+      "en": "At least one check URL is required when the network monitor is enabled"
+    },
+    {
+      "id": "ConfigDialog.ValidationError",
+      "zh": "验证错误",
+      "en": "Validation error"
+    },
+    {
+      "id": "ConfigDialog.ProxyProcessMonitorInterval",
+      "zh": "代理进程监控检测间隔必须在 5000 到 300000 毫秒之间",
+      "en": "The proxy process monitor interval must be between 5000 and 300000 ms"
+    },
+    {
+      "id": "ConfigDialog.ProxyPoolSOCKSPort",
+      "zh": "代理池 SOCKS 端口必须在 1024 到 65535 之间",
+      "en": "The proxy pool SOCKS port must be between 1024 and 65535"
+    },
+    {
+      "id": "ConfigDialog.ProxyPoolAPIPort",
+      "zh": "代理池 API 端口必须在 1024 到 65535 之间",
+      "en": "The proxy pool API port must be between 1024 and 65535"
+    },
+    {
+      "id": "ConfigDialog.ObservationIntervalMustBetween",
+      "zh": "观测间隔必须在 1 到 300 秒之间",
+      "en": "The observation interval must be between 1 and 300 seconds"
+    },
+    {
+      "id": "ConfigDialog.ObservationTimeoutMustBetween",
+      "zh": "观测超时必须在 1 到 60 秒之间",
+      "en": "The observation timeout must be between 1 and 60 seconds"
+    },
+    {
+      "id": "ConfigDialog.EvaluationIntervalMustBetween",
+      "zh": "评估间隔必须在 1 到 600 秒之间",
+      "en": "The evaluation interval must be between 1 and 600 seconds"
+    },
+    {
+      "id": "ConfigDialog.RemovalThresholdMustLeast",
+      "zh": "剔除阈值必须大于等于 1",
+      "en": "The removal threshold must be at least 1"
+    },
+    {
+      "id": "ConfigDialog.NumberProbeWorkersMust",
+      "zh": "探针 worker 数必须在 0 到 64 之间（0=禁用探针池）",
+      "en": "The number of probe workers must be between 0 and 64 (0 = disable the probe pool)"
+    },
+    {
+      "id": "ConfigDialog.ProxyScoringWeightsMust",
+      "zh": "代理评分权重必须在 0.0 到 1.0 之间",
+      "en": "Proxy scoring weights must be between 0.0 and 1.0"
+    },
+    {
+      "id": "ConfigDialog.DatabaseConnectedCannotOpen",
+      "zh": "数据库未连接，无法打开 SQL 方案库。",
+      "en": "The database is not connected; cannot open the SQL template library."
+    },
+    {
+      "id": "ConfigDialog.SQLTemplates",
+      "zh": "SQL 方案库",
+      "en": "SQL Templates"
+    },
+    {
+      "id": "ConfigDialog.SelectedSQLTemplateNo",
+      "zh": "所选 SQL 方案已不存在，请刷新后重试。",
+      "en": "The selected SQL template no longer exists; refresh and try again."
+    },
+    {
+      "id": "ConfigDialog.Templates",
+      "zh": "模板列表:",
+      "en": "Templates:"
+    },
+    {
+      "id": "ConfigDialog.Regenerate",
+      "zh": "重新生成",
+      "en": "Regenerate"
+    },
+    {
+      "id": "ConfigDialog.Refresh",
+      "zh": "刷新",
+      "en": "Refresh"
+    },
+    {
+      "id": "ConfigDialog.Type",
+      "zh": "类型",
+      "en": "Type"
+    },
+    {
+      "id": "ConfigDialog.ParentTemplate",
+      "zh": "父模板",
+      "en": "Parent template"
+    },
+    {
+      "id": "ConfigDialog.Remarks",
+      "zh": "备注",
+      "en": "Remarks"
+    },
+    {
+      "id": "ConfigDialog.Status",
+      "zh": "状态",
+      "en": "Status"
+    },
+    {
+      "id": "ConfigDialog.GeneratedConfigurationReadOnly",
+      "zh": "生成的配置（只读，由组件链解析产生；请到「组件包配置」/「组件链编辑」修改后重新解析）:",
+      "en": "Generated configuration (read-only, produced by resolving the component chain; edit it in \"Component Bundles\" / \"Chain Editor\" and resolve again):"
+    },
+    {
+      "id": "ConfigDialog.Templates2",
+      "zh": "模板配置",
+      "en": "Templates"
+    },
+    {
+      "id": "ConfigDialog.Base",
+      "zh": "(基础)",
+      "en": "(base)"
+    },
+    {
+      "id": "ConfigDialog.SelectTemplateRegenerateFirst",
+      "zh": "请先选择要重新生成的模板",
+      "en": "Select a template to regenerate first"
+    },
+    {
+      "id": "ConfigDialog.Notice",
+      "zh": "提示",
+      "en": "Notice"
+    },
+    {
+      "id": "ConfigDialog.Regenerated",
+      "zh": "已按组件链重新生成 ",
+      "en": "Regenerated "
+    },
+    {
+      "id": "ConfigDialog.ComponentChain",
+      "zh": " 的配置",
+      "en": " from the component chain"
+    },
+    {
+      "id": "ConfigDialog.Success",
+      "zh": "成功",
+      "en": "Success"
+    },
+    {
+      "id": "ConfigDialog.TemplateNoUsableComponent",
+      "zh": "该模板没有可用的组件链，无法生成配置。请先到「组件链编辑」为其添加 Bundle。",
+      "en": "This template has no usable component chain, so no configuration can be generated. Add bundles to it in the Chain Editor first."
+    },
+    {
+      "id": "ConfigDialog.ComponentBundles",
+      "zh": "组件包列表:",
+      "en": "Component bundles:"
+    },
+    {
+      "id": "ConfigDialog.Core",
+      "zh": "核心",
+      "en": "Core"
+    },
+    {
+      "id": "ConfigDialog.Components",
+      "zh": "组件数",
+      "en": "Components"
+    },
+    {
+      "id": "ConfigDialog.Version",
+      "zh": "版本",
+      "en": "Version"
+    },
+    {
+      "id": "ConfigDialog.New",
+      "zh": "新增",
+      "en": "New"
+    },
+    {
+      "id": "ConfigDialog.Delete",
+      "zh": "删除",
+      "en": "Delete"
+    },
+    {
+      "id": "ConfigDialog.Save",
+      "zh": "保存",
+      "en": "Save"
+    },
+    {
+      "id": "ConfigDialog.JSONConfiguration",
+      "zh": "JSON 配置:",
+      "en": "JSON configuration:"
+    },
+    {
+      "id": "ConfigDialog.ComponentTypesComponentType",
+      "zh": "组件类型（ComponentType）:",
+      "en": "Component types (ComponentType):"
+    },
+    {
+      "id": "ConfigDialog.Enum",
+      "zh": "枚举",
+      "en": "Enum"
+    },
+    {
+      "id": "ConfigDialog.Value",
+      "zh": "值",
+      "en": "Value"
+    },
+    {
+      "id": "ConfigDialog.XraySection",
+      "zh": "Xray 节",
+      "en": "Xray section"
+    },
+    {
+      "id": "ConfigDialog.SingBoxSection",
+      "zh": "SingBox 节",
+      "en": "SingBox section"
+    },
+    {
+      "id": "ConfigDialog.Strategy",
+      "zh": "策略",
+      "en": "Strategy"
+    },
+    {
+      "id": "ConfigDialog.PlaceholdersReplacedConfigBuilderRuntime",
+      "zh": "占位符（运行时由 ConfigBuilder 替换）:",
+      "en": "Placeholders (replaced by ConfigBuilder at runtime):"
+    },
+    {
+      "id": "ConfigDialog.Placeholder",
+      "zh": "占位符",
+      "en": "Placeholder"
+    },
+    {
+      "id": "ConfigDialog.Description",
+      "zh": "说明",
+      "en": "Description"
+    },
+    {
+      "id": "ConfigDialog.ComponentBundles2",
+      "zh": "组件包配置",
+      "en": "Component Bundles"
+    },
+    {
+      "id": "ConfigDialog.None2",
+      "zh": "（无）",
+      "en": "(none)"
+    },
+    {
+      "id": "ConfigDialog.SOCKSInboundPortInt",
+      "zh": "SOCKS 入站端口（int）",
+      "en": "SOCKS inbound port (int)"
+    },
+    {
+      "id": "ConfigDialog.APIPortIntXray",
+      "zh": "API 端口（int，仅 Xray）",
+      "en": "API port (int, Xray only)"
+    },
+    {
+      "id": "ConfigDialog.ProbeURLString",
+      "zh": "探测 URL（string）",
+      "en": "Probe URL (string)"
+    },
+    {
+      "id": "ConfigDialog.ObservatoryIntervalIntMs",
+      "zh": "Observatory 间隔（int，毫秒）",
+      "en": "Observatory interval (int, ms)"
+    },
+    {
+      "id": "ConfigDialog.LoadBalancingStrategyString",
+      "zh": "负载均衡策略（string）",
+      "en": "Load balancing strategy (string)"
+    },
+    {
+      "id": "ConfigDialog.EnableObservatoryTrueFalse",
+      "zh": "启用 observatory（\"true\"/\"false\"）",
+      "en": "Enable observatory (\"true\"/\"false\")"
+    },
+    {
+      "id": "ConfigDialog.EnableCNDirectRouting",
+      "zh": "启用 CN 直连分流（\"true\"/\"false\"）",
+      "en": "Enable CN direct routing (\"true\"/\"false\")"
+    },
+    {
+      "id": "ConfigDialog.BlockQUICTrueFalse",
+      "zh": "阻断 QUIC（\"true\"/\"false\"）",
+      "en": "Block QUIC (\"true\"/\"false\")"
+    },
+    {
+      "id": "ConfigDialog.Base2",
+      "zh": "基础",
+      "en": "Base"
+    },
+    {
+      "id": "ConfigDialog.Standalone",
+      "zh": "独立",
+      "en": "Standalone"
+    },
+    {
+      "id": "ConfigDialog.Pool",
+      "zh": "池",
+      "en": "Pool"
+    },
+    {
+      "id": "ConfigDialog.EnterIDNewComponent",
+      "zh": "请输入新组件包的 ID：",
+      "en": "Enter the ID of the new component bundle:"
+    },
+    {
+      "id": "ConfigDialog.NewComponentBundle",
+      "zh": "新增组件包",
+      "en": "New component bundle"
+    },
+    {
+      "id": "ConfigDialog.ComponentBundleIDCannot",
+      "zh": "组件包 ID 不能为空",
+      "en": "The component bundle ID cannot be empty"
+    },
+    {
+      "id": "ConfigDialog.ComponentBundle",
+      "zh": "组件包 '",
+      "en": "Component bundle \""
+    },
+    {
+      "id": "ConfigDialog.AlreadyExistsChooseAnother",
+      "zh": "' 已存在，请换一个 ID",
+      "en": "\" already exists; choose another ID"
+    },
+    {
+      "id": "ConfigDialog.ChooseCoreComponentBundle",
+      "zh": "请选择该组件包适用的核心：",
+      "en": "Choose the core this component bundle applies to:"
+    },
+    {
+      "id": "ConfigDialog.CoreType",
+      "zh": "核心类型",
+      "en": "Core type"
+    },
+    {
+      "id": "ConfigDialog.DoAddComponentsYet",
+      "zh": "暂不添加组件（components 为空数组）",
+      "en": "Do not add components yet (empty components array)"
+    },
+    {
+      "id": "ConfigDialog.NoConfigurationSection",
+      "zh": "（无配置节）",
+      "en": "(no configuration section)"
+    },
+    {
+      "id": "ConfigDialog.ChooseComponentTypePrefill",
+      "zh": "请选择要预置的组件类型（会自动填好 type 字段）：",
+      "en": "Choose a component type to prefill (the type field is filled automatically):"
+    },
+    {
+      "id": "ConfigDialog.InitialComponentType",
+      "zh": "初始组件类型",
+      "en": "Initial component type"
+    },
+    {
+      "id": "ConfigDialog.CreationFailedSeeLog",
+      "zh": "创建失败，请查看日志",
+      "en": "Creation failed; see the log"
+    },
+    {
+      "id": "ConfigDialog.Error",
+      "zh": "错误",
+      "en": "Error"
+    },
+    {
+      "id": "ConfigDialog.CreatedComponentBundle",
+      "zh": "已创建组件包 '",
+      "en": "Created component bundle \""
+    },
+    {
+      "id": "ConfigDialog.EditJSONRightThen",
+      "zh": "'，请在右侧编辑 JSON 后点「保存」",
+      "en": "\"; edit the JSON on the right, then click Save"
+    },
+    {
+      "id": "ConfigDialog.SelectComponentBundleSave",
+      "zh": "请先选择要保存的组件包",
+      "en": "Select a component bundle to save first"
+    },
+    {
+      "id": "ConfigDialog.NNotSavedFixProblems",
+      "zh": "\n\n未保存，请修正后重试。",
+      "en": "\n\nNot saved; fix the problems and try again."
+    },
+    {
+      "id": "ConfigDialog.ValidationFailed",
+      "zh": "校验失败",
+      "en": "Validation failed"
+    },
+    {
+      "id": "ConfigDialog.ComponentBundlesSelectedSelect",
+      "zh": "当前有 %d 个组件包处于选中状态，请只选中一个再保存。\n（列表支持 Ctrl/Shift 多选，会造成保存对象与编辑器内容不一致）",
+      "en": "%d component bundles are selected; select exactly one before saving.\n(The list supports Ctrl/Shift multi-select, which would desynchronise the saved object and the editor.)"
+    },
+    {
+      "id": "ConfigDialog.ComponentBundleIDAlready",
+      "zh": "组件包 ID 已存在：",
+      "en": "Component bundle ID already exists: "
+    },
+    {
+      "id": "ConfigDialog.NChooseUnusedIDNNot",
+      "zh": "\n请换一个未被占用的 ID。\n\n未保存。",
+      "en": "\nChoose an unused ID.\n\nNot saved."
+    },
+    {
+      "id": "ConfigDialog.ComponentBundleIDChanged",
+      "zh": "组件包 ID 已由 '%s' 改为 '%s'。\n\n",
+      "en": "Component bundle ID changed from \"%s\" to \"%s\".\n\n"
+    },
+    {
+      "id": "ConfigDialog.NoTemplateReferencesOld",
+      "zh": "没有模板引用旧 ID，已同步 ",
+      "en": "No template references the old ID; synchronised "
+    },
+    {
+      "id": "ConfigDialog.Templates3",
+      "zh": " 个模板。",
+      "en": " templates."
+    },
+    {
+      "id": "ConfigDialog.FollowingTemplatesStillReference",
+      "zh": "⚠ 以下 %d 个模板仍引用旧 ID，其组件链已无法解析，需到「组件链编辑」更新引用：\n",
+      "en": "⚠ The following %d templates still reference the old ID and their chains can no longer be resolved; update them in the Chain Editor:\n"
+    },
+    {
+      "id": "ConfigDialog.ComponentBundleSavedSynchronised",
+      "zh": "组件包已保存，已同步 %d 个模板的 Config。",
+      "en": "Component bundle saved; synchronised the Config of %d templates."
+    },
+    {
+      "id": "ConfigDialog.SaveFailed",
+      "zh": "保存失败",
+      "en": "Save failed"
+    },
+    {
+      "id": "ConfigDialog.SelectComponentBundleDelete",
+      "zh": "请先选择要删除的组件包",
+      "en": "Select a component bundle to delete first"
+    },
+    {
+      "id": "ConfigDialog.DeleteComponentBundle",
+      "zh": "确定要删除组件包 '%s' 吗？",
+      "en": "Delete component bundle \"%s\"?"
+    },
+    {
+      "id": "ConfigDialog.ConfirmDelete",
+      "zh": "确认删除",
+      "en": "Confirm Delete"
+    },
+    {
+      "id": "ConfigDialog.DeletedSynchronisedConfigTemplates",
+      "zh": "已删除，已同步 %d 个模板的 Config。",
+      "en": "Deleted; synchronised the Config of %d templates."
+    },
+    {
+      "id": "ConfigDialog.ChainsFollowingTemplatesStill",
+      "zh": "\n\n⚠ 以下 %d 个模板的组件链仍引用已删除的 '%s'，其链已无法解析，需到「组件链编辑」移除该 Bundle：\n",
+      "en": "\n\n⚠ The chains of the following %d templates still reference the deleted \"%s\" and can no longer be resolved; remove that bundle in the Chain Editor:\n"
+    },
+    {
+      "id": "ConfigDialog.DeleteFailed",
+      "zh": "删除失败",
+      "en": "Delete failed"
+    },
+    {
+      "id": "ConfigDialog.ResolvedComponentsConflicts",
+      "zh": "解析成功：%d 个组件，%d 个冲突",
+      "en": "Resolved: %d components, %d conflicts"
+    },
+    {
+      "id": "ConfigDialog.ResolveFailed",
+      "zh": "解析失败：",
+      "en": "Resolve failed: "
+    },
+    {
+      "id": "ConfigDialog.ResolveFailed2",
+      "zh": "// 解析失败：",
+      "en": "// Resolve failed: "
+    },
+    {
+      "id": "ConfigDialog.ResolvedButGeneratedConfiguration",
+      "zh": "// 解析成功，但生成的配置为空",
+      "en": "// Resolved, but the generated configuration is empty"
+    },
+    {
+      "id": "ConfigDialog.AddBundle",
+      "zh": "添加 Bundle",
+      "en": "Add Bundle"
+    },
+    {
+      "id": "ConfigDialog.Remove",
+      "zh": "移除",
+      "en": "Remove"
+    },
+    {
+      "id": "ConfigDialog.Resolve",
+      "zh": "解析",
+      "en": "Resolve"
+    },
+    {
+      "id": "ConfigDialog.ConfigurationPreview",
+      "zh": "配置预览:",
+      "en": "Configuration preview:"
+    },
+    {
+      "id": "ConfigDialog.SaveChain",
+      "zh": "保存链",
+      "en": "Save chain"
+    },
+    {
+      "id": "ConfigDialog.CurrentTemplateNoneSelected",
+      "zh": "当前模板：（未选择）",
+      "en": "Current template: (none selected)"
+    },
+    {
+      "id": "ConfigDialog.ChainEditor",
+      "zh": "组件链编辑",
+      "en": "Chain Editor"
+    },
+    {
+      "id": "ConfigDialog.CurrentTemplate",
+      "zh": "当前模板：%s",
+      "en": "Current template: %s"
+    },
+    {
+      "id": "ConfigDialog.SelectTemplateLeftList",
+      "zh": "请先在左侧模板列表中选择要保存的模板",
+      "en": "Select a template in the left list first"
+    },
+    {
+      "id": "ConfigDialog.ComponentChainEmptyNo",
+      "zh": "组件链为空（未添加任何 Bundle），无法保存",
+      "en": "The component chain is empty (no bundles added); cannot save"
+    },
+    {
+      "id": "ConfigDialog.NRemoveBundleChainEditor",
+      "zh": "\n\n请在「组件链编辑」中移除该 Bundle 后再保存。",
+      "en": "\n\nRemove that bundle in the Chain Editor before saving."
+    },
+    {
+      "id": "ConfigDialog.ComponentChainERRORLevel",
+      "zh": "组件链存在 ERROR 级冲突，请先修复后再保存",
+      "en": "The component chain has ERROR-level conflicts; fix them before saving"
+    },
+    {
+      "id": "ConfigDialog.ComponentChainSavedTemplate",
+      "zh": "组件链已保存到模板 ",
+      "en": "Component chain saved to template "
+    },
+    {
+      "id": "ConfigDialog.TemplateConfigSynchronised",
+      "zh": "，并已同步该模板的 Config",
+      "en": ", and the template Config was synchronised"
+    },
+    {
+      "id": "ConfigDialog.ButTemplateConfigCould",
+      "zh": "，但该模板的 Config 未能重新生成（请查看日志）。",
+      "en": ", but the template Config could not be regenerated (see the log)."
+    },
+    {
+      "id": "ConfigDialog.PartialSuccess",
+      "zh": "部分成功",
+      "en": "Partial success"
+    },
+    {
+      "id": "ConfigDialog.SaveFailedSeeLog",
+      "zh": "保存失败，请查看日志",
+      "en": "Save failed; see the log"
     }
   ]
 }
