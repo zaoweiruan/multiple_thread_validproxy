@@ -4,10 +4,14 @@
 
 #include <cstddef>
 #include <string>
+#include <vector>
+
+#include <windows.h>   // UIIds.h 的 TaskCtxClearAllCmdId 用到 UINT
 
 #include "i18n/I18n.h"
 #include "i18n/Language.h"
 #include "i18n/StringId.h"
+#include "UIIds.h"
 
 namespace {
 
@@ -27,6 +31,38 @@ protected:
 
     static std::wstring wide(i18n::StrId id) {
         return std::wstring(i18n::w(id));
+    }
+
+    // 去掉 wxWidgets 的 "&" 助记符前缀与 "\t" 加速键后缀，得到裸文案。
+    static std::wstring bare(const std::wstring& text) {
+        std::wstring out;
+        for (std::size_t i = 0; i < text.size(); ++i) {
+            if (text[i] == L'\t') break;
+            if (text[i] != L'&') out.push_back(text[i]);
+        }
+        return out;
+    }
+
+    static std::size_t countHoles(const std::string& text) {
+        std::size_t holes = 0;
+        std::size_t pos = 0;
+        while ((pos = text.find("{}", pos)) != std::string::npos) {
+            ++holes;
+            pos += 2;
+        }
+        return holes;
+    }
+
+    // 是否含 CJK（汉字 + CJK 标点 + 全角字符）。
+    static bool hasCjk(const std::wstring& text) {
+        for (std::size_t i = 0; i < text.size(); ++i) {
+            const wchar_t c = text[i];
+            if ((c >= 0x4E00 && c <= 0x9FFF) || (c >= 0x3000 && c <= 0x303F) ||
+                (c >= 0xFF00 && c <= 0xFFEF)) {
+                return true;
+            }
+        }
+        return false;
     }
 };
 
@@ -215,6 +251,112 @@ TEST_F(I18nTest, U8fDoesNotRescanInsertedArgument) {
     i18n::setLanguage(i18n::Language::EnUS);
     EXPECT_EQ(i18n::u8f(i18n::StrId::MainFrame_Status_LanguagePendingRestart, { "{}{}" }),
               std::string("UI language set to {}{}; restart to apply"));
+}
+
+// ------------------------------------------------- 完整性与测试常量一致性
+
+TEST_F(I18nTest, HoleCountMatchesAcrossLanguages) {
+    // 两语言占位符数量必须一致，否则某一种语言会丢参数或残留 "{}"。
+    // （生成器在构建期已校验一遍，这里对最终生成的表再做兜底断言。）
+    i18n::setLanguage(i18n::Language::ZhCN);
+    std::vector<std::string> zh;
+    zh.reserve(static_cast<std::size_t>(i18n::kStrIdCount));
+    for (int index = 0; index < i18n::kStrIdCount; ++index) {
+        zh.push_back(narrow(static_cast<i18n::StrId>(index)));
+    }
+
+    i18n::setLanguage(i18n::Language::EnUS);
+    for (int index = 0; index < i18n::kStrIdCount; ++index) {
+        const std::string en = narrow(static_cast<i18n::StrId>(index));
+        EXPECT_EQ(countHoles(zh[static_cast<std::size_t>(index)]), countHoles(en))
+            << "placeholder count differs at index " << index;
+    }
+}
+
+TEST_F(I18nTest, EnglishCarriesNoUnintentionalCjk) {
+    // 英文值不得夹带中文；唯一例外是 strings.json 标记 "fixed": true 的语言中立项
+    // （语言菜单三项），其 zh 与 en 逐字相同。生成器对 fixed 白名单做权威校验，
+    // 这里断言运行期表里的可观察后果，防止漏翻译项混进来。
+    i18n::setLanguage(i18n::Language::ZhCN);
+    std::vector<std::wstring> zh;
+    zh.reserve(static_cast<std::size_t>(i18n::kStrIdCount));
+    for (int index = 0; index < i18n::kStrIdCount; ++index) {
+        zh.push_back(wide(static_cast<i18n::StrId>(index)));
+    }
+
+    i18n::setLanguage(i18n::Language::EnUS);
+    for (int index = 0; index < i18n::kStrIdCount; ++index) {
+        const std::wstring en = wide(static_cast<i18n::StrId>(index));
+        if (!hasCjk(en)) continue;
+        EXPECT_EQ(zh[static_cast<std::size_t>(index)], en)
+            << "English value contains CJK but is not a fixed entry at index " << index;
+    }
+}
+
+TEST_F(I18nTest, MenuEntriesCoverBothLanguages) {
+    // 菜单表项必须有 zh 与 en，且除 fixed 的语言项外 en 与 zh 不同。
+    const i18n::StrId menuIds[] = {
+        i18n::StrId::MainFrame_Menu_File,
+        i18n::StrId::MainFrame_Menu_Proxy,
+        i18n::StrId::MainFrame_Menu_Task,
+        i18n::StrId::MainFrame_Menu_Settings,
+        i18n::StrId::MainFrame_Menu_Language,
+        i18n::StrId::MainFrame_Menu_Help,
+        i18n::StrId::MainFrame_Menu_CloudPull,
+        i18n::StrId::MainFrame_Menu_CloudPush,
+        i18n::StrId::MainFrame_Menu_LangZh,
+        i18n::StrId::MainFrame_Menu_LangEn,
+    };
+    for (std::size_t i = 0; i < sizeof(menuIds) / sizeof(menuIds[0]); ++i) {
+        i18n::setLanguage(i18n::Language::ZhCN);
+        const std::wstring zh = wide(menuIds[i]);
+        i18n::setLanguage(i18n::Language::EnUS);
+        const std::wstring en = wide(menuIds[i]);
+        EXPECT_FALSE(zh.empty()) << "zh empty at slot " << i;
+        EXPECT_FALSE(en.empty()) << "en empty at slot " << i;
+        if (menuIds[i] == i18n::StrId::MainFrame_Menu_LangZh ||
+            menuIds[i] == i18n::StrId::MainFrame_Menu_LangEn) {
+            EXPECT_EQ(zh, en) << "language item must stay fixed at slot " << i;
+        } else {
+            EXPECT_NE(zh, en) << "menu entry not translated at slot " << i;
+        }
+    }
+}
+
+TEST_F(I18nTest, UiIdsConstantsMatchStringTable) {
+    // 测试常量与字符串表一致性（Spec §10.1）：UIIds.h 是 UI 自动化的定位源，
+    // 它写死的中英文案必须与表一致，否则语言用例会因为常量漂移而静默失效。
+    const struct {
+        const wchar_t* uiid;
+        i18n::StrId id;
+        i18n::Language lang;
+    } cases[] = {
+        { uitest::ids::MenuFileCaption,     i18n::StrId::MainFrame_Menu_File,      i18n::Language::ZhCN },
+        { uitest::ids::MenuProxyCaption,    i18n::StrId::MainFrame_Menu_Proxy,     i18n::Language::ZhCN },
+        { uitest::ids::MenuTaskCaption,     i18n::StrId::MainFrame_Menu_Task,      i18n::Language::ZhCN },
+        { uitest::ids::MenuSettingsCaption, i18n::StrId::MainFrame_Menu_Settings,  i18n::Language::ZhCN },
+        { uitest::ids::MenuHelpCaption,     i18n::StrId::MainFrame_Menu_Help,      i18n::Language::ZhCN },
+        { uitest::ids::MenuLanguageCaption, i18n::StrId::MainFrame_Menu_Language,  i18n::Language::ZhCN },
+        { uitest::ids::MenuLanguageCaptionEn, i18n::StrId::MainFrame_Menu_Language, i18n::Language::EnUS },
+        { uitest::ids::MenuLanguageZhItem,  i18n::StrId::MainFrame_Menu_LangZh,    i18n::Language::ZhCN },
+        { uitest::ids::MenuLanguageEnItem,  i18n::StrId::MainFrame_Menu_LangEn,    i18n::Language::ZhCN },
+        { uitest::ids::MenuCloudPullItem,   i18n::StrId::MainFrame_Menu_CloudPull, i18n::Language::ZhCN },
+        { uitest::ids::MenuCloudPullItemEn, i18n::StrId::MainFrame_Menu_CloudPull, i18n::Language::EnUS },
+        { uitest::ids::MenuCloudUploadItem, i18n::StrId::MainFrame_Menu_CloudPush, i18n::Language::ZhCN },
+        { uitest::ids::MenuCloudUploadItemEn, i18n::StrId::MainFrame_Menu_CloudPush, i18n::Language::EnUS },
+        { uitest::ids::MenuImportSubItem,   i18n::StrId::MainFrame_Menu_ImportSub, i18n::Language::ZhCN },
+        { uitest::ids::MenuUpdateAllItem,   i18n::StrId::MainFrame_Menu_UpdateAll, i18n::Language::ZhCN },
+        { uitest::ids::MenuSyncDbItem,      i18n::StrId::MainFrame_Menu_SyncDb,    i18n::Language::ZhCN },
+        { uitest::ids::MenuExitItem,        i18n::StrId::MainFrame_Menu_Exit,      i18n::Language::ZhCN },
+        { uitest::ids::MenuConfigItem,      i18n::StrId::MainFrame_Menu_Config,    i18n::Language::ZhCN },
+        { uitest::ids::MenuAboutItem,       i18n::StrId::MainFrame_Menu_About,     i18n::Language::ZhCN },
+    };
+
+    for (std::size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); ++i) {
+        i18n::setLanguage(cases[i].lang);
+        EXPECT_EQ(std::wstring(cases[i].uiid), bare(wide(cases[i].id)))
+            << "UIIds/value drift at case " << i;
+    }
 }
 
 }  // namespace

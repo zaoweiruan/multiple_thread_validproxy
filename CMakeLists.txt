@@ -938,7 +938,9 @@ add_executable(test_i18n
     src/Logger.cpp
     src/LoggerInstance.cpp
 )
-target_include_directories(test_i18n PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_include_directories(test_i18n PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/ui)   # UIIds.h：测试常量与字符串表一致性（Spec §10.1）
 target_link_libraries(test_i18n PRIVATE gtest_main gtest)
 set_target_properties(test_i18n PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${VALIDPROXY_TEST_DIR}
@@ -2200,6 +2202,7 @@ if(wxWidgets_FOUND AND BUILD_UI_TESTS)
             tests/ui/TestPopupGuard.cpp
             tests/ui/TestTaskLedgerContextMenu.cpp
             tests/ui/TestToolbarRegionButton.cpp
+            tests/ui/TestLanguageMenu.cpp
         )
         add_executable(UITests ${UI_FRAMEWORK_SOURCES} ${UI_TEST_SOURCES})
         target_include_directories(UITests PRIVATE
@@ -2231,6 +2234,9 @@ add_test(NAME UI_BOTTOMVIEW COMMAND UITests "[bottomview]")
         add_test(NAME UI_POPUPGUARD COMMAND UITests "[popup]")
         add_test(NAME UI_TASKLEDGER COMMAND UITests "[taskledger]")
         add_test(NAME UI_TOOLBARREGION COMMAND UITests "[toolbarregion]")
+        # 语言菜单用例：语言选择写配置 + 重启提示 + 不热切换（Spec §10.2）。
+        # 独立沙箱 test/ui-sandbox-lang，仍以共享沙箱的种子库为前提。
+        add_test(NAME UI_LANGUAGEMENU COMMAND UITests "[language]")
         set_tests_properties(UI_MAINWINDOW UI_SEARCH UI_CLEAR UI_CHAINPREVIEW PROPERTIES
             TIMEOUT 120
             WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
@@ -2269,6 +2275,11 @@ add_test(NAME UI_BOTTOMVIEW COMMAND UITests "[bottomview]")
             FIXTURES_REQUIRED ui_sandbox
             TIMEOUT 180
             WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+        # 语言菜单用例自带沙箱，但种子库取自共享沙箱（prepare-ui-sandbox.bat）。
+        set_tests_properties(UI_LANGUAGEMENU PROPERTIES
+            FIXTURES_REQUIRED ui_sandbox
+            TIMEOUT 180
+            WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
         # Point the UI tests at the actual GUI exe for THIS build (VALIDPROXY_BIN_DIR).
         # Default (non-isolated) = <repo>/bin/validproxy.exe, same as the built-in
         # fallback; isolated = <build>/out/bin/validproxy.exe.
@@ -2281,7 +2292,7 @@ add_test(NAME UI_BOTTOMVIEW COMMAND UITests "[bottomview]")
         set_tests_properties(UI_MAINWINDOW UI_SEARCH UI_CLEAR UI_FLOATINGWIDGET
             UI_POOL UI_PORTCLOSE UI_EXITASSERT UI_CHAINPREVIEW UI_WINDOWSENSING
             UI_LAYOUTSENSING UI_BOTTOMVIEW UI_MENUACTION UI_POPUPGUARD
-            UI_TASKLEDGER UI_TOOLBARREGION UI_SANDBOX_PREP
+            UI_TASKLEDGER UI_TOOLBARREGION UI_LANGUAGEMENU UI_SANDBOX_PREP
             PROPERTIES ENVIRONMENT
                 "VALIDPROXY_APP_EXE=${_UI_APP_EXE};VALIDPROXY_APP_ROOT=${_UI_APP_ROOT}")
     endif()

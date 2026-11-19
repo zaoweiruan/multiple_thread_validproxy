@@ -21,6 +21,7 @@
 - [Build & Test](#build--test)
 - [CLI Usage](#cli-usage)
 - [Configuration & Data](#configuration--data)
+- [UI Language](#ui-language)
 - [Project Structure](#project-structure)
 - [Core Modules](#core-modules)
 - [Debug Toolchain](#debug-toolchain)
@@ -149,6 +150,17 @@ ctest -R DedupTest -V
 | Default test DB (full) | `test/guindb.db` | 53,837 profiles / 44 SubIDs, used by all tests except import/migration |
 | Test DB (slim) | `test/guiNDB_empty.db` | 711 profiles / 8 SubIDs, dedicated to import/migration regression tests |
 | Test-only config | `bin/test_config.json` | Points to `test/guiNDB.db`, prevents polluting production |
+
+---
+
+## UI Language
+
+- **Entry point**: top-level menu bar entry `语言 / Language` → `中文 (Chinese)` / `English (English)`.
+- **When it applies**: **after a restart**. The running window is never retranslated, which keeps control text and layout free of hot-swap side effects; the choice itself is written to the config file immediately.
+- **Config key**: `"ui": { "language": "zh-CN" }` (or `"en-US"`; `zh` / `en` / `zh_CN` / `en_US` are accepted). A missing or invalid value falls back to `zh-CN`; the Windows locale is not probed.
+- **String assets**: `resources/i18n/strings.json` is the single source of copy (`zh` / `en` plus a `fixed` exemption for strings that must stay identical in both languages). After editing copy, run `scripts/gen-i18n.ps1` to regenerate `include/i18n/StringId.h` and `src/i18n/StringTable.cpp`; code reads strings through `i18n::u8` / `i18n::w` / `i18n::u8f` / `i18n::wf` (`i18n::wx` / `i18n::wxf` in the UI layer).
+- **Gates**: `scripts/gen-i18n.ps1 -Check` verifies the generated files match `strings.json`; `scripts/check-ui-literals.ps1 -Mode cjk -AllowList scripts/i18n-allowlist.txt` verifies `src/` and `include/` contain no unregistered CJK literals (the allowlist may only shrink and ends up comment-only). Both run inside `scripts/build-and-test.bat`.
+- **Logs**: every log file starts with a session-language banner; when the language differs from the previous session, an extra language-change separator is written so mixed Chinese/English logs stay readable.
 
 ---
 

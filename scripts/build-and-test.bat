@@ -5,7 +5,7 @@ echo ========================================
 echo  wxWidgets UI Test
 echo ========================================
 
-echo [1/5] Checking toolchain...
+echo [1/7] Checking toolchain...
 where gcc >nul 2>nul || (echo [FAIL] MinGW-w64 gcc not in PATH & exit /b 1)
 where cmake >nul 2>nul || (echo [FAIL] cmake not in PATH & exit /b 1)
 if not defined VCPKG_ROOT (
@@ -15,22 +15,36 @@ if not defined VCPKG_ROOT (
 )
 echo [PASS] toolchain
 
-echo [2/5] Checking dependencies...
+echo [2/7] Checking dependencies...
 if not exist "%VCPKG_ROOT%\installed\x64-mingw-static\share\catch2" (
   "%VCPKG_ROOT%\vcpkg.exe" install catch2:x64-mingw-static || exit /b 1
 )
 echo [PASS] Catch2 3.x
 
-echo [3/5] Building...
+rem ---- i18n 门禁（Spec 2026-11-18 §11）：生成表与 strings.json 同步、源码无中文字面量 ----
+rem 两个脚本互为补充：-Check 守生成产物，-Mode cjk 守源码字面量。
+set "PS=powershell"
+where pwsh >nul 2>nul && set "PS=pwsh"
+
+echo [3/7] Checking i18n string table...
+%PS% -NoProfile -File scripts\gen-i18n.ps1 -Check || (echo [FAIL] i18n table out of sync ^(run scripts\gen-i18n.ps1^) & exit /b 1)
+echo [PASS] i18n table
+
+echo [4/7] Checking for unregistered CJK literals...
+%PS% -NoProfile -File scripts\check-ui-literals.ps1 -Mode cjk -AllowList scripts\i18n-allowlist.txt || (echo [FAIL] CJK literals outside the string table & exit /b 1)
+%PS% -NoProfile -File scripts\check-ui-literals.ps1 || (echo [FAIL] narrow non-ASCII literals in src/ui & exit /b 1)
+echo [PASS] literal gates
+
+echo [5/7] Building...
 call scripts\build.bat || exit /b 1
 echo [PASS] Application + UITests
 
-echo [4/5] Running UI Tests...
+echo [6/7] Running UI Tests...
 call scripts\prepare-ui-sandbox.bat || exit /b 1
 ctest --test-dir build --output-on-failure -R "^UI_"
 set "RC=%ERRORLEVEL%"
 
-echo [5/5] Result summary...
+echo [7/7] Result summary...
 if "%RC%"=="0" (
   echo ========================================
   echo  ALL TESTS PASSED

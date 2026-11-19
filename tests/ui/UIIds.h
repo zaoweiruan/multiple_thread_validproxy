@@ -126,6 +126,27 @@ inline const wchar_t* const MenuConfigItem       = L"配置…";           // 61
 inline const wchar_t* const MenuAboutItem        = L"关于";            // 6111
 
 // ---------------------------------------------------------------------------
+// Language menu (Spec 2026-11-18-Spec-BilingualUI-v1.2 §10.2) + cloud sync.
+//
+// The language menu sits between 设置 and 帮助, so the bar has 6 top-level
+// menus in Chinese mode. Its bar caption is bilingual in the CHINESE session
+// (a non-Chinese reader must be able to find the entry) and translated in the
+// English session; the two radio items are `fixed` in the string table, i.e.
+// identical in both sessions. MenuLanguageCaptionEn / MenuCloud*ItemEn are the
+// English-session values asserted by test_i18n against the string table (UI
+// automation runs in Chinese mode only, D2).
+// ---------------------------------------------------------------------------
+inline const wchar_t* const MenuLanguageCaption   = L"语言 / Language";
+inline const wchar_t* const MenuLanguageCaptionEn = L"Language";
+inline const wchar_t* const MenuLanguageZhItem    = L"中文 (Chinese)";
+inline const wchar_t* const MenuLanguageEnItem    = L"English (English)";
+
+inline const wchar_t* const MenuCloudPullItem     = L"从云端同步订阅";
+inline const wchar_t* const MenuCloudPullItemEn   = L"Sync Subscriptions from Cloud";
+inline const wchar_t* const MenuCloudUploadItem   = L"上传配置与订阅到云端";
+inline const wchar_t* const MenuCloudUploadItemEn = L"Upload Config and Subscriptions to Cloud";
+
+// ---------------------------------------------------------------------------
 // Toolbar button labels (wxAuiToolBar::AddTool label argument).
 //
 // IMPORTANT: these are NOT UIA locators. wxAuiToolBar draws its tools itself —

@@ -21,6 +21,7 @@
 - [构建与测试](#构建与测试)
 - [CLI 使用](#cli-使用)
 - [配置与数据](#配置与数据)
+- [界面语言 / UI Language](#界面语言-ui-language)
 - [项目结构](#项目结构)
 - [核心模块](#核心模块)
 - [调试工具链](#调试工具链)
@@ -147,6 +148,17 @@ ctest -R DedupTest -V
 | 默认测试数据库（全量） | `test/guindb.db` | 53,837 profiles / 44 SubIDs，用于除导入、迁移数据外全部测试 |
 | 测试数据库（精简） | `test/guiNDB_empty.db` | 711 profiles / 8 SubIDs，专门用于导入、迁移数据回归单测 |
 | 测试专用配置 | `bin/test_config.json` | 指向 `test/guiNDB.db`，防止污染生产环境 |
+
+---
+
+## 界面语言 / UI Language
+
+- **入口**：菜单栏顶层「语言 / Language」→ `中文 (Chinese)` / `English (English)`。
+- **生效时机**：切换后**重启生效**（运行期不重译，避免控件文案与布局热切换的副作用）；选择会立即写入配置文件。
+- **配置键**：`"ui": { "language": "zh-CN" }`（或 `"en-US"`；兼容 `zh` / `en` / `zh_CN` / `en_US`）。缺省与非法值一律回退 `zh-CN`，不探测系统语言。
+- **字符串资产**：`resources/i18n/strings.json` 是唯一文案源（`zh` / `en` 两侧 + `fixed` 双语豁免标记）。改完文案后执行 `scripts/gen-i18n.ps1` 重新生成 `include/i18n/StringId.h` 与 `src/i18n/StringTable.cpp`；代码中通过 `i18n::u8` / `i18n::w` / `i18n::u8f` / `i18n::wf`（UI 层用 `i18n::wx` / `i18n::wxf`）取文案。
+- **门禁**：`scripts/gen-i18n.ps1 -Check` 校验生成物与 `strings.json` 同步；`scripts/check-ui-literals.ps1 -Mode cjk -AllowList scripts/i18n-allowlist.txt` 校验 `src/`、`include/` 无未登记中文字面量（allowlist 仅减不增，收尾时只剩注释）。两者均已接入 `scripts/build-and-test.bat`。
+- **日志**：每个日志文件开头写会话语言横幅；若与上一会话语言不同，额外写一条语言变更分隔线，便于中英混排日志定位。
 
 ---
 
