@@ -660,6 +660,526 @@
       "id": "LogPanel.Stats.ReasonLine",
       "zh": "{}. [{} 次] {}",
       "en": "{}. [{} times] {}"
+    },
+    {
+      "id": "Subscription.Filter.All",
+      "zh": "全部",
+      "en": "All"
+    },
+    {
+      "id": "Subscription.Menu.Update",
+      "zh": "更新订阅",
+      "en": "Update Subscription"
+    },
+    {
+      "id": "Subscription.Menu.Test",
+      "zh": "测试订阅",
+      "en": "Test Subscription"
+    },
+    {
+      "id": "Subscription.Menu.Edit",
+      "zh": "编辑订阅",
+      "en": "Edit Subscription"
+    },
+    {
+      "id": "Subscription.Menu.Delete",
+      "zh": "删除订阅",
+      "en": "Delete Subscription"
+    },
+    {
+      "id": "Subscription.Menu.DeleteProxies",
+      "zh": "删除订阅下代理",
+      "en": "Delete Proxies of Subscription"
+    },
+    {
+      "id": "Subscription.Menu.Refresh",
+      "zh": "刷新",
+      "en": "Refresh"
+    },
+    {
+      "id": "Subscription.Menu.Add",
+      "zh": "添加订阅",
+      "en": "Add Subscription"
+    },
+    {
+      "id": "Subscription.Message.QueueBusySave",
+      "zh": "任务队列有任务（执行中或排队），为避免数据竞争，保存订阅修改前请先清理队列",
+      "en": "The task queue is busy (a task is running or queued). Clear the queue before saving subscription changes to avoid data races"
+    },
+    {
+      "id": "Subscription.Message.QueueBusyDelete",
+      "zh": "任务队列有任务（执行中或排队），为避免数据竞争，删除前请先清理队列",
+      "en": "The task queue is busy (a task is running or queued). Clear the queue before deleting to avoid data races"
+    },
+    {
+      "id": "Subscription.Message.ConfirmDeleteProxies",
+      "zh": "确定删除订阅 \"{}\" 下的所有代理？",
+      "en": "Delete all proxies of subscription \"{}\"?"
+    },
+    {
+      "id": "Subscription.Dialog.ConfirmDelete",
+      "zh": "确认删除",
+      "en": "Confirm Delete"
+    },
+    {
+      "id": "Subscription.Message.InvalidUrl",
+      "zh": "订阅 URL 格式无效，请确认包含 http:// 或 https:// 开头且域名有效",
+      "en": "Invalid subscription URL; it must start with http:// or https:// and contain a valid host name"
+    },
+    {
+      "id": "Subscription.Dialog.UrlFormatError",
+      "zh": "URL 格式错误",
+      "en": "Invalid URL"
+    },
+    {
+      "id": "TaskMonitor.Empty",
+      "zh": "当前无运行任务",
+      "en": "No running task"
+    },
+    {
+      "id": "TaskMonitor.Column.Id",
+      "zh": "任务ID",
+      "en": "Task ID"
+    },
+    {
+      "id": "TaskMonitor.Column.Type",
+      "zh": "类型",
+      "en": "Type"
+    },
+    {
+      "id": "TaskMonitor.Column.Name",
+      "zh": "名称",
+      "en": "Name"
+    },
+    {
+      "id": "TaskMonitor.Column.Priority",
+      "zh": "优先级",
+      "en": "Priority"
+    },
+    {
+      "id": "TaskMonitor.Column.Status",
+      "zh": "状态",
+      "en": "Status"
+    },
+    {
+      "id": "TaskMonitor.Column.Submitted",
+      "zh": "提交于",
+      "en": "Submitted"
+    },
+    {
+      "id": "TaskMonitor.Button.Terminate",
+      "zh": "终止当前",
+      "en": "Terminate"
+    },
+    {
+      "id": "TaskMonitor.Button.CancelSelected",
+      "zh": "取消选中",
+      "en": "Cancel selected"
+    },
+    {
+      "id": "TaskMonitor.Button.CancelAll",
+      "zh": "取消全部排队",
+      "en": "Cancel all queued"
+    },
+    {
+      "id": "TaskMonitor.Placeholder.None",
+      "zh": "（无任务）",
+      "en": "(no tasks)"
+    },
+    {
+      "id": "TaskMonitor.Current.Status",
+      "zh": "　状态：",
+      "en": " · Status: "
+    },
+    {
+      "id": "TaskMonitor.Current.Progress",
+      "zh": "　进度：",
+      "en": " · Progress: "
+    },
+    {
+      "id": "TaskMonitor.Current.Elapsed",
+      "zh": "　已运行 ",
+      "en": " · Running for "
+    },
+    {
+      "id": "TaskMonitor.Current.Info",
+      "zh": "　信息：",
+      "en": " · Info: "
+    },
+    {
+      "id": "TaskMonitor.Menu.TerminateCurrent",
+      "zh": "终止当前任务",
+      "en": "Terminate current task"
+    },
+    {
+      "id": "TaskMonitor.Menu.CancelQueued",
+      "zh": "取消此排队任务",
+      "en": "Cancel this queued task"
+    },
+    {
+      "id": "TaskMonitor.Menu.RemoveRecord",
+      "zh": "移除此记录",
+      "en": "Remove this record"
+    },
+    {
+      "id": "TaskMonitor.Menu.CancelAllQueued",
+      "zh": "取消全部排队",
+      "en": "Cancel all queued"
+    },
+    {
+      "id": "TaskMonitor.Menu.ClearFinished",
+      "zh": "清理全部完成记录",
+      "en": "Clear all finished records"
+    },
+    {
+      "id": "TaskMonitor.Status.ClearedFinished",
+      "zh": "已清理 {} 条完成记录",
+      "en": "Cleared {} finished records"
+    },
+    {
+      "id": "TaskMonitor.Status.CancelQueuedOne",
+      "zh": "已取消排队任务: {}",
+      "en": "Queued task cancelled: {}"
+    },
+    {
+      "id": "TaskMonitor.Status.CancelQueued",
+      "zh": "已取消排队任务",
+      "en": "Queued task cancelled"
+    },
+    {
+      "id": "TaskMonitor.Status.CancelAllQueued",
+      "zh": "已取消全部排队任务",
+      "en": "All queued tasks cancelled"
+    },
+    {
+      "id": "TaskMonitor.Status.CancelCurrent",
+      "zh": "已取消当前任务: {}",
+      "en": "Current task cancelled: {}"
+    },
+    {
+      "id": "TaskMonitor.Label.Task",
+      "zh": "任务",
+      "en": "Task"
+    },
+    {
+      "id": "Subscription.Dialog.TaskInProgress",
+      "zh": "任务进行中",
+      "en": "Task in progress"
+    },
+    {
+      "id": "ProxyList.Context.TestSelected",
+      "zh": "测试选中代理",
+      "en": "Test Selected Proxy"
+    },
+    {
+      "id": "ProxyList.Context.ExportShare",
+      "zh": "有效代理分享",
+      "en": "Share Valid Proxies"
+    },
+    {
+      "id": "ProxyList.Context.ResolveRegion",
+      "zh": "解析地区",
+      "en": "Resolve Region"
+    },
+    {
+      "id": "ProxyList.Context.BatchResolveRegion",
+      "zh": "批量解析地区",
+      "en": "Resolve Regions"
+    },
+    {
+      "id": "ProxyList.Context.Refresh",
+      "zh": "刷新",
+      "en": "Refresh"
+    },
+    {
+      "id": "ProxyList.Context.TestOnline",
+      "zh": "测试在线代理",
+      "en": "Test Online Proxies"
+    },
+    {
+      "id": "ProxyList.Context.StartStandalone",
+      "zh": "开启独立代理",
+      "en": "Start Standalone Proxy"
+    },
+    {
+      "id": "ProxyList.Context.AddToPool",
+      "zh": "加入代理池",
+      "en": "Add to Proxy Pool"
+    },
+    {
+      "id": "ProxyList.Message.NoStandalone",
+      "zh": "当前没有正在运行的独立代理进程。",
+      "en": "No standalone proxy process is currently running."
+    },
+    {
+      "id": "ProxyList.Message.OnlineTestDone",
+      "zh": "在线代理测试完成：共 {}，成功 {}，失败 {}。",
+      "en": "Online proxy test finished: {} total, {} succeeded, {} failed."
+    },
+    {
+      "id": "ProxyList.Message.OperationInProgress",
+      "zh": "操作进行中，请等待完成后再试",
+      "en": "An operation is in progress; please wait for it to finish"
+    },
+    {
+      "id": "ProxyList.Dialog.OperationInProgressTitle",
+      "zh": "操作进行中",
+      "en": "Operation in progress"
+    },
+    {
+      "id": "ProxyList.Message.Exported",
+      "zh": "导出{}个有效代理至文件{}",
+      "en": "Exported {} valid proxies to {}"
+    },
+    {
+      "id": "ProxyList.Message.NoValid",
+      "zh": "没有有效代理可导出。",
+      "en": "No valid proxies to export."
+    },
+    {
+      "id": "ProxyList.Message.ExportFailed",
+      "zh": "导出分享链接失败。",
+      "en": "Failed to export share links."
+    },
+    {
+      "id": "ProxyList.Status.QueuedResolveSingle",
+      "zh": "已加入队列：解析代理地区，前方还有 {} 个任务",
+      "en": "Queued: resolve proxy region, {} ahead"
+    },
+    {
+      "id": "ProxyList.Status.ResolveSingleStarted",
+      "zh": "解析代理地区已开始",
+      "en": "Region resolution started"
+    },
+    {
+      "id": "ProxyList.Status.QueuedResolveBatch",
+      "zh": "已加入队列：批量解析地区，前方还有 {} 个任务",
+      "en": "Queued: resolve regions, {} ahead"
+    },
+    {
+      "id": "ProxyList.Status.ResolveBatchStarted",
+      "zh": "批量解析地区已开始",
+      "en": "Region resolution started"
+    },
+    {
+      "id": "ProxyList.Message.AlreadyRunning",
+      "zh": "该代理已作为独立进程运行，请先停止后再启动。",
+      "en": "This proxy is already running as a standalone process; stop it before starting again."
+    },
+    {
+      "id": "ProxyList.Dialog.AlreadyRunningTitle",
+      "zh": "代理已运行",
+      "en": "Proxy already running"
+    },
+    {
+      "id": "ProxyList.Message.Untested",
+      "zh": "该代理尚未测速，请先进行连通性测速后再启动。",
+      "en": "This proxy has not been tested; run a connectivity test before starting it."
+    },
+    {
+      "id": "ProxyList.Message.TestFailed",
+      "zh": "该代理测速失败，请先进行连通性测速后再启动。",
+      "en": "The last connectivity test of this proxy failed; retest it before starting."
+    },
+    {
+      "id": "ProxyList.Dialog.NeedTestTitle",
+      "zh": "需要测速",
+      "en": "Test required"
+    },
+    {
+      "id": "ProxyList.Message.NoFreePort",
+      "zh": "端口 {} 已被占用，且无法找到其他空闲端口。",
+      "en": "Port {} is in use and no other free port could be found."
+    },
+    {
+      "id": "ProxyList.Dialog.PortCheckTitle",
+      "zh": "端口检查",
+      "en": "Port check"
+    },
+    {
+      "id": "ProxyList.Message.PortOccupied",
+      "zh": "端口 {} 已被占用，是否使用端口 {} 开启代理？",
+      "en": "Port {} is in use. Start the proxy on port {} instead?"
+    },
+    {
+      "id": "ProxyList.Dialog.PortOccupiedTitle",
+      "zh": "端口占用提示",
+      "en": "Port in use"
+    },
+    {
+      "id": "ProxyList.Message.SelectProxyFirst",
+      "zh": "请先在列表中选择一个代理。",
+      "en": "Select a proxy in the list first."
+    },
+    {
+      "id": "ProxyList.Dialog.PoolTitle",
+      "zh": "代理池",
+      "en": "Proxy Pool"
+    },
+    {
+      "id": "ProxyList.Message.PoolDisabled",
+      "zh": "代理池功能未启用。请在配置中启用 standalone_pool.enabled 后再试。",
+      "en": "The proxy pool is disabled. Enable standalone_pool.enabled in the configuration and try again."
+    },
+    {
+      "id": "ProxyList.Message.PoolStartFailed",
+      "zh": "代理池启动失败，无法加入代理。请确认 xray 可执行文件已配置且端口可用。",
+      "en": "Failed to start the proxy pool, so the proxy could not be added. Check that the xray executable is configured and the port is free."
+    },
+    {
+      "id": "ProxyList.Message.AddedToPool",
+      "zh": "已加入代理池：{}",
+      "en": "Added to proxy pool: {}"
+    },
+    {
+      "id": "Floating.Column.Type",
+      "zh": "类型",
+      "en": "Type"
+    },
+    {
+      "id": "Floating.Column.IndexId",
+      "zh": "标识",
+      "en": "IndexId"
+    },
+    {
+      "id": "Floating.Column.Port",
+      "zh": "监听端口",
+      "en": "Listen Port"
+    },
+    {
+      "id": "Floating.Column.State",
+      "zh": "状态",
+      "en": "State"
+    },
+    {
+      "id": "Floating.Column.Delay",
+      "zh": "延迟(ms)",
+      "en": "Delay(ms)"
+    },
+    {
+      "id": "Floating.Column.FailStreak",
+      "zh": "失败次数",
+      "en": "Failures"
+    },
+    {
+      "id": "Floating.Tooltip.HideDelay",
+      "zh": "鼠标离开后自动收起延迟",
+      "en": "Auto-collapse delay after the mouse leaves"
+    },
+    {
+      "id": "Floating.Pool.StatusIdle",
+      "zh": "代理池状态: 未运行",
+      "en": "Proxy pool: not running"
+    },
+    {
+      "id": "Floating.Pool.Start",
+      "zh": "启动池",
+      "en": "Start pool"
+    },
+    {
+      "id": "Floating.Pool.Stop",
+      "zh": "停止池",
+      "en": "Stop pool"
+    },
+    {
+      "id": "Floating.Pool.Add",
+      "zh": "添加代理",
+      "en": "Add proxies"
+    },
+    {
+      "id": "Floating.Pool.Refresh",
+      "zh": "刷新",
+      "en": "Refresh"
+    },
+    {
+      "id": "Floating.Pool.ReportHealth",
+      "zh": "上报健康",
+      "en": "Report health"
+    },
+    {
+      "id": "Floating.Pool.PruneDead",
+      "zh": "自动剔除死亡",
+      "en": "Auto-prune dead"
+    },
+    {
+      "id": "Floating.Pool.Optimize",
+      "zh": "自动优化",
+      "en": "Auto-optimize"
+    },
+    {
+      "id": "Floating.Pool.Probe",
+      "zh": "独立代理探活",
+      "en": "Probe standalone proxies"
+    },
+    {
+      "id": "Floating.Menu.CloseProxy",
+      "zh": "关闭代理",
+      "en": "Close proxy"
+    },
+    {
+      "id": "Floating.Menu.Locate",
+      "zh": "定位到代理列表",
+      "en": "Locate in proxy list"
+    },
+    {
+      "id": "Floating.Menu.Exit",
+      "zh": "退出",
+      "en": "Exit"
+    },
+    {
+      "id": "Floating.Message.CloseFailed",
+      "zh": "关闭代理失败：未找到运行中的代理进程。",
+      "en": "Failed to close the proxy: no running proxy process was found."
+    },
+    {
+      "id": "Floating.Message.PoolStartFailed",
+      "zh": "代理池启动失败",
+      "en": "Failed to start the proxy pool"
+    },
+    {
+      "id": "Floating.Message.PoolStartFailedAdd",
+      "zh": "代理池启动失败，无法添加代理…",
+      "en": "Failed to start the proxy pool; cannot add proxies..."
+    },
+    {
+      "id": "Floating.Message.PoolAdded",
+      "zh": "已添加 {} 个代理到代理池。",
+      "en": "Added {} proxies to the proxy pool."
+    },
+    {
+      "id": "Floating.Pool.StatusFull",
+      "zh": "代理池状态: {} 成员数: {} 在线代理: {}",
+      "en": "Proxy pool: {} · {} members · {} online"
+    },
+    {
+      "id": "Floating.State.Running",
+      "zh": "运行中",
+      "en": "Running"
+    },
+    {
+      "id": "Floating.State.NotRunning",
+      "zh": "未运行",
+      "en": "Not running"
+    },
+    {
+      "id": "Floating.Kind.Pool",
+      "zh": "代理池",
+      "en": "Pool"
+    },
+    {
+      "id": "Floating.Kind.Standalone",
+      "zh": "独立",
+      "en": "Standalone"
+    },
+    {
+      "id": "Floating.State.RemoveRequested",
+      "zh": "待移除",
+      "en": "Remove requested"
+    },
+    {
+      "id": "Floating.State.Draining",
+      "zh": "排空中",
+      "en": "Draining"
     }
   ]
 }

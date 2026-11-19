@@ -11,10 +11,6 @@
 #   未处理原始字符串导致的引号失步误计；该文件已从清单移除。
 
 # ---- P1 主窗口 ----
-src/ui/StandaloneFloatingWidget.cpp | P1 主窗口（规划 41 条，实测 41 条） | 2027-06-30 | 41
-src/ui/ProxyListPanel.cpp | P1 主窗口（规划 39 条，实测 39 条） | 2027-06-30 | 39
-src/ui/TaskMonitorPanel.cpp | P1 主窗口（规划 30 条，实测 30 条） | 2027-06-30 | 30
-src/ui/SubscriptionPanel.cpp | P1 主窗口（规划 24 条，实测 24 条） | 2027-06-30 | 24
 # ---- P2 对话框 ----
 src/ui/ConfigDialog.cpp | P2 对话框（规划 265 条，实测 265 条） | 2027-06-30 | 265
 src/ui/SqlQueryManageDialog.cpp | P2 对话框（规划 73 条，实测 73 条） | 2027-06-30 | 73

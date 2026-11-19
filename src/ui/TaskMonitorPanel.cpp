@@ -1,4 +1,5 @@
 #include "TaskMonitorPanel.h"
+#include "i18n/I18nWx.h"
 
 #include <wx/statline.h>
 
@@ -47,26 +48,26 @@ TaskMonitorPanel::TaskMonitorPanel(wxWindow* parent, AppController* controller)
     wxBoxSizer* root = new wxBoxSizer(wxVERTICAL);
 
     currentInfo_ = new wxStaticText(this, ID_TASK_CURRENT_INFO,
-                                    wxString::FromUTF8(u8"当前无运行任务"));
+                                    i18n::wx(i18n::StrId::TaskMonitor_Empty));
     root->Add(currentInfo_, 0, wxEXPAND | wxALL, 4);
 
     pendingList_ = new wxListCtrl(this, ID_TASK_PENDING_LIST, wxDefaultPosition,
                                   wxDefaultSize, wxLC_REPORT | wxLC_SINGLE_SEL);
-    pendingList_->InsertColumn(0, wxString::FromUTF8(u8"任务ID"), wxLIST_FORMAT_LEFT, 150);
-    pendingList_->InsertColumn(1, wxString::FromUTF8(u8"类型"), wxLIST_FORMAT_LEFT, 160);
-    pendingList_->InsertColumn(2, wxString::FromUTF8(u8"名称"), wxLIST_FORMAT_LEFT, 140);
-    pendingList_->InsertColumn(3, wxString::FromUTF8(u8"优先级"), wxLIST_FORMAT_RIGHT, 60);
-    pendingList_->InsertColumn(4, wxString::FromUTF8(u8"状态"), wxLIST_FORMAT_LEFT, 90);
-    pendingList_->InsertColumn(5, wxString::FromUTF8(u8"提交于"), wxLIST_FORMAT_RIGHT, 90);
+    pendingList_->InsertColumn(0, i18n::wx(i18n::StrId::TaskMonitor_Column_Id), wxLIST_FORMAT_LEFT, 150);
+    pendingList_->InsertColumn(1, i18n::wx(i18n::StrId::TaskMonitor_Column_Type), wxLIST_FORMAT_LEFT, 160);
+    pendingList_->InsertColumn(2, i18n::wx(i18n::StrId::TaskMonitor_Column_Name), wxLIST_FORMAT_LEFT, 140);
+    pendingList_->InsertColumn(3, i18n::wx(i18n::StrId::TaskMonitor_Column_Priority), wxLIST_FORMAT_RIGHT, 60);
+    pendingList_->InsertColumn(4, i18n::wx(i18n::StrId::TaskMonitor_Column_Status), wxLIST_FORMAT_LEFT, 90);
+    pendingList_->InsertColumn(5, i18n::wx(i18n::StrId::TaskMonitor_Column_Submitted), wxLIST_FORMAT_RIGHT, 90);
     root->Add(pendingList_, 1, wxEXPAND | wxLEFT | wxRIGHT, 4);
 
     wxBoxSizer* buttons = new wxBoxSizer(wxHORIZONTAL);
     cancelCurrentBtn_ = new wxButton(this, ID_TASK_CANCEL_CURRENT,
-                                     wxString::FromUTF8(u8"终止当前"));
+                                     i18n::wx(i18n::StrId::TaskMonitor_Button_Terminate));
     cancelSelectedBtn_ = new wxButton(this, ID_TASK_CANCEL_SELECTED,
-                                      wxString::FromUTF8(u8"取消选中"));
+                                      i18n::wx(i18n::StrId::TaskMonitor_Button_CancelSelected));
     cancelAllBtn_ = new wxButton(this, ID_TASK_CANCEL_ALL,
-                                 wxString::FromUTF8(u8"取消全部排队"));
+                                 i18n::wx(i18n::StrId::TaskMonitor_Button_CancelAll));
     buttons->Add(cancelCurrentBtn_, 0, wxRIGHT, 6);
     buttons->Add(cancelSelectedBtn_, 0, wxRIGHT, 6);
     buttons->Add(cancelAllBtn_, 0);
@@ -105,23 +106,23 @@ void TaskMonitorPanel::refreshNow() {
     // ── current task line ──
     const bool idle = snap.current.taskId.empty();
     if (idle) {
-        currentInfo_->SetLabel(wxString::FromUTF8(u8"当前无运行任务"));
+        currentInfo_->SetLabel(i18n::wx(i18n::StrId::TaskMonitor_Empty));
     } else {
         wxString line = wxString::FromUTF8(task::taskTypeToString(snap.current.type));
         if (!snap.current.targetId.empty()) {
             line << wxString::FromUTF8(u8" [") << wxString::FromAscii(snap.current.targetId.c_str())
                  << wxString::FromUTF8(u8"]");
         }
-        line << wxString::FromUTF8(u8"　状态：") << wxString::FromAscii(statusToString(snap.current.status));
+        line << i18n::wx(i18n::StrId::TaskMonitor_Current_Status) << wxString::FromAscii(statusToString(snap.current.status));
         if (snap.current.progressTotal > 0) {
             const double pct = snap.current.progressCurrent * 100.0 / snap.current.progressTotal;
-            line << wxString::FromUTF8(u8"　进度：")
+            line << i18n::wx(i18n::StrId::TaskMonitor_Current_Progress)
                  << wxString::Format("%d/%d (%.1f%%)", snap.current.progressCurrent,
                                      snap.current.progressTotal, pct);
         }
-        line << wxString::FromUTF8(u8"　已运行 ") << elapsedText(snap.current.startedAt);
+        line << i18n::wx(i18n::StrId::TaskMonitor_Current_Elapsed) << elapsedText(snap.current.startedAt);
         if (!snap.current.progressMessage.empty()) {
-            line << wxString::FromUTF8(u8"　信息：")
+            line << i18n::wx(i18n::StrId::TaskMonitor_Current_Info)
                  << wxString::FromUTF8(snap.current.progressMessage.c_str());
         }
         currentInfo_->SetLabel(line);
@@ -212,7 +213,7 @@ void TaskMonitorPanel::refreshNow() {
     }
     // Empty list: one non-selectable placeholder row (spec §3.2 空态).
     if (row == 0) {
-        const long idx = pendingList_->InsertItem(0, wxString::FromUTF8(u8"（无任务）"));
+        const long idx = pendingList_->InsertItem(0, i18n::wx(i18n::StrId::TaskMonitor_Placeholder_None));
         pendingList_->SetItem(idx, 1, wxString());
         pendingIds_.push_back(std::string());
         rowIsChild_.push_back(true);   // monitor-only: cancel never targets it
@@ -293,20 +294,20 @@ void TaskMonitorPanel::onListContextMenu(wxContextMenuEvent& event) {
 
     wxMenu menu;
     if (ctxRowKind_ == RowCurrent) {
-        menu.Append(ID_TASK_CTX_TERM_ONE, wxString::FromUTF8(u8"终止当前任务"));
+        menu.Append(ID_TASK_CTX_TERM_ONE, i18n::wx(i18n::StrId::TaskMonitor_Menu_TerminateCurrent));
     } else if (ctxRowKind_ == RowPending) {
-        menu.Append(ID_TASK_CTX_CANCEL_ONE, wxString::FromUTF8(u8"取消此排队任务"));
+        menu.Append(ID_TASK_CTX_CANCEL_ONE, i18n::wx(i18n::StrId::TaskMonitor_Menu_CancelQueued));
     } else if (ctxRowKind_ == RowFinished) {
-        menu.Append(ID_TASK_CTX_REMOVE_ONE, wxString::FromUTF8(u8"移除此记录"));
+        menu.Append(ID_TASK_CTX_REMOVE_ONE, i18n::wx(i18n::StrId::TaskMonitor_Menu_RemoveRecord));
     } else {
         // Blank space / child rows: whole-queue actions only.
         wxMenuItem* cancelAllItem = menu.Append(ID_TASK_CTX_CANCEL_ALL,
-                                                wxString::FromUTF8(u8"取消全部排队"));
+                                                i18n::wx(i18n::StrId::TaskMonitor_Button_CancelAll));
         cancelAllItem->Enable(snap.queueDepth > 0);
     }
     // Every row (and the blank area) additionally offers the bulk cleanup.
     wxMenuItem* clearItem = menu.Append(ID_TASK_CTX_CLEAR_ALL,
-                                        wxString::FromUTF8(u8"清理全部完成记录"));
+                                        i18n::wx(i18n::StrId::TaskMonitor_Menu_ClearFinished));
     clearItem->Enable(hasFinished);
 
     PopupMenu(&menu, clientPt);
@@ -319,7 +320,7 @@ void TaskMonitorPanel::onContextCommand(wxCommandEvent& event) {
         const std::size_t n = controller_->clearFinishedTasks();
         refreshNow();
         wxQueueEvent(wxGetTopLevelParent(this), new StatusUpdateEvent(
-            0, u8"已清理 " + std::to_string(n) + u8" 条完成记录"));
+            0, i18n::u8f(i18n::StrId::TaskMonitor_Status_ClearedFinished, { std::to_string(n) })));
         return;
     }
     if (id == ID_TASK_CTX_REMOVE_ONE) {
@@ -331,14 +332,14 @@ void TaskMonitorPanel::onContextCommand(wxCommandEvent& event) {
         if (!ctxTaskId_.empty()) controller_->cancelTask(ctxTaskId_);
         refreshNow();
         wxQueueEvent(wxGetTopLevelParent(this),
-                     new StatusUpdateEvent(0, u8"已取消排队任务"));
+                     new StatusUpdateEvent(0, i18n::u8(i18n::StrId::TaskMonitor_Status_CancelQueued)));
         return;
     }
     if (id == ID_TASK_CTX_CANCEL_ALL) {
         controller_->cancelAllQueuedTasks();
         refreshNow();
         wxQueueEvent(wxGetTopLevelParent(this),
-                     new StatusUpdateEvent(0, u8"已取消全部排队任务"));
+                     new StatusUpdateEvent(0, i18n::u8(i18n::StrId::TaskMonitor_Status_CancelAllQueued)));
         return;
     }
     if (id == ID_TASK_CTX_TERM_ONE) {
@@ -346,7 +347,8 @@ void TaskMonitorPanel::onContextCommand(wxCommandEvent& event) {
         if (!snap.current.taskId.empty()) {
             controller_->cancelTask(snap.current.taskId);
             wxQueueEvent(wxGetTopLevelParent(this), new StatusUpdateEvent(
-                0, std::string(u8"已取消当前任务: ") + task::taskTypeToString(snap.current.type)));
+                0, i18n::u8f(i18n::StrId::TaskMonitor_Status_CancelCurrent,
+                             { task::taskTypeToString(snap.current.type) })));
         }
         refreshNow();
         return;
@@ -377,8 +379,9 @@ void TaskMonitorPanel::onCancelCurrent(wxCommandEvent&) {
     // that truly stops a batch test, spec §3.5 B3-a).
     controller_->cancelTask(snap.current.taskId);
     wxQueueEvent(wxGetTopLevelParent(this),
-                 new StatusUpdateEvent(0, std::string(u8"已取消当前任务: ") +
-                                            task::taskTypeToString(snap.current.type)));
+                 new StatusUpdateEvent(
+                     0, i18n::u8f(i18n::StrId::TaskMonitor_Status_CancelCurrent,
+                                  { task::taskTypeToString(snap.current.type) })));
     refreshNow();
 }
 
@@ -386,7 +389,7 @@ void TaskMonitorPanel::onCancelSelected(wxCommandEvent&) {
     const std::string id = selectedTaskId();
     if (id.empty()) return;
     const task::TaskQueueSnapshot snap = controller_->getTaskQueueSnapshot();
-    std::string label = u8"任务";
+    std::string label = i18n::u8(i18n::StrId::TaskMonitor_Label_Task);
     if (snap.current.taskId == id) {
         label = task::taskTypeToString(snap.current.type);
     } else {
@@ -402,12 +405,12 @@ void TaskMonitorPanel::onCancelSelected(wxCommandEvent&) {
     // onComplete OUTSIDE the queue lock (spec §3.4, test T4).
     refreshNow();
     wxQueueEvent(wxGetTopLevelParent(this),
-                 new StatusUpdateEvent(0, u8"已取消排队任务: " + label));
+                 new StatusUpdateEvent(0, i18n::u8f(i18n::StrId::TaskMonitor_Status_CancelQueuedOne, { label })));
 }
 
 void TaskMonitorPanel::onCancelAll(wxCommandEvent&) {
     controller_->cancelAllQueuedTasks();
     refreshNow();
     wxQueueEvent(wxGetTopLevelParent(this),
-                 new StatusUpdateEvent(0, u8"已取消全部排队任务"));
+                 new StatusUpdateEvent(0, i18n::u8(i18n::StrId::TaskMonitor_Status_CancelAllQueued)));
 }

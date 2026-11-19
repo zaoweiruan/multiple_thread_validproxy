@@ -1,4 +1,5 @@
 #include "ProxyListPanel.h"
+#include "i18n/I18nWx.h"
 #include "AppController.h"
 #include "Events.h"
 #include "Logger.h"
@@ -581,23 +582,23 @@ void ProxyListPanel::onContextMenu(wxDataViewEvent& event) {
     }
 
     wxMenu menu;
-    menu.Append(ID_CONTEXT_TEST_PROXY, L"测试选中代理");
-    menu.Append(ID_CONTEXT_EXPORT_SHARE, L"有效代理分享");
+    menu.Append(ID_CONTEXT_TEST_PROXY, i18n::wx(i18n::StrId::ProxyList_Context_TestSelected));
+    menu.Append(ID_CONTEXT_EXPORT_SHARE, i18n::wx(i18n::StrId::ProxyList_Context_ExportShare));
     menu.AppendSeparator();
-    menu.Append(ID_CONTEXT_RESOLVE_REGION, L"解析地区");
-    menu.Append(ID_CONTEXT_BATCH_RESOLVE_REGION, L"批量解析地区");
+    menu.Append(ID_CONTEXT_RESOLVE_REGION, i18n::wx(i18n::StrId::ProxyList_Context_ResolveRegion));
+    menu.Append(ID_CONTEXT_BATCH_RESOLVE_REGION, i18n::wx(i18n::StrId::ProxyList_Context_BatchResolveRegion));
     menu.AppendSeparator();
-    menu.Append(ID_CONTEXT_REFRESH, L"刷新");
+    menu.Append(ID_CONTEXT_REFRESH, i18n::wx(i18n::StrId::ProxyList_Context_Refresh));
     menu.AppendSeparator();
     // Move "测试在线代理" to immediately before "开启独立代理".
-    menu.Append(ID_CONTEXT_TEST_ONLINE_PROXIES, L"测试在线代理");
+    menu.Append(ID_CONTEXT_TEST_ONLINE_PROXIES, i18n::wx(i18n::StrId::ProxyList_Context_TestOnline));
     // Standalone (single-process) proxy start — always launches an independent
     // xray process regardless of whether the proxy pool is running. Pool
     // injection is a separate menu item (ID_CONTEXT_ADD_TO_POOL).
-    menu.Append(ID_CONTEXT_START_PROXY, L"开启独立代理");
+    menu.Append(ID_CONTEXT_START_PROXY, i18n::wx(i18n::StrId::ProxyList_Context_StartStandalone));
     // Dedicated pool entry point: add the selected proxy to the pool.
     // The pool is auto-started if needed, so this entry point is always usable.
-    menu.Append(ID_CONTEXT_ADD_TO_POOL, L"加入代理池");
+    menu.Append(ID_CONTEXT_ADD_TO_POOL, i18n::wx(i18n::StrId::ProxyList_Context_AddToPool));
     PopupMenu(&menu);
     event.Skip();
 }
@@ -680,19 +681,22 @@ void ProxyListPanel::onTestOnlineProxiesEvent(TestOnlineProxiesEvent& event) {
 
     wxString msg;
     if (total <= 0) {
-        msg = L"当前没有正在运行的独立代理进程。";
-        wxMessageBox(msg, L"测试在线代理", wxOK | wxICON_INFORMATION);
+        msg = i18n::wx(i18n::StrId::ProxyList_Message_NoStandalone);
+        wxMessageBox(msg, i18n::wx(i18n::StrId::ProxyList_Context_TestOnline), wxOK | wxICON_INFORMATION);
         return;
     }
 
-    msg = wxString::Format(L"在线代理测试完成：共 %d，成功 %d，失败 %d。", total, success, failed);
+    msg = i18n::wxf(i18n::StrId::ProxyList_Message_OnlineTestDone,
+                              { wxString::Format("%d", total),
+                                wxString::Format("%d", success),
+                                wxString::Format("%d", failed) });
     if (failed > 0) {
         // Show every failed proxy in a scrollable dialog. A single click on a
         // failed row locates it in the Subscription + Proxy List panels.
         TestOnlineResultDialog dlg(this, failedIndexIds, total, success, failed);
         dlg.ShowModal();
     } else {
-        wxMessageBox(msg, L"测试在线代理", wxOK | wxICON_INFORMATION);
+        wxMessageBox(msg, i18n::wx(i18n::StrId::ProxyList_Context_TestOnline), wxOK | wxICON_INFORMATION);
     }
 }
 
@@ -718,7 +722,7 @@ void ProxyListPanel::onExportShareLink(wxCommandEvent& event) {
     }
     // Prevent export during active operations
     if (controller_ && controller_->isRunning()) {
-        wxMessageBox(L"操作进行中，请等待完成后再试", L"操作进行中", wxOK | wxICON_WARNING);
+        wxMessageBox(i18n::wx(i18n::StrId::ProxyList_Message_OperationInProgress), i18n::wx(i18n::StrId::ProxyList_Dialog_OperationInProgressTitle), wxOK | wxICON_WARNING);
         return;
     }
 
@@ -727,13 +731,15 @@ void ProxyListPanel::onExportShareLink(wxCommandEvent& event) {
     int count = std::get<1>(exportResult);
     wxString msg;
     if (ok && count > 0) {
-        msg = wxString::Format(L"导出%d个有效代理至文件%s", count, std::get<2>(exportResult));
+        msg = i18n::wxf(i18n::StrId::ProxyList_Message_Exported,
+                                  { wxString::Format("%d", count),
+                                    wxString::FromUTF8(std::get<2>(exportResult).c_str()) });
     } else if (ok) {
-        msg = L"没有有效代理可导出。";
+        msg = i18n::wx(i18n::StrId::ProxyList_Message_NoValid);
     } else {
-        msg = L"导出分享链接失败。";
+        msg = i18n::wx(i18n::StrId::ProxyList_Message_ExportFailed);
     }
-    wxMessageBox(msg, L"有效代理分享", wxOK | (ok ? wxICON_INFORMATION : wxICON_WARNING));
+    wxMessageBox(msg, i18n::wx(i18n::StrId::ProxyList_Context_ExportShare), wxOK | (ok ? wxICON_INFORMATION : wxICON_WARNING));
     (void)event;
 }
 
@@ -765,8 +771,9 @@ void ProxyListPanel::onResolveRegion(wxCommandEvent& event) {
     if (topLevel) {
         static_cast<MainFrame*>(topLevel)->setStatusNotice(
             ahead > 0
-                ? wxString::Format(L"已加入队列：解析代理地区，前方还有 %zu 个任务", ahead)
-                : wxString(L"解析代理地区已开始"));
+                ? i18n::wxf(i18n::StrId::ProxyList_Status_QueuedResolveSingle,
+                                { wxString::Format("%zu", ahead) })
+                : i18n::wx(i18n::StrId::ProxyList_Status_ResolveSingleStarted));
     }
     // Use batch resolver async method (online via api.ipinfo.io/lite)
     controller_->resolveSingleProxyRegionAsync(indexId, this);
@@ -792,8 +799,9 @@ void ProxyListPanel::onBatchResolveRegion(wxCommandEvent& event) {
     if (topLevel) {
         static_cast<MainFrame*>(topLevel)->setStatusNotice(
             ahead > 0
-                ? wxString::Format(L"已加入队列：批量解析地区，前方还有 %zu 个任务", ahead)
-                : wxString(L"批量解析地区已开始"));
+                ? i18n::wxf(i18n::StrId::ProxyList_Status_QueuedResolveBatch,
+                                { wxString::Format("%zu", ahead) })
+                : i18n::wx(i18n::StrId::ProxyList_Status_ResolveBatchStarted));
     }
     controller_->resolveRegionsBatchAsync(this, currentSubId_);
     (void)event;
@@ -818,8 +826,8 @@ void ProxyListPanel::onStartProxy(wxCommandEvent& event) {
     if (controller_->isStandaloneProxyRunning(indexId)) {
         Logger::write("[UI] Standalone proxy for " + indexId
                       + " is already running, skipped duplicate start", LogLevel::WARN);
-        wxMessageDialog dlg(this, L"该代理已作为独立进程运行，请先停止后再启动。",
-                            L"代理已运行", wxOK | wxICON_INFORMATION);
+        wxMessageDialog dlg(this, i18n::wx(i18n::StrId::ProxyList_Message_AlreadyRunning),
+                            i18n::wx(i18n::StrId::ProxyList_Dialog_AlreadyRunningTitle), wxOK | wxICON_INFORMATION);
         dlg.CentreOnScreen();
         dlg.ShowModal();
         return;
@@ -834,9 +842,9 @@ void ProxyListPanel::onStartProxy(wxCommandEvent& event) {
             Logger::write("[UI] Refusing standalone start for " + indexId
                           + ": reason=" + reason, LogLevel::WARN);
             wxString userMsg = reason == "untested"
-                ? L"该代理尚未测速，请先进行连通性测速后再启动。"
-                : L"该代理测速失败，请先进行连通性测速后再启动。";
-            wxMessageDialog dlg(this, userMsg, L"需要测速", wxOK | wxICON_WARNING);
+                ? i18n::wx(i18n::StrId::ProxyList_Message_Untested)
+                : i18n::wx(i18n::StrId::ProxyList_Message_TestFailed);
+            wxMessageDialog dlg(this, userMsg, i18n::wx(i18n::StrId::ProxyList_Dialog_NeedTestTitle), wxOK | wxICON_WARNING);
             dlg.CentreOnScreen();
             dlg.ShowModal();
             return;
@@ -857,8 +865,9 @@ void ProxyListPanel::onStartProxy(wxCommandEvent& event) {
         int freePort = utils::findAvailablePort(desiredPort + 1);
         if (freePort < 0) {
             wxMessageDialog dlg(this,
-                wxString::Format(L"端口 %d 已被占用，且无法找到其他空闲端口。", desiredPort),
-                L"端口检查", wxOK | wxICON_WARNING);
+                i18n::wxf(i18n::StrId::ProxyList_Message_NoFreePort,
+                          { wxString::Format("%d", desiredPort) }),
+                i18n::wx(i18n::StrId::ProxyList_Dialog_PortCheckTitle), wxOK | wxICON_WARNING);
             dlg.CentreOnScreen();
             dlg.ShowModal();
             Logger::write("[UI] No free port found for standalone proxy (base port " + std::to_string(desiredPort)
@@ -866,8 +875,10 @@ void ProxyListPanel::onStartProxy(wxCommandEvent& event) {
             return;
         }
         // Ask user whether to use the alternate port
-        wxString msg = wxString::Format(L"端口 %d 已被占用，是否使用端口 %d 开启代理？", desiredPort, freePort);
-        wxMessageDialog portDlg(this, msg, L"端口占用提示", wxYES_NO | wxICON_QUESTION | wxNO_DEFAULT);
+        wxString msg = i18n::wxf(i18n::StrId::ProxyList_Message_PortOccupied,
+                               { wxString::Format("%d", desiredPort),
+                                 wxString::Format("%d", freePort) });
+        wxMessageDialog portDlg(this, msg, i18n::wx(i18n::StrId::ProxyList_Dialog_PortOccupiedTitle), wxYES_NO | wxICON_QUESTION | wxNO_DEFAULT);
         portDlg.CentreOnScreen();
         if (portDlg.ShowModal() != wxID_YES) {
             Logger::write("[UI] User declined alternate port " + std::to_string(freePort)
@@ -1065,7 +1076,7 @@ void ProxyListPanel::selectFirstProxy() {
 void ProxyListPanel::onAddToPool(wxCommandEvent& event) {
     wxDataViewItem item = listCtrl_->GetSelection();
     if (!item.IsOk()) {
-        wxMessageDialog dlg(this, L"请先在列表中选择一个代理。", L"代理池", wxOK | wxICON_INFORMATION);
+        wxMessageDialog dlg(this, i18n::wx(i18n::StrId::ProxyList_Message_SelectProxyFirst), i18n::wx(i18n::StrId::ProxyList_Dialog_PoolTitle), wxOK | wxICON_INFORMATION);
         dlg.CentreOnScreen();
         dlg.ShowModal();
         return;
@@ -1078,8 +1089,8 @@ void ProxyListPanel::onAddToPool(wxCommandEvent& event) {
 
     // Check if the pool feature is enabled in configuration
     if (!controller_->isProxyPoolEnabled()) {
-        wxMessageDialog dlg(this, L"代理池功能未启用。请在配置中启用 standalone_pool.enabled 后再试。",
-                            L"代理池", wxOK | wxICON_WARNING);
+        wxMessageDialog dlg(this, i18n::wx(i18n::StrId::ProxyList_Message_PoolDisabled),
+                            i18n::wx(i18n::StrId::ProxyList_Dialog_PoolTitle), wxOK | wxICON_WARNING);
         dlg.CentreOnScreen();
         dlg.ShowModal();
         return;
@@ -1089,8 +1100,8 @@ void ProxyListPanel::onAddToPool(wxCommandEvent& event) {
     // be used even when the pool has never been started.
     if (!controller_->isProxyPoolRunning()) {
         if (!controller_->startProxyPool()) {
-            wxMessageDialog dlg(this, L"代理池启动失败，无法加入代理。请确认 xray 可执行文件已配置且端口可用。",
-                                L"代理池", wxOK | wxICON_WARNING);
+            wxMessageDialog dlg(this, i18n::wx(i18n::StrId::ProxyList_Message_PoolStartFailed),
+                                i18n::wx(i18n::StrId::ProxyList_Dialog_PoolTitle), wxOK | wxICON_WARNING);
             dlg.CentreOnScreen();
             dlg.ShowModal();
             return;
@@ -1099,8 +1110,9 @@ void ProxyListPanel::onAddToPool(wxCommandEvent& event) {
     bool ok = controller_->injectProxyToPool(indexId);
     if (ok) {
         Logger::write("[UI] Added proxy to pool via context menu: " + indexId, LogLevel::REPORT);
-        wxMessageDialog dlg(this, L"已加入代理池：" + wxString(indexId.c_str(), wxConvUTF8),
-                            L"代理池", wxOK | wxICON_INFORMATION);
+        wxMessageDialog dlg(this, i18n::wxf(i18n::StrId::ProxyList_Message_AddedToPool,
+                            { wxString(indexId.c_str(), wxConvUTF8) }),
+                            i18n::wx(i18n::StrId::ProxyList_Dialog_PoolTitle), wxOK | wxICON_INFORMATION);
         dlg.CentreOnScreen();
         dlg.ShowModal();
     } else {

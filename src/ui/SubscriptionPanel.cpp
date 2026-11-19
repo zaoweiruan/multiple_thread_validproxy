@@ -1,4 +1,5 @@
 #include "SubscriptionPanel.h"
+#include "i18n/I18nWx.h"
 #include "AppController.h"
 #include "Events.h"
 #include "MainFrame.h"
@@ -68,12 +69,12 @@ SubscriptionPanel::SubscriptionPanel(wxWindow* parent, AppController* controller
 
     // Columns — Append[Toggle|Text]Column(label, model_column, mode, width, ...)
     listCtrl_->AppendTextColumn("#", 0, wxDATAVIEW_CELL_INERT, 30);
-    listCtrl_->AppendToggleColumn(L"启用", 1, wxDATAVIEW_CELL_ACTIVATABLE, 30);
-    listCtrl_->AppendTextColumn(L"名称 ↕", 2, wxDATAVIEW_CELL_INERT, 200);  // Changed to INERT to prevent editing
-    listCtrl_->AppendTextColumn(L"有效 ↕", 3, wxDATAVIEW_CELL_INERT, 60, wxALIGN_RIGHT);
-    listCtrl_->AppendTextColumn(L"代理数 ↕", 4, wxDATAVIEW_CELL_INERT, 70, wxALIGN_RIGHT);
-    listCtrl_->AppendTextColumn(L"更新 ↕", 5, wxDATAVIEW_CELL_INERT, 130);
-    listCtrl_->AppendTextColumn(L"ID ↕", 6, wxDATAVIEW_CELL_INERT, 60);
+    listCtrl_->AppendToggleColumn(i18n::wx(i18n::StrId::Subscription_Column_Enabled), 1, wxDATAVIEW_CELL_ACTIVATABLE, 30);
+    listCtrl_->AppendTextColumn(i18n::wx(i18n::StrId::Subscription_Column_Name), 2, wxDATAVIEW_CELL_INERT, 200);  // Changed to INERT to prevent editing
+    listCtrl_->AppendTextColumn(i18n::wx(i18n::StrId::Subscription_Column_Valid), 3, wxDATAVIEW_CELL_INERT, 60, wxALIGN_RIGHT);
+    listCtrl_->AppendTextColumn(i18n::wx(i18n::StrId::Subscription_Column_Total), 4, wxDATAVIEW_CELL_INERT, 70, wxALIGN_RIGHT);
+    listCtrl_->AppendTextColumn(i18n::wx(i18n::StrId::Subscription_Column_Updated), 5, wxDATAVIEW_CELL_INERT, 130);
+    listCtrl_->AppendTextColumn(i18n::wx(i18n::StrId::Subscription_Column_Id), 6, wxDATAVIEW_CELL_INERT, 60);
 
     sizer->Add(listCtrl_, 1, wxEXPAND | wxALL, 2);
 
@@ -132,7 +133,7 @@ void SubscriptionPanel::updateSubscriptionList(const std::vector<db::models::Sub
 
     db::models::Subitem allItem;
     allItem.id = ALL_SUBSCRIPTION_ID;
-    allItem.remarks = u8"全部";
+    allItem.remarks = i18n::u8(i18n::StrId::Subscription_Filter_All);
     allItem.enabled = "1";
     allItem.url = "";
     allItem.updatetime = "";
@@ -201,7 +202,7 @@ void SubscriptionPanel::filterBySearch(const wxString& query) {
 
     db::models::Subitem allItem;
     allItem.id = ALL_SUBSCRIPTION_ID;
-    allItem.remarks = u8"全部";
+    allItem.remarks = i18n::u8(i18n::StrId::Subscription_Filter_All);
     allItem.enabled = "1";
     allItem.url = "";
     allItem.updatetime = "";
@@ -339,15 +340,15 @@ void SubscriptionPanel::onSelectionChanged(wxDataViewEvent& event) {
 void SubscriptionPanel::onContextMenu(wxDataViewEvent&) {
     std::string subId = getSelectedSubId();
     wxMenu menu;
-    menu.Append(ID_SUB_UPDATE, L"更新订阅");
-    menu.Append(ID_SUB_TEST, L"测试订阅");
+    menu.Append(ID_SUB_UPDATE, i18n::wx(i18n::StrId::Subscription_Menu_Update));
+    menu.Append(ID_SUB_TEST, i18n::wx(i18n::StrId::Subscription_Menu_Test));
     menu.AppendSeparator();
-    menu.Append(ID_SUB_EDIT, L"编辑订阅");
-    menu.Append(ID_SUB_DELETE, L"删除订阅");
-    menu.Append(ID_SUB_DELETE_PROXIES, L"删除订阅下代理");
+    menu.Append(ID_SUB_EDIT, i18n::wx(i18n::StrId::Subscription_Menu_Edit));
+    menu.Append(ID_SUB_DELETE, i18n::wx(i18n::StrId::Subscription_Menu_Delete));
+    menu.Append(ID_SUB_DELETE_PROXIES, i18n::wx(i18n::StrId::Subscription_Menu_DeleteProxies));
     menu.AppendSeparator();
-    menu.Append(ID_SUB_REFRESH, L"刷新");
-    menu.Append(ID_SUB_IMPORT, L"添加订阅");
+    menu.Append(ID_SUB_REFRESH, i18n::wx(i18n::StrId::Subscription_Menu_Refresh));
+    menu.Append(ID_SUB_IMPORT, i18n::wx(i18n::StrId::Subscription_Menu_Add));
 
     // Disable context-dependent items if nothing selected
     if (subId.empty()) {
@@ -397,8 +398,8 @@ void SubscriptionPanel::onEditSubscription(wxCommandEvent&) {
     // gate is TIGHTENED to isBusy(): queued tasks count too (a queued update
     // runs shortly after the edit would commit).
     if (controller_ && controller_->isBusy()) {
-        wxMessageBox(L"任务队列有任务（执行中或排队），为避免数据竞争，保存订阅修改前请先清理队列",
-                     L"任务进行中", wxOK | wxICON_WARNING);
+        wxMessageBox(i18n::wx(i18n::StrId::Subscription_Message_QueueBusySave),
+                     i18n::wx(i18n::StrId::Subscription_Dialog_TaskInProgress), wxOK | wxICON_WARNING);
         return;
     }
     std::string subId = getSelectedSubId();
@@ -423,8 +424,8 @@ void SubscriptionPanel::onDeleteSubscription(wxCommandEvent&) {
     // tightened to isBusy() — a QUEUED test/update would race the delete the
     // moment it starts (its worker re-inserts rows the delete just removed).
     if (controller_ && controller_->isBusy()) {
-        wxMessageBox(L"任务队列有任务（执行中或排队），为避免数据竞争，删除前请先清理队列",
-                     L"任务进行中", wxOK | wxICON_WARNING);
+        wxMessageBox(i18n::wx(i18n::StrId::Subscription_Message_QueueBusyDelete),
+                     i18n::wx(i18n::StrId::Subscription_Dialog_TaskInProgress), wxOK | wxICON_WARNING);
         return;
     }
     std::string subId = getSelectedSubId();
@@ -484,8 +485,8 @@ void SubscriptionPanel::onDeleteProxies(wxCommandEvent&) {
     }
     // G12 (spec 2026-11-06 §2.3): same synchronous-write race as G11 → isBusy().
     if (controller_ && controller_->isBusy()) {
-        wxMessageBox(L"任务队列有任务（执行中或排队），为避免数据竞争，删除前请先清理队列",
-                     L"任务进行中", wxOK | wxICON_WARNING);
+        wxMessageBox(i18n::wx(i18n::StrId::Subscription_Message_QueueBusyDelete),
+                     i18n::wx(i18n::StrId::Subscription_Dialog_TaskInProgress), wxOK | wxICON_WARNING);
         return;
     }
     std::string subId = getSelectedSubId();
@@ -494,8 +495,8 @@ void SubscriptionPanel::onDeleteProxies(wxCommandEvent&) {
     for (const db::models::Subitem& sub : subs_) {
         if (sub.id == subId) { remarks = sub.remarks; break; }
     }
-    wxString msg = wxString::Format(L"确定删除订阅 \"%s\" 下的所有代理？", remarks);
-    wxMessageDialog dlg(this, msg, L"确认删除", wxYES_NO | wxNO_DEFAULT | wxICON_QUESTION);
+    wxString msg = i18n::wxf(i18n::StrId::Subscription_Message_ConfirmDeleteProxies, { remarks });
+    wxMessageDialog dlg(this, msg, i18n::wx(i18n::StrId::Subscription_Dialog_ConfirmDelete), wxYES_NO | wxNO_DEFAULT | wxICON_QUESTION);
     dlg.CentreOnScreen();
     if (dlg.ShowModal() == wxID_YES) {
         if (controller_) {
@@ -639,8 +640,8 @@ void SubscriptionPanel::showEditDialog(const db::models::Subitem& sub) {
         if (evt.GetId() == wxID_OK) {
             wxString newUrl = urlCtrl->GetValue().Trim();
             if (!newUrl.empty() && !utils::isValidUrlFormat(newUrl.ToStdString())) {
-                wxMessageBox(L"订阅 URL 格式无效，请确认包含 http:// 或 https:// 开头且域名有效",
-                             L"URL 格式错误", wxOK | wxICON_WARNING);
+                wxMessageBox(i18n::wx(i18n::StrId::Subscription_Message_InvalidUrl),
+                             i18n::wx(i18n::StrId::Subscription_Dialog_UrlFormatError), wxOK | wxICON_WARNING);
                 urlValid = false;
                 return;
             }
