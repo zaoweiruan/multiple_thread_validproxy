@@ -1180,6 +1180,376 @@
       "id": "Floating.State.Draining",
       "zh": "排空中",
       "en": "Draining"
+    },
+    {
+      "id": "TestOnlineResult.Title",
+      "zh": "在线代理测试结果",
+      "en": "Online proxy test results"
+    },
+    {
+      "id": "TestOnlineResult.FailedHint",
+      "zh": "失败代理（{} 个，单击可定位）：",
+      "en": "Failed proxies ({}, click to locate):"
+    },
+    {
+      "id": "TestOnlineResult.FailedHintNone",
+      "zh": "失败代理：",
+      "en": "Failed proxies:"
+    },
+    {
+      "id": "BundleChain.Column.Name",
+      "zh": "名称",
+      "en": "Name"
+    },
+    {
+      "id": "BundleChain.Column.Version",
+      "zh": "版本",
+      "en": "Version"
+    },
+    {
+      "id": "BundleChain.Button.Add",
+      "zh": "添加 Bundle",
+      "en": "Add Bundle"
+    },
+    {
+      "id": "BundleChain.Button.Remove",
+      "zh": "移除",
+      "en": "Remove"
+    },
+    {
+      "id": "BundleChain.Button.Resolve",
+      "zh": "解析",
+      "en": "Resolve"
+    },
+    {
+      "id": "BundleSelector.Title",
+      "zh": "选择组件包",
+      "en": "Select component bundle"
+    },
+    {
+      "id": "BundleSelector.Column.Name",
+      "zh": "名称",
+      "en": "Name"
+    },
+    {
+      "id": "BundleSelector.Column.Version",
+      "zh": "版本",
+      "en": "Version"
+    },
+    {
+      "id": "BundleSelector.Column.Core",
+      "zh": "核心",
+      "en": "Core"
+    },
+    {
+      "id": "BundleSelector.Button.Ok",
+      "zh": "确定",
+      "en": "OK"
+    },
+    {
+      "id": "BundleSelector.Button.Cancel",
+      "zh": "取消",
+      "en": "Cancel"
+    },
+    {
+      "id": "AddPoolMember.Title",
+      "zh": "选择代理",
+      "en": "Select proxies"
+    },
+    {
+      "id": "AddPoolMember.Hint",
+      "zh": "选择要加入代理池的有效代理（共 {} 个候选）：",
+      "en": "Select valid proxies to add to the pool ({} candidates):"
+    },
+    {
+      "id": "AddPoolMember.SearchHint",
+      "zh": "按 IndexId / 地址 / 备注 过滤",
+      "en": "Filter by IndexId / address / remarks"
+    },
+    {
+      "id": "AddPoolMember.Column.Protocol",
+      "zh": "协议",
+      "en": "Protocol"
+    },
+    {
+      "id": "AddPoolMember.Column.Address",
+      "zh": "地址",
+      "en": "Address"
+    },
+    {
+      "id": "AddPoolMember.Column.Delay",
+      "zh": "时延",
+      "en": "Delay"
+    },
+    {
+      "id": "AddPoolMember.Column.Health",
+      "zh": "健康度",
+      "en": "Health"
+    },
+    {
+      "id": "AddPoolMember.Column.Remarks",
+      "zh": "备注",
+      "en": "Remarks"
+    },
+    {
+      "id": "AddPoolMember.Button.Add",
+      "zh": "加入",
+      "en": "Add"
+    },
+    {
+      "id": "AddPoolMember.Button.Cancel",
+      "zh": "取消",
+      "en": "Cancel"
+    },
+    {
+      "id": "AddPoolMember.Message.NoneSelected",
+      "zh": "请至少选择一个代理。",
+      "en": "Select at least one proxy."
+    },
+    {
+      "id": "SqlQuery.Scope.BySubId",
+      "zh": "按 SubId",
+      "en": "By SubId"
+    },
+    {
+      "id": "SqlQuery.Scope.All",
+      "zh": "通用",
+      "en": "All"
+    },
+    {
+      "id": "SqlQuery.Title",
+      "zh": "SQL 查询方案库",
+      "en": "SQL Query Templates"
+    },
+    {
+      "id": "SqlQuery.Dialog.Title",
+      "zh": "SQL 方案库",
+      "en": "SQL Templates"
+    },
+    {
+      "id": "SqlQuery.Error.InitFailed",
+      "zh": "SQL 方案表初始化失败，请检查数据库连接。",
+      "en": "Failed to initialise the SQL template table; check the database connection."
+    },
+    {
+      "id": "SqlQuery.Hint",
+      "zh": "管理 SQL 查询方案：新增 / 编辑 / 保存 / 删除 / 设为默认；双击列表中的方案或点击「选择此方案」返回配置。",
+      "en": "Manage SQL query templates: create / edit / save / delete / set default. Double-click a template or click \"Choose this template\" to return to the configuration."
+    },
+    {
+      "id": "SqlQuery.Label.ScopeFilter",
+      "zh": "范围过滤:",
+      "en": "Scope filter:"
+    },
+    {
+      "id": "SqlQuery.Filter.AllScopes",
+      "zh": "全部范围",
+      "en": "All scopes"
+    },
+    {
+      "id": "SqlQuery.Scope.GeneralChoice",
+      "zh": "通用 (all)",
+      "en": "General (all)"
+    },
+    {
+      "id": "SqlQuery.Scope.BySubIdChoice",
+      "zh": "按 SubId (by_subid)",
+      "en": "By SubId (by_subid)"
+    },
+    {
+      "id": "SqlQuery.Column.Name",
+      "zh": "名称",
+      "en": "Name"
+    },
+    {
+      "id": "SqlQuery.Column.Scope",
+      "zh": "范围",
+      "en": "Scope"
+    },
+    {
+      "id": "SqlQuery.Column.Default",
+      "zh": "默认",
+      "en": "Default"
+    },
+    {
+      "id": "SqlQuery.Column.Description",
+      "zh": "描述",
+      "en": "Description"
+    },
+    {
+      "id": "SqlQuery.Label.Name",
+      "zh": "名称:",
+      "en": "Name:"
+    },
+    {
+      "id": "SqlQuery.Label.Scope",
+      "zh": "作用范围:",
+      "en": "Scope:"
+    },
+    {
+      "id": "SqlQuery.Label.Default",
+      "zh": "默认方案:",
+      "en": "Default template:"
+    },
+    {
+      "id": "SqlQuery.Checkbox.Default",
+      "zh": "同范围内默认使用此方案",
+      "en": "Use this template by default within its scope"
+    },
+    {
+      "id": "SqlQuery.Label.Description",
+      "zh": "描述:",
+      "en": "Description:"
+    },
+    {
+      "id": "SqlQuery.Label.Sql",
+      "zh": "SQL 语句:",
+      "en": "SQL statement:"
+    },
+    {
+      "id": "SqlQuery.Status.New",
+      "zh": "新方案（尚未保存）",
+      "en": "New template (not saved)"
+    },
+    {
+      "id": "SqlQuery.Button.New",
+      "zh": "新增",
+      "en": "New"
+    },
+    {
+      "id": "SqlQuery.Button.Save",
+      "zh": "保存",
+      "en": "Save"
+    },
+    {
+      "id": "SqlQuery.Button.Delete",
+      "zh": "删除",
+      "en": "Delete"
+    },
+    {
+      "id": "SqlQuery.Button.SetDefault",
+      "zh": "设为默认",
+      "en": "Set default"
+    },
+    {
+      "id": "SqlQuery.Button.Refresh",
+      "zh": "刷新",
+      "en": "Refresh"
+    },
+    {
+      "id": "SqlQuery.Button.Choose",
+      "zh": "选择此方案",
+      "en": "Choose this template"
+    },
+    {
+      "id": "SqlQuery.Button.Close",
+      "zh": "关闭",
+      "en": "Close"
+    },
+    {
+      "id": "SqlQuery.Yes",
+      "zh": "是",
+      "en": "Yes"
+    },
+    {
+      "id": "SqlQuery.Status.Created",
+      "zh": "    创建: {}",
+      "en": "    Created: {}"
+    },
+    {
+      "id": "SqlQuery.Status.Updated",
+      "zh": "    更新: {}",
+      "en": "    Updated: {}"
+    },
+    {
+      "id": "SqlQuery.Message.NameRequired",
+      "zh": "请输入方案名称。",
+      "en": "Enter a template name."
+    },
+    {
+      "id": "SqlQuery.Message.SqlRequired",
+      "zh": "请输入 SQL 语句。",
+      "en": "Enter an SQL statement."
+    },
+    {
+      "id": "SqlQuery.Message.DbNotConnectedSave",
+      "zh": "数据库未连接，无法保存。",
+      "en": "The database is not connected; cannot save."
+    },
+    {
+      "id": "SqlQuery.Message.DuplicateName",
+      "zh": "已存在同名 SQL 方案，请换一个名称。",
+      "en": "A SQL template with this name already exists; choose another name."
+    },
+    {
+      "id": "SqlQuery.Message.SaveFailed",
+      "zh": "保存 SQL 方案失败。",
+      "en": "Failed to save the SQL template."
+    },
+    {
+      "id": "SqlQuery.Message.InsertFailed",
+      "zh": "新增 SQL 方案失败（名称可能重复）。",
+      "en": "Failed to create the SQL template (the name may already exist)."
+    },
+    {
+      "id": "SqlQuery.Message.DefaultFailedAfterSave",
+      "zh": "方案已保存，但设置为默认失败。",
+      "en": "The template was saved, but setting it as default failed."
+    },
+    {
+      "id": "SqlQuery.Status.SavedPrefix",
+      "zh": "已保存。 ",
+      "en": "Saved. "
+    },
+    {
+      "id": "SqlQuery.Message.SelectOrSaveFirst",
+      "zh": "请先选择或保存一个 SQL 方案。",
+      "en": "Select or save a SQL template first."
+    },
+    {
+      "id": "SqlQuery.Message.NotFound",
+      "zh": "方案不存在，列表将刷新。",
+      "en": "The template no longer exists; the list will be refreshed."
+    },
+    {
+      "id": "SqlQuery.Message.DeleteConfirm",
+      "zh": "确定删除 SQL 方案「{}」(ID {})？",
+      "en": "Delete SQL template \"{}\" (ID {})?"
+    },
+    {
+      "id": "SqlQuery.Message.DeleteFailed",
+      "zh": "删除 SQL 方案失败。",
+      "en": "Failed to delete the SQL template."
+    },
+    {
+      "id": "SqlQuery.Message.SaveBeforeDefault",
+      "zh": "请先保存方案，再设为默认。",
+      "en": "Save the template before setting it as default."
+    },
+    {
+      "id": "SqlQuery.Message.SetDefaultFailed",
+      "zh": "设置默认 SQL 方案失败。",
+      "en": "Failed to set the default SQL template."
+    },
+    {
+      "id": "SqlQuery.Status.DefaultSetPrefix",
+      "zh": "已设为默认。 ",
+      "en": "Set as default. "
+    },
+    {
+      "id": "SqlQuery.Message.SelectFirst",
+      "zh": "请先在左侧选择一个 SQL 方案。",
+      "en": "Select a SQL template on the left first."
+    },
+    {
+      "id": "SqlQuery.Message.DbNotConnectedRead",
+      "zh": "数据库未连接，无法读取方案。",
+      "en": "The database is not connected; cannot read templates."
+    },
+    {
+      "id": "SqlQuery.Message.ScopeMismatch",
+      "zh": "当前配置需要「{}」范围的方案，选中的方案是「{}」范围。",
+      "en": "The current configuration requires a \"{}\" template, but the selected one has scope \"{}\"."
     }
   ]
 }

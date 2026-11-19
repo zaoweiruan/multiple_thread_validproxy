@@ -1,4 +1,5 @@
 #include "BundleSelectorDialog.h"
+#include "i18n/I18nWx.h"
 #include "config/ComponentBundleDAO.h"
 #include "config/ComponentBundle.h"
 #include <string>
@@ -14,15 +15,15 @@ wxEND_EVENT_TABLE()
 
 BundleSelectorDialog::BundleSelectorDialog(wxWindow* parent, sqlite3* db,
                                            config::CoreType coreType)
-    : wxDialog(parent, wxID_ANY, wxT("选择组件包"), wxDefaultPosition, wxSize(520, 380)),
+    : wxDialog(parent, wxID_ANY, i18n::wx(i18n::StrId::BundleSelector_Title), wxDefaultPosition, wxSize(520, 380)),
       db_(db), coreType_(coreType), selectedId_() {
 
     list_ = new wxListCtrl(this, wxID_ANY, wxDefaultPosition, wxDefaultSize,
                            wxLC_REPORT | wxLC_SINGLE_SEL);
     list_->InsertColumn(0, wxT("Bundle ID"), wxLIST_FORMAT_LEFT, 200);
-    list_->InsertColumn(1, wxT("名称"), wxLIST_FORMAT_LEFT, 160);
-    list_->InsertColumn(2, wxT("版本"), wxLIST_FORMAT_LEFT, 60);
-    list_->InsertColumn(3, wxT("核心"), wxLIST_FORMAT_LEFT, 70);
+    list_->InsertColumn(1, i18n::wx(i18n::StrId::BundleSelector_Column_Name), wxLIST_FORMAT_LEFT, 160);
+    list_->InsertColumn(2, i18n::wx(i18n::StrId::BundleSelector_Column_Version), wxLIST_FORMAT_LEFT, 60);
+    list_->InsertColumn(3, i18n::wx(i18n::StrId::BundleSelector_Column_Core), wxLIST_FORMAT_LEFT, 70);
 
     config::ComponentBundleDAO dao(db_);
     const std::vector<config::ComponentBundle> bundles = dao.getAllEnabled();
@@ -39,8 +40,8 @@ BundleSelectorDialog::BundleSelectorDialog(wxWindow* parent, sqlite3* db,
         ++row;
     }
 
-    wxButton* okBtn = new wxButton(this, wxID_OK, wxT("确定"));
-    wxButton* cancelBtn = new wxButton(this, wxID_CANCEL, wxT("取消"));
+    wxButton* okBtn = new wxButton(this, wxID_OK, i18n::wx(i18n::StrId::BundleSelector_Button_Ok));
+    wxButton* cancelBtn = new wxButton(this, wxID_CANCEL, i18n::wx(i18n::StrId::BundleSelector_Button_Cancel));
 
     wxBoxSizer* btnSizer = new wxBoxSizer(wxHORIZONTAL);
     btnSizer->AddStretchSpacer(1);

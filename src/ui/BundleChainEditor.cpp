@@ -1,4 +1,5 @@
 #include "BundleChainEditor.h"
+#include "i18n/I18nWx.h"
 #include "BundleSelectorDialog.h"
 #include "config/BundleChainResolver.h"
 #include "config/ComponentBundle.h"
@@ -26,15 +27,15 @@ BundleChainEditor::BundleChainEditor(wxWindow* parent, sqlite3* db, bool showBut
     bundleList_ = new wxListCtrl(this, wxID_ANY, wxDefaultPosition, wxSize(-1, -1),
                                  wxLC_REPORT | wxLC_SINGLE_SEL);
     bundleList_->InsertColumn(0, wxT("Bundle ID"), wxLIST_FORMAT_LEFT, 130);
-    bundleList_->InsertColumn(1, wxT("名称"), wxLIST_FORMAT_LEFT, 100);
-    bundleList_->InsertColumn(2, wxT("版本"), wxLIST_FORMAT_LEFT, 50);
+    bundleList_->InsertColumn(1, i18n::wx(i18n::StrId::BundleChain_Column_Name), wxLIST_FORMAT_LEFT, 100);
+    bundleList_->InsertColumn(2, i18n::wx(i18n::StrId::BundleChain_Column_Version), wxLIST_FORMAT_LEFT, 50);
 
     wxBoxSizer* topSizer = new wxBoxSizer(wxVERTICAL);
 
     if (showButtons) {
-        addBtn_ = new wxButton(this, wxID_ADD, wxT("添加 Bundle"));
-        removeBtn_ = new wxButton(this, wxID_REMOVE, wxT("移除"));
-        resolveBtn_ = new wxButton(this, wxID_EXECUTE, wxT("解析"));
+        addBtn_ = new wxButton(this, wxID_ADD, i18n::wx(i18n::StrId::BundleChain_Button_Add));
+        removeBtn_ = new wxButton(this, wxID_REMOVE, i18n::wx(i18n::StrId::BundleChain_Button_Remove));
+        resolveBtn_ = new wxButton(this, wxID_EXECUTE, i18n::wx(i18n::StrId::BundleChain_Button_Resolve));
 
         wxBoxSizer* btnSizer = new wxBoxSizer(wxHORIZONTAL);
         btnSizer->Add(addBtn_, 0, wxRIGHT, 6);

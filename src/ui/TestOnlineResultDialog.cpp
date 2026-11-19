@@ -1,4 +1,5 @@
 #include "TestOnlineResultDialog.h"
+#include "i18n/I18nWx.h"
 #include "Events.h"
 
 #include <wx/msgdlg.h>
@@ -7,23 +8,25 @@
 TestOnlineResultDialog::TestOnlineResultDialog(wxWindow* parent,
                                                const std::vector<std::string>& failedIndexIds,
                                                int total, int success, int failed)
-    : wxDialog(parent, wxID_ANY, L"在线代理测试结果",
+    : wxDialog(parent, wxID_ANY, i18n::wx(i18n::StrId::TestOnlineResult_Title),
                wxDefaultPosition, wxSize(620, 480)) {
     rowIndexIds_ = failedIndexIds;
 
     wxBoxSizer* root = new wxBoxSizer(wxVERTICAL);
 
-    wxString summary = wxString::Format(
-        L"在线代理测试完成：共 %d，成功 %d，失败 %d。",
-        total, success, failed);
+    wxString summary = i18n::wxf(i18n::StrId::ProxyList_Message_OnlineTestDone,
+        { wxString::Format("%d", total),
+          wxString::Format("%d", success),
+          wxString::Format("%d", failed) });
     wxStaticText* text = new wxStaticText(this, wxID_ANY, summary);
     root->Add(text, 0, wxALL, 8);
 
     wxString failedHint;
     if (failed > 0) {
-        failedHint.Printf(L"失败代理（%d 个，单击可定位）：", failed);
+        failedHint = i18n::wxf(i18n::StrId::TestOnlineResult_FailedHint,
+                              { wxString::Format("%d", failed) });
     } else {
-        failedHint = L"失败代理：";
+        failedHint = i18n::wx(i18n::StrId::TestOnlineResult_FailedHintNone);
     }
     wxStaticText* hint = new wxStaticText(this, wxID_ANY, failedHint);
     root->Add(hint, 0, wxLEFT | wxRIGHT | wxBOTTOM, 8);
@@ -33,7 +36,7 @@ TestOnlineResultDialog::TestOnlineResultDialog(wxWindow* parent,
     list_->InsertColumn(0, "IndexId", wxLIST_FORMAT_LEFT, 420);
     root->Add(list_, 1, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, 8);
 
-    wxButton* closeBtn = new wxButton(this, wxID_OK, L"关闭");
+    wxButton* closeBtn = new wxButton(this, wxID_OK, i18n::wx(i18n::StrId::LogPanel_Button_Close));
     root->Add(closeBtn, 0, wxALIGN_RIGHT | wxALL, 8);
 
     closeBtn->Bind(wxEVT_BUTTON, &TestOnlineResultDialog::onClose, this);

@@ -13,11 +13,6 @@
 # ---- P1 主窗口 ----
 # ---- P2 对话框 ----
 src/ui/ConfigDialog.cpp | P2 对话框（规划 265 条，实测 265 条） | 2027-06-30 | 265
-src/ui/SqlQueryManageDialog.cpp | P2 对话框（规划 73 条，实测 73 条） | 2027-06-30 | 73
-src/ui/AddPoolMemberDialog.cpp | P2 对话框（规划 12 条，实测 12 条） | 2027-06-30 | 12
-src/ui/BundleSelectorDialog.cpp | P2 对话框（规划 6 条，实测 6 条） | 2027-06-30 | 6
-src/ui/BundleChainEditor.cpp | P2 对话框（规划 5 条，实测 5 条） | 2027-06-30 | 5
-src/ui/TestOnlineResultDialog.cpp | P2 对话框（规划 5 条，实测 5 条） | 2027-06-30 | 5
 # ---- P3 日志/业务 ----
 src/main_gui.cpp | P3 日志/业务（规划 68 条，实测 68 条） | 2027-06-30 | 68
 src/ui/AppController.cpp | P3 日志/业务（规划 36 条，实测 36 条） | 2027-06-30 | 36

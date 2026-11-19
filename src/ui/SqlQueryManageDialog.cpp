@@ -1,4 +1,5 @@
 #include "SqlQueryManageDialog.h"
+#include "i18n/I18nWx.h"
 
 #include <wx/button.h>
 #include <wx/msgdlg.h>
@@ -40,9 +41,9 @@ wxString fromUtf8(const std::string& text) {
 
 wxString scopeDisplayName(const std::string& scope) {
     if (scope == "by_subid") {
-        return L"按 SubId";
+        return i18n::wx(i18n::StrId::SqlQuery_Scope_BySubId);
     }
-    return L"通用";
+    return i18n::wx(i18n::StrId::SqlQuery_Scope_All);
 }
 
 int scopeChoiceIndex(const std::string& scope) {
@@ -54,7 +55,7 @@ int scopeChoiceIndex(const std::string& scope) {
 SqlQueryManageDialog::SqlQueryManageDialog(wxWindow* parent, sqlite3* db,
                                            const std::string& requiredScope,
                                            int currentId)
-    : wxDialog(parent, wxID_ANY, L"SQL 查询方案库",
+    : wxDialog(parent, wxID_ANY, i18n::wx(i18n::StrId::SqlQuery_Title),
                wxDefaultPosition, wxSize(1080, 780),
                wxDEFAULT_DIALOG_STYLE | wxRESIZE_BORDER)
     , db_(db)
@@ -69,8 +70,8 @@ SqlQueryManageDialog::SqlQueryManageDialog(wxWindow* parent, sqlite3* db,
     bindEvents();
 
     if (db_ && !db::SqlQueryDAO::createTableIfNotExists(db_)) {
-        wxMessageBox(L"SQL 方案表初始化失败，请检查数据库连接。",
-                     L"SQL 方案库", wxOK | wxICON_ERROR, this);
+        wxMessageBox(i18n::wx(i18n::StrId::SqlQuery_Error_InitFailed),
+                     i18n::wx(i18n::StrId::SqlQuery_Dialog_Title), wxOK | wxICON_ERROR, this);
     }
 
     std::string initialFilter = requiredScope_;
@@ -107,17 +108,16 @@ void SqlQueryManageDialog::buildUi() {
 
     wxStaticText* hint = new wxStaticText(
         this, wxID_ANY,
-        L"管理 SQL 查询方案：新增 / 编辑 / 保存 / 删除 / 设为默认；"
-        L"双击列表中的方案或点击「选择此方案」返回配置。");
+        i18n::wx(i18n::StrId::SqlQuery_Hint));
     topSizer->Add(hint, 0, wxLEFT | wxRIGHT | wxTOP, 10);
 
     wxBoxSizer* filterSizer = new wxBoxSizer(wxHORIZONTAL);
-    filterSizer->Add(new wxStaticText(this, wxID_ANY, L"范围过滤:"),
+    filterSizer->Add(new wxStaticText(this, wxID_ANY, i18n::wx(i18n::StrId::SqlQuery_Label_ScopeFilter)),
                      0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 6);
     filterChoice_ = new wxChoice(this, wxID_ANY);
-    filterChoice_->Append(L"全部范围");
-    filterChoice_->Append(L"通用 (all)");
-    filterChoice_->Append(L"按 SubId (by_subid)");
+    filterChoice_->Append(i18n::wx(i18n::StrId::SqlQuery_Filter_AllScopes));
+    filterChoice_->Append(i18n::wx(i18n::StrId::SqlQuery_Scope_GeneralChoice));
+    filterChoice_->Append(i18n::wx(i18n::StrId::SqlQuery_Scope_BySubIdChoice));
     filterChoice_->SetSelection(0);
     filterSizer->Add(filterChoice_, 0, wxALIGN_CENTER_VERTICAL);
     topSizer->Add(filterSizer, 0, wxLEFT | wxRIGHT | wxTOP, 10);
@@ -128,10 +128,10 @@ void SqlQueryManageDialog::buildUi() {
     list_ = new wxListCtrl(this, wxID_ANY, wxDefaultPosition, wxDefaultSize,
                            wxLC_REPORT | wxLC_SINGLE_SEL);
     list_->InsertColumn(0, L"ID", wxLIST_FORMAT_LEFT, 55);
-    list_->InsertColumn(1, L"名称", wxLIST_FORMAT_LEFT, 190);
-    list_->InsertColumn(2, L"范围", wxLIST_FORMAT_CENTER, 90);
-    list_->InsertColumn(3, L"默认", wxLIST_FORMAT_CENTER, 55);
-    list_->InsertColumn(4, L"描述", wxLIST_FORMAT_LEFT, 260);
+    list_->InsertColumn(1, i18n::wx(i18n::StrId::SqlQuery_Column_Name), wxLIST_FORMAT_LEFT, 190);
+    list_->InsertColumn(2, i18n::wx(i18n::StrId::SqlQuery_Column_Scope), wxLIST_FORMAT_CENTER, 90);
+    list_->InsertColumn(3, i18n::wx(i18n::StrId::SqlQuery_Column_Default), wxLIST_FORMAT_CENTER, 55);
+    list_->InsertColumn(4, i18n::wx(i18n::StrId::SqlQuery_Column_Description), wxLIST_FORMAT_LEFT, 260);
     list_->SetMinSize(wxSize(-1, 190));
     bodySizer->Add(list_, 2, wxEXPAND | wxLEFT | wxRIGHT | wxTOP, 10);
 
@@ -141,30 +141,30 @@ void SqlQueryManageDialog::buildUi() {
     formSizer->AddGrowableCol(1, 1);
     formSizer->AddGrowableRow(4, 1);
 
-    formSizer->Add(new wxStaticText(this, wxID_ANY, L"名称:"),
+    formSizer->Add(new wxStaticText(this, wxID_ANY, i18n::wx(i18n::StrId::SqlQuery_Label_Name)),
                    0, wxALIGN_CENTER_VERTICAL);
     nameText_ = new wxTextCtrl(this, wxID_ANY);
     formSizer->Add(nameText_, 1, wxEXPAND);
 
-    formSizer->Add(new wxStaticText(this, wxID_ANY, L"作用范围:"),
+    formSizer->Add(new wxStaticText(this, wxID_ANY, i18n::wx(i18n::StrId::SqlQuery_Label_Scope)),
                    0, wxALIGN_CENTER_VERTICAL);
     scopeChoice_ = new wxChoice(this, wxID_ANY);
-    scopeChoice_->Append(L"通用 (all)");
-    scopeChoice_->Append(L"按 SubId (by_subid)");
+    scopeChoice_->Append(i18n::wx(i18n::StrId::SqlQuery_Scope_GeneralChoice));
+    scopeChoice_->Append(i18n::wx(i18n::StrId::SqlQuery_Scope_BySubIdChoice));
     scopeChoice_->SetSelection(0);
     formSizer->Add(scopeChoice_, 0, wxALIGN_CENTER_VERTICAL);
 
-    formSizer->Add(new wxStaticText(this, wxID_ANY, L"默认方案:"),
+    formSizer->Add(new wxStaticText(this, wxID_ANY, i18n::wx(i18n::StrId::SqlQuery_Label_Default)),
                    0, wxALIGN_CENTER_VERTICAL);
-    defaultCheck_ = new wxCheckBox(this, wxID_ANY, L"同范围内默认使用此方案");
+    defaultCheck_ = new wxCheckBox(this, wxID_ANY, i18n::wx(i18n::StrId::SqlQuery_Checkbox_Default));
     formSizer->Add(defaultCheck_, 0, wxALIGN_CENTER_VERTICAL);
 
-    formSizer->Add(new wxStaticText(this, wxID_ANY, L"描述:"),
+    formSizer->Add(new wxStaticText(this, wxID_ANY, i18n::wx(i18n::StrId::SqlQuery_Label_Description)),
                    0, wxALIGN_CENTER_VERTICAL);
     descriptionText_ = new wxTextCtrl(this, wxID_ANY);
     formSizer->Add(descriptionText_, 1, wxEXPAND);
 
-    formSizer->Add(new wxStaticText(this, wxID_ANY, L"SQL 语句:"),
+    formSizer->Add(new wxStaticText(this, wxID_ANY, i18n::wx(i18n::StrId::SqlQuery_Label_Sql)),
                    0, wxALIGN_TOP);
     sqlText_ = new wxTextCtrl(this, wxID_ANY, L"", wxDefaultPosition,
                               wxDefaultSize,
@@ -176,15 +176,15 @@ void SqlQueryManageDialog::buildUi() {
 
     editorSizer->Add(formSizer, 1, wxEXPAND | wxLEFT | wxRIGHT | wxTOP, 6);
 
-    statusText_ = new wxStaticText(this, wxID_ANY, L"新方案（尚未保存）");
+    statusText_ = new wxStaticText(this, wxID_ANY, i18n::wx(i18n::StrId::SqlQuery_Status_New));
     editorSizer->Add(statusText_, 0, wxEXPAND | wxLEFT | wxRIGHT | wxTOP, 6);
 
     wxBoxSizer* actionSizer = new wxBoxSizer(wxHORIZONTAL);
-    wxButton* newBtn = new wxButton(this, wxID_ANY, L"新增");
-    wxButton* saveBtn = new wxButton(this, wxID_ANY, L"保存");
-    wxButton* deleteBtn = new wxButton(this, wxID_ANY, L"删除");
-    wxButton* defaultBtn = new wxButton(this, wxID_ANY, L"设为默认");
-    wxButton* refreshBtn = new wxButton(this, wxID_ANY, L"刷新");
+    wxButton* newBtn = new wxButton(this, wxID_ANY, i18n::wx(i18n::StrId::SqlQuery_Button_New));
+    wxButton* saveBtn = new wxButton(this, wxID_ANY, i18n::wx(i18n::StrId::SqlQuery_Button_Save));
+    wxButton* deleteBtn = new wxButton(this, wxID_ANY, i18n::wx(i18n::StrId::SqlQuery_Button_Delete));
+    wxButton* defaultBtn = new wxButton(this, wxID_ANY, i18n::wx(i18n::StrId::SqlQuery_Button_SetDefault));
+    wxButton* refreshBtn = new wxButton(this, wxID_ANY, i18n::wx(i18n::StrId::SqlQuery_Button_Refresh));
     newBtn->Bind(wxEVT_BUTTON, &SqlQueryManageDialog::onNew, this);
     saveBtn->Bind(wxEVT_BUTTON, &SqlQueryManageDialog::onSave, this);
     deleteBtn->Bind(wxEVT_BUTTON, &SqlQueryManageDialog::onDelete, this);
@@ -202,8 +202,8 @@ void SqlQueryManageDialog::buildUi() {
 
     wxBoxSizer* bottomSizer = new wxBoxSizer(wxHORIZONTAL);
     bottomSizer->AddStretchSpacer(1);
-    wxButton* chooseBtn = new wxButton(this, ID_SQL_CHOOSE, L"选择此方案");
-    wxButton* closeBtn = new wxButton(this, ID_SQL_CLOSE, L"关闭");
+    wxButton* chooseBtn = new wxButton(this, ID_SQL_CHOOSE, i18n::wx(i18n::StrId::SqlQuery_Button_Choose));
+    wxButton* closeBtn = new wxButton(this, ID_SQL_CLOSE, i18n::wx(i18n::StrId::SqlQuery_Button_Close));
     bottomSizer->Add(chooseBtn, 0, wxRIGHT, 6);
     bottomSizer->Add(closeBtn, 0, 0);
     topSizer->Add(bottomSizer, 0, wxEXPAND | wxALL, 10);
@@ -242,7 +242,7 @@ void SqlQueryManageDialog::reloadList(int selectId) {
         list_->InsertItem(row, wxString::Format(L"%d", item.id));
         list_->SetItem(row, 1, fromUtf8(item.name));
         list_->SetItem(row, 2, scopeDisplayName(item.scope));
-        list_->SetItem(row, 3, item.is_default ? L"是" : L"");
+        list_->SetItem(row, 3, item.is_default ? i18n::wx(i18n::StrId::SqlQuery_Yes) : L"");
         list_->SetItem(row, 4, fromUtf8(item.description));
         list_->SetItemData(row, static_cast<long>(item.id));
         if (firstId == 0) {
@@ -306,10 +306,12 @@ void SqlQueryManageDialog::reloadEditor(int id) {
 
     wxString status = wxString::Format(L"ID: %d", item.id);
     if (!item.created_at.empty()) {
-        status += L"    创建: " + fromUtf8(item.created_at);
+        status += i18n::wxf(i18n::StrId::SqlQuery_Status_Created,
+                            { fromUtf8(item.created_at) });
     }
     if (!item.updated_at.empty()) {
-        status += L"    更新: " + fromUtf8(item.updated_at);
+        status += i18n::wxf(i18n::StrId::SqlQuery_Status_Updated,
+                            { fromUtf8(item.updated_at) });
     }
     statusText_->SetLabel(status);
 }
@@ -322,7 +324,7 @@ void SqlQueryManageDialog::clearEditor(const std::string& preferredScope) {
     const std::string scope = preferredScope == "by_subid" ? "by_subid" : "all";
     scopeChoice_->SetSelection(scopeChoiceIndex(scope));
     defaultCheck_->SetValue(false);
-    statusText_->SetLabel(L"新方案（尚未保存）");
+    statusText_->SetLabel(i18n::wx(i18n::StrId::SqlQuery_Status_New));
 }
 
 void SqlQueryManageDialog::selectRowById(int id) {
@@ -384,13 +386,13 @@ bool SqlQueryManageDialog::collectEditor(db::SqlQueryItem& item) {
     item.is_default = defaultCheck_->GetValue();
 
     if (item.name.empty()) {
-        wxMessageBox(L"请输入方案名称。", L"SQL 方案库",
+        wxMessageBox(i18n::wx(i18n::StrId::SqlQuery_Message_NameRequired), i18n::wx(i18n::StrId::SqlQuery_Dialog_Title),
                      wxOK | wxICON_WARNING, this);
         nameText_->SetFocus();
         return false;
     }
     if (item.sql_text.empty()) {
-        wxMessageBox(L"请输入 SQL 语句。", L"SQL 方案库",
+        wxMessageBox(i18n::wx(i18n::StrId::SqlQuery_Message_SqlRequired), i18n::wx(i18n::StrId::SqlQuery_Dialog_Title),
                      wxOK | wxICON_WARNING, this);
         sqlText_->SetFocus();
         return false;
@@ -413,7 +415,7 @@ void SqlQueryManageDialog::onNew(wxCommandEvent&) {
 
 void SqlQueryManageDialog::onSave(wxCommandEvent&) {
     if (!db_) {
-        wxMessageBox(L"数据库未连接，无法保存。", L"SQL 方案库",
+        wxMessageBox(i18n::wx(i18n::StrId::SqlQuery_Message_DbNotConnectedSave), i18n::wx(i18n::StrId::SqlQuery_Dialog_Title),
                      wxOK | wxICON_ERROR, this);
         return;
     }
@@ -426,7 +428,7 @@ void SqlQueryManageDialog::onSave(wxCommandEvent&) {
     const std::vector<db::SqlQueryItem> allItems = db::SqlQueryDAO::getAll(db_, "");
     for (const db::SqlQueryItem& other : allItems) {
         if (other.id != currentId_ && other.name == item.name) {
-            wxMessageBox(L"已存在同名 SQL 方案，请换一个名称。", L"SQL 方案库",
+            wxMessageBox(i18n::wx(i18n::StrId::SqlQuery_Message_DuplicateName), i18n::wx(i18n::StrId::SqlQuery_Dialog_Title),
                          wxOK | wxICON_WARNING, this);
             nameText_->SetFocus();
             return;
@@ -437,21 +439,21 @@ void SqlQueryManageDialog::onSave(wxCommandEvent&) {
     int savedId = currentId_;
     if (currentId_ > 0) {
         if (!dao.update(item)) {
-            wxMessageBox(L"保存 SQL 方案失败。", L"SQL 方案库",
+            wxMessageBox(i18n::wx(i18n::StrId::SqlQuery_Message_SaveFailed), i18n::wx(i18n::StrId::SqlQuery_Dialog_Title),
                          wxOK | wxICON_ERROR, this);
             return;
         }
     } else {
         savedId = dao.insert(item);
         if (savedId <= 0) {
-            wxMessageBox(L"新增 SQL 方案失败（名称可能重复）。", L"SQL 方案库",
+            wxMessageBox(i18n::wx(i18n::StrId::SqlQuery_Message_InsertFailed), i18n::wx(i18n::StrId::SqlQuery_Dialog_Title),
                          wxOK | wxICON_ERROR, this);
             return;
         }
     }
 
     if (item.is_default && !db::SqlQueryDAO::setDefault(db_, savedId, item.scope)) {
-        wxMessageBox(L"方案已保存，但设置为默认失败。", L"SQL 方案库",
+        wxMessageBox(i18n::wx(i18n::StrId::SqlQuery_Message_DefaultFailedAfterSave), i18n::wx(i18n::StrId::SqlQuery_Dialog_Title),
                      wxOK | wxICON_WARNING, this);
     }
 
@@ -461,34 +463,35 @@ void SqlQueryManageDialog::onSave(wxCommandEvent&) {
     }
 
     reloadList(savedId);
-    statusText_->SetLabel(L"已保存。 " + statusText_->GetLabel());
+    statusText_->SetLabel(i18n::wx(i18n::StrId::SqlQuery_Status_SavedPrefix) + statusText_->GetLabel());
 }
 
 void SqlQueryManageDialog::onDelete(wxCommandEvent&) {
     if (!db_ || currentId_ <= 0) {
-        wxMessageBox(L"请先选择或保存一个 SQL 方案。", L"SQL 方案库",
+        wxMessageBox(i18n::wx(i18n::StrId::SqlQuery_Message_SelectOrSaveFirst), i18n::wx(i18n::StrId::SqlQuery_Dialog_Title),
                      wxOK | wxICON_INFORMATION, this);
         return;
     }
 
     const db::SqlQueryItem item = db::SqlQueryDAO::getById(db_, currentId_);
     if (item.id <= 0) {
-        wxMessageBox(L"方案不存在，列表将刷新。", L"SQL 方案库",
+        wxMessageBox(i18n::wx(i18n::StrId::SqlQuery_Message_NotFound), i18n::wx(i18n::StrId::SqlQuery_Dialog_Title),
                      wxOK | wxICON_WARNING, this);
         reloadList(0);
         return;
     }
 
-    const wxString message = L"确定删除 SQL 方案「" + fromUtf8(item.name) +
-                             L"」(ID " + wxString::Format(L"%d", item.id) + L")？";
-    if (wxMessageBox(message, L"SQL 方案库",
+    const wxString message = i18n::wxf(i18n::StrId::SqlQuery_Message_DeleteConfirm,
+                                       { fromUtf8(item.name),
+                                         wxString::Format("%d", item.id) });
+    if (wxMessageBox(message, i18n::wx(i18n::StrId::SqlQuery_Dialog_Title),
                      wxYES_NO | wxNO_DEFAULT | wxICON_QUESTION, this) != wxYES) {
         return;
     }
 
     db::SqlQueryDAO dao(db_);
     if (!dao.remove(currentId_)) {
-        wxMessageBox(L"删除 SQL 方案失败。", L"SQL 方案库",
+        wxMessageBox(i18n::wx(i18n::StrId::SqlQuery_Message_DeleteFailed), i18n::wx(i18n::StrId::SqlQuery_Dialog_Title),
                      wxOK | wxICON_ERROR, this);
         return;
     }
@@ -499,19 +502,19 @@ void SqlQueryManageDialog::onDelete(wxCommandEvent&) {
 
 void SqlQueryManageDialog::onSetDefault(wxCommandEvent&) {
     if (!db_ || currentId_ <= 0) {
-        wxMessageBox(L"请先保存方案，再设为默认。", L"SQL 方案库",
+        wxMessageBox(i18n::wx(i18n::StrId::SqlQuery_Message_SaveBeforeDefault), i18n::wx(i18n::StrId::SqlQuery_Dialog_Title),
                      wxOK | wxICON_INFORMATION, this);
         return;
     }
 
     db::SqlQueryDAO dao(db_);
     if (!dao.setDefault(currentId_)) {
-        wxMessageBox(L"设置默认 SQL 方案失败。", L"SQL 方案库",
+        wxMessageBox(i18n::wx(i18n::StrId::SqlQuery_Message_SetDefaultFailed), i18n::wx(i18n::StrId::SqlQuery_Dialog_Title),
                      wxOK | wxICON_ERROR, this);
         return;
     }
     reloadList(currentId_);
-    statusText_->SetLabel(L"已设为默认。 " + statusText_->GetLabel());
+    statusText_->SetLabel(i18n::wx(i18n::StrId::SqlQuery_Status_DefaultSetPrefix) + statusText_->GetLabel());
 }
 
 void SqlQueryManageDialog::onRefresh(wxCommandEvent&) {
@@ -559,30 +562,30 @@ void SqlQueryManageDialog::onClose(wxCommandEvent&) {
 void SqlQueryManageDialog::chooseCurrent() {
     const int id = selectedRowId();
     if (id <= 0) {
-        wxMessageBox(L"请先在左侧选择一个 SQL 方案。", L"SQL 方案库",
+        wxMessageBox(i18n::wx(i18n::StrId::SqlQuery_Message_SelectFirst), i18n::wx(i18n::StrId::SqlQuery_Dialog_Title),
                      wxOK | wxICON_INFORMATION, this);
         return;
     }
 
     if (!db_) {
-        wxMessageBox(L"数据库未连接，无法读取方案。", L"SQL 方案库",
+        wxMessageBox(i18n::wx(i18n::StrId::SqlQuery_Message_DbNotConnectedRead), i18n::wx(i18n::StrId::SqlQuery_Dialog_Title),
                      wxOK | wxICON_ERROR, this);
         return;
     }
 
     const db::SqlQueryItem item = db::SqlQueryDAO::getById(db_, id);
     if (item.id <= 0) {
-        wxMessageBox(L"方案不存在，列表将刷新。", L"SQL 方案库",
+        wxMessageBox(i18n::wx(i18n::StrId::SqlQuery_Message_NotFound), i18n::wx(i18n::StrId::SqlQuery_Dialog_Title),
                      wxOK | wxICON_WARNING, this);
         reloadList(0);
         return;
     }
 
     if (!requiredScope_.empty() && item.scope != requiredScope_) {
-        const wxString message = L"当前配置需要「" + scopeDisplayName(requiredScope_) +
-                                 L"」范围的方案，选中的方案是「" +
-                                 scopeDisplayName(item.scope) + L"」范围。";
-        wxMessageBox(message, L"SQL 方案库", wxOK | wxICON_WARNING, this);
+        const wxString message = i18n::wxf(i18n::StrId::SqlQuery_Message_ScopeMismatch,
+                                       { scopeDisplayName(requiredScope_),
+                                         scopeDisplayName(item.scope) });
+        wxMessageBox(message, i18n::wx(i18n::StrId::SqlQuery_Dialog_Title), wxOK | wxICON_WARNING, this);
         return;
     }
 
