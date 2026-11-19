@@ -148,8 +148,7 @@ bool configContains(const std::wstring& path, const char* needle) {
 
 // Radio state of a leaf item inside a top-level menu. wxWidgets renders a radio
 // group as plain check items, so MF_CHECKED is the observable state.
-bool menuItemChecked(HWND hwnd, const wchar_t* topCaption, const wchar_t* itemCaption) {
-    HMENU bar = ::GetMenu(hwnd);
+bool menuItemChecked(HWND hwnd, const wchar_t* topCaption, const wchar_t* itemCaption) {    HMENU bar = ::GetMenu(hwnd);
     if (bar == nullptr) return false;
 
     const int topCount = ::GetMenuItemCount(bar);
@@ -179,6 +178,34 @@ int countTopLevelMenus(HWND hwnd) {
     HMENU bar = ::GetMenu(hwnd);
     if (bar == nullptr) return 0;
     return ::GetMenuItemCount(bar);
+}
+
+// wxMessageBox appears asynchronously after WM_COMMAND, so a single
+// dismissAllPopups() right after the click can miss it (it did: 0 popups).
+// Poll until the dialog shows up, close it, then give the handler a moment to
+// finish the state updates that run after the modal returns.
+int waitAndDismissPopups(DWORD pid, int timeoutMs) {
+    const int stepMs = 150;
+    int closed = 0;
+    int waited = 0;
+    while (waited < timeoutMs) {
+        const uitest::DialogReport rep =
+            uitest::findPopup(pid, uitest::WindowKind::Unknown, 0, 0);
+        if (rep.found) {
+            if (uitest::closePopup(rep)) {
+                ++closed;
+            } else {
+                ::PostMessageW(rep.hwnd, WM_CLOSE, 0, 0);
+            }
+            ::Sleep(stepMs);
+        } else if (closed > 0) {
+            break;   // nothing left; the modal handler has returned
+        } else {
+            ::Sleep(stepMs);
+        }
+        waited += stepMs;
+    }
+    return closed;
 }
 
 }  // namespace
@@ -226,7 +253,7 @@ TEST_CASE("Language menu writes the choice to config and asks for a restart",
     INFO("menu trace: " << uitest::toUtf8(trace));
     REQUIRE(clicked);
 
-    const int popups = uitest::dismissAllPopups(app.pid());
+    const int popups = waitAndDismissPopups(app.pid(), kConfigTimeoutMs);
     INFO("popups dismissed: " << popups);
     CHECK(popups >= 1);   // "UI language set to en-US; restart to apply"
 

@@ -39,6 +39,11 @@ echo [5/7] Building...
 call scripts\build.bat || exit /b 1
 echo [PASS] Application + UITests
 
+rem 加载器门禁：链接动态 wx 的测试 exe 必须嵌入 Common Controls v6 清单，
+rem 否则运行时会弹「无法找到入口」模态框把 ctest 挂死（需人工点确定）。
+%PS% -NoProfile -File scripts\check-test-manifests.ps1 || (echo [FAIL] wx test exe missing Common Controls v6 manifest & exit /b 1)
+echo [PASS] test manifests
+
 echo [6/7] Running UI Tests...
 call scripts\prepare-ui-sandbox.bat || exit /b 1
 ctest --test-dir build --output-on-failure -R "^UI_"

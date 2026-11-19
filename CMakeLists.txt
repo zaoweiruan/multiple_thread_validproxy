@@ -2210,6 +2210,16 @@ if(wxWidgets_FOUND AND BUILD_UI_TESTS)
             Catch2::Catch2
             uiautomationcore oleaut32 uuid
             user32 gdi32 gdiplus shell32 ws2_32 iphlpapi)
+
+        # Catch2 来自 vcpkg 预编译静态库；若它由另一版本 GCC 编出（本机为
+        # E:/w64devkit GCC 14.2，而 clion-msvcrt 工具链是 GCC 15.2），两份
+        # libstdc++ 的 inline 符号 `std::type_info::operator==` 会重复定义，
+        # 链接以 "multiple definition" 失败，UITests 因此完全无法产出。
+        # 两者是等价的内联实现，允许重复定义后 UITests 可正常构建与运行。
+        # 作用范围仅限 UI 测试可执行文件（不削弱应用/单测的链接检查）。
+        if(MINGW)
+            target_link_options(UITests PRIVATE "-Wl,--allow-multiple-definition")
+        endif()
         set_target_properties(UITests PROPERTIES
             RUNTIME_OUTPUT_DIRECTORY ${VALIDPROXY_TEST_DIR}
             RUNTIME_OUTPUT_DIRECTORY_DEBUG ${VALIDPROXY_TEST_DIR}
@@ -2319,3 +2329,18 @@ foreach(_vp_t ${_vp_targets})
         endif()
     endif()
 endforeach()
+
+# -- 测试超时兜底 -----------------------------------------------------------
+# 加载器/依赖错误（例如 wx 测试 exe 缺 Common Controls v6 清单时的
+# "无法找到入口" 对话框）会让进程停在系统模态框上，ctest 没有 TIMEOUT 就一直
+# 等下去，必须人工点「确定」，整套回归于是被人为挂住。
+# 这里给所有未显式设置超时的测试一个默认上限：超时由 ctest 终止进程，弹框随
+# 进程一起消失。根因（缺清单）由 scripts/check-test-manifests.ps1 在门禁里拦住。
+get_property(_vp_all_tests DIRECTORY PROPERTY TESTS)
+foreach(_vp_test IN LISTS _vp_all_tests)
+    get_test_property(${_vp_test} TIMEOUT _vp_test_timeout)
+    if(_vp_test_timeout STREQUAL "NOTFOUND")
+        set_tests_properties(${_vp_test} PROPERTIES TIMEOUT 600)
+    endif()
+endforeach()
+
