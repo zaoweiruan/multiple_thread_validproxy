@@ -2346,7 +2346,9 @@ if(NOT TARGET i18n_core)
     add_library(i18n_core STATIC
         src/i18n/Language.cpp
         src/i18n/I18n.cpp
-        src/i18n/StringTable.cpp)
+        src/i18n/StringTable.cpp
+        src/Logger.cpp
+        src/LoggerInstance.cpp)
     target_include_directories(i18n_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 endif()
 
