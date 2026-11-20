@@ -45,9 +45,14 @@ rem 否则运行时会弹「无法找到入口」模态框把 ctest 挂死（需
 echo [PASS] test manifests
 
 echo [6/7] Running UI Tests...
+%PS% -NoProfile -File scripts\config-guard.ps1 -Mode Snapshot || exit /b 1
 call scripts\prepare-ui-sandbox.bat || exit /b 1
 ctest --test-dir build --output-on-failure -R "^UI_"
 set "RC=%ERRORLEVEL%"
+if "%RC%"=="0" (
+  %PS% -NoProfile -File scripts\config-guard.ps1 -Mode Verify
+  if errorlevel 1 set "RC=1"
+)
 
 echo [7/7] Result summary...
 if "%RC%"=="0" (

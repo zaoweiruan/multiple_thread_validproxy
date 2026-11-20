@@ -430,6 +430,12 @@ static int runCloudSync(const std::string& mode, const std::string& configPath,
 }
 
 int main(int argc, char* argv[]) {
+    // 人可读文本（中文/英文）统一以 UTF-8 字节输出。cmd.exe 默认代码页是 CP936
+    // （简体中文系统），会把 UTF-8 当成 GBK 显示成「浠ｇ悊鏁?」这类乱码；
+    // 这里把控制台输入/输出代码页切到 UTF-8。仅影响控制台显示，重定向输出
+    // 仍是同一份 UTF-8 字节。
+    SetConsoleOutputCP(CP_UTF8);
+    SetConsoleCP(CP_UTF8);
     SetConsoleCtrlHandler(consoleCtrlHandler, TRUE);
     CurlGlobalGuard curlGuard;  // RAII guard for curl global init/cleanup
     

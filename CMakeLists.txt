@@ -2344,3 +2344,28 @@ foreach(_vp_test IN LISTS _vp_all_tests)
     endif()
 endforeach()
 
+# -- 运行时 DLL 的 PATH 前置（所有测试） ------------------------------------
+# 测试进程的 DLL 解析顺序是 exe 目录 → System32 → PATH。exe 目录里没有
+# libwinpthread/libstdc++ 与 wx DLL，它们只能从 PATH 上捡到；而开发机的 PATH
+# 同时挂着多条工具链的 bin（clion mingw15、vcpkg msvcrt、vcpkg ucrt、E:\mingw64），
+# 捡错一个就出事：
+#   * 捡到别的 CRT 的 wx DLL  → 0xC0000374（堆损坏）或 GUI 起不来；
+#   * 捡到别的 GCC 的 libwinpthread-1.dll → 0xC0000139（入口点找不到，
+#     并弹出「无法定位程序输入点 … 于 libwinpthread-1.dll」模态框，卡住 ctest）。
+# 因此把「本次构建自己的编译器 bin」和「本工具链的 wx bin」前置到每个测试子
+# 进程的 PATH（CMake 的 ENVIRONMENT_MODIFICATION 不会破坏 PATH 的 ';' 分隔）。
+get_filename_component(_vp_cc_bin "${CMAKE_CXX_COMPILER}" DIRECTORY)
+file(TO_NATIVE_PATH "${_vp_cc_bin}" _vp_cc_bin_native)
+foreach(_vp_test IN LISTS _vp_all_tests)
+    set_property(TEST ${_vp_test} APPEND PROPERTY ENVIRONMENT_MODIFICATION
+        "PATH=path_list_prepend:${_vp_cc_bin_native}")
+endforeach()
+if(wxWidgets_FOUND)
+    file(TO_NATIVE_PATH "${WX_VCPKG_DIR}/debug/bin" _vp_wx_bin)
+    foreach(_vp_test IN LISTS _vp_all_tests)
+        set_property(TEST ${_vp_test} APPEND PROPERTY ENVIRONMENT_MODIFICATION
+            "PATH=path_list_prepend:${_vp_wx_bin}")
+    endforeach()
+endif()
+
+
