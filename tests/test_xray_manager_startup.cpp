@@ -145,3 +145,34 @@ TEST(XrayManagerStartupTest, RealXrayStartsBounded) {
     std::error_code ec;
     std::filesystem::remove_all(tmp, ec);
 }
+
+// 配置热更新回归（2026-11-20）：xray 可执行文件路径 / worker 数改变后，
+// 空闲池必须立即失效，否则「在配置对话框里改完路径点确定」仍会用启动时
+// 缓存的旧路径跑测试，直到重启进程（用户感知为「配置不生效」）。
+TEST(XrayManagerStartupTest, PathOrWorkerChangeInvalidatesIdlePool) {
+    XrayManager::release();
+
+    XrayManager* first =
+        XrayManager::getInstance("C:/fake/first/xray.exe", "C:/tmp/xraycfg", 1);
+    ASSERT_NE(nullptr, first);
+    EXPECT_EQ(std::string("C:/fake/first/xray.exe"), first->getXrayPath());
+
+    // 配置未变：复用同一个池，不能每次构造测试器都重建。
+    EXPECT_EQ(first, XrayManager::getInstance("C:/fake/first/xray.exe", "C:/tmp/xraycfg", 1));
+
+    // 路径变化且池空闲：旧池失效，新对象承载新路径（新配置立即生效）。
+    // 注意不能比较裸指针判断「是否重建」——删除后分配器可能复用同一地址。
+    XrayManager* second =
+        XrayManager::getInstance("C:/fake/second/xray.exe", "C:/tmp/xraycfg", 1);
+    EXPECT_EQ(std::string("C:/fake/second/xray.exe"), second->getXrayPath());
+    EXPECT_EQ(1, second->getWorkers());
+    EXPECT_EQ(second, XrayManager::getInstance("C:/fake/second/xray.exe", "C:/tmp/xraycfg", 1));
+
+    // worker 数变化同样让池失效。
+    XrayManager* third =
+        XrayManager::getInstance("C:/fake/second/xray.exe", "C:/tmp/xraycfg", 4);
+    EXPECT_EQ(4, third->getWorkers());
+    EXPECT_EQ(std::string("C:/fake/second/xray.exe"), third->getXrayPath());
+
+    XrayManager::release();
+}

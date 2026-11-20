@@ -5,7 +5,7 @@
 | 标题 | 双语言版本方案（中文 / English） |
 | 类型 | Spec（实施方案） |
 | 模块 | `i18n`（新增）、`src/ui/**`、`src/config/**`、日志层、`tests/**`、`scripts/**` |
-| 版本 | v1.2（owner 决策定稿版；修订记录见附录 D） |
+| 版本 | v1.3（v1.2 owner 决策定稿 + 2026-11-20 用户追加项；修订记录见附录 D） |
 | 日期 | 2026-11-18 |
 | 分支 | `Bilingual-version`（worktree：`E:\eclipse_workspace\multiple_thread_validproxy-bilingual`） |
 | 状态 | 已定稿，待实施 |
@@ -823,3 +823,13 @@ P0-0 落地门禁时发现 `check-ui-literals.ps1` 既有实现有缺陷（详�
 | allowlist | 39 行 | **38 行** | 同上；文件头写入更正记录 |
 
 同时确认：`tests/test_ui_string_encoding.cpp` 的 C++ 扫描器**没有**同类缺陷（它本来就是单遍词法扫描，并显式跳过注释、字符字面量与原始字符串），无需改动。
+
+### D.4 v1.2 → v1.3（2026-11-20 用户三项追加）
+
+| 项 | 变更 | 影响的 FR/AC |
+|---|---|---|
+| **版本信息加二进制 ABI** | `include/version.h.in` 新增编译期 `APP_CRT_ABI`（`_UCRT`→`ucrt`，`__MSVCRT_VERSION__`→`msvcrt`）；`-v`、启动 REPORT 日志、关于对话框三处显示。**FR-7「中文输出逐字一致」对关于对话框开一个 owner 明确要求的例外**（新增一行「运行时 ABI: {}」，中英同步，占位符 9/9） | FR-7（例外）、AC-5 |
+| **配置热更新** | `XrayManager::getInstance()` 检测 xray 路径 / worker 数变化：空闲池立即重建，有实例在跑则保留并 WARN；改配置后无需重启即生效（不在本 Spec 的文案范围内，登记以免与 D1「重启生效」混淆——D1 只约束**语言切换**） | — |
+| **「任务链」乱码修复** | `ConfigDialog` 的 `stepDisplayName()` 返回临时 `wxString` 缓冲区（悬垂指针）导致乱码；抽出 `src/ui/TaskChainText.{h,cpp}` 按值返回。属缺陷修复，不改变文案 | — |
+
+验证见 `docs/bugfix/2026-11-20-Bugfix-UiMojibake-AbiTag-ConfigHotReload-v1.0.md`。

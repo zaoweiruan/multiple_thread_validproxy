@@ -1,4 +1,5 @@
 #include "ConfigDialog.h"
+#include "TaskChainText.h"
 #include "i18n/I18nWx.h"
 
 #include <windows.h>
@@ -410,7 +411,7 @@ ConfigDialog::ConfigDialog(wxWindow* parent, const config::AppConfig& cfg, sqlit
         strategyChoices.Add(L"leastPing");
         strategyChoices.Add(L"leastLoad");
         propGrid_->Append(new wxEnumProperty(i18n::wx(i18n::StrId::ConfigDialog_BalancingStrategy), "pool_balancer_strategy", strategyChoices));
-        propGrid_->SetPropertyValue("pool_balancer_strategy", wxString(cfg.standalone_pool.balancerStrategy));
+        propGrid_->SetPropertyValue("pool_balancer_strategy", wxString::FromUTF8(cfg.standalone_pool.balancerStrategy));
     }
     propGrid_->Append(new wxIntProperty(i18n::wx(i18n::StrId::ConfigDialog_ObservationInterval), "pool_obs_interval", cfg.standalone_pool.observatory.intervalSec));
     propGrid_->Append(new wxIntProperty(i18n::wx(i18n::StrId::ConfigDialog_ObservationTimeout), "pool_obs_timeout", cfg.standalone_pool.observatory.timeoutSec));
@@ -502,22 +503,22 @@ void ConfigDialog::loadConfig(const config::AppConfig& cfg) {
     sqlQueryId_ = cfg.sql_query_id;
     sqlBySubidId_ = cfg.sql_by_subid_id;
     refreshSqlSchemeDisplay();
-    propGrid_->SetPropertyValue("log_console_level", wxString(cfg.log_console_level));
-    propGrid_->SetPropertyValue("log_file_level", wxString(cfg.log_file_level));
+    propGrid_->SetPropertyValue("log_console_level", wxString::FromUTF8(cfg.log_console_level));
+    propGrid_->SetPropertyValue("log_file_level", wxString::FromUTF8(cfg.log_file_level));
     // Network monitor fields
     propGrid_->SetPropertyValue("network_monitor_enabled", cfg.network_monitor.enabled);
     {
         wxString urls;
         for (size_t i = 0; i < cfg.network_monitor.checkUrls.size(); ++i) {
             if (i > 0) urls += ",";
-            urls += wxString(cfg.network_monitor.checkUrls[i]);
+            urls += wxString::FromUTF8(cfg.network_monitor.checkUrls[i]);
         }
         propGrid_->SetPropertyValue("network_monitor_checkUrls", urls);
     }
     propGrid_->SetPropertyValue("network_monitor_interval", cfg.network_monitor.checkIntervalMs);
     propGrid_->SetPropertyValue("network_monitor_timeout", cfg.network_monitor.checkTimeoutMs);
     // Set accelerator_url
-    propGrid_->SetPropertyValue("accelerator_url", wxString(cfg.accelerator_url));
+    propGrid_->SetPropertyValue("accelerator_url", wxString::FromUTF8(cfg.accelerator_url));
     // Set update_methods checkboxes
     bool hasAccel = false, hasProxy = false, hasDirect = false;
     for (const std::string& m : cfg.update_methods) {
@@ -552,15 +553,15 @@ void ConfigDialog::loadConfig(const config::AppConfig& cfg) {
                                 wxString::FromUTF8(cfg.auto_task.state_file));
 
     // Proxy fields
-    propGrid_->SetPropertyValue("proxy_xray_executable", wxString(cfg.proxy.xray_executable));
+    propGrid_->SetPropertyValue("proxy_xray_executable", wxString::FromUTF8(cfg.proxy.xray_executable));
     propGrid_->SetPropertyValue("proxy_use_singbox", cfg.proxy.use_singbox);
     propGrid_->SetPropertyValue("proxy_ech_enabled", cfg.proxy.ech_enabled);
     propGrid_->SetPropertyValue("proxy_socks_base_port", cfg.proxy.socks_base_port);
       propGrid_->SetPropertyValue("port_time_wait_blocking", cfg.port.time_wait_blocking);
       propGrid_->SetPropertyValue("proxy_api_base_port", cfg.proxy.api_base_port);
-    propGrid_->SetPropertyValue("proxy_xray_asset_dir", wxString(cfg.proxy.xray_asset_dir));
-    propGrid_->SetPropertyValue("proxy_singbox_executable", wxString(cfg.proxy.singbox_executable));
-    propGrid_->SetPropertyValue("proxy_singbox_asset_dir", wxString(cfg.proxy.singbox_asset_dir));
+    propGrid_->SetPropertyValue("proxy_xray_asset_dir", wxString::FromUTF8(cfg.proxy.xray_asset_dir));
+    propGrid_->SetPropertyValue("proxy_singbox_executable", wxString::FromUTF8(cfg.proxy.singbox_executable));
+    propGrid_->SetPropertyValue("proxy_singbox_asset_dir", wxString::FromUTF8(cfg.proxy.singbox_asset_dir));
 
     // ProxyProcessMonitor fields
     propGrid_->SetPropertyValue("proxy_process_monitor_enabled", cfg.proxy_process_monitor.enabled);
@@ -571,7 +572,7 @@ void ConfigDialog::loadConfig(const config::AppConfig& cfg) {
     propGrid_->SetPropertyValue("pool_enabled", cfg.standalone_pool.enabled);
     propGrid_->SetPropertyValue("pool_socks_port", cfg.standalone_pool.socksPort);
     propGrid_->SetPropertyValue("pool_api_port", cfg.standalone_pool.apiPort);
-    propGrid_->SetPropertyValue("pool_balancer_strategy", wxString(cfg.standalone_pool.balancerStrategy));
+    propGrid_->SetPropertyValue("pool_balancer_strategy", wxString::FromUTF8(cfg.standalone_pool.balancerStrategy));
     propGrid_->SetPropertyValue("pool_obs_interval", cfg.standalone_pool.observatory.intervalSec);
     propGrid_->SetPropertyValue("pool_obs_timeout", cfg.standalone_pool.observatory.timeoutSec);
     propGrid_->SetPropertyValue("pool_eval_interval", cfg.standalone_pool.evaluate.intervalSec);
@@ -591,7 +592,7 @@ void ConfigDialog::loadConfig(const config::AppConfig& cfg) {
 
 bool ConfigDialog::saveConfig() {
     // Database fields
-    editedConfig_.database_path = propGrid_->GetPropertyValueAsString("database_path").ToStdString();
+    editedConfig_.database_path = propGrid_->GetPropertyValueAsString("database_path").ToStdString(wxConvUTF8);
     // SQL 行显示的是方案名称，不能回写为 SQL 文本；真实 ID 与 SQL 文本由选择逻辑维护。
     editedConfig_.sql_query_id = sqlQueryId_;
     editedConfig_.sql_by_subid_id = sqlBySubidId_;
@@ -602,13 +603,13 @@ bool ConfigDialog::saveConfig() {
     editedConfig_.xray_api_port = propGrid_->GetPropertyValueAsInt("xray_api_port");
 
     // Test fields
-    editedConfig_.test_url = propGrid_->GetPropertyValueAsString("test_url").ToStdString();
+    editedConfig_.test_url = propGrid_->GetPropertyValueAsString("test_url").ToStdString(wxConvUTF8);
     editedConfig_.test_timeout_ms = propGrid_->GetPropertyValueAsInt("test_timeout_ms");
 
     // Log fields - log_enabled always true (removed from UI)
     editedConfig_.log_enabled = true;
-    editedConfig_.log_console_level = propGrid_->GetPropertyValueAsString("log_console_level").ToStdString();
-    editedConfig_.log_file_level = propGrid_->GetPropertyValueAsString("log_file_level").ToStdString();
+    editedConfig_.log_console_level = propGrid_->GetPropertyValueAsString("log_console_level").ToStdString(wxConvUTF8);
+    editedConfig_.log_file_level = propGrid_->GetPropertyValueAsString("log_file_level").ToStdString(wxConvUTF8);
 
     // Network monitor fields
     editedConfig_.network_monitor.enabled = propGrid_->GetPropertyValueAsBool("network_monitor_enabled");
@@ -619,7 +620,7 @@ bool ConfigDialog::saveConfig() {
         while (tok.HasMoreTokens()) {
             wxString url = tok.GetNextToken().Trim(true).Trim(false);
             if (!url.empty()) {
-                editedConfig_.network_monitor.checkUrls.push_back(url.ToStdString());
+                editedConfig_.network_monitor.checkUrls.push_back(url.ToStdString(wxConvUTF8));
             }
         }
     }
@@ -628,7 +629,7 @@ bool ConfigDialog::saveConfig() {
 
     // Subscription fields
     {
-        std::string accelUrl = propGrid_->GetPropertyValueAsString("accelerator_url").ToStdString();
+        std::string accelUrl = propGrid_->GetPropertyValueAsString("accelerator_url").ToStdString(wxConvUTF8);
         if (!accelUrl.empty() && !utils::isValidUrlFormat(accelUrl)) {
             wxMessageBox(i18n::wx(i18n::StrId::ConfigDialog_InvalidAcceleratorURLMust),
                          i18n::wx(i18n::StrId::ConfigDialog_InvalidURL), wxOK | wxICON_WARNING);
@@ -654,7 +655,7 @@ bool ConfigDialog::saveConfig() {
     editedConfig_.dedup_enabled = true;
     editedConfig_.dedup_after_update = propGrid_->GetPropertyValueAsBool("dedup_after_update");
     editedConfig_.blacklist_enabled = propGrid_->GetPropertyValueAsBool("blacklist_enabled");
-    editedConfig_.blacklist_subid = propGrid_->GetPropertyValueAsString("blacklist_subid").ToStdString();
+    editedConfig_.blacklist_subid = propGrid_->GetPropertyValueAsString("blacklist_subid").ToStdString(wxConvUTF8);
     editedConfig_.blacklist_threshold = propGrid_->GetPropertyValueAsInt("blacklist_threshold");
     // Parse comma-separated dedup_subids
     {
@@ -664,14 +665,14 @@ bool ConfigDialog::saveConfig() {
         while (tok.HasMoreTokens()) {
             wxString id = tok.GetNextToken().Trim(true).Trim(false);
             if (!id.empty()) {
-                editedConfig_.dedup_subids.push_back(id.ToStdString());
+                editedConfig_.dedup_subids.push_back(id.ToStdString(wxConvUTF8));
             }
         }
     }
 
     // Sync fields
-    editedConfig_.sync.source_db = propGrid_->GetPropertyValueAsString("sync_source_db").ToStdString();
-    editedConfig_.sync.target_db = propGrid_->GetPropertyValueAsString("sync_target_db").ToStdString();
+    editedConfig_.sync.source_db = propGrid_->GetPropertyValueAsString("sync_source_db").ToStdString(wxConvUTF8);
+    editedConfig_.sync.target_db = propGrid_->GetPropertyValueAsString("sync_target_db").ToStdString(wxConvUTF8);
     editedConfig_.sync.sync_skip_subids = propGrid_->GetPropertyValueAsBool("sync_skip_subids");
 
     // Notification fields
@@ -680,15 +681,15 @@ bool ConfigDialog::saveConfig() {
     editedConfig_.notification_on_test = propGrid_->GetPropertyValueAsBool("notification_on_test");
 
     // Proxy fields
-    editedConfig_.proxy.xray_executable = propGrid_->GetPropertyValueAsString("proxy_xray_executable").ToStdString();
+    editedConfig_.proxy.xray_executable = propGrid_->GetPropertyValueAsString("proxy_xray_executable").ToStdString(wxConvUTF8);
     editedConfig_.proxy.use_singbox = propGrid_->GetPropertyValueAsBool("proxy_use_singbox");
     editedConfig_.proxy.ech_enabled = propGrid_->GetPropertyValueAsBool("proxy_ech_enabled");
     editedConfig_.proxy.socks_base_port = propGrid_->GetPropertyValueAsInt("proxy_socks_base_port");
       editedConfig_.port.time_wait_blocking = propGrid_->GetPropertyValueAsBool("port_time_wait_blocking");
       editedConfig_.proxy.api_base_port = propGrid_->GetPropertyValueAsInt("proxy_api_base_port");
-    editedConfig_.proxy.xray_asset_dir = propGrid_->GetPropertyValueAsString("proxy_xray_asset_dir").ToStdString();
-    editedConfig_.proxy.singbox_executable = propGrid_->GetPropertyValueAsString("proxy_singbox_executable").ToStdString();
-    editedConfig_.proxy.singbox_asset_dir = propGrid_->GetPropertyValueAsString("proxy_singbox_asset_dir").ToStdString();
+    editedConfig_.proxy.xray_asset_dir = propGrid_->GetPropertyValueAsString("proxy_xray_asset_dir").ToStdString(wxConvUTF8);
+    editedConfig_.proxy.singbox_executable = propGrid_->GetPropertyValueAsString("proxy_singbox_executable").ToStdString(wxConvUTF8);
+    editedConfig_.proxy.singbox_asset_dir = propGrid_->GetPropertyValueAsString("proxy_singbox_asset_dir").ToStdString(wxConvUTF8);
 
     // ProxyProcessMonitor fields
     editedConfig_.proxy_process_monitor.enabled = propGrid_->GetPropertyValueAsBool("proxy_process_monitor_enabled");
@@ -702,7 +703,7 @@ bool ConfigDialog::saveConfig() {
     editedConfig_.standalone_pool.enabled = propGrid_->GetPropertyValueAsBool("pool_enabled");
     editedConfig_.standalone_pool.socksPort = static_cast<int>(propGrid_->GetPropertyValueAsInt("pool_socks_port"));
     editedConfig_.standalone_pool.apiPort = static_cast<int>(propGrid_->GetPropertyValueAsInt("pool_api_port"));
-    editedConfig_.standalone_pool.balancerStrategy = propGrid_->GetPropertyValueAsString("pool_balancer_strategy").ToStdString();
+    editedConfig_.standalone_pool.balancerStrategy = propGrid_->GetPropertyValueAsString("pool_balancer_strategy").ToStdString(wxConvUTF8);
     editedConfig_.standalone_pool.observatory.intervalSec = static_cast<int>(propGrid_->GetPropertyValueAsInt("pool_obs_interval"));
     editedConfig_.standalone_pool.observatory.timeoutSec = static_cast<int>(propGrid_->GetPropertyValueAsInt("pool_obs_timeout"));
     editedConfig_.standalone_pool.evaluate.intervalSec = static_cast<int>(propGrid_->GetPropertyValueAsInt("pool_eval_interval"));
@@ -748,23 +749,12 @@ static const char* stepNameForProp(const wxString& propName) {
     return "";
 }
 
-static const wchar_t* stepDisplayName(const std::string& step) {
-    if (step == "update_all") return i18n::wx(i18n::StrId::ConfigDialog_UpdateAll);
-    if (step == "test_all")   return i18n::wx(i18n::StrId::ConfigDialog_TestAll);
-    if (step == "dedup")      return i18n::wx(i18n::StrId::ConfigDialog_Cleanup);
-    if (step == "sync")       return i18n::wx(i18n::StrId::ConfigDialog_Sync);
-    if (step == "export")            return i18n::wx(i18n::StrId::ConfigDialog_Export);
-    if (step == "resolve_region")    return i18n::wx(i18n::StrId::ConfigDialog_ResolveRegions);
-    return L"";
-}
-
 void ConfigDialog::refreshAutoTaskChainDisplay() {
-    wxString display;
-    for (size_t i = 0; i < stepOrder_.size(); ++i) {
-        if (i > 0) display += L" → ";
-        display += stepDisplayName(stepOrder_[i]);
-    }
-    propGrid_->SetPropertyValue("autotask_chain_display", display);
+    // 组合逻辑在 ui::taskChainDisplayText()（按值返回 wxString）。
+    // 这里绝不能再改成返回 const wchar_t* 的写法：那会返回临时 wxString 的
+    // 缓冲区，属性网格读到悬垂指针 → 「任务链」显示乱码（2026-11-20 修复）。
+    propGrid_->SetPropertyValue("autotask_chain_display",
+                                ui::taskChainDisplayText(stepOrder_));
 }
 
 void ConfigDialog::refreshUpdateMethodDisplay() {
@@ -845,7 +835,7 @@ bool ConfigDialog::validateConfig() {
     if (editedConfig_.network_monitor.enabled) {
         for (const std::string& url : editedConfig_.network_monitor.checkUrls) {
             if (!utils::isValidUrlFormat(url)) {
-                wxMessageBox(i18n::wx(i18n::StrId::ConfigDialog_InvalidNetworkMonitorCheck) + wxString(url), i18n::wx(i18n::StrId::ConfigDialog_InvalidURL2), wxOK | wxICON_WARNING);
+                wxMessageBox(i18n::wx(i18n::StrId::ConfigDialog_InvalidNetworkMonitorCheck) + wxString::FromUTF8(url), i18n::wx(i18n::StrId::ConfigDialog_InvalidURL2), wxOK | wxICON_WARNING);
                 return false;
             }
         }
@@ -1487,7 +1477,7 @@ void ConfigDialog::onBundleNew(wxCommandEvent& event) {
     // 1. 输入 ID
     wxTextEntryDialog idDlg(this, i18n::wx(i18n::StrId::ConfigDialog_EnterIDNewComponent), i18n::wx(i18n::StrId::ConfigDialog_NewComponentBundle), L"xray_CUSTOM");
     if (idDlg.ShowModal() != wxID_OK) return;
-    const std::string newId = idDlg.GetValue().Trim(true).Trim(false).ToStdString();
+    const std::string newId = idDlg.GetValue().Trim(true).Trim(false).ToStdString(wxConvUTF8);
     if (newId.empty()) {
         wxMessageBox(i18n::wx(i18n::StrId::ConfigDialog_ComponentBundleIDCannot), i18n::wx(i18n::StrId::ConfigDialog_Notice), wxOK | wxICON_INFORMATION);
         return;
@@ -1549,7 +1539,7 @@ void ConfigDialog::onBundleNew(wxCommandEvent& event) {
     config::ComponentBundle bundle;
     bundle.id = newId;
     bundle.name = newId;
-    bundle.description = "Manually created bundle (" + coreName.ToStdString() + ")";
+    bundle.description = "Manually created bundle (" + coreName.ToStdString(wxConvUTF8) + ")";
     bundle.coreType = isSingBox ? config::CoreType::SINGBOX : config::CoreType::XRAY;
     bundle.version = 1;
     bundle.enabled = true;
@@ -1639,7 +1629,7 @@ void ConfigDialog::onBundleSave(wxCommandEvent& event) {
     boost::json::value parseResult;
     std::string schemaError;
     if (!config::SchemaValidator::parseAndValidateComponentBundle(
-            bundleEditor_->GetValue().ToStdString(), parseResult, schemaError)) {
+            bundleEditor_->GetValue().ToStdString(wxConvUTF8), parseResult, schemaError)) {
         wxMessageBox(wxString::FromUTF8(schemaError.c_str())
                          + i18n::wx(i18n::StrId::ConfigDialog_NNotSavedFixProblems),
                      i18n::wx(i18n::StrId::ConfigDialog_ValidationFailed), wxOK | wxICON_ERROR);

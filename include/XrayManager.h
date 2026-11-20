@@ -26,6 +26,8 @@ public:
     int getInstanceCount() const;
     std::vector<std::pair<int, int>> getPortPairs();
     int getWorkers() const { return workers_; }
+    // 最近一次创建本池时使用的 xray 可执行文件（配置热更新回归测试用）。
+    const std::string& getXrayPath() const { return xrayPath_; }
     bool isRunning() const { return getInstanceCount() > 0; }
 
     // Lifecycle management: locate the instance bound to apiPort and evaluate

@@ -1707,7 +1707,8 @@ void MainFrame::onMenuAbout(wxCommandEvent&) {
           wxString::FromUTF8(APP_GIT_COMMIT),
           wxString::FromUTF8(APP_BUILD_TYPE),
           wxString::FromUTF8(APP_BUILD_TIME),
-          wxString::FromUTF8(__VERSION__) });
+          wxString::FromUTF8(__VERSION__),
+          wxString::FromUTF8(APP_CRT_ABI) });
 
     wxMessageBox(info,
                  i18n::wx(i18n::StrId::MainFrame_Dialog_AboutTitle),

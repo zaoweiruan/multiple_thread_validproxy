@@ -483,8 +483,8 @@
     },
     {
       "id": "MainFrame.Dialog.AboutText",
-      "zh": "{} v{}\n\n版本: {}\nGit Tag: {}\nGit Commit: {}\n构建类型: {}\n构建时间: {}\n编译器: {}\n\n管理并测试您的代理订阅。",
-      "en": "{} v{}\n\nVersion: {}\nGit Tag: {}\nGit Commit: {}\nBuild type: {}\nBuild time: {}\nCompiler: {}\n\nManage and test your proxy subscriptions."
+      "zh": "{} v{}\n\n版本: {}\nGit Tag: {}\nGit Commit: {}\n构建类型: {}\n构建时间: {}\n编译器: {}\n运行时 ABI: {}\n\n管理并测试您的代理订阅。",
+      "en": "{} v{}\n\nVersion: {}\nGit Tag: {}\nGit Commit: {}\nBuild type: {}\nBuild time: {}\nCompiler: {}\nRuntime ABI: {}\n\nManage and test your proxy subscriptions."
     },
     {
       "id": "Tray.Menu.Exit",

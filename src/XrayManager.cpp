@@ -101,6 +101,34 @@ XrayManager* XrayManager::getInstance() {
 
 XrayManager* XrayManager::getInstance(const std::string& xrayPath, const std::string& configDir, int workers, sqlite3* db) {
     std::lock_guard<std::mutex> lock(instanceMutex_);
+    if (instance_) {
+        const bool backendChanged =
+            (instance_->xrayPath_ != xrayPath) || (instance_->workers_ != workers);
+        // 配置热更新（2026-11-20）：xray 可执行文件路径 / worker 数改变后，
+        // 旧池必须立即失效。否则用户在配置对话框里改完路径点「确定」，测试
+        // 仍会用进程启动时缓存的旧路径，直到重启程序 —— 表现为「配置不生效」。
+        // 空闲时立即重建；有实例正在跑时保留旧池（不能拔掉正在使用它的任务），
+        // 等任务结束后下一次取值自然重建。配置对话框在任务运行期间禁止保存，
+        // 因此正常使用中不会走到 WARN 分支。
+        if (backendChanged) {
+            const int running = instance_->getInstanceCount();
+            if (running == 0) {
+                Logger::write("[XrayManager] backend changed (path '" + instance_->xrayPath_ +
+                              "' -> '" + xrayPath + "', workers " +
+                              std::to_string(instance_->workers_) + " -> " +
+                              std::to_string(workers) +
+                              "); recreating the idle pool with the new settings",
+                              LogLevel::INFO);
+                delete instance_;
+                instance_ = nullptr;
+            } else {
+                Logger::write("[XrayManager] backend configuration changed but " +
+                              std::to_string(running) + " instance(s) are still running; "
+                              "the new xray settings apply when the current task finishes",
+                              LogLevel::WARN);
+            }
+        }
+    }
     if (!instance_) {
         instance_ = new XrayManager(xrayPath, configDir, workers, db);
     }

@@ -251,7 +251,7 @@ static int runDefaultTest(const std::string& configPath, const std::string& exeD
     // Log version info
     Logger::write(std::string(APP_NAME) + " v" + APP_VERSION + " (" + APP_GIT_TAG + ")", LogLevel::REPORT);
     Logger::write(std::string("Build: ") + APP_BUILD_TYPE + " | " + APP_BUILD_TIME, LogLevel::REPORT);
-    Logger::write(std::string("Compiler: ") + __VERSION__, LogLevel::REPORT);
+    Logger::write(std::string("Compiler: ") + __VERSION__ + " | ABI: " + APP_CRT_ABI, LogLevel::REPORT);
 
     logInfo("validproxy starting...");
     logInfo("Config loaded from: " + configPath);
@@ -479,7 +479,9 @@ int main(int argc, char* argv[]) {
             std::cout << APP_NAME << " " << APP_VERSION << "\n"
                       << "Git tag: " << APP_GIT_TAG << "\n"
                       << "Git commit: " << APP_GIT_COMMIT << "\n"
-                      << "Build: " << APP_BUILD_TYPE << " " << APP_BUILD_TIME << "\n";
+                      << "Build: " << APP_BUILD_TYPE << " " << APP_BUILD_TIME << "\n"
+                      << "Compiler: " << __VERSION__ << "\n"
+                      << "Runtime ABI: " << APP_CRT_ABI << " (" << APP_CRT_ABI_LABEL << ")\n";
             return 0;
         } else if (arg == "-show-sub" || arg == "--show-sub") {
             commandMode = "show-sub";

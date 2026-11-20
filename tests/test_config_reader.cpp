@@ -134,6 +134,41 @@ TEST_F(ConfigReaderTest, SaveRoundTrip) {
     EXPECT_TRUE(content.find("proxy") != std::string::npos);
 }
 
+// 配置文件是 UTF-8 契约：GUI 里输入的中文路径/备注必须原样落盘并可原样读回。
+// 回归背景（2026-11-20）：ConfigDialog 曾用 wxString::ToStdString()（= 当前 ANSI
+// 代码页，中文 Windows 上是 CP936）回写配置，中文路径写进 JSON 后不是合法
+// UTF-8，重新加载时解析失败；读取侧用 wxString(std::string) 同样按 ANSI 解释，
+// 中文显示为乱码。此处钉住 save()/load() 的字节级往返。
+TEST_F(ConfigReaderTest, SaveRoundTrip_KeepsUtf8NonAsciiValues) {
+    const std::string chineseDir = "D:/工具/xray 目录";
+    const std::string chineseExe = chineseDir + "/xray.exe";
+
+    AppConfig original;
+    original.database_path = "guin.db";
+    original.proxy.xray_executable = chineseExe;
+    original.proxy.xray_asset_dir = chineseDir + "/assets";
+    original.sync.source_db = chineseDir + "/src.db";
+    original.sync.target_db = chineseDir + "/dst.db";
+
+    ASSERT_TRUE(ConfigReader::save(configPath("utf8.json"), original));
+
+    std::ifstream in(configPath("utf8.json"), std::ios::binary);
+    ASSERT_TRUE(in.is_open());
+    std::string content((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    in.close();
+
+    // 落盘必须是 UTF-8：JSON 转义后仍是同样的多字节序列，不应出现 CP936 字节。
+    EXPECT_NE(std::string::npos, content.find(chineseExe))
+        << "saved config lost the UTF-8 path; the writer is not UTF-8 aware";
+
+    std::optional<AppConfig> loaded = ConfigReader::load(configPath("utf8.json"));
+    ASSERT_TRUE(loaded.has_value());
+    EXPECT_EQ(chineseExe, loaded->proxy.xray_executable);
+    EXPECT_EQ(chineseDir + "/assets", loaded->proxy.xray_asset_dir);
+    EXPECT_EQ(chineseDir + "/src.db", loaded->sync.source_db);
+    EXPECT_EQ(chineseDir + "/dst.db", loaded->sync.target_db);
+}
+
 // ============================================================
 // Full-field save/load round-trip — all struct members
 // ============================================================

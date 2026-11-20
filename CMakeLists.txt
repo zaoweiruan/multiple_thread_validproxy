@@ -658,6 +658,8 @@ if(wxWidgets_FOUND)
         src/ui/UiControlIds.h
         src/ui/ConfigDialog.h
         src/ui/ConfigDialog.cpp
+        src/ui/TaskChainText.h
+        src/ui/TaskChainText.cpp
         src/ui/ComponentListPanel.h
         src/ui/ComponentListPanel.cpp
         src/ui/BundleChainEditor.h
@@ -836,6 +838,34 @@ add_dependencies(validproxy update_version_h)
     set_target_properties(test_proxy_list_model PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY ${VALIDPROXY_TEST_DIR})
     add_test(NAME ProxyListModelTest COMMAND test_proxy_list_model)
+
+    # ===== Auto-task chain display text (needs wx runtime for wxString) =====
+    # 回归 2026-11-20：ConfigDialog 的「任务链」曾因返回临时 wxString 的
+    # 内部缓冲区（悬垂指针）而在属性网格里显示乱码。组合逻辑现集中在
+    # ui::taskChainDisplayText()，本测试固定中英文的完整文本。
+    add_executable(test_task_chain_text
+        tests/test_task_chain_text.cpp
+        tests/wx_test_manifest.rc
+        src/ui/TaskChainText.cpp
+        src/i18n/Language.cpp
+        src/i18n/I18n.cpp
+        src/i18n/StringTable.cpp)
+    target_include_directories(test_task_chain_text PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/ui
+        "${WX_VCPKG_DIR}/include")
+    target_include_directories(test_task_chain_text SYSTEM BEFORE PRIVATE
+        "${WX_VCPKG_DIR}/include"
+        "${WX_VCPKG_DIR}/lib/mswud")
+    target_link_libraries(test_task_chain_text PRIVATE
+        gtest_main
+        gtest
+        wx::wxbase)
+    set_target_properties(test_task_chain_text PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY ${VALIDPROXY_TEST_DIR}
+        RUNTIME_OUTPUT_DIRECTORY_DEBUG ${VALIDPROXY_TEST_DIR}
+        RUNTIME_OUTPUT_DIRECTORY_RELEASE ${VALIDPROXY_TEST_DIR})
+    add_test(NAME TaskChainTextTest COMMAND test_task_chain_text)
 
 else()
     message(STATUS "wxWidgets not found - GUI mode (-ui) will not be available")

@@ -24,6 +24,23 @@
 #define APP_BUILD_TYPE      "@CMAKE_BUILD_TYPE@"
 #define APP_BUILD_TIME      "@BUILD_TIMESTAMP@"
 
+// 二进制 ABI（C 运行时）。同一份源码可能用两套工具链构建：
+//   - MinGW-w64 UCRT    : 定义 _UCRT，运行时是 api-ms-win-crt-*.dll + ucrtbase.dll
+//   - MinGW-w64 MSVCRT  : 定义 __MSVCRT_VERSION__，运行时是 msvcrt.dll
+// 两者生成的 DLL 依赖不兼容（例如混用会在加载期报 0xC0000139），
+// 因此版本信息里必须能一眼看出二进制属于哪一套。
+#if defined(_UCRT)
+#define APP_CRT_ABI         "ucrt"
+#define APP_CRT_ABI_LABEL   "UCRT"
+#elif defined(__MSVCRT_VERSION__)
+#define APP_CRT_ABI         "msvcrt"
+#define APP_CRT_ABI_LABEL   "MSVCRT"
+#else
+#define APP_CRT_ABI         "unknown"
+#define APP_CRT_ABI_LABEL   "unknown"
+#endif
+
+
 // 项目名称
 #define APP_NAME            "validproxy"
 
