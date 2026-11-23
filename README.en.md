@@ -7,7 +7,7 @@
 
 # validproxy — Proxy Validation & Network Forwarding Manager
 
-> **Version**: v1.6.1 · **Git**: `3e703e6` · **Platform**: Windows (MinGW/GCC) · **Language**: C++17
+> **Version**: v1.6.2 · **Git**: `36fb9ab` · **Platform**: Windows (MinGW/GCC) · **Language**: C++17
 
 `validproxy` is a proxy validation and network-forwarding manager built on **Xray-core**, offering both a **wxWidgets GUI** and a **command-line (CLI)** interface. It targets the v2rayN ecosystem and supports subscription management, batched proxy connectivity testing, deduplication, share-link import/export, standalone proxy / proxy-pool lifecycle and monitoring, plus real-time log and statistics panels.
 
@@ -32,7 +32,7 @@
 
 ## Features
 
-- **Subscription management**: fetch/parse multiple subscription sources (URL/local file), supporting VMess/VLESS/Trojan/Shadowsocks/Hysteria2/Sing-Box and more, with high-efficiency deduplication, 404 gone-marking, and update-interval control.
+- **Subscription management**: fetch/parse multiple subscription sources (URL/local file), supporting VMess/VLESS/Trojan/Shadowsocks/Hysteria2/Sing-Box and more, with high-efficiency deduplication, 404 gone-marking, and update-interval control; **subscriptions are pulled from the cloud automatically when a fresh empty database is created** (no manual import needed).
 - **Batched connectivity testing**: multi-threaded concurrent scheduler (`ProxyBatchTester`) with dynamic Xray instance injection + cURL probing, network-disconnect pause/resume, and automatic instance relaunch.
 - **Proxy lookup**: `-F` quick-find first working proxy; `-FMIN` returns the lowest-latency premium proxy.
 - **Standalone proxy / proxy pool**: single-proxy start/stop/monitoring, pool concurrency management, dynamic port allocation (`PortManager`) and reclamation.
@@ -233,7 +233,7 @@ cmake --build build --parallel 6 && .\scripts\run_coverage.ps1
 - `docs/bugfix/` — root-cause analysis & fix records.
 - `docs/reviews/` — independent review records (three-perspective / 5-persona parallel).
 - `docs/design/` — UI design, invalid-filtering and other baseline design specs.
-- `CHANGELOG.md` — version history (currently v1.6.1).
+- `CHANGELOG.md` — version history (currently v1.6.2).
 
 ---
 
