@@ -46,7 +46,7 @@ if(NOT DEFINED CMAKE_TOOLCHAIN_FILE OR "${CMAKE_TOOLCHAIN_FILE}" STREQUAL "")
 endif()
 
 
-project(multiple_thread_validproxy VERSION 1.6.1 LANGUAGES CXX)
+project(multiple_thread_validproxy VERSION 1.6.2 LANGUAGES CXX)
 
 # Partial static linking: link libgcc/libstdc++ into the exe so the release no
 # longer depends on libgcc_s_seh-1.dll / libstdc++-6.dll (only libwinpthread-1.dll
@@ -275,7 +275,8 @@ if(MSVC)
     add_compile_options(/W4 /WX /permissive- /utf-8)
     add_link_options(/UTF-8)
 else()
-    add_compile_options(-Wall -Wextra -pedantic -finput-charset=UTF-8 -fexec-charset=UTF-8)
+    # -pipe keeps compile intermediates in RAM instead of temp files.
+    add_compile_options(-Wall -Wextra -pedantic -pipe -finput-charset=UTF-8 -fexec-charset=UTF-8)
 endif()
 
 # ===== Sanitizer options (Debug) =====
@@ -295,6 +296,42 @@ string(STRIP "${CMAKE_CXX_FLAGS}" CMAKE_CXX_FLAGS)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}" CACHE STRING "Flags used by the compiler during all build types." FORCE)
 
 set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -g3 -O0")
+
+# ===== Compile/link optimization tuning (2026-11-23) =====
+# ccache launcher (inert until ccache is installed; verified absent on this
+# machine). Once installed, every rebuild of the 100+ TU project hits the cache.
+find_program(VALIDPROXY_CCACHE NAMES ccache)
+if(VALIDPROXY_CCACHE AND NOT MSVC)
+    set(CMAKE_CXX_COMPILER_LAUNCHER "${VALIDPROXY_CCACHE}")
+    message(STATUS "[opt] using ccache launcher: ${VALIDPROXY_CCACHE}")
+endif()
+
+# Release-only tuning. -march=native stays OPT-IN (VALIDPROXY_MARCH_NATIVE):
+# the Win7 SP1 package (resources/win7 + scripts/check-win7-deps.ps1) must run
+# on older CPUs, and -march=native binaries do not.
+option(VALIDPROXY_MARCH_NATIVE "Use -march=native in Release (breaks binary portability)" OFF)
+include(CheckIPOSupported)
+check_ipo_supported(RESULT _vp_ipo_supported OUTPUT _vp_ipo_reason LANGUAGES CXX)
+if(NOT MSVC AND CMAKE_BUILD_TYPE STREQUAL "Release")
+    # Scheduling-only tune: no new instructions -> binary stays portable.
+    add_compile_options(-mtune=native)
+    if(_vp_ipo_supported AND NOT ENABLE_SANITIZERS)
+        set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
+        message(STATUS "[opt] Release: IPO/LTO enabled")
+    else()
+        # Do not print _vp_ipo_reason: it embeds CMake's multi-line LTO probe
+        # output (harmless compiler errors from the feature test).
+        message(STATUS "[opt] Release: IPO/LTO not supported by this toolchain; skipping")
+    endif()
+    # GC unused sections to shrink the exe. Symbols are kept on purpose:
+    # CrashHandler/dbghelp stack traces need them, so no -s/--strip-* here.
+    add_compile_options(-ffunction-sections -fdata-sections)
+    add_link_options(-Wl,--gc-sections)
+    if(VALIDPROXY_MARCH_NATIVE)
+        message(WARNING "[opt] -march=native enabled: binary will NOT run on older CPUs; never use it for the Win7 package")
+        add_compile_options(-march=native)
+    endif()
+endif()
 
 # ===== Coverage options =====
 if(ENABLE_SANITIZERS AND ENABLE_COVERAGE)
@@ -2234,6 +2271,10 @@ if(wxWidgets_FOUND AND BUILD_UI_TESTS)
             tests/ui/TestLanguageMenu.cpp
         )
         add_executable(UITests ${UI_FRAMEWORK_SOURCES} ${UI_TEST_SOURCES})
+        # LTO would add a second variable to the already fragile Catch2
+        # double-libstdc++ link (see --allow-multiple-definition below); the UI
+        # tests do not need the perf. Keep them on the plain compile path.
+        set_property(TARGET UITests PROPERTY INTERPROCEDURAL_OPTIMIZATION FALSE)
         target_include_directories(UITests PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}/tests/ui)
         target_link_libraries(UITests PRIVATE

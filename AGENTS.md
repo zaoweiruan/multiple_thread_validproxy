@@ -192,6 +192,16 @@ cmake --build build --parallel 6
 ctest --test-dir build -V
 ```
 
+### 6.1.1 编译选项与工具链现状（2026-11-23 核验）
+
+- Release 自动启用：`-mtune=native`（只调调度、不改指令集）、`-ffunction-sections -fdata-sections` + `-Wl,--gc-sections` 瘦身；IPO/LTO 由 `check_ipo_supported` 门控——E:\mingw64 GCC 16.2（ucrt 工具链）支持并启用，E:\clion\bin\mingw GCC 15.2（msvcrt 工具链）**无 LTO 插件**，自动跳过而不报错。
+- `-march=native` 默认关闭，须显式 `-DVALIDPROXY_MARCH_NATIVE=ON`；Win7 SP1 发布包（resources/win7）严禁开启。
+- 全局加 `-pipe`；检测到 ccache 时自动启用编译 launcher（本机尚未安装 ccache，装上即生效）。
+- Debug 标志未变（`-g -g3 -O0`）；禁止加 strip 类标志——CrashHandler/dbghelp 堆栈依赖符号。
+- UITests 显式关闭 IPO/LTO（`INTERPROCEDURAL_OPTIMIZATION FALSE`），避免给 Catch2 双 libstdc++ 链接问题再添变量。
+- 工具链盘点：`E:\w64devkit` 不存在（仅外部 CMAKE_TOOLCHAIN_FILE 才会落到该默认值）；本机可用 MinGW 为 clion-msvcrt（GCC 15.2，`D:/vcpkg` 依赖树）与 mingw-ucrt（GCC 16.2，`temp/vcpkg-ucrt-root` 依赖树）；无 MSVC、无 ccache；CMake 4.4.5 + Ninja 1.13.2。
+- `E:\eclipse_workspace\toolchains.cmake` 是纯通用 MinGW 选择文件（`-DMINGW_PROFILE=clion|ucrt`，不含本项目信息）；用它配置会绕过内建选择器，且依赖树落到 `D:/vcpkg` 默认值——本项目构建仍推荐内建选择器 `-DVALIDPROXY_TOOLCHAIN=...` 或项目内 `cmake/toolchains/*.cmake`。
+
 ### 6.2 专项验收
 
 - UI 相关变更交付前，执行 `scripts/build-and-test.bat`，并确认相关 UI 自动化验收通过。
