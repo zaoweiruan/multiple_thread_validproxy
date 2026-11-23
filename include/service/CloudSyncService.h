@@ -47,6 +47,21 @@ public:
     CloudSyncService(net::WebDavClient& client, std::string remoteDir,
                      std::string localConfigPath, db::models::SubitemDAO& subDao);
 
+    // Seam for unit tests: how the embedded WebDAV credentials are loaded. The
+    // default is net::WebDavCredentialsStore::load; tests inject a loader that
+    // always fails so the no-credentials branch is exercised without network.
+    using CredentialLoader = bool (*)(net::WebDavCredentials&, std::string&);
+
+    // Best-effort pull of remote subscriptions into a freshly created database.
+    // Called right after DatabaseBootstrap::create() so a new empty database is
+    // populated from the cloud instead of forcing a manual import. Never throws.
+    // Returns ok=false (and logs WARN) when credentials are not provisioned, the
+    // remote has no subscriptions.json, or the network fails; callers treat the
+    // result as informational only and never block startup on it.
+    static CloudSyncResult pullSubscriptionsInto(sqlite3* db, const std::string& remoteDir,
+                                                 CredentialLoader loader =
+                                                     &net::WebDavCredentialsStore::load);
+
     // R1: config.json is missing locally -> fetch from the cloud and write it.
     CloudSyncResult ensureLocalConfig();
 

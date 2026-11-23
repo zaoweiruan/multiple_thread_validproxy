@@ -446,6 +446,24 @@ CloudSyncResult CloudSyncService::pullSubscriptions() {
     return result;
 }
 
+CloudSyncResult CloudSyncService::pullSubscriptionsInto(sqlite3* db,
+                                                        const std::string& remoteDir,
+                                                        CredentialLoader loader) {
+    CloudSyncResult result;
+    net::WebDavCredentials credentials;
+    std::string credError;
+    if (!loader(credentials, credError)) {
+        result.error = credError;
+        Logger::write("fresh-db cloud sync skipped: " + credError, LogLevel::WARN);
+        return result;
+    }
+    net::WebDavClient client(credentials, "https://dav.jianguoyun.com/dav/");
+    db::models::SubitemDAO subDao(db);
+    // localConfigPath is unused by pullSubscriptions(); pass empty.
+    CloudSyncService sync(client, remoteDir, std::string(), subDao);
+    return sync.pullSubscriptions();
+}
+
 CloudSyncResult CloudSyncService::pushConfig() {
     CloudSyncResult result;
     bool readOk = false;

@@ -3053,8 +3053,8 @@
     },
     {
       "id": "Startup.Created",
-      "zh": "已就绪数据库：\n{}\n\n新建的库是空的（无订阅、无代理），请导入订阅。",
-      "en": "Database ready:\n{}\n\nThe new database is empty (no subscriptions, no proxies); import a subscription."
+      "zh": "已就绪数据库：\n{}\n\n新建的库是空的（无订阅、无代理）；将自动从云端同步订阅（若已配置云端凭据）。",
+      "en": "Database ready:\n{}\n\nThe new database is empty (no subscriptions, no proxies); subscriptions will be synced from the cloud automatically when configured."
     },
     {
       "id": "Startup.RebuildHeadMissingTables",
@@ -3108,8 +3108,8 @@
     },
     {
       "id": "Startup.Rebuilt",
-      "zh": "已重建数据库：\n{}\n\n旧库已备份并保留在：\n{}",
-      "en": "Database rebuilt:\n{}\n\nThe old database was backed up and kept at:\n{}"
+      "zh": "已重建数据库：\n{}\n\n旧库已备份并保留在：\n{}\n\n新库的订阅将自动从云端同步（若已配置云端凭据）。",
+      "en": "Database rebuilt:\n{}\n\nThe old database was backed up and kept at:\n{}\n\nSubscriptions will be synced from the cloud automatically when configured."
     },
     {
       "id": "Startup.InternalLoop",

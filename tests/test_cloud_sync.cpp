@@ -300,3 +300,24 @@ TEST(CloudSyncTest, CredentialsLoadFailsWhenNotProvisioned) {
         EXPECT_TRUE(creds.usable()) << "a provisioned blob must yield usable credentials";
     }
 }
+
+namespace {
+
+// Deterministic "credentials not available" loader for pullSubscriptionsInto:
+// always fails, so the no-credentials branch is exercised without any network.
+bool noCredentialLoader(net::WebDavCredentials&, std::string& error) {
+    error = "test: no WebDAV credentials";
+    return false;
+}
+
+} // namespace
+
+TEST(CloudSyncTest, PullSubscriptionsIntoSkipsWithoutCredentials) {
+    // A fresh-db pull with no credentials must return ok=false with an error,
+    // without throwing and without touching sqlite (db=nullptr is fine here
+    // because the loader fails before any database access).
+    const service::CloudSyncResult result = service::CloudSyncService::pullSubscriptionsInto(
+            nullptr, "validproxy", noCredentialLoader);
+    EXPECT_FALSE(result.ok);
+    EXPECT_FALSE(result.error.empty());
+}

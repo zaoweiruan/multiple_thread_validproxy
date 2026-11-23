@@ -211,9 +211,13 @@ bool rewriteConfigPaths(const std::string& configPath, const std::string& oldPat
 }
 
 // Runs the probe -> prompt -> create -> rewrite -> reopen state machine.
-// Returns true when a usable database path has been established.
+// Returns true when a usable database path has been established. On return
+// `freshCreated` is true when this call created or rebuilt an empty database
+// (PromptCreate / PromptRebuild succeeded), so the caller can auto-pull cloud
+// subscriptions into the new database.
 bool bootstrapDatabase(const std::string& exeDir, const std::string& configPath,
-                       config::AppConfig& appConfig) {
+                       config::AppConfig& appConfig, bool& freshCreated) {
+    freshCreated = false;
     const bool autoCreate = envFlagSet("VALIDPROXY_DB_AUTOCREATE");
     const bool autoRebuild = envFlagSet("VALIDPROXY_DB_AUTOREBUILD");
 
@@ -327,6 +331,7 @@ bool bootstrapDatabase(const std::string& exeDir, const std::string& configPath,
                                   LogLevel::ERR);
                     return false;
                 }
+                freshCreated = true;
 
                 if (!samePath) {
                     std::string rewriteError;
@@ -405,6 +410,7 @@ bool bootstrapDatabase(const std::string& exeDir, const std::string& configPath,
                         return false;
                     }
                 }
+                freshCreated = true;
 
                 service::DatabaseBootstrap::removeBackup(bak);
 
@@ -551,7 +557,8 @@ int main(int argc, char* argv[]) {
     // Bootstrap the database: read-only probe -> prompt -> create/rebuild -> rewrite.
     // This replaces the old behaviour where SQLITE_OPEN_CREATE silently produced a
     // 0-byte database (and later blew up with "no such table" everywhere).
-    if (!bootstrapDatabase(exeDir, configPath, *appConfig)) {
+    bool freshCreated = false;
+    if (!bootstrapDatabase(exeDir, configPath, *appConfig, freshCreated)) {
         Logger::close();
         return 1;
     }
@@ -583,6 +590,21 @@ int main(int argc, char* argv[]) {
 
     // Register all ConfigPipeline step handlers
     config::registerAllStepHandlers();
+
+    // When this startup created or rebuilt an empty database, pull subscriptions
+    // from the cloud so the new database is populated instead of forcing a manual
+    // import. Best-effort: any failure (no WebDAV credentials, network down, no
+    // remote subscriptions.json) is logged and never blocks startup.
+    if (freshCreated) {
+        const service::CloudSyncResult syncResult =
+                service::CloudSyncService::pullSubscriptionsInto(db, "validproxy");
+        if (syncResult.ok) {
+            Logger::write("fresh-db cloud sync: " + syncResult.detail, LogLevel::REPORT);
+        } else {
+            Logger::write("fresh-db cloud sync skipped: " + syncResult.error,
+                          LogLevel::WARN);
+        }
+    }
 
     // Strip non-wxWidgets flags from argv before passing to wxEntry
     // (-ui, --ui, --gui are CLI-legacy flags from the old hybrid binary)

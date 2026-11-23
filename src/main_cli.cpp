@@ -108,6 +108,9 @@ static std::optional<config::AppConfig> loadConfig(const std::string& configPath
 }
 
 static bool openDatabase(const config::AppConfig& config, sqlite3*& db, const std::string& context) {
+    // True when this call created an empty database; used to auto-pull cloud
+    // subscriptions into the new database (see below).
+    bool createdFresh = false;
     // CLI database bootstrap.
     //
     // This used to open with SQLITE_OPEN_CREATE, which silently produced a
@@ -154,6 +157,7 @@ static bool openDatabase(const config::AppConfig& config, sqlite3*& db, const st
             Logger::write(context + " - created database schema at " +
                                   utils::toWindowsPath(config.database_path),
                           LogLevel::REPORT);
+            createdFresh = true;
         }
     }
 
@@ -182,7 +186,23 @@ static bool openDatabase(const config::AppConfig& config, sqlite3*& db, const st
         sqlQueryDao.createTableIfNotExists();
         sqlQueryDao.seedDefaults(config.sql_query, config.sql_by_subid);
     }
-    
+
+    // When this call created an empty database, pull subscriptions from the cloud
+    // so the new database is populated instead of forcing a manual import.
+    // Best-effort: any failure (no WebDAV credentials, network down, no remote
+    // subscriptions.json) is logged and never blocks the command.
+    if (createdFresh) {
+        const service::CloudSyncResult syncResult =
+                service::CloudSyncService::pullSubscriptionsInto(db, "validproxy");
+        if (syncResult.ok) {
+            Logger::write(context + " - fresh-db cloud sync: " + syncResult.detail,
+                          LogLevel::REPORT);
+        } else {
+            Logger::write(context + " - fresh-db cloud sync skipped: " + syncResult.error,
+                          LogLevel::WARN);
+        }
+    }
+
     return true;
 }
 
