@@ -20,7 +20,6 @@
 - [环境要求](#环境要求)
 - [构建与测试](#构建与测试)
 - [CLI 使用](#cli-使用)
-- [配置与数据](#配置与数据)
 - [界面语言 / UI Language](#界面语言-ui-language)
 - [项目结构](#项目结构)
 - [核心模块](#核心模块)
@@ -136,18 +135,6 @@ ctest -R DedupTest -V
 -IS, -import-sub-config <f> 从本地文件或网络 URL 批量导入订阅节点
 -h, --help                  打印 CLI 帮助菜单
 ```
-
----
-
-## 配置与数据
-
-| 数据/配置 | 路径 | 说明 |
-|-----------|------|------|
-| 生产运行时数据库 | `bin/worker/guindb.db` | 实际业务存储，由 `bin/config.json` 的 `database.path` 指定 |
-| 全局生产配置 | `bin/config.json` | 默认超时、并发数、高优先级字段等 |
-| 默认测试数据库（全量） | `test/guindb.db` | 53,837 profiles / 44 SubIDs，用于除导入、迁移数据外全部测试 |
-| 测试数据库（精简） | `test/guiNDB_empty.db` | 711 profiles / 8 SubIDs，专门用于导入、迁移数据回归单测 |
-| 测试专用配置 | `bin/test_config.json` | 指向 `test/guiNDB.db`，防止污染生产环境 |
 
 ---
 

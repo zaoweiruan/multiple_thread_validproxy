@@ -20,7 +20,6 @@
 - [Requirements](#requirements)
 - [Build & Test](#build--test)
 - [CLI Usage](#cli-usage)
-- [Configuration & Data](#configuration--data)
 - [UI Language](#ui-language)
 - [Project Structure](#project-structure)
 - [Core Modules](#core-modules)
@@ -138,18 +137,6 @@ ctest -R DedupTest -V
 -IS, -import-sub-config <f> Batch-import subscription nodes from local file or URL
 -h, --help                  Print CLI help menu
 ```
-
----
-
-## Configuration & Data
-
-| Data/Config | Path | Description |
-|-------------|------|-------------|
-| Production runtime DB | `bin/worker/guindb.db` | Actual business storage, set by `database.path` in `bin/config.json` |
-| Global production config | `bin/config.json` | Default timeout, concurrency, priority fields, etc. |
-| Default test DB (full) | `test/guindb.db` | 53,837 profiles / 44 SubIDs, used by all tests except import/migration |
-| Test DB (slim) | `test/guiNDB_empty.db` | 711 profiles / 8 SubIDs, dedicated to import/migration regression tests |
-| Test-only config | `bin/test_config.json` | Points to `test/guiNDB.db`, prevents polluting production |
 
 ---
 
