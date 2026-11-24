@@ -971,6 +971,18 @@ set_target_properties(test_task_report_service PROPERTIES
 )
 add_test(NAME TaskReportServiceTest COMMAND test_task_report_service)
 
+# task-report-hover Task 3: TaskQueue 完成 sink(含stats) + 任务窗口日志捕获
+add_executable(test_task_queue_report tests/test_task_queue_report.cpp src/task/TaskQueue.cpp
+    src/task/TaskType.cpp src/Logger.cpp src/LoggerInstance.cpp)
+target_include_directories(test_task_queue_report PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(test_task_queue_report PRIVATE gtest_main gtest)
+set_target_properties(test_task_queue_report PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${VALIDPROXY_TEST_DIR}
+)
+add_test(NAME TaskQueueReportTest COMMAND test_task_queue_report)
+
 add_executable(test_task_format tests/test_task_format.cpp src/task/TaskFormat.cpp)
 target_include_directories(test_task_format PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(test_task_format PRIVATE gtest_main gtest)

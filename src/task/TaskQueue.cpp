@@ -408,6 +408,27 @@ void TaskQueue::workerLoop() {
         bool cancelled = false;
         bool failed = false;
         std::string err;
+        // task-report-hover Task 3: capture the task window's log lines (Logger
+        // level >= INFO) emitted while entry.func(ctx) runs. The callback is
+        // popped right after the task returns so the sink's OWN logging is
+        // never captured; ctx.stats is read below after the task function has
+        // returned while ctx is still alive.
+        std::vector<task::LogLine> capturedLines;
+        bool sinkPushed = false;
+        try {
+            Logger::pushCallback([&capturedLines](const std::string& msg, LogLevel level) {
+                if (level >= LogLevel::INFO) {
+                    task::LogLine ll;
+                    ll.level = level;
+                    ll.line = msg;
+                    capturedLines.push_back(std::move(ll));
+                }
+            });
+            sinkPushed = true;
+        } catch (...) {
+            // pushCallback threw (unlikely): run the task without capture.
+            sinkPushed = false;
+        }
         try {
             entry.func(ctx);
             if (localCancel.load() || cancelRequested_.load()) cancelled = true;
@@ -421,6 +442,13 @@ void TaskQueue::workerLoop() {
             // UI guards stay consistent.
             failed = true;
             err = "unknown non-std exception";
+        }
+        if (sinkPushed) {
+            try {
+                Logger::popCallback();
+            } catch (...) {
+                // pop failed: nothing further to do; the capture scope ends here.
+            }
         }
 
         entry.handle.status = cancelled ? TaskStatus::CANCELLED :
@@ -442,6 +470,14 @@ void TaskQueue::workerLoop() {
         }
 
         if (entry.callbacks.onComplete) entry.callbacks.onComplete(entry.handle);
+
+        // task-report-hover Task 3: publish the completion sink AFTER the
+        // terminal status is set and onComplete ran, but BEFORE busy_ is
+        // released (the monitoring panel's busy gate). The captured lines
+        // exclude the sink's own logging (popCallback ran above); ctx.stats is
+        // read while ctx is still in scope (the task function already
+        // returned). No scheduling/cancellation semantics change.
+        if (taskFinishedSink_) taskFinishedSink_(entry.handle, capturedLines, ctx.stats);
 
         busy_.store(false);
         currentCancelFlag_ = nullptr;

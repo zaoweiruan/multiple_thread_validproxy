@@ -1,6 +1,7 @@
 #pragma once
 
 #include "TaskType.h"
+#include "task/TaskReportService.h"   // task::LogLine (task-report-hover Task 2)
 
 #include <atomic>
 #include <chrono>
@@ -42,6 +43,18 @@ struct TaskCallbacks {
     std::function<void(const TaskHandle&)> onComplete;
     std::function<void(const TaskHandle&)> onRejected;
 };
+
+// Completion sink (task-report-hover Task 3). Invoked after a task reaches a
+// terminal state, after its onComplete ran and before busy_ is released, with:
+//   - the task's captured log window (Logger level >= INFO lines emitted while
+//     entry.func(ctx) ran), and
+//   - ctx.stats (the task's accumulated outcome counters, read after the task
+//     function returned while ctx is still alive).
+// The sink's OWN logging is NOT captured: the Logger callback is popped before
+// the sink is invoked.
+using TaskFinishedSink = std::function<void(const TaskHandle&,
+                                            const std::vector<task::LogLine>&,
+                                            const TaskStats&)>;
 
 // Point-in-time view of the queue for the monitoring UI.
 struct TaskQueueSnapshot {
@@ -153,6 +166,10 @@ public:
 
     void setProbeRunningQuery(std::function<bool()> q) { probeRunningQuery_ = std::move(q); }
 
+    // Register the completion sink (task-report-hover Task 3). One consumer
+    // (AppController, Task 5); replacing an existing sink is allowed.
+    void setTaskFinishedSink(TaskFinishedSink sink) { taskFinishedSink_ = std::move(sink); }
+
 private:
     struct Entry {
         TaskHandle handle;
@@ -201,6 +218,9 @@ private:
     std::size_t historyLimit_ = 100;
 
     std::function<bool()> probeRunningQuery_;
+
+    // Completion sink (task-report-hover Task 3); empty = no sink registered.
+    TaskFinishedSink taskFinishedSink_;
 };
 
 } // namespace task
