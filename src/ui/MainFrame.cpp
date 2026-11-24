@@ -876,13 +876,13 @@ void MainFrame::initToolBar() {
     // format: AddTool(id, label, bitmap, shortHelp)
     m_toolbar->AddTool(ID_TOOL_UPDATE_ALL, i18n::wx(i18n::StrId::MainFrame_Toolbar_UpdateAll), ToolbarIcons::load("tool_update1"), i18n::wx(i18n::StrId::MainFrame_Toolbar_UpdateAll));
     m_toolbar->AddTool(ID_TOOL_TEST, i18n::wx(i18n::StrId::MainFrame_Toolbar_Test), ToolbarIcons::load("tool_test"), i18n::wx(i18n::StrId::MainFrame_Toolbar_TestTip));
-    m_toolbar->AddTool(ID_TOOL_CANCEL, i18n::wx(i18n::StrId::MainFrame_Toolbar_StopTest), ToolbarIcons::load("tool_cancel"), i18n::wx(i18n::StrId::MainFrame_Toolbar_StopTestTip));
-    m_toolbar->EnableTool(ID_TOOL_CANCEL, false);  // disabled until operation starts
     m_toolbar->AddTool(ID_TOOL_DEDUP, i18n::wx(i18n::StrId::MainFrame_Toolbar_Dedup), ToolbarIcons::load("tool_dedup"), i18n::wx(i18n::StrId::MainFrame_Toolbar_DedupTip));
     m_toolbar->AddTool(ID_TOOL_REGION, i18n::wx(i18n::StrId::MainFrame_Toolbar_Region), ToolbarIcons::load("parsingregion"), i18n::wx(i18n::StrId::MainFrame_Toolbar_RegionTip));
+    m_toolbar->AddTool(ID_TOOL_AUTOTASK, i18n::wx(i18n::StrId::MainFrame_Toolbar_AutoTask), ToolbarIcons::load("tool_pipeline"), i18n::wx(i18n::StrId::MainFrame_Toolbar_AutoTask));
+    m_toolbar->AddTool(ID_TOOL_CANCEL, i18n::wx(i18n::StrId::MainFrame_Toolbar_StopTest), ToolbarIcons::load("tool_cancel"), i18n::wx(i18n::StrId::MainFrame_Toolbar_StopTestTip));
+    m_toolbar->EnableTool(ID_TOOL_CANCEL, false);  // disabled until operation starts
     m_toolbar->AddTool(ID_TOOL_SYNC, i18n::wx(i18n::StrId::MainFrame_Toolbar_Sync), ToolbarIcons::load("tool_synchronize"), i18n::wx(i18n::StrId::MainFrame_Toolbar_Sync));
     m_toolbar->AddTool(ID_TOOL_IMPORT, i18n::wx(i18n::StrId::MainFrame_Toolbar_Import), ToolbarIcons::load("tool_import"), i18n::wx(i18n::StrId::MainFrame_Toolbar_ImportTip));
-    m_toolbar->AddTool(ID_TOOL_AUTOTASK, i18n::wx(i18n::StrId::MainFrame_Toolbar_AutoTask), ToolbarIcons::load("tool_pipeline"), i18n::wx(i18n::StrId::MainFrame_Toolbar_AutoTask));
     m_toolbar->AddTool(ID_TOOL_STANDALONE_MON, i18n::wx(i18n::StrId::MainFrame_Toolbar_StandaloneMon), ToolbarIcons::load("tool_monitoring_proxy_process"), i18n::wx(i18n::StrId::MainFrame_Toolbar_StandaloneMonTip), wxITEM_CHECK);
     m_toolbar->ToggleTool(ID_TOOL_STANDALONE_MON, config_.proxy_process_monitor.enabled);
     m_toolbar->AddTool(ID_TOOL_CONFIG, i18n::wx(i18n::StrId::MainFrame_Toolbar_Config), ToolbarIcons::load("tool_config"), i18n::wx(i18n::StrId::MainFrame_Toolbar_Config));
