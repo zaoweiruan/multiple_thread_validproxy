@@ -2330,6 +2330,7 @@ if(wxWidgets_FOUND AND BUILD_UI_TESTS)
             tests/ui/TestMenuAction.cpp
             tests/ui/TestPopupGuard.cpp
             tests/ui/TestTaskLedgerContextMenu.cpp
+            tests/ui/TestTaskReportHover.cpp
             tests/ui/TestToolbarRegionButton.cpp
             tests/ui/TestLanguageMenu.cpp
         )
@@ -2376,6 +2377,7 @@ add_test(NAME UI_BOTTOMVIEW COMMAND UITests "[bottomview]")
         add_test(NAME UI_MENUACTION COMMAND UITests "[menu]")
         add_test(NAME UI_POPUPGUARD COMMAND UITests "[popup]")
         add_test(NAME UI_TASKLEDGER COMMAND UITests "[taskledger]")
+        add_test(NAME UI_TASKREPORTHOVER COMMAND UITests "[taskreporthover]")
         add_test(NAME UI_TOOLBARREGION COMMAND UITests "[toolbarregion]")
         # 语言菜单用例：语言选择写配置 + 重启提示 + 不热切换（Spec §10.2）。
         # 独立沙箱 test/ui-sandbox-lang，仍以共享沙箱的种子库为前提。
@@ -2412,6 +2414,13 @@ add_test(NAME UI_BOTTOMVIEW COMMAND UITests "[bottomview]")
             FIXTURES_REQUIRED ui_sandbox
             TIMEOUT 180
             WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+        # Task 6 (task-report-hover): the report popup test boots the GUI once,
+        # waits for a real DEDUP run to publish report_<taskId>.txt, then hovers
+        # the finished row. Same sandbox baseline as UI_TASKLEDGER.
+        set_tests_properties(UI_TASKREPORTHOVER PROPERTIES
+            FIXTURES_REQUIRED ui_sandbox
+            TIMEOUT 180
+            WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
         # V11 boots the GUI and waits for a real RESOLVE_REGION run
         # (network-bounded); same sandbox baseline as V8.
         set_tests_properties(UI_TOOLBARREGION PROPERTIES
@@ -2435,7 +2444,8 @@ add_test(NAME UI_BOTTOMVIEW COMMAND UITests "[bottomview]")
         set_tests_properties(UI_MAINWINDOW UI_SEARCH UI_CLEAR UI_FLOATINGWIDGET
             UI_POOL UI_PORTCLOSE UI_EXITASSERT UI_CHAINPREVIEW UI_WINDOWSENSING
             UI_LAYOUTSENSING UI_BOTTOMVIEW UI_MENUACTION UI_POPUPGUARD
-            UI_TASKLEDGER UI_TOOLBARREGION UI_LANGUAGEMENU UI_SANDBOX_PREP
+            UI_TASKLEDGER UI_TASKREPORTHOVER UI_TOOLBARREGION UI_LANGUAGEMENU
+            UI_SANDBOX_PREP
             PROPERTIES ENVIRONMENT
                 "VALIDPROXY_APP_EXE=${_UI_APP_EXE};VALIDPROXY_APP_ROOT=${_UI_APP_ROOT}")
     endif()

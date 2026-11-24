@@ -1,6 +1,8 @@
 #include "TaskMonitorPanel.h"
 #include "i18n/I18nWx.h"
 
+#include <wx/display.h>
+#include <wx/popupwin.h>
 #include <wx/statline.h>
 
 #include <chrono>
@@ -18,6 +20,43 @@ wxBEGIN_EVENT_TABLE(TaskMonitorPanel, wxPanel)
 wxEND_EVENT_TABLE()
 
 namespace {
+
+// "查看报告" context-menu command id. Kept file-local (not in UiControlIds.h):
+// it is TaskMonitorPanel-internal (the menu item is only built here and only
+// handled here), and this task's change set is limited to TaskMonitorPanel.*.
+// wxID_HIGHEST == 6000 → 7505; the UiControlIds block uses +1500..+1504.
+const int kCtxViewReport = wxID_HIGHEST + 1505;
+
+// Fixed popup content size (upper bound; the popup is clamped into the work
+// area below, and the text control scrolls).
+const int kPopupWidth = 560;
+const int kPopupHeight = 420;
+
+// Popup anchor offset from the trigger point (cursor / focused row).
+const int kPopupAnchorOffset = 8;
+
+// Hover report popup. A plain wxPopupTransientWindow dismisses itself the
+// moment it loses activation (WM_ACTIVATE WA_INACTIVE → DismissOnDeactivate),
+// but a hover report must NOT vanish because unrelated focus churn (the 1s
+// task-list refresh, a focus change) deactivates it — it is closed explicitly
+// on list leave / popup leave / row change / missing report only. Swallow the
+// deactivation so only those explicit paths dismiss it (it stays a real
+// wxPopupTransientWindow per the brief; the subclass only removes the
+// transient deactivation auto-close).
+class ReportPopupWindow : public wxPopupTransientWindow {
+public:
+    explicit ReportPopupWindow(wxWindow* parent)
+        : wxPopupTransientWindow(parent, wxPU_CONTAINS_CONTROLS) {}
+
+    bool MSWHandleMessage(WXLRESULT* result, WXUINT message,
+                          WXWPARAM wParam, WXLPARAM lParam) override {
+        if (message == WM_ACTIVATE && wParam == WA_INACTIVE) {
+            return true;  // keep open; closed only via hideReportPopup()
+        }
+        return wxPopupTransientWindow::MSWHandleMessage(result, message,
+                                                        wParam, lParam);
+    }
+};
 
 const char* statusToString(task::TaskStatus s) {
     switch (s) {
@@ -81,6 +120,12 @@ TaskMonitorPanel::TaskMonitorPanel(wxWindow* parent, AppController* controller)
     cancelAllBtn_->Bind(wxEVT_BUTTON, &TaskMonitorPanel::onCancelAll, this);
     pendingList_->Bind(wxEVT_LIST_ITEM_SELECTED, &TaskMonitorPanel::onItemSelected, this);
     pendingList_->Bind(wxEVT_LIST_ITEM_DESELECTED, &TaskMonitorPanel::onItemSelected, this);
+    // Hover report popup (task-report-hover Task 6): motion over a finished
+    // row shows the report; leaving the list hides it. The transient window
+    // has no mouse-leave dismissal of its own for wxPU_CONTAINS_CONTROLS, so
+    // the popup is bound to the same leave handler (hideReportPopup).
+    pendingList_->Bind(wxEVT_MOTION, &TaskMonitorPanel::onListMotion, this);
+    pendingList_->Bind(wxEVT_LEAVE_WINDOW, &TaskMonitorPanel::onListLeave, this);
     // Context menu (spec 2026-11-06 §3.3): wxEVT_CONTEXT_MENU handles both row
     // and blank-space right-clicks with one entry point (on wxMSW, row right-
     // clicks fire ITEM_RIGHT_CLICK *and* propagate WM_CONTEXTMENU, so binding
@@ -96,12 +141,19 @@ TaskMonitorPanel::TaskMonitorPanel(wxWindow* parent, AppController* controller)
     Bind(wxEVT_MENU, &TaskMonitorPanel::onContextCommand, this, ID_TASK_CTX_REMOVE_ONE);
     Bind(wxEVT_MENU, &TaskMonitorPanel::onContextCommand, this, ID_TASK_CTX_CANCEL_ALL);
     Bind(wxEVT_MENU, &TaskMonitorPanel::onContextCommand, this, ID_TASK_CTX_TERM_ONE);
+    Bind(wxEVT_MENU, &TaskMonitorPanel::onContextCommand, this, kCtxViewReport);
 
     updateButtonStates(task::TaskQueueSnapshot());   // start fully disabled
 }
 
 void TaskMonitorPanel::refreshNow() {
     const task::TaskQueueSnapshot snap = controller_->getTaskQueueSnapshot();
+
+    // task-report-hover Task 6: capture the popup's taskId BEFORE the row
+    // rebuild (DeleteAllItems destroys row identity), so hoveredRow_ can be
+    // restored by taskId afterwards. Fixed order: capture → rebuild →
+    // restore hoveredRow_ → conditional-hide (see the end of this method).
+    const std::string popupTaskIdBefore = popupTaskId_;
 
     // ── current task line ──
     const bool idle = snap.current.taskId.empty();
@@ -236,6 +288,36 @@ void TaskMonitorPanel::refreshNow() {
         pendingList_->EnsureVisible(keepTop);
     }
 
+    // ── hovered report popup: fixed-order conditional hide ──────────────
+    // (1) popupTaskIdBefore was captured before the rebuild; (2) restore
+    // hoveredRow_ to the task's new row index (rows shift when history
+    // changes), hiding the popup if the task left the list; (3) keep the
+    // popup only while the restored row is still RowFinished AND its report
+    // still exists — a stationary hover must survive the 1s refresh, and a
+    // row that no longer finishes/reports must hide.
+    if (!popupTaskIdBefore.empty()) {
+        bool found = false;
+        for (std::size_t i = 0; i < pendingIds_.size(); ++i) {
+            if (pendingIds_[i] == popupTaskIdBefore) {
+                hoveredRow_ = static_cast<long>(i);
+                found = true;
+                break;
+            }
+        }
+        if (!found) hideReportPopup();
+    }
+    if (!popupTaskId_.empty()) {
+        bool keep = false;
+        if (hoveredRow_ >= 0 && hoveredRow_ < static_cast<long>(pendingIds_.size()) &&
+            rowKinds_.size() == pendingIds_.size() &&
+            pendingIds_[static_cast<std::size_t>(hoveredRow_)] == popupTaskId_ &&
+            rowKinds_[static_cast<std::size_t>(hoveredRow_)] == RowFinished) {
+            task::TaskReportInfo info;
+            keep = controller_->findTaskReport(popupTaskId_, info);
+        }
+        if (!keep) hideReportPopup();
+    }
+
     updateButtonStates(snap);
 }
 
@@ -299,6 +381,14 @@ void TaskMonitorPanel::onListContextMenu(wxContextMenuEvent& event) {
         menu.Append(ID_TASK_CTX_CANCEL_ONE, i18n::wx(i18n::StrId::TaskMonitor_Menu_CancelQueued));
     } else if (ctxRowKind_ == RowFinished) {
         menu.Append(ID_TASK_CTX_REMOVE_ONE, i18n::wx(i18n::StrId::TaskMonitor_Menu_RemoveRecord));
+        // task-report-hover Task 6: keyboard-reachable path to the report
+        // popup. Only offered when the finished row actually has a published
+        // report (findTaskReport gate) — a report-less finished row gets no
+        // 查看报告 entry (it is omitted, not disabled).
+        task::TaskReportInfo reportInfo;
+        if (controller_->findTaskReport(ctxTaskId_, reportInfo)) {
+            menu.Append(kCtxViewReport, wxString::FromUTF8(u8"查看报告"));
+        }
     } else {
         // Blank space / child rows: whole-queue actions only.
         wxMenuItem* cancelAllItem = menu.Append(ID_TASK_CTX_CANCEL_ALL,
@@ -351,6 +441,30 @@ void TaskMonitorPanel::onContextCommand(wxCommandEvent& event) {
                              { task::taskTypeToString(snap.current.type) })));
         }
         refreshNow();
+        return;
+    }
+    if (id == kCtxViewReport) {
+        // task-report-hover Task 6: keyboard-reachable report popup. Target is
+        // the FOCUSED row (selectedRow_ / ctxTaskId_), not a re-HitTest of the
+        // list centre; the taskId is stable across refreshes, so find its
+        // current row index and anchor the popup there. No report → no-op.
+        if (ctxTaskId_.empty()) return;
+        long row = -1;
+        for (std::size_t i = 0; i < pendingIds_.size(); ++i) {
+            if (pendingIds_[i] == ctxTaskId_) {
+                row = static_cast<long>(i);
+                break;
+            }
+        }
+        if (row < 0) row = selectedRow_;
+        wxPoint pos(0, 0);
+        if (row >= 0 && row < static_cast<long>(pendingIds_.size())) {
+            wxRect rect;
+            if (pendingList_->GetItemRect(row, rect, wxLIST_RECT_BOUNDS)) {
+                pos = wxPoint(rect.x, rect.y);
+            }
+        }
+        showReportPopup(ctxTaskId_, pos);
         return;
     }
     event.Skip();
@@ -413,4 +527,142 @@ void TaskMonitorPanel::onCancelAll(wxCommandEvent&) {
     refreshNow();
     wxQueueEvent(wxGetTopLevelParent(this),
                  new StatusUpdateEvent(0, i18n::u8(i18n::StrId::TaskMonitor_Status_CancelAllQueued)));
+}
+
+// -------------------------------------------------------------------
+//  Hover report popup (task-report-hover Task 6). A finished row shows a
+//  wxPopupTransientWindow (wxPU_CONTAINS_CONTROLS) with the task's report;
+//  the popup is dismissed on mouse leave / non-finished row / missing report.
+// -------------------------------------------------------------------
+void TaskMonitorPanel::onListMotion(wxMouseEvent& event) {
+    const wxPoint pos = event.GetPosition();
+    int hitFlags = 0;
+    const long hit = pendingList_->HitTest(pos, hitFlags);
+    const bool hitRow = hit >= 0 && hit < static_cast<long>(pendingIds_.size());
+    if (!hitRow || rowKinds_[static_cast<std::size_t>(hit)] != RowFinished) {
+        // Blank space / non-finished row: hide any open report popup.
+        hideReportPopup();
+        event.Skip();
+        return;
+    }
+    const std::string& rowId = pendingIds_[static_cast<std::size_t>(hit)];
+    task::TaskReportInfo info;
+    if (!controller_->findTaskReport(rowId, info)) {
+        // Finished row without a published report: nothing to show.
+        hideReportPopup();
+        event.Skip();
+        return;
+    }
+    // Debounce: moving within the same row must not reposition/refresh the
+    // popup; switching rows (or re-showing after an external dismiss) does.
+    if (hit != hoveredRow_ || reportPopup_ == nullptr || !reportPopup_->IsShown()
+        || popupTaskId_ != rowId) {
+        hoveredRow_ = hit;  // the popup now tracks this row (debounce + refresh)
+        showReportPopup(rowId, pos);
+    }
+    event.Skip();
+}
+
+void TaskMonitorPanel::onListLeave(wxMouseEvent& event) {
+    // The list fires a spurious wxEVT_LEAVE_WINDOW as a side effect of the
+    // popup being shown (the topmost popup re-evaluates the window under the
+    // cursor, so IsMouseInWindow()/WindowFromPoint no longer reports the list
+    // even though the cursor never moved off the row). Decide from the actual
+    // cursor point against the screen rects instead — that is deterministic
+    // and matches what the user perceives: the popup stays while the cursor
+    // is over the list or over the popup, and only closes once it has truly
+    // left both (moving onto the popup or staying on the row keeps it).
+    POINT cp{};
+    const bool haveCursor = ::GetCursorPos(&cp) != FALSE;
+    RECT lr{};
+    const bool haveListRect =
+        pendingList_ != nullptr &&
+        ::GetWindowRect(static_cast<HWND>(pendingList_->GetHWND()), &lr) != FALSE;
+    RECT prr{};
+    const bool havePopupRect =
+        reportPopup_ != nullptr &&
+        ::GetWindowRect(static_cast<HWND>(reportPopup_->GetHWND()), &prr) != FALSE;
+    const bool cursorOverList =
+        haveCursor && haveListRect && ::IsWindowVisible(
+            static_cast<HWND>(pendingList_->GetHWND())) != FALSE &&
+        ::PtInRect(&lr, cp) != FALSE;
+    const bool cursorOverPopup =
+        haveCursor && havePopupRect &&
+        ::IsWindowVisible(static_cast<HWND>(reportPopup_->GetHWND())) != FALSE &&
+        ::PtInRect(&prr, cp) != FALSE;
+    if (cursorOverList || cursorOverPopup) {
+        event.Skip();
+        return;
+    }
+    hideReportPopup();
+    event.Skip();
+}
+
+void TaskMonitorPanel::showReportPopup(const std::string& taskId, const wxPoint& pos) {
+    // Guard: no published report → no popup (and clear any stale state).
+    task::TaskReportInfo info;
+    if (!controller_->findTaskReport(taskId, info)) {
+        hideReportPopup();
+        return;
+    }
+    // Lazy-create the transient popup with a read-only multiline text ctrl.
+    // wxPU_CONTAINS_CONTROLS (NOT wxPU_NO_FOCUS, which does not exist in
+    // wxWidgets 3.3.3) lets the inner control take focus / scroll; the
+    // transient window has no mouse-leave dismissal for this style, so the
+    // popup is bound to the same leave handler as the list.
+    if (reportPopup_ == nullptr) {
+        reportPopup_ = new ReportPopupWindow(this);
+        reportPopupText_ = new wxTextCtrl(reportPopup_, wxID_ANY, wxString(),
+                                          wxDefaultPosition, wxDefaultSize,
+                                          wxTE_MULTILINE | wxTE_READONLY);
+        wxBoxSizer* sizer = new wxBoxSizer(wxVERTICAL);
+        sizer->Add(reportPopupText_, 1, wxEXPAND);
+        reportPopup_->SetSizer(sizer);
+        reportPopup_->SetSize(kPopupWidth, kPopupHeight);
+        reportPopup_->Bind(wxEVT_LEAVE_WINDOW, &TaskMonitorPanel::onListLeave, this);
+    }
+    // Identification for UI automation: the popup is located by TITLE
+    // ("任务报告 <taskId>"). wxWindow::SetLabel maps to SetWindowText on MSW;
+    // SetTitle is wxTopLevelWindow-only and a popup is not one, so SetLabel is
+    // the correct (and only) title path.
+    reportPopup_->SetLabel(wxString::FromUTF8((u8"任务报告 " + taskId).c_str()));
+    // UTF-8 → wxString so the report text (Chinese log lines) is never decoded
+    // with the ANSI code page.
+    reportPopupText_->SetValue(wxString::FromUTF8(info.content.c_str()));
+    popupTaskId_ = taskId;
+
+    // Position: anchor at the trigger point + offset, clamped into the work
+    // area. SetSize BEFORE Position so GetSize() drives the clamp (Position
+    // itself only knows the display geometry, not the work area).
+    const wxPoint screenPt = pendingList_->ClientToScreen(pos);
+    wxPoint pt(screenPt.x + kPopupAnchorOffset, screenPt.y + kPopupAnchorOffset);
+    const wxSize sz = reportPopup_->GetSize();
+    wxRect wa;
+    const int displayNum = wxDisplay::GetFromPoint(screenPt);
+    if (displayNum != wxNOT_FOUND) {
+        wa = wxDisplay(static_cast<unsigned>(displayNum)).GetClientArea();
+    } else {
+        wa = wxDisplay(0u).GetClientArea();
+    }
+    const int maxX = wa.GetRight() - sz.GetWidth();
+    const int maxY = wa.GetBottom() - sz.GetHeight();
+    if (pt.x > maxX) pt.x = maxX;
+    if (pt.y > maxY) pt.y = maxY;
+    if (pt.x < wa.GetLeft()) pt.x = wa.GetLeft();
+    if (pt.y < wa.GetTop()) pt.y = wa.GetTop();
+    // Position takes ptOrigin + size; size is an ANCHOR OFFSET, NOT the popup
+    // size — wxSize(0,0) puts the top-left at pt (cursor+8) so the popup opens
+    // below/right of the anchor, with clamping driven by GetSize().
+    reportPopup_->Position(pt, wxSize(0, 0));
+    reportPopup_->Popup();
+}
+
+void TaskMonitorPanel::hideReportPopup() {
+    if (reportPopup_ != nullptr && reportPopup_->IsShown()) {
+        reportPopup_->Dismiss();
+    }
+    popupTaskId_.clear();
+    // hoveredRow_ is intentionally NOT reset here: the next motion re-shows
+    // the popup for the same row via the IsShown() debounce check, and the
+    // per-second refresh re-validates it by scanning pendingIds_.
 }
