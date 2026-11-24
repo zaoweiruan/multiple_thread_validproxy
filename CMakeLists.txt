@@ -4,7 +4,7 @@ cmake_minimum_required(VERSION 3.20)
 # VALIDPROXY_TOOLCHAIN selects the MinGW toolchain via a CMake toolchain file:
 #   -DVALIDPROXY_TOOLCHAIN=<tc>  or  $ENV{VALIDPROXY_TOOLCHAIN}=<tc>
 #   <tc> = clion | ucrt
-# Resolution order: -D cache value > $ENV{VALIDPROXY_TOOLCHAIN} > default "mingw-ucrt".
+# Resolution order: -D cache value > $ENV{VALIDPROXY_TOOLCHAIN} > default "clion-msvcrt".
 #   clion : CLion bundled MinGW (E:/clion/bin/mingw)  GCC 15.2.0, MSVCRT
 #           (zero-risk baseline; wx/Catch2 from the vcpkg msvcrt tree)
 #   ucrt  : UCRT MinGW (E:/mingw64)                    GCC 16.2.0, UCRT
@@ -25,7 +25,7 @@ if(NOT DEFINED CMAKE_TOOLCHAIN_FILE OR "${CMAKE_TOOLCHAIN_FILE}" STREQUAL "")
         set(_VALIDPROXY_TC "${VALIDPROXY_TOOLCHAIN}")
     endif()
     if("${_VALIDPROXY_TC}" STREQUAL "")
-        set(_VALIDPROXY_TC "mingw-ucrt")
+        set(_VALIDPROXY_TC "clion-msvcrt")
     endif()
 
     if(_VALIDPROXY_TC STREQUAL "clion-msvcrt")
