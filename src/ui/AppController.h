@@ -28,6 +28,7 @@
 #include "task/TaskType.h"
 #include "task/MutexPolicy.h"
 #include "task/TaskQueue.h"
+#include "task/TaskReportService.h"
 #include "ProcessExitListener.h"
 #include "ProxyRuntimeHistory.h"
 #include "StandaloneProxyPool.h"
@@ -242,10 +243,15 @@ bool removeFinishedTask(const std::string& taskId) { return taskQueue_.removeFro
 
 // Export / Tool
     std::tuple<bool, int, std::string> exportShareLinks();
-   bool deduplicate();
+   bool deduplicate(task::TaskStats* stats = nullptr);
    // Queued dedup (spec 2026-11-06 §2.5-G14). Fires DEDUP_OK/DEDUP_FAIL on the
    // handler when the task finishes.
    void deduplicateAsync(wxEvtHandler* wxHandler);
+   // Look up the published report for a finished task (task-report-hover
+   // Task 5). Copies the report (file path + full content) into `out` under
+   // the service's lock — no pointer escapes — and returns false when the
+   // task has no published report (leaves `out` untouched).
+   bool findTaskReport(const std::string& taskId, task::TaskReportInfo& out) const;
    bool syncDatabases(const std::string& src = "", const std::string& dst = "");
    bool generateConfig(const std::string& indexId);
     void stopXray();
@@ -318,20 +324,20 @@ private:
   // close (sqlite3_close() returned SQLITE_BUSY). Handles that are still
   // busy stay in the list for a later attempt.
   void closeRetiredDbHandles();
-  void doUpdateSubscription(const std::string& subId, wxEvtHandler* wxHandler);
-  void doUpdateAllSubscriptions(wxEvtHandler* wxHandler);
-  void doTestSubscription(const std::string& subId, wxEvtHandler* wxHandler);
-  void doTestSingleProxy(const std::string& indexId, wxEvtHandler* wxHandler, bool manageRunning = true);
+  void doUpdateSubscription(const std::string& subId, wxEvtHandler* wxHandler, task::TaskStats* stats = nullptr);
+  void doUpdateAllSubscriptions(wxEvtHandler* wxHandler, task::TaskStats* stats = nullptr);
+  void doTestSubscription(const std::string& subId, wxEvtHandler* wxHandler, task::TaskStats* stats = nullptr);
+  void doTestSingleProxy(const std::string& indexId, wxEvtHandler* wxHandler, bool manageRunning = true, task::TaskStats* stats = nullptr);
   void doTestSingleProxySubtask(const std::string& indexId, wxEvtHandler* wxHandler);
-  void doTestAllProxies(wxEvtHandler* wxHandler, ProxyBatchTester* tester = nullptr);
+  void doTestAllProxies(wxEvtHandler* wxHandler, ProxyBatchTester* tester = nullptr, task::TaskStats* stats = nullptr);
   void doTestOnlineProxies(wxEvtHandler* wxHandler, bool silent);
-  void doFindFirstProxy(wxEvtHandler* wxHandler);
-  void doFindBestProxy(wxEvtHandler* wxHandler);
-  void doSyncDatabases(wxEvtHandler* wxHandler);
-    void doAutoTaskImpl(wxEvtHandler* wxHandler, bool resume);
-    void doRunAutoTask(wxEvtHandler* wxHandler);
-    void doResumeAutoTask(wxEvtHandler* wxHandler);
-    void doResolveRegionsBatch(wxEvtHandler* handler, const std::string& subId);
+  bool doFindFirstProxy(wxEvtHandler* wxHandler);
+  bool doFindBestProxy(wxEvtHandler* wxHandler);
+  void doSyncDatabases(wxEvtHandler* wxHandler, task::TaskStats* stats = nullptr);
+    void doAutoTaskImpl(wxEvtHandler* wxHandler, bool resume, task::TaskStats* stats = nullptr);
+    void doRunAutoTask(wxEvtHandler* wxHandler, task::TaskStats* stats = nullptr);
+    void doResumeAutoTask(wxEvtHandler* wxHandler, task::TaskStats* stats = nullptr);
+    void doResolveRegionsBatch(wxEvtHandler* handler, const std::string& subId, task::TaskStats* stats = nullptr);
     void doResolveSingleProxyRegion(const std::string& indexId, wxEvtHandler* handler);
     // Overall progress of the running update task (owner 2026-11-06: 更新订阅
     // 不再拆解订阅名，改为复用队列进度条显示整体进度). The breakdown snapshot
@@ -385,6 +391,11 @@ private:
   // Worker thread (single at a time)
 std::thread workerThread_;
 task::TaskQueue taskQueue_;
+// Task-report publisher (task-report-hover Task 5): the queue's completion
+// sink (registered in the ctor) publishes each finished task's log window +
+// aggregated stats as report_<taskId>.txt via this service. Bound to the
+// Logger log dir so reports land next to the application logs.
+task::TaskReportService taskReportService_;
    TestResult lastFindResult_;
    NetworkMonitor netMon_;
    bool netMonEnabled_{false};  // Cache for MainFrame to query

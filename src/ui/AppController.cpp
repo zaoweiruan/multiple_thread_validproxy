@@ -54,7 +54,7 @@ using ui::ScopeGuard;
 // AppController implementation
 // ---------------------------------------------------------------
 AppController::AppController(sqlite3* db, const config::AppConfig& cfg)
-    : db_(db), config_(cfg) {
+    : db_(db), config_(cfg), taskReportService_(Logger::getLogDir()) {
 
     // P0-1: publish the TIME_WAIT rollback switch once, at startup. ConfigReader::load()
     // is disk IO per call, so the probing hot path must never read the config file —
@@ -71,6 +71,19 @@ AppController::AppController(sqlite3* db, const config::AppConfig& cfg)
         // decision, taken when one of its workers exhausts its 30s wait.
     }
     exitListener_ = new proc::ProcessExitListener();
+
+    // Task-report sink (task-report-hover Task 5): every task that reaches a
+    // terminal state publishes its log window + aggregated stats as
+    // report_<taskId>.txt. A taskId-less handle (e.g. the queue's "no task"
+    // sentinel) is ignored; publish failure is non-throwing (WARN in the
+    // service, index not updated) so a report write can never break the queue.
+    taskQueue_.setTaskFinishedSink([this](const task::TaskHandle& h,
+                                          const std::vector<task::LogLine>& l,
+                                          const task::TaskStats& s) {
+        if (!h.taskId.empty()) {
+            taskReportService_.publish(h, l, s);
+        }
+    });
 }
 
 AppController::~AppController() {
@@ -393,13 +406,15 @@ void AppController::updateSubscriptionAsync(const std::string& subId, wxEvtHandl
     // work (bugfix 2026-11-03 P2, guarded by TaskCancelResetGuardTest).
     taskQueue_.submit(task::TaskType::UPDATE_SUBSCRIPTION,
         [this, subId, wxHandler](task::TaskContext& ctx) {
-            (void)ctx;
             ScopeGuard<std::atomic<bool>> _guard{isRunning_};
     isRunning_ = true;
             ScopeGuard<std::atomic<int>> _taskGuard{currentTaskType_};
             currentTaskType_.store(static_cast<int>(task::TaskType::UPDATE_SUBSCRIPTION));
             cancelRequested_ = false;   // P2: reset on the worker (bugfix 2026-11-03)
-            doUpdateSubscription(subId, wxHandler);
+            // 统计穿线（task-report-hover Task 5）：do* helper 尾参 &local → ctx.addStats。
+            task::TaskStats local;
+            doUpdateSubscription(subId, wxHandler, &local);
+            ctx.addStats(local);
         }, 1, task::TaskCallbacks{}, subId);
 }
 
@@ -407,13 +422,14 @@ void AppController::updateAllSubscriptionsAsync(wxEvtHandler* wxHandler) {
     // cancelRequested_ is reset by the task body on the worker only (§2.3).
     taskQueue_.submit(task::TaskType::UPDATE_ALL,
         [this, wxHandler](task::TaskContext& ctx) {
-            (void)ctx;
             ScopeGuard<std::atomic<bool>> _guard{isRunning_};
             isRunning_ = true;
             ScopeGuard<std::atomic<int>> _taskGuard{currentTaskType_};
             currentTaskType_.store(static_cast<int>(task::TaskType::UPDATE_ALL));
             cancelRequested_ = false;   // P2: reset on the worker (bugfix 2026-11-03)
-            doUpdateAllSubscriptions(wxHandler);
+            task::TaskStats local;
+            doUpdateAllSubscriptions(wxHandler, &local);
+            ctx.addStats(local);
         }, 1, task::TaskCallbacks{
             .onQueued = [wxHandler](const task::TaskHandle& h) {
                 Logger::write("Task queued: " + h.taskId, LogLevel::INFO);
@@ -692,13 +708,14 @@ void AppController::testSubscriptionAsync(const std::string& subId, wxEvtHandler
     // cancelRequested_ is reset by the task body on the worker only (§2.3).
     taskQueue_.submit(task::TaskType::TEST_SUBSCRIPTION,
         [this, subId, wxHandler](task::TaskContext& ctx) {
-            (void)ctx;
             ScopeGuard<std::atomic<bool>> _guard{isRunning_};
     isRunning_ = true;
             ScopeGuard<std::atomic<int>> _taskGuard{currentTaskType_};
             currentTaskType_.store(static_cast<int>(task::TaskType::TEST_SUBSCRIPTION));
             cancelRequested_ = false;   // P2: reset on the worker (bugfix 2026-11-03)
-            doTestSubscription(subId, wxHandler);
+            task::TaskStats local;
+            doTestSubscription(subId, wxHandler, &local);
+            ctx.addStats(local);
         }, 1, task::TaskCallbacks{}, subId);
 }
 
@@ -726,13 +743,14 @@ void AppController::testSingleProxyAsync(const std::string& indexId, wxEvtHandle
 
     taskQueue_.submit(task::TaskType::TEST_SINGLE_PROXY,
         [this, indexId, wxHandler](task::TaskContext& ctx) {
-            (void)ctx;
             ScopeGuard<std::atomic<bool>> _guard{isRunning_};
             isRunning_ = true;
             ScopeGuard<std::atomic<int>> _taskGuard{currentTaskType_};
             currentTaskType_.store(static_cast<int>(task::TaskType::TEST_SINGLE_PROXY));
             cancelRequested_ = false;   // P2: reset on the worker (bugfix 2026-11-03)
-            doTestSingleProxy(indexId, wxHandler, true);
+            task::TaskStats local;
+            doTestSingleProxy(indexId, wxHandler, true, &local);
+            ctx.addStats(local);
         }, 2, task::TaskCallbacks{
             .onQueued = [wxHandler](const task::TaskHandle& h) {
                 Logger::write("Task queued: " + h.taskId, LogLevel::INFO);
@@ -745,7 +763,6 @@ void AppController::testAllProxiesAsync(wxEvtHandler* wxHandler) {
     // cancelRequested_ is reset by the task body on the worker only (§2.3).
     taskQueue_.submit(task::TaskType::TEST_ALL,
         [this, wxHandler](task::TaskContext& ctx) {
-            (void)ctx;
             // Create tester BEFORE setting isRunning_, so testSingleProxyAsync
             // can see proxyBatchTester_ as soon as isRunning_ is true.
             std::shared_ptr<ProxyBatchTester> tester =
@@ -763,13 +780,15 @@ void AppController::testAllProxiesAsync(wxEvtHandler* wxHandler) {
             ScopeGuard<std::atomic<int>> _taskGuard{currentTaskType_};
             currentTaskType_.store(static_cast<int>(task::TaskType::TEST_ALL));
             cancelRequested_ = false;   // P2: reset on the worker (bugfix 2026-11-03)
+            task::TaskStats local;
             try {
-                doTestAllProxies(wxHandler, tester.get());
+                doTestAllProxies(wxHandler, tester.get(), &local);
             } catch (...) {
                 setBatchTester(nullptr);
                 throw;
             }
             setBatchTester(nullptr);
+            ctx.addStats(local);
         }, 1, task::TaskCallbacks{
             .onQueued = [wxHandler](const task::TaskHandle& h) {
                 Logger::write("Task queued: " + h.taskId, LogLevel::INFO);
@@ -815,7 +834,6 @@ void AppController::testSelectedProxiesAsync(const std::vector<std::string>& ind
 
     taskQueue_.submit(task::TaskType::TEST_ALL,
         [this, indexIds, wxHandler](task::TaskContext& ctx) {
-            (void)ctx;
             std::shared_ptr<ProxyBatchTester> tester =
                 std::make_shared<ProxyBatchTester>(db_, config_, "", &cancelRequested_, &netMon_);
             tester->setRowsUpdatedCallback([wxHandler](const std::vector<std::string>& ids) {
@@ -833,13 +851,15 @@ void AppController::testSelectedProxiesAsync(const std::vector<std::string>& ind
             ScopeGuard<std::atomic<int>> _taskGuard{currentTaskType_};
             currentTaskType_.store(static_cast<int>(task::TaskType::TEST_ALL));
             cancelRequested_ = false;   // P2: reset on the worker (bugfix 2026-11-03)
+            task::TaskStats local;
             try {
-                doTestAllProxies(wxHandler, tester.get());
+                doTestAllProxies(wxHandler, tester.get(), &local);
             } catch (...) {
                 setBatchTester(nullptr);
                 throw;
             }
             setBatchTester(nullptr);
+            ctx.addStats(local);
         }, 1, task::TaskCallbacks{
             .onQueued = [wxHandler](const task::TaskHandle& h) {
                 Logger::write("Task queued: " + h.taskId, LogLevel::INFO);
@@ -1017,13 +1037,14 @@ void AppController::findFirstProxyAsync(wxEvtHandler* wxHandler) {
     // cancelRequested_ is reset by the task body on the worker only (§2.3).
     taskQueue_.submit(task::TaskType::FIND_FIRST,
         [this, wxHandler](task::TaskContext& ctx) {
-            (void)ctx;
             ScopeGuard<std::atomic<bool>> _guard{isRunning_};
     isRunning_ = true;
             ScopeGuard<std::atomic<int>> _taskGuard{currentTaskType_};
             currentTaskType_.store(static_cast<int>(task::TaskType::FIND_FIRST));
             cancelRequested_ = false;   // P2: reset on the worker (bugfix 2026-11-03)
-            doFindFirstProxy(wxHandler);
+            // 简单任务（FIND_*，task-report-hover Task 5）：直接从返回值 addStats。
+            const bool ok = doFindFirstProxy(wxHandler);
+            ctx.addStats({1, ok ? 1 : 0, ok ? 0 : 1, 0});
         }, 2);
 }
 
@@ -1031,13 +1052,14 @@ void AppController::findBestProxyAsync(wxEvtHandler* wxHandler) {
     // cancelRequested_ is reset by the task body on the worker only (§2.3).
     taskQueue_.submit(task::TaskType::FIND_BEST,
         [this, wxHandler](task::TaskContext& ctx) {
-            (void)ctx;
             ScopeGuard<std::atomic<bool>> _guard{isRunning_};
     isRunning_ = true;
             ScopeGuard<std::atomic<int>> _taskGuard{currentTaskType_};
             currentTaskType_.store(static_cast<int>(task::TaskType::FIND_BEST));
             cancelRequested_ = false;   // P2: reset on the worker (bugfix 2026-11-03)
-            doFindBestProxy(wxHandler);
+            // 简单任务（FIND_*）：直接从返回值 addStats。
+            const bool ok = doFindBestProxy(wxHandler);
+            ctx.addStats({1, ok ? 1 : 0, ok ? 0 : 1, 0});
         }, 2);
 }
 
@@ -1107,9 +1129,9 @@ std::tuple<bool, int, std::string> AppController::exportShareLinks() {
     return {true, exportCount, outPath.filename().string()};
 }
 
-bool AppController::deduplicate() {
+bool AppController::deduplicate(task::TaskStats* stats) {
     update::SubitemUpdaterV2 updater(db_, config_.proxy.xray_executable, config_, nullptr, "");
-    return updater.deduplicate();
+    return updater.deduplicate(stats);
 }
 
 void AppController::deduplicateAsync(wxEvtHandler* wxHandler) {
@@ -1120,18 +1142,27 @@ void AppController::deduplicateAsync(wxEvtHandler* wxHandler) {
     // the mutex now. cancelRequested_ is reset by the body on the worker only.
     taskQueue_.submit(task::TaskType::DEDUP,
         [this, wxHandler](task::TaskContext& ctx) {
-            (void)ctx;
             ScopeGuard<std::atomic<bool>> _guard{isRunning_};
             isRunning_ = true;
             ScopeGuard<std::atomic<int>> _taskGuard{currentTaskType_};
             currentTaskType_.store(static_cast<int>(task::TaskType::DEDUP));
             cancelRequested_ = false;   // P2: reset on the worker (bugfix 2026-11-03)
-            const bool ok = deduplicate();
+            // DEDUP 统计穿线（task-report-hover Task 5）：deduplicateAsync lambda →
+            // AppController::deduplicate(&local) → SubitemUpdaterV2::deduplicate(&local)
+            // → Deduplicator::deduplicate(&local)，随后 ctx.addStats(local)。
+            task::TaskStats local;
+            const bool ok = deduplicate(&local);
+            ctx.addStats(local);
             if (wxHandler) {
                 wxQueueEvent(wxHandler, new StatusUpdateEvent(0, std::string(
                     ok ? ui::refresh_cmd::kDedupOk : ui::refresh_cmd::kDedupFail)));
             }
         }, 1);
+}
+
+bool AppController::findTaskReport(const std::string& taskId, task::TaskReportInfo& out) const {
+    // 转调 service::find：锁内副本，无指针逃逸；缺键返回 false 且不改 out。
+    return taskReportService_.find(taskId, out);
 }
 
 bool AppController::syncDatabases(const std::string& src, const std::string& dst) {
@@ -3320,7 +3351,7 @@ void AppController::probePoolNow() {
 // ---------------------------------------------------------------
 // Async workers
 // ---------------------------------------------------------------
-void AppController::doUpdateSubscription(const std::string& subId, wxEvtHandler* wxHandler) {
+void AppController::doUpdateSubscription(const std::string& subId, wxEvtHandler* wxHandler, task::TaskStats* stats) {
     // Scope guard: reset isRunning_ on every exit path (including early returns and exceptions)
     ScopeGuard<std::atomic<bool>> _guard{isRunning_};
     isRunning_ = true;
@@ -3329,7 +3360,7 @@ void AppController::doUpdateSubscription(const std::string& subId, wxEvtHandler*
 
     try {
 update::SubitemUpdaterV2 updater(db_, config_.proxy.xray_executable, config_, nullptr, "", &cancelRequested_, &netMon_);
-         bool ok = updater.runSingle(subId);
+         bool ok = updater.runSingle(subId, stats);
 
         std::string msg = ok ? "Update completed: " + subId : "Update failed: " + subId;
         if (wxHandler) {
@@ -3354,7 +3385,7 @@ static void countUpdateProgress(
     const std::vector<update::SubitemUpdaterV2::UpdateStepInfo>& steps,
     int& total, int& done, int& ok, int& failed);
 
-void AppController::doUpdateAllSubscriptions(wxEvtHandler* wxHandler) {
+void AppController::doUpdateAllSubscriptions(wxEvtHandler* wxHandler, task::TaskStats* stats) {
     // Scope guard: reset isRunning_ on every exit path (including early returns and exceptions)
     ScopeGuard<std::atomic<bool>> _guard{isRunning_};
     isRunning_ = true;
@@ -3375,7 +3406,7 @@ update::SubitemUpdaterV2 updater(db_, config_.proxy.xray_executable, config_, nu
             countUpdateProgress(steps, total, done, ok, failed);
             publishUpdateProgress(total, done, ok, failed);
         });
-        bool ok = updater.run();
+        bool ok = updater.run(stats);
         resetUpdateProgress();
 
         std::string msg = ok ? "All subscriptions updated" : "Update (all) had failures";
@@ -3396,7 +3427,7 @@ update::SubitemUpdaterV2 updater(db_, config_.proxy.xray_executable, config_, nu
     }
 }
 
-void AppController::doTestSubscription(const std::string& subId, wxEvtHandler* wxHandler) {
+void AppController::doTestSubscription(const std::string& subId, wxEvtHandler* wxHandler, task::TaskStats* stats) {
     // Scope guard: reset isRunning_ on every exit path (including early returns and exceptions)
     ScopeGuard<std::atomic<bool>> _guard{isRunning_};
     isRunning_ = true;
@@ -3413,7 +3444,7 @@ void AppController::doTestSubscription(const std::string& subId, wxEvtHandler* w
         // Register the running pool so testSingleProxyAsync can insert
         // high-priority proxies while this subscription test is running.
                 setBatchTester(tester);
-        bool ok = tester->runWithSubId(subId);
+        bool ok = tester->runWithSubId(subId, stats);
         setBatchTester(nullptr);
 
         // Batch resolve regions for valid proxies only when actual tests were performed
@@ -3458,7 +3489,7 @@ void AppController::doTestSubscription(const std::string& subId, wxEvtHandler* w
     }
 }
 
-void AppController::doTestSingleProxy(const std::string& indexId, wxEvtHandler* wxHandler, bool manageRunning) {
+void AppController::doTestSingleProxy(const std::string& indexId, wxEvtHandler* wxHandler, bool manageRunning, task::TaskStats* stats) {
     // Scope guard: reset isRunning_ on every exit path (only when managing)
     std::optional<ui::ScopeGuard<std::atomic<bool>>> runningGuard;
     if (manageRunning) {
@@ -3476,6 +3507,14 @@ void AppController::doTestSingleProxy(const std::string& indexId, wxEvtHandler* 
 
         service::ProxyTestService tester(db_, config_, &netMon_);
         bool ok = tester.runSingleProxy(indexId, &cancelRequested_);
+        // ProxyTestService 无 TaskStats 出参（Task 4 未改造）：单代理任务在
+        // do* 内按 {1, ok?1:0, ok?0:1, 0} 直接填（task-report-hover Task 5）。
+        if (stats) {
+            stats->total = 1;
+            stats->success = ok ? 1 : 0;
+            stats->failed = ok ? 0 : 1;
+            stats->skipped = 0;
+        }
         // Get actual test result (delay + message) from the tester
         TestResult result = tester.getLastResult();
         std::string delayStr = utils::isTestResultValid(result.success, result.latencyMs) ? std::to_string(result.latencyMs) : std::string("");
@@ -3552,7 +3591,7 @@ void AppController::doTestSingleProxySubtask(const std::string& indexId, wxEvtHa
     }
 }
 
-void AppController::doTestAllProxies(wxEvtHandler* wxHandler, ProxyBatchTester* tester) {
+void AppController::doTestAllProxies(wxEvtHandler* wxHandler, ProxyBatchTester* tester, task::TaskStats* stats) {
     // tester is pre-created by caller (testAllProxiesAsync) and stored in proxyBatchTester_
     try {
         // Show batch testing progress in status bar field 0
@@ -3560,7 +3599,7 @@ void AppController::doTestAllProxies(wxEvtHandler* wxHandler, ProxyBatchTester* 
             wxQueueEvent(wxHandler, new StatusUpdateEvent(0, "Testing all proxies..."));
         }
 
-        bool ok = tester->run();
+        bool ok = tester->run(stats);
         // Batch resolve regions for all valid proxies only when actual tests were performed
         if (tester->getTotalProxies() > 0) {
             resolveRegionsForValidProxies();
@@ -3748,7 +3787,7 @@ void AppController::doTestOnlineProxies(wxEvtHandler* wxHandler, bool silent) {
 //   "ERR:<msg>"                   — exception occurred
 //   "CANCELLED"                   — operation cancelled
 // ---------------------------------------------------------------
-void AppController::doFindFirstProxy(wxEvtHandler* wxHandler) {
+bool AppController::doFindFirstProxy(wxEvtHandler* wxHandler) {
     // Scope guard: reset isRunning_ on every exit path (including early returns and exceptions)
     ScopeGuard<std::atomic<bool>> _guard{isRunning_};
     isRunning_ = true;
@@ -3758,7 +3797,7 @@ void AppController::doFindFirstProxy(wxEvtHandler* wxHandler) {
             if (wxHandler) {
                 wxQueueEvent(wxHandler, new StatusUpdateEvent(0, "CANCELLED"));
             }
-            return;
+            return false;
         }
         std::string xrayPath = config_.proxy.xray_executable;
         std::string configDir = utils::getExecutableDir() + "/config";
@@ -3767,7 +3806,7 @@ void AppController::doFindFirstProxy(wxEvtHandler* wxHandler) {
             if (wxHandler) {
                 wxQueueEvent(wxHandler, new StatusUpdateEvent(0, "ERR:Failed to create XrayManager"));
             }
-            return;
+            return false;
         }
         // Start Xray instances if not already running
         if (manager->getInstanceCount() == 0) {
@@ -3776,7 +3815,7 @@ void AppController::doFindFirstProxy(wxEvtHandler* wxHandler) {
                 if (wxHandler) {
                     wxQueueEvent(wxHandler, new StatusUpdateEvent(0, "ERR:Failed to start Xray instances"));
                 }
-                return;
+                return false;
             }
         }
         ProxyFinder finder(db_, manager, xrayPath, config_.test_url, "", config_.test_timeout_ms, &cancelRequested_, &netMon_);
@@ -3788,7 +3827,7 @@ void AppController::doFindFirstProxy(wxEvtHandler* wxHandler) {
             if (wxHandler) {
                 wxQueueEvent(wxHandler, new StatusUpdateEvent(0, "CANCELLED"));
             }
-            return;
+            return false;
         }
 
         TestResult res = finder.getLastResult();
@@ -3806,14 +3845,18 @@ void AppController::doFindFirstProxy(wxEvtHandler* wxHandler) {
 
         finder.release();
 
+        // 简单任务（FIND_*）：成功 = 找到可用代理（task-report-hover Task 5）。
+        return res.success && ports.first > 0;
+
     } catch (const std::exception& e) {
         if (wxHandler) {
             wxQueueEvent(wxHandler, new StatusUpdateEvent(0, std::string("ERR:") + e.what()));
         }
+        return false;
     }
 }
 
-void AppController::doFindBestProxy(wxEvtHandler* wxHandler) {
+bool AppController::doFindBestProxy(wxEvtHandler* wxHandler) {
     // Scope guard: reset isRunning_ on every exit path (including early returns and exceptions)
     ScopeGuard<std::atomic<bool>> _guard{isRunning_};
     isRunning_ = true;
@@ -3823,7 +3866,7 @@ void AppController::doFindBestProxy(wxEvtHandler* wxHandler) {
             if (wxHandler) {
                 wxQueueEvent(wxHandler, new StatusUpdateEvent(0, "CANCELLED"));
             }
-            return;
+            return false;
         }
         std::string xrayPath = config_.proxy.xray_executable;
         std::string configDir = utils::getExecutableDir() + "/config";
@@ -3832,7 +3875,7 @@ void AppController::doFindBestProxy(wxEvtHandler* wxHandler) {
             if (wxHandler) {
                 wxQueueEvent(wxHandler, new StatusUpdateEvent(0, "ERR:Failed to create XrayManager"));
             }
-            return;
+            return false;
         }
         // Start Xray instances if not already running
         if (manager->getInstanceCount() == 0) {
@@ -3841,7 +3884,7 @@ void AppController::doFindBestProxy(wxEvtHandler* wxHandler) {
                 if (wxHandler) {
                     wxQueueEvent(wxHandler, new StatusUpdateEvent(0, "ERR:Failed to start Xray instances"));
                 }
-                return;
+                return false;
             }
         }
         ProxyFinder finder(db_, manager, xrayPath, config_.test_url, "", config_.test_timeout_ms, &cancelRequested_, &netMon_);
@@ -3853,7 +3896,7 @@ void AppController::doFindBestProxy(wxEvtHandler* wxHandler) {
             if (wxHandler) {
                 wxQueueEvent(wxHandler, new StatusUpdateEvent(0, "CANCELLED"));
             }
-            return;
+            return false;
         }
 
         TestResult res = finder.getLastResult();
@@ -3871,14 +3914,18 @@ void AppController::doFindBestProxy(wxEvtHandler* wxHandler) {
 
         finder.release();
 
+        // 简单任务（FIND_*）：成功 = 找到可用代理（task-report-hover Task 5）。
+        return res.success && ports.first > 0;
+
     } catch (const std::exception& e) {
         if (wxHandler) {
             wxQueueEvent(wxHandler, new StatusUpdateEvent(0, std::string("ERR:") + e.what()));
         }
+        return false;
     }
 }
 
-void AppController::doSyncDatabases(wxEvtHandler* wxHandler) {
+void AppController::doSyncDatabases(wxEvtHandler* wxHandler, task::TaskStats* stats) {
     // Scope guard: reset isRunning_ on every exit path (including early returns and exceptions)
     ScopeGuard<std::atomic<bool>> _guard{isRunning_};
     isRunning_ = true;
@@ -3887,7 +3934,7 @@ void AppController::doSyncDatabases(wxEvtHandler* wxHandler) {
 
     try {
         update::SubitemUpdaterV2 updater(db_, config_.proxy.xray_executable, config_, nullptr, "", &cancelRequested_);
-        bool ok = updater.syncDatabases(config_.sync.source_db, config_.sync.target_db);
+        bool ok = updater.syncDatabases(config_.sync.source_db, config_.sync.target_db, stats);
         std::string msg =
                 ok ? i18n::u8(i18n::StrId::AppController_DbSyncDone)
                    : i18n::u8(i18n::StrId::AppController_DbSyncFailed);
@@ -3935,7 +3982,6 @@ void AppController::findProxyByIndexIdAsync(const std::string& indexId, wxEvtHan
 
     taskQueue_.submit(task::TaskType::FIND_BY_INDEX,
         [this, indexId, wxHandler](task::TaskContext& ctx) {
-            (void)ctx;
             ScopeGuard<std::atomic<bool>> _guard{isRunning_};
     isRunning_ = true;
             ScopeGuard<std::atomic<int>> _taskGuard{currentTaskType_};
@@ -3959,6 +4005,7 @@ void AppController::findProxyByIndexIdAsync(const std::string& indexId, wxEvtHan
                 if (wxHandler) {
                     wxQueueEvent(wxHandler, new StatusUpdateEvent(0, "NOTFOUND:" + indexId));
                 }
+                ctx.addStats({1, 0, 1, 0});   // 简单任务：未找到 = 失败
                 return;
             }
             
@@ -3975,11 +4022,14 @@ void AppController::findProxyByIndexIdAsync(const std::string& indexId, wxEvtHan
                                                         message, true));
                 wxQueueEvent(wxHandler, new StatusUpdateEvent(0, ok ? ("FOUND:" + it->indexid + ":" + it->address) : ("ERR:" + message)));
             }
+            // 简单任务（FIND_*）：直接从返回值 addStats。
+            ctx.addStats({1, ok ? 1 : 0, ok ? 0 : 1, 0});
 
         } catch (const std::exception& e) {
             if (wxHandler) {
                 wxQueueEvent(wxHandler, new StatusUpdateEvent(0, std::string("ERR:") + e.what()));
             }
+            ctx.addStats({1, 0, 1, 0});
         }
         }, 2);
 }
@@ -3988,13 +4038,14 @@ void AppController::syncDatabasesAsync(wxEvtHandler* wxHandler) {
     // cancelRequested_ is reset by the task body on the worker only (§2.3).
     taskQueue_.submit(task::TaskType::SYNC_DB,
         [this, wxHandler](task::TaskContext& ctx) {
-            (void)ctx;
             ScopeGuard<std::atomic<bool>> _guard{isRunning_};
     isRunning_ = true;
             ScopeGuard<std::atomic<int>> _taskGuard{currentTaskType_};
             currentTaskType_.store(static_cast<int>(task::TaskType::SYNC_DB));
             cancelRequested_ = false;   // P2: reset on the worker (bugfix 2026-11-03)
-            doSyncDatabases(wxHandler);
+            task::TaskStats local;
+            doSyncDatabases(wxHandler, &local);
+            ctx.addStats(local);
         }, 1);
 }
 
@@ -4013,17 +4064,18 @@ void AppController::resolveRegionsBatchAsync(wxEvtHandler* handler, const std::s
     // cancelRequested_ is reset by the task body on the worker only (§2.3).
     taskQueue_.submit(task::TaskType::RESOLVE_REGION,
         [this, handler, subId](task::TaskContext& ctx) {
-            (void)ctx;
             ScopeGuard<std::atomic<bool>> _guard{isRunning_};
     isRunning_ = true;
             ScopeGuard<std::atomic<int>> _taskGuard{currentTaskType_};
             currentTaskType_.store(static_cast<int>(task::TaskType::RESOLVE_REGION));
             cancelRequested_ = false;   // P2: reset on the worker (bugfix 2026-11-03)
-            doResolveRegionsBatch(handler, subId);
+            task::TaskStats local;
+            doResolveRegionsBatch(handler, subId, &local);
+            ctx.addStats(local);
         }, 1, task::TaskCallbacks{}, subId);
 }
 
-void AppController::doResolveRegionsBatch(wxEvtHandler* handler, const std::string& subId) {
+void AppController::doResolveRegionsBatch(wxEvtHandler* handler, const std::string& subId, task::TaskStats* stats) {
     ScopeGuard<std::atomic<bool>> _guard{isRunning_};
     isRunning_ = true;
     ScopeGuard<std::atomic<int>> _taskGuard{currentTaskType_};
@@ -4062,7 +4114,7 @@ void AppController::doResolveRegionsBatch(wxEvtHandler* handler, const std::stri
                 wxQueueEvent(handler, new ProxyTestProgressEvent(processed, total, "", "", "", msg, false));
             }
         });
-        int resolved = resolver.run(subId);
+        int resolved = resolver.run(subId, stats);
 
         std::string msg;
         if (resolved > 0) {
@@ -4331,7 +4383,6 @@ void AppController::runAutoTaskAsync(wxEvtHandler* wxHandler) {
     // cancelRequested_ is reset by the task body on the worker only (§2.3).
     taskQueue_.submit(task::TaskType::AUTO_TASK,
         [this, wxHandler](task::TaskContext& ctx) {
-            (void)ctx;
             ScopeGuard<std::atomic<bool>> _guard{isRunning_};
     isRunning_ = true;
             ScopeGuard<std::atomic<int>> _taskGuard{currentTaskType_};
@@ -4340,7 +4391,9 @@ void AppController::runAutoTaskAsync(wxEvtHandler* wxHandler) {
             // the worker), not just at submit time (UI thread). A cancel
             // requested while the task was queued must not poison the run.
             cancelRequested_ = false;
-            doRunAutoTask(wxHandler);
+            task::TaskStats local;
+            doRunAutoTask(wxHandler, &local);
+            ctx.addStats(local);
         }, 1);
 }
 
@@ -4348,18 +4401,19 @@ void AppController::resumeAutoTaskAsync(wxEvtHandler* wxHandler) {
     // cancelRequested_ is reset by the task body on the worker only (§2.3).
     taskQueue_.submit(task::TaskType::AUTO_TASK,
         [this, wxHandler](task::TaskContext& ctx) {
-            (void)ctx;
             ScopeGuard<std::atomic<bool>> _guard{isRunning_};
     isRunning_ = true;
             ScopeGuard<std::atomic<int>> _taskGuard{currentTaskType_};
             currentTaskType_.store(static_cast<int>(task::TaskType::AUTO_TASK));
             // P2: reset cancel flag when the task actually starts running.
             cancelRequested_ = false;
-            doResumeAutoTask(wxHandler);
+            task::TaskStats local;
+            doResumeAutoTask(wxHandler, &local);
+            ctx.addStats(local);
         }, 1);
 }
 
-void AppController::doAutoTaskImpl(wxEvtHandler* wxHandler, bool resume) {
+void AppController::doAutoTaskImpl(wxEvtHandler* wxHandler, bool resume, task::TaskStats* stats) {
     ScopeGuard<std::atomic<bool>> _guard{isRunning_};
     isRunning_ = true;
     ScopeGuard<std::atomic<int>> _taskGuard{currentTaskType_};
@@ -4427,7 +4481,7 @@ void AppController::doAutoTaskImpl(wxEvtHandler* wxHandler, bool resume) {
             setBatchTester(tester);
         });
 
-        bool ok = resume ? manager.resume() : manager.run(config_.auto_task.steps);
+        bool ok = resume ? manager.resume(stats) : manager.run(config_.auto_task.steps, stats);
 
         std::string msg = ok ? "AutoTask completed" : "AutoTask failed";
         if (wxHandler) {
@@ -4442,10 +4496,10 @@ void AppController::doAutoTaskImpl(wxEvtHandler* wxHandler, bool resume) {
     }
 }
 
-void AppController::doRunAutoTask(wxEvtHandler* wxHandler) {
-    doAutoTaskImpl(wxHandler, false);
+void AppController::doRunAutoTask(wxEvtHandler* wxHandler, task::TaskStats* stats) {
+    doAutoTaskImpl(wxHandler, false, stats);
 }
 
-void AppController::doResumeAutoTask(wxEvtHandler* wxHandler) {
-    doAutoTaskImpl(wxHandler, true);
+void AppController::doResumeAutoTask(wxEvtHandler* wxHandler, task::TaskStats* stats) {
+    doAutoTaskImpl(wxHandler, true, stats);
 }

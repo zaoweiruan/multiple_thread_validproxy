@@ -556,6 +556,7 @@ set(CORE_SOURCES
     ${WEBDAV_SECRET_GENERATED}
     src/task/MutexPolicy.cpp
     src/task/TaskQueue.cpp
+    src/task/TaskReportService.cpp
     src/task/TaskType.cpp
     src/task/TaskFormat.cpp
     src/service/ConfigService.cpp
@@ -982,6 +983,18 @@ set_target_properties(test_task_queue_report PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY_RELEASE ${VALIDPROXY_TEST_DIR}
 )
 add_test(NAME TaskQueueReportTest COMMAND test_task_queue_report)
+
+# task-report-hover Task 5: 全链路集成（TaskQueue 完成 sink → TaskReportService 落盘）
+add_executable(test_task_report_integration tests/test_task_report_integration.cpp src/task/TaskQueue.cpp
+    src/task/TaskType.cpp src/task/TaskReportService.cpp src/Logger.cpp src/LoggerInstance.cpp)
+target_include_directories(test_task_report_integration PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(test_task_report_integration PRIVATE gtest_main gtest)
+set_target_properties(test_task_report_integration PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${VALIDPROXY_TEST_DIR}
+)
+add_test(NAME TaskReportIntegrationTest COMMAND test_task_report_integration)
 
 add_executable(test_task_format tests/test_task_format.cpp src/task/TaskFormat.cpp)
 target_include_directories(test_task_format PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
