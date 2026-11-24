@@ -959,6 +959,18 @@ set_target_properties(test_task_stats PROPERTIES
 )
 add_test(NAME TaskStatsTest COMMAND test_task_stats)
 
+# task-report-hover Task 2: TaskReportService 报告格式化+落盘+内存索引
+add_executable(test_task_report_service tests/test_task_report_service.cpp src/task/TaskReportService.cpp
+    src/task/TaskType.cpp src/Logger.cpp src/LoggerInstance.cpp)
+target_include_directories(test_task_report_service PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(test_task_report_service PRIVATE gtest_main gtest)
+set_target_properties(test_task_report_service PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${VALIDPROXY_TEST_DIR}
+)
+add_test(NAME TaskReportServiceTest COMMAND test_task_report_service)
+
 add_executable(test_task_format tests/test_task_format.cpp src/task/TaskFormat.cpp)
 target_include_directories(test_task_format PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(test_task_format PRIVATE gtest_main gtest)
