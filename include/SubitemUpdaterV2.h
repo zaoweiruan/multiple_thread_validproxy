@@ -21,6 +21,7 @@
 #include "update/Deduplicator.h"
 #include "update/Importer.h"
 #include "i18n/I18n.h"
+#include "task/TaskType.h"
 
 class NetworkMonitor;
 
@@ -60,14 +61,17 @@ public:
     using StepObserver = std::function<void(const std::vector<UpdateStepInfo>&)>;
     void setStepObserver(StepObserver cb) { stepObserver_ = std::move(cb); }
 
-    bool run();
-    bool runSingle(const std::string& subId);
+    // stats (optional, trailing): filled at the existing summary point with the
+    // already-computed counts; nullptr (default) keeps current behaviour.
+    bool run(task::TaskStats* stats = nullptr);
+    bool runSingle(const std::string& subId, task::TaskStats* stats = nullptr);
     bool runSingleWithProxy(const std::string& subId, int socksPort);
-    bool deduplicate();
+    bool deduplicate(task::TaskStats* stats = nullptr);
 
     // Sync databases - migrate valid proxies from source to target
     bool syncDatabases(const std::string& sourceDbPath, 
-                       const std::string& targetDbPath);
+                       const std::string& targetDbPath,
+                       task::TaskStats* stats = nullptr);
 
     // Import subitems from file (batch import)
     bool importSubitemsFromFile(const std::string& filePath, 

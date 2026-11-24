@@ -1134,6 +1134,21 @@ set_target_properties(test_dedup PROPERTIES
 )
 add_test(NAME DedupTest COMMAND test_dedup)
 
+add_executable(test_task_stats_exposure tests/test_task_stats_exposure.cpp src/update/Deduplicator.cpp src/ProfileitemDAO.cpp src/Utils.cpp src/Logger.cpp src/LoggerInstance.cpp)
+target_include_directories(test_task_stats_exposure PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(test_task_stats_exposure PRIVATE
+    gtest_main
+    gtest
+    ${VCPKG_ROOT}/installed/x64-mingw-static/lib/libsqlite3.a
+    -lws2_32
+)
+set_target_properties(test_task_stats_exposure PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${VALIDPROXY_TEST_DIR}
+)
+add_test(NAME TaskStatsExposureTest COMMAND test_task_stats_exposure)
+
 add_executable(test_profile_ex_item_dao tests/test_profile_ex_item_dao.cpp src/ProfileExItemDAO.cpp src/Logger.cpp src/LoggerInstance.cpp src/Utils.cpp)
 target_include_directories(test_profile_ex_item_dao PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(test_profile_ex_item_dao PRIVATE

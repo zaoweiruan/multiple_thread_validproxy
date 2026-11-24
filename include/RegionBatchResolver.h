@@ -11,6 +11,7 @@
 
 #include "ConfigReader.h"
 #include "Profileitem.h"
+#include "task/TaskType.h"
 
 // Forward declaration only: networkDown() is defined in the .cpp so this header
 // stays free of a NetworkMonitor link dependency for every consumer.
@@ -24,7 +25,10 @@ public:
 
     /// Run batch region resolution for all (or filtered subId) valid proxies
     /// that don't have a region yet. Returns number of successfully resolved.
-    int run(const std::string& subId = "");
+    /// stats (optional, trailing): filled at the completion summary with the
+    /// already-computed counts (skipped derived so success+failed+skipped==total);
+    /// nullptr (default) keeps the current behaviour exactly.
+    int run(const std::string& subId = "", task::TaskStats* stats = nullptr);
 
     /// Request cancellation from worker threads
     void cancel();

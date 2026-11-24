@@ -20,6 +20,7 @@
 #include "XrayApi.h"
 #include "ConfigGenerator.h"
 #include "TestResultQueue.h"
+#include "task/TaskType.h"
 
 class NetworkMonitor;
 
@@ -29,9 +30,12 @@ public:
                      std::atomic<bool>* externalCancel = nullptr, const NetworkMonitor* netMon = nullptr);
     ~ProxyBatchTester();
 
-    bool run();
-    bool runWithSubId(const std::string& subId);
-    bool runWithIndexId(const std::string& indexId);
+    // stats (optional, trailing): filled at the existing summary point
+    // (printSummary) with the already-computed counts; nullptr (default) keeps
+    // the current behaviour exactly.
+    bool run(task::TaskStats* stats = nullptr);
+    bool runWithSubId(const std::string& subId, task::TaskStats* stats = nullptr);
+    bool runWithIndexId(const std::string& indexId, task::TaskStats* stats = nullptr);
 
     // Phase A (ProxyTestUnified): load a specific set of proxies (by indexId)
     // into proxies_ so a multi-select test can create one count=N pool instead
@@ -108,13 +112,16 @@ public:
     void testProxiesMultiThreaded();
     // Phase C (ProxyTestUnified): unified completion summary exit reason.
     enum class ExitReason { Normal, Cancelled, Crash, Shutdown };
-    void printSummary(ExitReason reason = ExitReason::Normal);
+    // stats (optional): filled from the already-computed run counters when a
+    // summary is actually printed (double-print guard still applies).
+    void printSummary(ExitReason reason = ExitReason::Normal,
+                      task::TaskStats* stats = nullptr);
 
     void workerThreadFunc(int workerId, int socksPort, int apiPort);
     void logToConsole(const std::string& msg);
 
     bool preGenerateConfigs(int count);
-    bool runInternal();
+    bool runInternal(task::TaskStats* stats = nullptr);
 
     /// Wait for network recovery or cancellation.
     /// Returns true if network is connected (resume testing), false if cancelled (exit).

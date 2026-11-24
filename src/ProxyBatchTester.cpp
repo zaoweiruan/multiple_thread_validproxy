@@ -807,7 +807,7 @@ void ProxyBatchTester::testProxiesMultiThreaded() {
     running_.store(false, std::memory_order_release);
 }
 
-void ProxyBatchTester::printSummary(ExitReason reason) {
+void ProxyBatchTester::printSummary(ExitReason reason, task::TaskStats* stats) {
     if (summaryPrinted_.exchange(true, std::memory_order_acq_rel)) return;  // avoid double-print
     const char* reasonStr = "normal";
     switch (reason) {
@@ -825,6 +825,15 @@ void ProxyBatchTester::printSummary(ExitReason reason) {
                      - failedCount_.load(std::memory_order_relaxed))
                  + " (exit: " + reasonStr + ")", LogLevel::REPORT);
     Logger::write("========================================", LogLevel::REPORT);
+
+    // Report stats at the existing summary point (task-report-hover Task 4).
+    // Uses the already-computed counters; skipped mirrors the "Remaining" line.
+    if (stats) {
+        stats->total = totalProxies_.load();
+        stats->success = successCount_.load(std::memory_order_relaxed);
+        stats->failed = failedCount_.load(std::memory_order_relaxed);
+        stats->skipped = stats->total - stats->success - stats->failed;
+    }
 }
 
 void ProxyBatchTester::teardownWorkerResult(int workerId, const std::string& errorMsg) {
@@ -945,13 +954,13 @@ bool ProxyBatchTester::preGenerateConfigs(int count) {
     return true;
 }
 
-bool ProxyBatchTester::runInternal() {
+bool ProxyBatchTester::runInternal(task::TaskStats* stats) {
     ExitReason reason = ExitReason::Normal;
     try {
         testProxiesMultiThreaded();
     } catch (...) {
         reason = ExitReason::Crash;
-        printSummary(reason);
+        printSummary(reason, stats);
         if (!keepXrayAlive_) {
             xrayManager_->stopAll();
         }
@@ -960,14 +969,14 @@ bool ProxyBatchTester::runInternal() {
     if (externalCancel_ && externalCancel_->load()) {
         reason = ExitReason::Cancelled;
     }
-    printSummary(reason);
+    printSummary(reason, stats);
     if (!keepXrayAlive_) {
         xrayManager_->stopAll();
     }
     return true;
 }
 
-bool ProxyBatchTester::run() {
+bool ProxyBatchTester::run(task::TaskStats* stats) {
     // B1: Reset all mutable state at start of each run
     proxiesSealed_.store(false, std::memory_order_release);
     successCount_.store(0, std::memory_order_relaxed);
@@ -989,7 +998,7 @@ bool ProxyBatchTester::run() {
 
         if (totalProxies_ == 0) {
             Logger::write("No proxies to test", LogLevel::WARN);
-            printSummary(ExitReason::Normal);
+            printSummary(ExitReason::Normal, stats);
             return true;
         }
 
@@ -1016,10 +1025,10 @@ bool ProxyBatchTester::run() {
         return false;
     }
 
-    return runInternal();
+    return runInternal(stats);
 }
 
-bool ProxyBatchTester::runWithSubId(const std::string& subId) {
+bool ProxyBatchTester::runWithSubId(const std::string& subId, task::TaskStats* stats) {
     // B1: Reset all mutable state at start of each run
     proxiesSealed_.store(false, std::memory_order_release);
     successCount_.store(0, std::memory_order_relaxed);
@@ -1037,7 +1046,7 @@ bool ProxyBatchTester::runWithSubId(const std::string& subId) {
 
     if (totalProxies_ == 0) {
         Logger::write("No proxies to test for subscription: " + subId, LogLevel::WARN);
-        printSummary(ExitReason::Normal);
+        printSummary(ExitReason::Normal, stats);
         return false;
     }
 
@@ -1060,10 +1069,10 @@ bool ProxyBatchTester::runWithSubId(const std::string& subId) {
         return false;
     }
 
-    return runInternal();
+    return runInternal(stats);
 }
 
-bool ProxyBatchTester::runWithIndexId(const std::string& indexId) {
+bool ProxyBatchTester::runWithIndexId(const std::string& indexId, task::TaskStats* stats) {
     // B1: Reset all mutable state at start of each run
     proxiesSealed_.store(false, std::memory_order_release);
     successCount_.store(0, std::memory_order_relaxed);
@@ -1123,7 +1132,7 @@ bool ProxyBatchTester::runWithIndexId(const std::string& indexId) {
     // time (optimization for "多次测试单个代理时，排队后每次都重启xray实例").
     keepXrayAlive_ = true;
 
-    return runInternal();
+    return runInternal(stats);
 }
 
 bool ProxyBatchTester::loadProxies(const std::vector<std::string>& indexIds) {

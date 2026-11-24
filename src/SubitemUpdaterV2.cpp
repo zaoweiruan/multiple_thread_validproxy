@@ -162,7 +162,7 @@ void SubitemUpdaterV2::publishUpdateSteps() {
     }
 }
 
-bool SubitemUpdaterV2::run() {
+bool SubitemUpdaterV2::run(task::TaskStats* stats) {
     Logger::write("========================================", LogLevel::INFO);
     Logger::write("INFO: Starting SubitemUpdaterV2", LogLevel::INFO);
     Logger::write("========================================", LogLevel::INFO);
@@ -425,6 +425,15 @@ bool SubitemUpdaterV2::run() {
     Logger::write("Update methods: " + methodsLog, LogLevel::REPORT);
     Logger::write("Total - Success: " + std::to_string(successCount) + ", Failed: " + std::to_string(totalSubs - successCount), LogLevel::REPORT);
 
+    // Report stats at the existing Update Summary (task-report-hover Task 4).
+    // Uses only the counts the summary already reports; never recomputes.
+    if (stats) {
+        stats->total = totalSubs;
+        stats->success = successCount;
+        stats->failed = totalSubs - successCount;
+        stats->skipped = 0;
+    }
+
     if (!failedSubs.empty()) {
         Logger::write("========================================", LogLevel::REPORT);
         Logger::write("Failed subscriptions:", LogLevel::REPORT);
@@ -470,7 +479,7 @@ bool SubitemUpdaterV2::run() {
     return successCount > 0;
 }
 
-bool SubitemUpdaterV2::runSingle(const std::string& subId) {
+bool SubitemUpdaterV2::runSingle(const std::string& subId, task::TaskStats* stats) {
     Logger::write("INFO: runSingle - subId: " + subId, LogLevel::INFO);
 
     std::optional<db::models::Subitem> optSub = getSubscription(subId);
@@ -512,6 +521,14 @@ bool SubitemUpdaterV2::runSingle(const std::string& subId) {
     if (config_.dedup_after_update && config_.dedup_enabled) {
         Logger::write("INFO: Running dedup after subscription update...", LogLevel::INFO);
         deduplicate();
+    }
+
+    // Single-subscription outcome (task-report-hover Task 4): one item total.
+    if (stats) {
+        stats->total = 1;
+        stats->success = result ? 1 : 0;
+        stats->failed = result ? 0 : 1;
+        stats->skipped = 0;
     }
 
     return result;
@@ -1353,7 +1370,8 @@ bool SubitemUpdaterV2::migrateProfileExItem(sqlite3* srcDb, sqlite3* dstDb,
 }
 
 bool SubitemUpdaterV2::syncDatabases(const std::string& sourceDbPath,
-                                         const std::string& targetDbPath) {
+                                         const std::string& targetDbPath,
+                                         task::TaskStats* stats) {
     sqlite3* srcDb = nullptr;
     sqlite3* dstDb = nullptr;
     
@@ -1447,6 +1465,15 @@ bool SubitemUpdaterV2::syncDatabases(const std::string& sourceDbPath,
     // 5. Output statistics
     Logger::write("Migration Result — Total: " + std::to_string(profiles.size()) + ", Succeeded: " + std::to_string(successCount) + ", Failed: " + std::to_string(failCount), LogLevel::REPORT);
 
+    // Report stats at the existing Migration Result (task-report-hover Task 4).
+    // skipped is derived so success+failed+skipped==total holds by construction.
+    if (stats) {
+        stats->total = static_cast<int>(profiles.size());
+        stats->success = successCount;
+        stats->failed = failCount;
+        stats->skipped = stats->total - stats->success - stats->failed;
+    }
+
     // Commit the transaction
     if (sqlite3_exec(dstDb, "COMMIT;", nullptr, nullptr, &errMsg) != SQLITE_OK) {
         Logger::write("syncDatabases: COMMIT failed, attempting ROLLBACK: " + std::string(errMsg ? errMsg : "unknown"), LogLevel::ERR);
@@ -1467,9 +1494,9 @@ bool SubitemUpdaterV2::syncDatabases(const std::string& sourceDbPath,
     return failCount == 0;
 }
 
-bool SubitemUpdaterV2::deduplicate() {
+bool SubitemUpdaterV2::deduplicate(task::TaskStats* stats) {
     Deduplicator dedup(db_, config_);
-    return dedup.deduplicate();
+    return dedup.deduplicate(stats);
 }
 
 // Import subitems from file

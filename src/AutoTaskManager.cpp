@@ -54,7 +54,7 @@ AutoTaskManager::~AutoTaskManager() {
     cancel();
 }
 
-bool AutoTaskManager::run(const std::vector<std::string>& stepNames) {
+bool AutoTaskManager::run(const std::vector<std::string>& stepNames, task::TaskStats* stats) {
     if (running_.exchange(true)) {
         Logger::write("AutoTask: already running", LogLevel::WARN);
         return false;
@@ -85,10 +85,25 @@ bool AutoTaskManager::run(const std::vector<std::string>& stepNames) {
     Logger::write("AutoTask: " + std::string(result ? "completed" : (state_.cancelled ? "cancelled" : "failed")),
         (result || cancelledOutcome) ? LogLevel::REPORT : LogLevel::ERR);
 
+    // Report stats at the existing summary line (task-report-hover Task 4):
+    // per-step terminal counts only; running/pending steps are not counted.
+    if (stats) {
+        int stepSuccess = 0;
+        int stepFailed = 0;
+        for (const AutoTaskStepInfo& s : state_.steps) {
+            if (s.status == StepStatus::COMPLETED) stepSuccess++;
+            else if (s.status == StepStatus::FAILED || s.status == StepStatus::CANCELLED) stepFailed++;
+        }
+        stats->total = stepSuccess + stepFailed;
+        stats->success = stepSuccess;
+        stats->failed = stepFailed;
+        stats->skipped = 0;
+    }
+
     return result;
 }
 
-bool AutoTaskManager::resume() {
+bool AutoTaskManager::resume(task::TaskStats* stats) {
     AutoTaskState saved = loadStateFile(stateFilePath_);
     if (saved.task_id.empty()) {
         Logger::write("AutoTask: no saved state to resume", LogLevel::WARN);
@@ -104,7 +119,7 @@ bool AutoTaskManager::resume() {
         for (const AutoTaskStepInfo& s : saved.steps) {
             stepNames.push_back(s.name);
         }
-        return run(stepNames);
+        return run(stepNames, stats);
     }
 
     if (saved.current_step_index < 0 || saved.current_step_index >= static_cast<int>(saved.steps.size())) {
@@ -113,7 +128,7 @@ bool AutoTaskManager::resume() {
         for (const AutoTaskStepInfo& s : saved.steps) {
             stepNames.push_back(s.name);
         }
-        return run(stepNames);
+        return run(stepNames, stats);
     }
 
     Logger::write("AutoTask: resuming from step " + std::to_string(saved.current_step_index)
@@ -134,6 +149,21 @@ bool AutoTaskManager::resume() {
 
     Logger::write("AutoTask: " + std::string(result ? "resumed and completed" : "resume failed"),
         result ? LogLevel::REPORT : LogLevel::ERR);
+
+    // Report stats at the existing resume summary (task-report-hover Task 4):
+    // per-step terminal counts only; running/pending steps are not counted.
+    if (stats) {
+        int stepSuccess = 0;
+        int stepFailed = 0;
+        for (const AutoTaskStepInfo& s : state_.steps) {
+            if (s.status == StepStatus::COMPLETED) stepSuccess++;
+            else if (s.status == StepStatus::FAILED || s.status == StepStatus::CANCELLED) stepFailed++;
+        }
+        stats->total = stepSuccess + stepFailed;
+        stats->success = stepSuccess;
+        stats->failed = stepFailed;
+        stats->skipped = 0;
+    }
 
     return result;
 }

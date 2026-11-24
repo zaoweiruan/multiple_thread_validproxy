@@ -9,6 +9,7 @@
 #include <sqlite3.h>
 #include "ConfigReader.h"
 #include "SubitemUpdaterV2.h"   // UpdateProgressObserver snapshot type (v1.2.6 §14.1)
+#include "task/TaskType.h"
 
 class NetworkMonitor;
 class ProxyBatchTester;
@@ -71,8 +72,12 @@ public:
 
     ~AutoTaskManager();
 
-    bool run(const std::vector<std::string>& stepNames);
-    bool resume();
+    // stats (optional, trailing): filled after runSteps() at the existing
+    // "AutoTask: completed/cancelled/failed" / "resumed and completed" summary
+    // from per-step terminal counts (COMPLETED->success, FAILED/CANCELLED->failed,
+    // running/pending not counted; total=success+failed). nullptr keeps current.
+    bool run(const std::vector<std::string>& stepNames, task::TaskStats* stats = nullptr);
+    bool resume(task::TaskStats* stats = nullptr);
 
     void cancel();
     bool isCancelled() const;

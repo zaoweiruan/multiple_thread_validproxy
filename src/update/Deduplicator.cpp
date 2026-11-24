@@ -10,7 +10,7 @@ Deduplicator::Deduplicator(sqlite3* db, const config::AppConfig& config)
     : db_(db), config_(config) {
 }
 
-bool Deduplicator::deduplicate() {
+bool Deduplicator::deduplicate(task::TaskStats* stats) {
     Logger::write("========================================", LogLevel::INFO);
     Logger::write("INFO: Starting Deduplication", LogLevel::INFO);
     Logger::write("========================================", LogLevel::INFO);
@@ -65,6 +65,16 @@ bool Deduplicator::deduplicate() {
     Logger::write("Total deleted: " + std::to_string(totalDeleted), LogLevel::REPORT);
     Logger::write("Total remaining: " + std::to_string(afterCount_), LogLevel::REPORT);
     Logger::write("Dedup completed successfully", LogLevel::REPORT);
+
+    // Report stats at the existing Deduplication Summary (task-report-hover
+    // Task 4). Uses the already-computed counts only; never recomputes.
+    if (stats) {
+        stats->total = beforeCount_;
+        stats->success = afterCount_;
+        stats->failed = configErrorCount_;
+        // Derived so success+failed+skipped==total holds by construction.
+        stats->skipped = stats->total - stats->success - stats->failed;
+    }
     
     return true;
 }

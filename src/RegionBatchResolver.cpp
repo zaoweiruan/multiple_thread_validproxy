@@ -63,7 +63,7 @@ std::vector<RegionBatchResolver::ResolveTarget> RegionBatchResolver::loadTargets
 }
 
 // ---------------------------------------------------------------
-int RegionBatchResolver::run(const std::string& subId) {
+int RegionBatchResolver::run(const std::string& subId, task::TaskStats* stats) {
     // 1. Load targets
     targets_ = loadTargets(subId);
     if (targets_.empty()) {
@@ -145,6 +145,17 @@ int RegionBatchResolver::run(const std::string& subId) {
         finalMsg += " (FAILED=" + std::to_string(totalFail) + " [" + reasonParts + "])";
     }
     Logger::write(finalMsg, LogLevel::REPORT);
+
+    // Report stats at the existing completion summary (task-report-hover Task 4).
+    // Uses the already-computed counters; skipped is derived so the invariant
+    // success+failed+skipped==total holds by construction.
+    if (stats) {
+        stats->total = totalTargets_;
+        stats->success = successCount_.load();
+        stats->failed = totalFail;
+        stats->skipped = stats->total - stats->success - stats->failed;
+    }
+
     return successCount_.load();
 }
 
