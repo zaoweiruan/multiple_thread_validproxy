@@ -18,9 +18,20 @@ struct TaskContext {
     std::atomic<bool>* cancelFlag = nullptr;
     std::function<void(int, int, const std::string&)> reportProgress;
 
+    // Aggregated outcome counters (task-report-hover Task 1); default all 0.
+    task::TaskStats stats;
+
     bool isCancelled() const { return cancelFlag && cancelFlag->load(); }
     void progress(int cur, int total, const std::string& msg) {
         if (reportProgress) reportProgress(cur, total, msg);
+    }
+    // Accumulate another task's stats field-by-field (a container task sums its
+    // children's counters across multiple calls).
+    void addStats(const task::TaskStats& s) {
+        stats.total += s.total;
+        stats.success += s.success;
+        stats.failed += s.failed;
+        stats.skipped += s.skipped;
     }
 };
 

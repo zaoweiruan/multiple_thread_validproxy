@@ -45,6 +45,17 @@ enum class TaskStatus {
 // Every enumerator must be listed; unlisted values return "未知任务 (UNKNOWN)".
 const char* taskTypeToString(TaskType t);
 
+// Aggregated outcome counters for a task run (task-report-hover Task 1).
+// A container task sums its children's stats via TaskContext::addStats; all
+// fields default to 0. A consistent report classifies each item into exactly
+// one bucket (total == success + failed + skipped).
+struct TaskStats {
+    int total = 0;
+    int success = 0;
+    int failed = 0;
+    int skipped = 0;
+};
+
 struct TaskHandle {
     std::string taskId;
     TaskType type = TaskType::NONE;

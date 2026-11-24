@@ -948,6 +948,17 @@ set_target_properties(test_task_type PROPERTIES
 )
 add_test(NAME TaskTypeLabelTest COMMAND test_task_type)
 
+# task-report-hover Task 1: task::TaskStats + TaskContext::addStats (header-only)
+add_executable(test_task_stats tests/test_task_stats.cpp)
+target_include_directories(test_task_stats PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(test_task_stats PRIVATE gtest_main gtest)
+set_target_properties(test_task_stats PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${VALIDPROXY_TEST_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${VALIDPROXY_TEST_DIR}
+)
+add_test(NAME TaskStatsTest COMMAND test_task_stats)
+
 add_executable(test_task_format tests/test_task_format.cpp src/task/TaskFormat.cpp)
 target_include_directories(test_task_format PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(test_task_format PRIVATE gtest_main gtest)
