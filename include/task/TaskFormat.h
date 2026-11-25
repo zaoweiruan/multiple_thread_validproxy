@@ -22,4 +22,17 @@ std::string wallClockText(const std::string& steadyCount,
                           std::chrono::steady_clock::time_point steadyNow,
                           std::chrono::system_clock::time_point wallNow);
 
+// Same mapping as wallClockText but with the FULL local wall-clock date+time
+// "yyyy-mm-dd hh:mm:ss" (report format v2). Returns an empty string for
+// empty / non-numeric / trailing-garbage input (vs wallClockText's "- -").
+std::string wallClockDateTime(const std::string& steadyCount,
+                              std::chrono::steady_clock::time_point steadyNow,
+                              std::chrono::system_clock::time_point wallNow);
+
+// Whole elapsed minutes between two steady stamps, as
+// floor((end-start)/ticksPerSecond/60). Returns -1 if either stamp is empty /
+// non-numeric / trailing-garbage. Both stamps share the steady_clock period.
+long long durationMinutesBetween(const std::string& startSteadyCount,
+                                 const std::string& endSteadyCount);
+
 } // namespace task

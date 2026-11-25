@@ -55,6 +55,15 @@ std::string fmtWall(std::chrono::system_clock::time_point t) {
     return std::string(buf);
 }
 
+// Independent expectation builder for the full wall-clock date+time.
+std::string fmtWallDate(std::chrono::system_clock::time_point t) {
+    const std::time_t tt = std::chrono::system_clock::to_time_t(t);
+    const std::tm* lt = std::localtime(&tt);
+    char buf[32];
+    std::strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", lt);
+    return std::string(buf);
+}
+
 } // namespace
 
 TEST(TaskFormatTest, WallClockTextMapsSteadyStampToWallTime) {
@@ -85,4 +94,76 @@ TEST(TaskFormatTest, WallClockTextGarbageReturnsDash) {
     EXPECT_EQ(task::wallClockText("", steadyNow, wallNow), "- -");
     EXPECT_EQ(task::wallClockText("xyz", steadyNow, wallNow), "- -");
     EXPECT_EQ(task::wallClockText("12xyz", steadyNow, wallNow), "- -");
+}
+
+TEST(TaskFormatTest, WallClockDateTimeMapsSteadyStampToFullWallTime) {
+    // Fixed clock pair for exact determinism: 2023-11-14 22:13:20 UTC epoch
+    // (local timezone applies equally to the function and the expectation).
+    const std::chrono::system_clock::time_point wallNow =
+        std::chrono::system_clock::from_time_t(1700000000);
+    const std::chrono::steady_clock::time_point steadyNow =
+        std::chrono::steady_clock::time_point(std::chrono::seconds(123456));
+
+    // Stamp taken 3661s (1h01m01s) before steadyNow → wall time = wallNow-3661s.
+    const std::string stamp = std::to_string(
+        (steadyNow - std::chrono::seconds(3661)).time_since_epoch().count());
+    const std::string got = task::wallClockDateTime(stamp, steadyNow, wallNow);
+    EXPECT_EQ(got, fmtWallDate(wallNow - std::chrono::seconds(3661)));
+    EXPECT_EQ(got.size(), 19u);              // "yyyy-mm-dd hh:mm:ss"
+    EXPECT_EQ(got[4], '-');
+    EXPECT_EQ(got[7], '-');
+    EXPECT_EQ(got[10], ' ');
+    EXPECT_EQ(got[13], ':');
+    EXPECT_EQ(got[16], ':');
+}
+
+TEST(TaskFormatTest, WallClockDateTimeZeroElapsedEqualsWallNow) {
+    const std::chrono::system_clock::time_point wallNow =
+        std::chrono::system_clock::from_time_t(1700000000);
+    const std::chrono::steady_clock::time_point steadyNow =
+        std::chrono::steady_clock::time_point(std::chrono::seconds(123456));
+    const std::string stamp = std::to_string(steadyNow.time_since_epoch().count());
+    EXPECT_EQ(task::wallClockDateTime(stamp, steadyNow, wallNow), fmtWallDate(wallNow));
+}
+
+TEST(TaskFormatTest, WallClockDateTimeGarbageReturnsEmpty) {
+    const std::chrono::steady_clock::time_point steadyNow =
+        std::chrono::steady_clock::time_point(std::chrono::seconds(123456));
+    const std::chrono::system_clock::time_point wallNow =
+        std::chrono::system_clock::from_time_t(1700000000);
+    EXPECT_EQ(task::wallClockDateTime("", steadyNow, wallNow), "");
+    EXPECT_EQ(task::wallClockDateTime("xyz", steadyNow, wallNow), "");
+    EXPECT_EQ(task::wallClockDateTime("12abc", steadyNow, wallNow), "");
+}
+
+namespace {
+
+std::string stampAt(std::chrono::steady_clock::time_point t) {
+    return std::to_string(t.time_since_epoch().count());
+}
+
+} // namespace
+
+TEST(TaskFormatTest, DurationMinutesBetweenFloorsToWholeMinutes) {
+    const std::chrono::steady_clock::time_point start =
+        std::chrono::steady_clock::time_point(std::chrono::seconds(1000));
+    EXPECT_EQ(task::durationMinutesBetween(stampAt(start),
+                                           stampAt(start + std::chrono::seconds(90))), 1);
+    EXPECT_EQ(task::durationMinutesBetween(stampAt(start),
+                                           stampAt(start + std::chrono::seconds(3600))), 60);
+    EXPECT_EQ(task::durationMinutesBetween(stampAt(start),
+                                           stampAt(start + std::chrono::seconds(59))), 0);
+    EXPECT_EQ(task::durationMinutesBetween(stampAt(start), stampAt(start)), 0);
+}
+
+TEST(TaskFormatTest, DurationMinutesBetweenInvalidReturnsMinusOne) {
+    const std::chrono::steady_clock::time_point start =
+        std::chrono::steady_clock::time_point(std::chrono::seconds(1000));
+    const std::string end = stampAt(start + std::chrono::seconds(90));
+    EXPECT_EQ(task::durationMinutesBetween("", end), -1);
+    EXPECT_EQ(task::durationMinutesBetween("abc", end), -1);
+    EXPECT_EQ(task::durationMinutesBetween("12abc", end), -1);
+    EXPECT_EQ(task::durationMinutesBetween(stampAt(start), ""), -1);
+    EXPECT_EQ(task::durationMinutesBetween(stampAt(start), "xyz"), -1);
+    EXPECT_EQ(task::durationMinutesBetween("", ""), -1);
 }
