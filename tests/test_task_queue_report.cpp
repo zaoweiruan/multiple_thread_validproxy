@@ -1,5 +1,5 @@
-// tests/test_task_queue_report.cpp — TaskQueue 完成 sink(含stats) + 任务窗口日志捕获
-// (task-report-hover Task 3; brief: TaskQueue 完成 sink + 作用域日志捕获 + stats 传递)
+// tests/test_task_queue_report.cpp — TaskQueue 完成 sink(handle, stats, updateMethods) + stats/updateMethods 传递
+// (task-report-format Task 2; brief: sink 三参 + ctx.updateMethods 传至 sink；无 lines/日志捕获)
 #include <gtest/gtest.h>
 
 #include <atomic>
@@ -7,9 +7,7 @@
 #include <stdexcept>
 #include <string>
 #include <thread>
-#include <vector>
 
-#include "Logger.h"
 #include "task/TaskQueue.h"
 #include "task/TaskType.h"
 
@@ -23,8 +21,8 @@ class TaskQueueReportTest : public ::testing::Test {
 protected:
     task::TaskQueue q;
     task::TaskHandle gotH;
-    std::vector<task::LogLine> got;
     task::TaskStats gotSt;
+    std::string gotUm;
     int failedSinkCalls = 0;
 };
 
@@ -35,19 +33,19 @@ protected:
 // set as its first statement), guaranteeing the worker already popped it from
 // the queue so stop() cannot drain it. stop(true) then joins, and the sink has
 // fired before any assertion reads the fixture members.
-TEST_F(TaskQueueReportTest, SinkCalledWithHandleLinesAndStats) {
+TEST_F(TaskQueueReportTest, SinkCalledWithHandleStatsAndUpdateMethods) {
     q.setTaskFinishedSink([&](const task::TaskHandle& h,
-                              const std::vector<task::LogLine>& l,
-                              const task::TaskStats& s) {
+                              const task::TaskStats& s,
+                              const std::string& um) {
         gotH = h;
-        got = l;
         gotSt = s;
+        gotUm = um;
     });
     std::atomic<bool> started{false};
     q.submit(task::TaskType::DEDUP, [&started](task::TaskContext& ctx) {
         started.store(true);
-        Logger::write("dedup line", LogLevel::INFO);
         ctx.addStats(task::TaskStats{10, 8, 1, 1});
+        ctx.updateMethods = "direct";
     });
     for (int i = 0; i < 200 && !started.load(); ++i) {
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
@@ -56,16 +54,17 @@ TEST_F(TaskQueueReportTest, SinkCalledWithHandleLinesAndStats) {
     q.stop(true);
 
     EXPECT_EQ(gotH.type, task::TaskType::DEDUP);
-    EXPECT_FALSE(got.empty());
-    EXPECT_NE(got[0].line.find("dedup line"), std::string::npos);
     EXPECT_EQ(gotSt.total, 10);
     EXPECT_EQ(gotSt.success, 8);
+    EXPECT_EQ(gotSt.failed, 1);
+    EXPECT_EQ(gotSt.skipped, 1);
+    EXPECT_EQ(gotUm, "direct");    // ctx.updateMethods propagated to the sink
 }
 
 TEST_F(TaskQueueReportTest, FailedTaskStillEmitsSink) {
     q.setTaskFinishedSink([&](const task::TaskHandle& h,
-                              const std::vector<task::LogLine>&,
-                              const task::TaskStats&) {
+                              const task::TaskStats&,
+                              const std::string&) {
         if (h.status == task::TaskStatus::FAILED) ++failedSinkCalls;
     });
     std::atomic<bool> started{false};

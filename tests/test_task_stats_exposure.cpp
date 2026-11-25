@@ -4,12 +4,18 @@
 //   1. deduplicate(&st) 在汇总点把既有计数写入 TaskStats，且
 //      不变式 success + failed + skipped == total 恒成立；
 //   2. 传 nullptr 与不传（默认 nullptr）行为一致，编译期可调用、运行无异常。
+//
+// task-report-format Task 2: SubitemUpdaterV2::run/runSingle 新增末位出参
+// `std::string* updateMethods`（默认 nullptr，向后兼容）——在方法字符串构建后、
+// 任何早返回前填充，格式 "accelerator, proxy"（逗号+空格分隔）。
 #include <gtest/gtest.h>
 #include <sqlite3.h>
+#include <atomic>
 #include <string>
 #include <vector>
 
 #include "update/Deduplicator.h"
+#include "SubitemUpdaterV2.h"
 #include "ConfigReader.h"
 #include "task/TaskType.h"
 
@@ -44,6 +50,8 @@ protected:
             "Delay TEXT, Speed TEXT, Sort TEXT, Message TEXT,"
             "consecutive_failures INTEGER DEFAULT 0"
         ")");
+        // SubitemUpdaterV2::run/runSingle 只需表存在（空表即无启用订阅/无匹配订阅，
+        // 均在网络/Xray 启动前早返回），列名与 DAO 读取一致即可。
         exec("CREATE TABLE SubItem ("
             "Id TEXT PRIMARY KEY,"
             "Url TEXT, Enabled TEXT, Remarks TEXT, UpdateTime TEXT"
@@ -83,6 +91,11 @@ protected:
         insertDelay("3", "300");
         exec("INSERT INTO SubItem (Id) VALUES ('sub1')");
     }
+
+    // SubitemUpdaterV2 只需内存库 + 空表；无网络、无 Xray（路径在早返回前）。
+    update::SubitemUpdaterV2 makeUpdater(const config::AppConfig& cfg) {
+        return update::SubitemUpdaterV2(db_, "", cfg, nullptr, "", nullptr, nullptr);
+    }
 };
 
 // 1. 出参填充 + 不变式 success + failed + skipped == total
@@ -114,4 +127,52 @@ TEST_F(TaskStatsExposureTest, NullStatsKeepsBehaviorUnchanged) {
 
     bool ok2 = dedup.deduplicate();         // 默认 nullptr
     ASSERT_TRUE(ok2) << "deduplicate() (default nullptr) failed";
+}
+
+// 3. run() 无启用订阅 → 成功早返回，updateMethods 出参已按
+//    "accelerator, proxy"（逗号+空格）填充。
+TEST_F(TaskStatsExposureTest, RunFillsUpdateMethodsOutParam) {
+    config::AppConfig cfg;
+    cfg.update_methods = std::vector<std::string>{"accelerator", "proxy"};
+
+    update::SubitemUpdaterV2 updater = makeUpdater(cfg);
+    std::string methods;
+    bool ok = updater.run(nullptr, &methods);
+
+    ASSERT_TRUE(ok) << "run() should succeed with no enabled subscriptions";
+    EXPECT_EQ(methods, "accelerator, proxy");
+}
+
+// 4. run() 不传 updateMethods（默认 nullptr）→ 行为不变、无异常。
+TEST_F(TaskStatsExposureTest, RunAcceptsNullUpdateMethods) {
+    config::AppConfig cfg;
+    cfg.update_methods = std::vector<std::string>{"direct"};
+
+    update::SubitemUpdaterV2 updater = makeUpdater(cfg);
+    bool ok = updater.run(nullptr);   // updateMethods 默认 nullptr
+    ASSERT_TRUE(ok);
+}
+
+// 5. runSingle() 订阅不存在 → 早返回 false，但 updateMethods 仍已填充
+//    （方法字符串在早返回前构建/填充）。
+TEST_F(TaskStatsExposureTest, RunSingleFillsUpdateMethodsEvenWhenSubMissing) {
+    config::AppConfig cfg;
+    cfg.update_methods = std::vector<std::string>{"accelerator", "proxy"};
+
+    update::SubitemUpdaterV2 updater = makeUpdater(cfg);
+    std::string methods;
+    bool ok = updater.runSingle("no-such-sub", nullptr, &methods);
+
+    ASSERT_FALSE(ok) << "runSingle of a missing subscription must fail";
+    EXPECT_EQ(methods, "accelerator, proxy");
+}
+
+// 6. runSingle() 不传 updateMethods（默认 nullptr）→ 行为不变、无异常。
+TEST_F(TaskStatsExposureTest, RunSingleAcceptsNullUpdateMethods) {
+    config::AppConfig cfg;
+    cfg.update_methods = std::vector<std::string>{"direct"};
+
+    update::SubitemUpdaterV2 updater = makeUpdater(cfg);
+    bool ok = updater.runSingle("no-such-sub", nullptr);   // updateMethods 默认 nullptr
+    ASSERT_FALSE(ok);
 }

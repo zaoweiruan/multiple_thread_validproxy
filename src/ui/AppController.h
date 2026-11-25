@@ -324,8 +324,8 @@ private:
   // close (sqlite3_close() returned SQLITE_BUSY). Handles that are still
   // busy stay in the list for a later attempt.
   void closeRetiredDbHandles();
-  void doUpdateSubscription(const std::string& subId, wxEvtHandler* wxHandler, task::TaskStats* stats = nullptr);
-  void doUpdateAllSubscriptions(wxEvtHandler* wxHandler, task::TaskStats* stats = nullptr);
+  void doUpdateSubscription(const std::string& subId, wxEvtHandler* wxHandler, task::TaskStats* stats = nullptr, std::string* updateMethods = nullptr);
+  void doUpdateAllSubscriptions(wxEvtHandler* wxHandler, task::TaskStats* stats = nullptr, std::string* updateMethods = nullptr);
   void doTestSubscription(const std::string& subId, wxEvtHandler* wxHandler, task::TaskStats* stats = nullptr);
   void doTestSingleProxy(const std::string& indexId, wxEvtHandler* wxHandler, bool manageRunning = true, task::TaskStats* stats = nullptr);
   void doTestSingleProxySubtask(const std::string& indexId, wxEvtHandler* wxHandler);

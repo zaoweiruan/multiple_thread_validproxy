@@ -1,11 +1,12 @@
 // tests/test_task_report_integration.cpp — 任务完成 → 完成 sink → TaskReportService 落盘
-// (task-report-hover Task 5; brief: AppController 接线 TaskReportService + lambda addStats
-//  完成即生成 report。集成测试独立跑，不经 wx。)
+// (task-report-format Task 2; brief: 签名更新（handle, stats, updateMethods）+ 无 log excerpt
+//  + `success: 9` 断言保留。集成测试独立跑，不经 wx。)
 //
-// 全链路（不经 wx）：task::TaskQueue 完成 sink（Task 3）把 (handle, lines, stats) 交给
-// task::TaskReportService::publish（Task 2），后者落盘 report_<taskId>.txt 并含统计节。
-// 这是 AppController ctor 中 setTaskFinishedSink 注册的同一语义（Task 5 接线），
-// 此处直接以 TaskQueue + TaskReportService 验证 sink→publish→文件 的端到端路径。
+// 全链路（不经 wx）：task::TaskQueue 完成 sink（(handle, stats, updateMethods)）把统计交给
+// task::TaskReportService::publish（(handle, stats, updateMethods)），后者落盘
+// report_<taskId>.txt 并含统计节。这是 AppController ctor 中 setTaskFinishedSink 注册的
+// 同一语义（Task 5 接线），此处直接以 TaskQueue + TaskReportService 验证 sink→publish→文件
+// 的端到端路径。
 #include <gtest/gtest.h>
 
 #include <atomic>
@@ -14,9 +15,7 @@
 #include <fstream>
 #include <string>
 #include <thread>
-#include <vector>
 
-#include "Logger.h"
 #include "task/TaskQueue.h"
 #include "task/TaskReportService.h"
 #include "task/TaskType.h"
@@ -49,17 +48,17 @@ TEST_F(TaskReportIntegrationTest, TaskCompletionPublishesReportFileWithStats) {
     // Register the sink BEFORE submit so it is present the moment the task
     // completes (worker reads taskFinishedSink_ after the body returns).
     q_.setTaskFinishedSink([this](const task::TaskHandle& h,
-                                  const std::vector<task::LogLine>& l,
-                                  const task::TaskStats& s) {
-        svc_.publish(h, l, s);
+                                  const task::TaskStats& s,
+                                  const std::string& um) {
+        svc_.publish(h, s, um);
     });
 
     std::atomic<bool> started{false};
     const task::TaskHandle h = q_.submit(task::TaskType::TEST_ALL,
         [&started](task::TaskContext& ctx) {
             started.store(true);
-            Logger::write("done", LogLevel::INFO);
             ctx.addStats(task::TaskStats{10, 9, 1, 0});
+            ctx.updateMethods = "accelerator";
         });
 
     for (int i = 0; i < 200 && !started.load(); ++i) {
@@ -78,6 +77,12 @@ TEST_F(TaskReportIntegrationTest, TaskCompletionPublishesReportFileWithStats) {
     const std::string content((std::istreambuf_iterator<char>(in)),
                               std::istreambuf_iterator<char>());
     EXPECT_NE(content.find("success: 9"), std::string::npos)
+        << "report content:\n" << content;
+    // Report format v2: the log-excerpt section is gone.
+    EXPECT_EQ(content.find("---- log excerpt ----"), std::string::npos)
+        << "report content:\n" << content;
+    // ctx.updateMethods propagated through the sink into the report.
+    EXPECT_NE(content.find("updateMethods: accelerator"), std::string::npos)
         << "report content:\n" << content;
 }
 

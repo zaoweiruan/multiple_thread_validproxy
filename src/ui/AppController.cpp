@@ -72,16 +72,17 @@ AppController::AppController(sqlite3* db, const config::AppConfig& cfg)
     }
     exitListener_ = new proc::ProcessExitListener();
 
-    // Task-report sink (task-report-hover Task 5): every task that reaches a
-    // terminal state publishes its log window + aggregated stats as
-    // report_<taskId>.txt. A taskId-less handle (e.g. the queue's "no task"
-    // sentinel) is ignored; publish failure is non-throwing (WARN in the
-    // service, index not updated) so a report write can never break the queue.
+    // Task-report sink (task-report-hover Task 5; format v2 = task-report-format
+    // Task 2): every task that reaches a terminal state publishes its aggregated
+    // stats + updateMethods as report_<taskId>.txt. A taskId-less handle (e.g.
+    // the queue's "no task" sentinel) is ignored; publish failure is
+    // non-throwing (WARN in the service, index not updated) so a report write
+    // can never break the queue.
     taskQueue_.setTaskFinishedSink([this](const task::TaskHandle& h,
-                                          const std::vector<task::LogLine>& l,
-                                          const task::TaskStats& s) {
+                                          const task::TaskStats& s,
+                                          const std::string& um) {
         if (!h.taskId.empty()) {
-            taskReportService_.publish(h, l, s);
+            taskReportService_.publish(h, s, um);
         }
     });
 }
@@ -413,8 +414,11 @@ void AppController::updateSubscriptionAsync(const std::string& subId, wxEvtHandl
             cancelRequested_ = false;   // P2: reset on the worker (bugfix 2026-11-03)
             // 统计穿线（task-report-hover Task 5）：do* helper 尾参 &local → ctx.addStats。
             task::TaskStats local;
-            doUpdateSubscription(subId, wxHandler, &local);
+            // updateMethods 穿线（task-report-format Task 2）：helper 填充 → ctx.updateMethods。
+            std::string methods;
+            doUpdateSubscription(subId, wxHandler, &local, &methods);
             ctx.addStats(local);
+            ctx.updateMethods = methods;
         }, 1, task::TaskCallbacks{}, subId);
 }
 
@@ -428,8 +432,11 @@ void AppController::updateAllSubscriptionsAsync(wxEvtHandler* wxHandler) {
             currentTaskType_.store(static_cast<int>(task::TaskType::UPDATE_ALL));
             cancelRequested_ = false;   // P2: reset on the worker (bugfix 2026-11-03)
             task::TaskStats local;
-            doUpdateAllSubscriptions(wxHandler, &local);
+            // updateMethods 穿线（task-report-format Task 2）：helper 填充 → ctx.updateMethods。
+            std::string methods;
+            doUpdateAllSubscriptions(wxHandler, &local, &methods);
             ctx.addStats(local);
+            ctx.updateMethods = methods;
         }, 1, task::TaskCallbacks{
             .onQueued = [wxHandler](const task::TaskHandle& h) {
                 Logger::write("Task queued: " + h.taskId, LogLevel::INFO);
@@ -3351,7 +3358,7 @@ void AppController::probePoolNow() {
 // ---------------------------------------------------------------
 // Async workers
 // ---------------------------------------------------------------
-void AppController::doUpdateSubscription(const std::string& subId, wxEvtHandler* wxHandler, task::TaskStats* stats) {
+void AppController::doUpdateSubscription(const std::string& subId, wxEvtHandler* wxHandler, task::TaskStats* stats, std::string* updateMethods) {
     // Scope guard: reset isRunning_ on every exit path (including early returns and exceptions)
     ScopeGuard<std::atomic<bool>> _guard{isRunning_};
     isRunning_ = true;
@@ -3360,7 +3367,7 @@ void AppController::doUpdateSubscription(const std::string& subId, wxEvtHandler*
 
     try {
 update::SubitemUpdaterV2 updater(db_, config_.proxy.xray_executable, config_, nullptr, "", &cancelRequested_, &netMon_);
-         bool ok = updater.runSingle(subId, stats);
+         bool ok = updater.runSingle(subId, stats, updateMethods);
 
         std::string msg = ok ? "Update completed: " + subId : "Update failed: " + subId;
         if (wxHandler) {
@@ -3385,7 +3392,7 @@ static void countUpdateProgress(
     const std::vector<update::SubitemUpdaterV2::UpdateStepInfo>& steps,
     int& total, int& done, int& ok, int& failed);
 
-void AppController::doUpdateAllSubscriptions(wxEvtHandler* wxHandler, task::TaskStats* stats) {
+void AppController::doUpdateAllSubscriptions(wxEvtHandler* wxHandler, task::TaskStats* stats, std::string* updateMethods) {
     // Scope guard: reset isRunning_ on every exit path (including early returns and exceptions)
     ScopeGuard<std::atomic<bool>> _guard{isRunning_};
     isRunning_ = true;
@@ -3406,7 +3413,7 @@ update::SubitemUpdaterV2 updater(db_, config_.proxy.xray_executable, config_, nu
             countUpdateProgress(steps, total, done, ok, failed);
             publishUpdateProgress(total, done, ok, failed);
         });
-        bool ok = updater.run(stats);
+        bool ok = updater.run(stats, updateMethods);
         resetUpdateProgress();
 
         std::string msg = ok ? "All subscriptions updated" : "Update (all) had failures";

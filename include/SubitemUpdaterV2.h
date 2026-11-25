@@ -63,8 +63,13 @@ public:
 
     // stats (optional, trailing): filled at the existing summary point with the
     // already-computed counts; nullptr (default) keeps current behaviour.
-    bool run(task::TaskStats* stats = nullptr);
-    bool runSingle(const std::string& subId, task::TaskStats* stats = nullptr);
+    // updateMethods (optional, trailing): filled with the update-methods label
+    // ("accelerator, proxy") after the method string is built and BEFORE any
+    // early return, so a caller always receives the configured methods even on
+    // the skip/not-found/canceled paths; nullptr (default) keeps behaviour.
+    bool run(task::TaskStats* stats = nullptr, std::string* updateMethods = nullptr);
+    bool runSingle(const std::string& subId, task::TaskStats* stats = nullptr,
+                   std::string* updateMethods = nullptr);
     bool runSingleWithProxy(const std::string& subId, int socksPort);
     bool deduplicate(task::TaskStats* stats = nullptr);
 
@@ -88,6 +93,10 @@ private:
     };
     
     std::vector<UpdateMethod> parseUpdateMethods(const std::vector<std::string>& methods);
+    // File-scope label for one update method ("accelerator"/"proxy"/"direct").
+    // Single switch replacing the three inline switches (run methodsLog, run
+    // loop, runSingleWithProxy); also used to build the runSingle label.
+    static std::string methodName(UpdateMethod method);
     // httpStatus (optional): receives the HTTP response code of the transfer.
     // 0 means "no response was obtained" (exception, timeout, DNS failure) and is
     // distinct from a real 4xx/5xx, so the caller can tell an upstream subscription

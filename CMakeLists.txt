@@ -961,8 +961,9 @@ set_target_properties(test_task_stats PROPERTIES
 add_test(NAME TaskStatsTest COMMAND test_task_stats)
 
 # task-report-hover Task 2: TaskReportService 报告格式化+落盘+内存索引
+# (task-report-format Task 2: formatReport 用 task::wallClockDateTime/durationMinutesBetween → 需链接 TaskFormat.cpp)
 add_executable(test_task_report_service tests/test_task_report_service.cpp src/task/TaskReportService.cpp
-    src/task/TaskType.cpp src/Logger.cpp src/LoggerInstance.cpp)
+    src/task/TaskFormat.cpp src/task/TaskType.cpp src/Logger.cpp src/LoggerInstance.cpp)
 target_include_directories(test_task_report_service PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(test_task_report_service PRIVATE gtest_main gtest)
 set_target_properties(test_task_report_service PROPERTIES
@@ -985,8 +986,9 @@ set_target_properties(test_task_queue_report PROPERTIES
 add_test(NAME TaskQueueReportTest COMMAND test_task_queue_report)
 
 # task-report-hover Task 5: 全链路集成（TaskQueue 完成 sink → TaskReportService 落盘）
+# (task-report-format Task 2: formatReport 用 task::wallClockDateTime/durationMinutesBetween → 需链接 TaskFormat.cpp)
 add_executable(test_task_report_integration tests/test_task_report_integration.cpp src/task/TaskQueue.cpp
-    src/task/TaskType.cpp src/task/TaskReportService.cpp src/Logger.cpp src/LoggerInstance.cpp)
+    src/task/TaskType.cpp src/task/TaskReportService.cpp src/task/TaskFormat.cpp src/Logger.cpp src/LoggerInstance.cpp)
 target_include_directories(test_task_report_integration PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(test_task_report_integration PRIVATE gtest_main gtest)
 set_target_properties(test_task_report_integration PROPERTIES
@@ -1147,12 +1149,19 @@ set_target_properties(test_dedup PROPERTIES
 )
 add_test(NAME DedupTest COMMAND test_dedup)
 
-add_executable(test_task_stats_exposure tests/test_task_stats_exposure.cpp src/update/Deduplicator.cpp src/ProfileitemDAO.cpp src/Utils.cpp src/Logger.cpp src/LoggerInstance.cpp)
+add_executable(test_task_stats_exposure tests/test_task_stats_exposure.cpp ${CORE_SOURCES})
 target_include_directories(test_task_stats_exposure PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+if(USE_GRPC_API)
+    target_compile_definitions(test_task_stats_exposure PRIVATE USE_GRPC_API=1)
+endif()
 target_link_libraries(test_task_stats_exposure PRIVATE
     gtest_main
     gtest
     ${VCPKG_ROOT}/installed/x64-mingw-static/lib/libsqlite3.a
+    ${VCPKG_ROOT}/installed/x64-mingw-static/lib/libboost_json-gcc14-mt-x64-1_91.a
+    Threads::Threads
+    CURL::libcurl
+    -ldbghelp
     -lws2_32
 )
 set_target_properties(test_task_stats_exposure PROPERTIES

@@ -1,7 +1,6 @@
 #pragma once
 
 #include "TaskType.h"
-#include "task/TaskReportService.h"   // task::LogLine (task-report-hover Task 2)
 
 #include <atomic>
 #include <chrono>
@@ -21,6 +20,12 @@ struct TaskContext {
 
     // Aggregated outcome counters (task-report-hover Task 1); default all 0.
     task::TaskStats stats;
+
+    // Update-methods label of a subscription-update task (task-report-format
+    // Task 2), e.g. "accelerator, proxy". Default empty; only UPDATE_* tasks
+    // set it (AUTO_TASK containers deliberately do not). Carried to the
+    // completion sink, which passes it to the report (non-empty → emitted).
+    std::string updateMethods;
 
     bool isCancelled() const { return cancelFlag && cancelFlag->load(); }
     void progress(int cur, int total, const std::string& msg) {
@@ -44,17 +49,18 @@ struct TaskCallbacks {
     std::function<void(const TaskHandle&)> onRejected;
 };
 
-// Completion sink (task-report-hover Task 3). Invoked after a task reaches a
-// terminal state, after its onComplete ran and before busy_ is released, with:
-//   - the task's captured log window (Logger level >= INFO lines emitted while
-//     entry.func(ctx) ran), and
+// Completion sink (task-report-hover Task 3; format v2 = task-report-format
+// Task 2). Invoked after a task reaches a terminal state, after its onComplete
+// ran and before busy_ is released, with:
+//   - the task handle (terminal status set),
 //   - ctx.stats (the task's accumulated outcome counters, read after the task
-//     function returned while ctx is still alive).
-// The sink's OWN logging is NOT captured: the Logger callback is popped before
-// the sink is invoked.
+//     function returned while ctx is still alive), and
+//   - ctx.updateMethods (the update-methods label; empty unless the task set it).
+// Format v2: the captured log window (LogLine) is gone — reports no longer
+// carry a log excerpt.
 using TaskFinishedSink = std::function<void(const TaskHandle&,
-                                            const std::vector<task::LogLine>&,
-                                            const TaskStats&)>;
+                                            const TaskStats&,
+                                            const std::string&)>;
 
 // Point-in-time view of the queue for the monitoring UI.
 struct TaskQueueSnapshot {

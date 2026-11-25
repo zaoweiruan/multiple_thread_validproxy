@@ -124,6 +124,19 @@ static bool isGitHubHostedUrl(const std::string& url) {
            url.find("githubusercontent.com") != std::string::npos;
 }
 
+// Single label switch for an update method (task-report-format Task 2).
+// Replaces the three inline switches (run methodsLog, run loop, runSingleWithProxy)
+// and builds the runSingle update-methods label. Format is the lowercase
+// method name; callers join with ", ".
+std::string SubitemUpdaterV2::methodName(UpdateMethod method) {
+    switch (method) {
+        case UpdateMethod::Accelerator: return "accelerator";
+        case UpdateMethod::Proxy: return "proxy";
+        case UpdateMethod::Direct: return "direct";
+    }
+    return "unknown";
+}
+
 SubitemUpdaterV2::SubitemUpdaterV2(sqlite3* db,
                                     const std::string& xrayPath,
                                     const config::AppConfig& config,
@@ -162,7 +175,7 @@ void SubitemUpdaterV2::publishUpdateSteps() {
     }
 }
 
-bool SubitemUpdaterV2::run(task::TaskStats* stats) {
+bool SubitemUpdaterV2::run(task::TaskStats* stats, std::string* updateMethods) {
     Logger::write("========================================", LogLevel::INFO);
     Logger::write("INFO: Starting SubitemUpdaterV2", LogLevel::INFO);
     Logger::write("========================================", LogLevel::INFO);
@@ -175,13 +188,16 @@ bool SubitemUpdaterV2::run(task::TaskStats* stats) {
     std::string methodsLog;
     for (const UpdateMethod& m : methods) {
         if (!methodsLog.empty()) methodsLog += ", ";
-        switch (m) {
-            case UpdateMethod::Accelerator: methodsLog += "accelerator"; break;
-            case UpdateMethod::Proxy: methodsLog += "proxy"; break;
-            case UpdateMethod::Direct: methodsLog += "direct"; break;
-        }
+        methodsLog += methodName(m);
     }
     Logger::write("INFO: Update methods: " + methodsLog, LogLevel::INFO);
+
+    // task-report-format Task 2: fill the update-methods out-param after the
+    // label is built and before any early return (incl. the empty-subscription
+    // return below), so the caller always receives the configured methods.
+    if (updateMethods) {
+        *updateMethods = methodsLog;
+    }
 
     db::models::SubitemDAO subDao(db_);
     std::vector<db::models::Subitem> enabledSubs = subDao.getEnabledSubscriptions();
@@ -245,12 +261,7 @@ bool SubitemUpdaterV2::run(task::TaskStats* stats) {
 
     for (const UpdateMethod& method : methods) {
         phaseIndex++;
-        std::string methodName;
-        switch (method) {
-            case UpdateMethod::Accelerator: methodName = "accelerator"; break;
-            case UpdateMethod::Proxy: methodName = "proxy"; break;
-            case UpdateMethod::Direct: methodName = "direct"; break;
-        }
+        const std::string methodLabel = methodName(method);
 
         // First phase: process all enabled subs. Later phases: only failed subs.
         if (phaseIndex == 1 && enabledSubs.empty()) continue;
@@ -260,7 +271,7 @@ bool SubitemUpdaterV2::run(task::TaskStats* stats) {
 
         Logger::write("========================================", LogLevel::INFO);
         Logger::write("INFO: Phase " + std::to_string(phaseIndex) + "/" + std::to_string(phaseCount)
-                       + " - " + methodName + " connection (" + std::to_string(subsCount) + " subs)", LogLevel::INFO);
+                       + " - " + methodLabel + " connection (" + std::to_string(subsCount) + " subs)", LogLevel::INFO);
         Logger::write("========================================", LogLevel::INFO);
 
         std::vector<std::tuple<std::string, std::string, std::string>> stillFailed;
@@ -275,7 +286,7 @@ bool SubitemUpdaterV2::run(task::TaskStats* stats) {
                 return false;
             }
 
-            Logger::write("INFO: " + methodName + ": " + subUrl, LogLevel::REPORT);
+            Logger::write("INFO: " + methodLabel + ": " + subUrl, LogLevel::REPORT);
             // Task-monitor: this subscription is being fetched right now
             // (retry phases re-enter RUNNING; SUCCESS is sticky).
             setUpdateStepStatus(subId, UpdateStepStatus::RUNNING);
@@ -321,7 +332,7 @@ bool SubitemUpdaterV2::run(task::TaskStats* stats) {
             }
 
             if (!content.empty()) {
-                Logger::write("INFO: " + methodName + " connection successful", LogLevel::INFO);
+                Logger::write("INFO: " + methodLabel + " connection successful", LogLevel::INFO);
                 std::vector<db::models::Profileitem> profiles = parseSubscription(content, subId);
                 if (!profiles.empty()) {
                     updateProfileItems(subId, profiles);
@@ -363,7 +374,7 @@ bool SubitemUpdaterV2::run(task::TaskStats* stats) {
                     }
                 }
             } else {
-                Logger::write(methodName + " connection failed", LogLevel::ERR);
+                Logger::write(methodLabel + " connection failed", LogLevel::ERR);
                 phaseFail++;
                 stillFailed.push_back({subId, subRemarks, subUrl});
                 setUpdateStepStatus(subId, UpdateStepStatus::FAILED);
@@ -375,7 +386,7 @@ bool SubitemUpdaterV2::run(task::TaskStats* stats) {
         if (phaseIndex == 1) {
             for (size_t i = 0; i < enabledSubs.size(); ++i) {
                 if (isCancelled()) {
-                    Logger::write("INFO: Update cancelled by user during " + methodName + " phase", LogLevel::REPORT);
+                    Logger::write("INFO: Update cancelled by user during " + methodLabel + " phase", LogLevel::REPORT);
                     break;
                 }
                 if (netMon_ && !netMon_->IsConnected()) {
@@ -388,26 +399,26 @@ bool SubitemUpdaterV2::run(task::TaskStats* stats) {
                     setUpdateStepStatus(sub.id, UpdateStepStatus::SKIPPED);
                     continue;
                 }
-                Logger::write("[" + std::to_string(i + 1) + "/" + std::to_string(enabledSubs.size()) + "] " + methodName + ": " + sub.url, LogLevel::REPORT);
+                Logger::write("[" + std::to_string(i + 1) + "/" + std::to_string(enabledSubs.size()) + "] " + methodLabel + ": " + sub.url, LogLevel::REPORT);
                 attemptedCount++;
                 if (!processSub(sub.id, sub.remarks, sub.url)) break;
             }
         } else {
             for (size_t i = 0; i < failedSubs.size(); ++i) {
                 if (isCancelled()) {
-                    Logger::write("INFO: Update cancelled by user during " + methodName + " phase", LogLevel::REPORT);
+                    Logger::write("INFO: Update cancelled by user during " + methodLabel + " phase", LogLevel::REPORT);
                     break;
                 }
                 if (netMon_ && !netMon_->IsConnected()) {
                     Logger::write("[SubitemUpdaterV2] network disconnected — aborting update", LogLevel::WARN);
                     break;
                 }
-                Logger::write("[" + std::to_string(i + 1) + "/" + std::to_string(failedSubs.size()) + "] " + methodName + ": " + std::get<2>(failedSubs[i]), LogLevel::REPORT);
+                Logger::write("[" + std::to_string(i + 1) + "/" + std::to_string(failedSubs.size()) + "] " + methodLabel + ": " + std::get<2>(failedSubs[i]), LogLevel::REPORT);
                 if (!processSub(std::get<0>(failedSubs[i]), std::get<1>(failedSubs[i]), std::get<2>(failedSubs[i]))) break;
             }
         }
 
-        Logger::write("INFO: Phase " + std::to_string(phaseIndex) + " (" + methodName + "): "
+        Logger::write("INFO: Phase " + std::to_string(phaseIndex) + " (" + methodLabel + "): "
                        + std::to_string(phaseSuccess) + " success, " + std::to_string(phaseFail) + " failed", LogLevel::INFO);
 
         if (phaseIndex == 1) {
@@ -479,8 +490,22 @@ bool SubitemUpdaterV2::run(task::TaskStats* stats) {
     return successCount > 0;
 }
 
-bool SubitemUpdaterV2::runSingle(const std::string& subId, task::TaskStats* stats) {
+bool SubitemUpdaterV2::runSingle(const std::string& subId, task::TaskStats* stats,
+                                 std::string* updateMethods) {
     Logger::write("INFO: runSingle - subId: " + subId, LogLevel::INFO);
+
+    // Build the update-methods label FIRST and fill the out-param before any
+    // early return (task-report-format Task 2), so a caller always receives the
+    // configured methods even on the not-found / disabled / skip paths.
+    std::vector<UpdateMethod> methods = parseUpdateMethods(config_.update_methods);
+    std::string methodsText;
+    for (const UpdateMethod& m : methods) {
+        if (!methodsText.empty()) methodsText += ", ";
+        methodsText += methodName(m);
+    }
+    if (updateMethods) {
+        *updateMethods = methodsText;
+    }
 
     std::optional<db::models::Subitem> optSub = getSubscription(subId);
     if (!optSub) {
@@ -499,7 +524,6 @@ bool SubitemUpdaterV2::runSingle(const std::string& subId, task::TaskStats* stat
         return true;
     }
 
-    std::vector<UpdateMethod> methods = parseUpdateMethods(config_.update_methods);
     if (isCancelled()) {
         Logger::write("INFO: Single update cancelled by user: " + subId, LogLevel::REPORT);
         return false;
@@ -694,14 +718,9 @@ bool SubitemUpdaterV2::updateWithMethods(const std::string& subUrl, const std::s
     if (markerRow) subRemarks = markerRow->remarks;
 
     for (const UpdateMethod& method : methods) {
-        std::string methodName;
-        switch (method) {
-            case UpdateMethod::Accelerator: methodName = "accelerator"; break;
-            case UpdateMethod::Proxy: methodName = "proxy"; break;
-            case UpdateMethod::Direct: methodName = "direct"; break;
-        }
+        const std::string methodLabel = methodName(method);
 
-        Logger::write("INFO: Trying " + methodName + " connection...", LogLevel::INFO);
+        Logger::write("INFO: Trying " + methodLabel + " connection...", LogLevel::INFO);
 
         std::string content;
         long httpStatus = 0;
@@ -715,7 +734,7 @@ bool SubitemUpdaterV2::updateWithMethods(const std::string& subUrl, const std::s
                 if (socks > 0) {
                     content = fetchUrlViaProxy(subUrl, socks, &httpStatus);
                 } else {
-                    Logger::write("WARN: No proxy available for " + methodName, LogLevel::WARN);
+                    Logger::write("WARN: No proxy available for " + methodLabel, LogLevel::WARN);
                 }
                 break;
             }
@@ -725,7 +744,7 @@ bool SubitemUpdaterV2::updateWithMethods(const std::string& subUrl, const std::s
         }
 
         if (!content.empty()) {
-            Logger::write("INFO: " + methodName + " connection successful", LogLevel::INFO);
+            Logger::write("INFO: " + methodLabel + " connection successful", LogLevel::INFO);
             std::vector<db::models::Profileitem> profiles = parseSubscription(content, subId);
             if (!profiles.empty()) {
                 clearSourceGoneMarker(subId, subRemarks);
