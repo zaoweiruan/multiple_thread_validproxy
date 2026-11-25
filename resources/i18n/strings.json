@@ -822,6 +822,16 @@
       "en": "Remove this record"
     },
     {
+      "id": "TaskMonitor.Menu.ViewReport",
+      "zh": "查看报告",
+      "en": "View Report"
+    },
+    {
+      "id": "TaskMonitor.Popup.Title",
+      "zh": "任务报告 {}",
+      "en": "Task Report {}"
+    },
+    {
       "id": "TaskMonitor.Menu.CancelAllQueued",
       "zh": "取消全部排队",
       "en": "Cancel all queued"

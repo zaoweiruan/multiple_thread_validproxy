@@ -387,7 +387,7 @@ void TaskMonitorPanel::onListContextMenu(wxContextMenuEvent& event) {
         // 查看报告 entry (it is omitted, not disabled).
         task::TaskReportInfo reportInfo;
         if (controller_->findTaskReport(ctxTaskId_, reportInfo)) {
-            menu.Append(kCtxViewReport, wxString::FromUTF8(u8"查看报告"));
+            menu.Append(kCtxViewReport, i18n::wx(i18n::StrId::TaskMonitor_Menu_ViewReport));
         }
     } else {
         // Blank space / child rows: whole-queue actions only.
@@ -625,7 +625,8 @@ void TaskMonitorPanel::showReportPopup(const std::string& taskId, const wxPoint&
     // ("任务报告 <taskId>"). wxWindow::SetLabel maps to SetWindowText on MSW;
     // SetTitle is wxTopLevelWindow-only and a popup is not one, so SetLabel is
     // the correct (and only) title path.
-    reportPopup_->SetLabel(wxString::FromUTF8((u8"任务报告 " + taskId).c_str()));
+    reportPopup_->SetLabel(i18n::wxf(i18n::StrId::TaskMonitor_Popup_Title,
+                                     { wxString::FromUTF8(taskId.c_str()) }));
     // UTF-8 → wxString so the report text (Chinese log lines) is never decoded
     // with the ANSI code page.
     reportPopupText_->SetValue(wxString::FromUTF8(info.content.c_str()));
