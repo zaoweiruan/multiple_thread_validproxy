@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <vector>
 
 namespace task {
 
@@ -49,11 +50,22 @@ const char* taskTypeToString(TaskType t);
 // A container task sums its children's stats via TaskContext::addStats; all
 // fields default to 0. A consistent report classifies each item into exactly
 // one bucket (total == success + failed + skipped).
+//
+// `failures` carries the identities of failed items (update-subscription
+// failures, 2026-11-26): the report lists them as "name (id)". Counters and
+// identities are independent: `failed` is authoritative, `failures` is
+// descriptive (a run may report a count without identities).
+struct TaskFailure {
+    std::string name;   // human-readable name (SubItem.Remarks); may be empty
+    std::string id;     // stable identifier (SubItem.Id)
+};
+
 struct TaskStats {
     int total = 0;
     int success = 0;
     int failed = 0;
     int skipped = 0;
+    std::vector<TaskFailure> failures;
 };
 
 struct TaskHandle {

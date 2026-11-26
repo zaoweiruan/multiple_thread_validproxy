@@ -212,6 +212,8 @@ TEST_CASE("Hover finished task row shows report popup", "[taskreporthover]") {
     // Report must carry the metadata header + statistics section (spec R3).
     REQUIRE(reportContent.find("taskId: " + taskId) != std::string::npos);
     REQUIRE(reportContent.find("---- statistics ----") != std::string::npos);
+    // Horizontal statistics line (report layout v3).
+    REQUIRE(reportContent.find(" | success: ") != std::string::npos);
 
     // ── Ensure the frame is restored+foreground BEFORE the hover. A fresh
     //    sandbox launch minimises the frame ~1s after first show and
@@ -282,6 +284,10 @@ TEST_CASE("Hover finished task row shows report popup", "[taskreporthover]") {
          << pr.right << "," << pr.bottom << ")");
     REQUIRE((pr.left > 0 && pr.top > 0));
     REQUIRE(((pr.right - pr.left) > 0 && (pr.bottom - pr.top) > 0));
+    // The popup adapts to the report content: a short DEDUP report (5 header
+    // lines + statistics) must be SHORTER than the old fixed 420px height.
+    INFO("popup size=" << (pr.right - pr.left) << "x" << (pr.bottom - pr.top));
+    REQUIRE((pr.bottom - pr.top) < 420);
 
     // ── The popup actually renders the report (Task 5 content, not an
     //    empty shell): the wxTextCtrl child must show the metadata header. ─

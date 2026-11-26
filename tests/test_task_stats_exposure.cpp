@@ -11,6 +11,7 @@
 #include <gtest/gtest.h>
 #include <sqlite3.h>
 #include <atomic>
+#include <chrono>
 #include <string>
 #include <vector>
 
@@ -50,11 +51,14 @@ protected:
             "Delay TEXT, Speed TEXT, Sort TEXT, Message TEXT,"
             "consecutive_failures INTEGER DEFAULT 0"
         ")");
-        // SubitemUpdaterV2::run/runSingle 只需表存在（空表即无启用订阅/无匹配订阅，
-        // 均在网络/Xray 启动前早返回），列名与 DAO 读取一致即可。
+        // SubitemUpdaterV2::run/runSingle 需要与真实库一致的列顺序（DAO 用
+        // SELECT * + 下标读取）；空表与间隔内跳过/失败用例共用此 schema。
         exec("CREATE TABLE SubItem ("
             "Id TEXT PRIMARY KEY,"
-            "Url TEXT, Enabled TEXT, Remarks TEXT, UpdateTime TEXT"
+            "Remarks TEXT, Url TEXT, MoreUrl TEXT, Enabled INTEGER,"
+            "UserAgent TEXT, Sort TEXT, Filter TEXT, AutoUpdateInterval TEXT,"
+            "UpdateTime TEXT, ConvertTarget TEXT, PrevProfile TEXT,"
+            "NextProfile TEXT, PreSocksPort TEXT, Memo TEXT"
         ")");
     }
 
@@ -79,6 +83,22 @@ protected:
     void insertDelay(const std::string& indexId, const std::string& delay) {
         std::string sql = "INSERT INTO ProfileExItem (IndexId, Delay) VALUES ('" + indexId + "','" + delay + "')";
         exec(sql);
+    }
+
+    void insertSub(const std::string& id, const std::string& remarks,
+                   const std::string& url, const std::string& intervalMinutes,
+                   const std::string& updateTimeEpochSec) {
+        const std::string sql =
+            "INSERT INTO SubItem (Id, Remarks, Url, Enabled, AutoUpdateInterval, UpdateTime)"
+            " VALUES ('" + id + "','" + remarks + "','" + url + "',1,'"
+            + intervalMinutes + "','" + updateTimeEpochSec + "')";
+        exec(sql);
+    }
+
+    static std::string nowEpochSec() {
+        const long long sec = std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count();
+        return std::to_string(sec);
     }
 
     // 代表性场景：两个重复代理 + 一个独立代理，合并阶段会删掉重复项。
@@ -175,4 +195,86 @@ TEST_F(TaskStatsExposureTest, RunSingleAcceptsNullUpdateMethods) {
     update::SubitemUpdaterV2 updater = makeUpdater(cfg);
     bool ok = updater.runSingle("no-such-sub", nullptr);   // updateMethods 默认 nullptr
     ASSERT_FALSE(ok);
+}
+
+// 7. 间隔内跳过 → skipped 计数，绝不计入 failed（bug：更新订阅日志把跳过
+//    当成失败）。run() 在全部跳过时返回 true 且不触网。
+TEST_F(TaskStatsExposureTest, RunCountsIntervalSkippedAsSkippedNotFailed) {
+    insertSub("sub-skip", "间隔内订阅", "http://127.0.0.1:1/skip", "60", nowEpochSec());
+
+    config::AppConfig cfg;
+    cfg.update_methods = std::vector<std::string>{"direct"};
+    cfg.check_auto_update_interval = true;
+
+    update::SubitemUpdaterV2 updater = makeUpdater(cfg);
+    task::TaskStats st;
+    bool ok = updater.run(&st, nullptr);
+
+    ASSERT_TRUE(ok) << "all-skipped run() must succeed";
+    EXPECT_EQ(st.total, 1);
+    EXPECT_EQ(st.success, 0);
+    EXPECT_EQ(st.failed, 0);
+    EXPECT_EQ(st.skipped, 1);
+    EXPECT_TRUE(st.failures.empty());
+}
+
+// 8. runSingle() 间隔内跳过同样计 skipped，不计 failed。
+TEST_F(TaskStatsExposureTest, RunSingleCountsIntervalSkippedAsSkippedNotFailed) {
+    insertSub("sub-skip", "间隔内订阅", "http://127.0.0.1:1/skip", "60", nowEpochSec());
+
+    config::AppConfig cfg;
+    cfg.update_methods = std::vector<std::string>{"direct"};
+    cfg.check_auto_update_interval = true;
+
+    update::SubitemUpdaterV2 updater = makeUpdater(cfg);
+    task::TaskStats st;
+    bool ok = updater.runSingle("sub-skip", &st, nullptr);
+
+    ASSERT_TRUE(ok);
+    EXPECT_EQ(st.total, 1);
+    EXPECT_EQ(st.success, 0);
+    EXPECT_EQ(st.failed, 0);
+    EXPECT_EQ(st.skipped, 1);
+    EXPECT_TRUE(st.failures.empty());
+}
+
+// 9. 更新失败 → stats.failures 带订阅名称（Remarks）与 ID，供报告展示。
+TEST_F(TaskStatsExposureTest, RunReportsFailedSubscriptionNameAndId) {
+    insertSub("sub-fail", "失败订阅", "http://127.0.0.1:1/fail", "", "0");
+
+    config::AppConfig cfg;
+    cfg.update_methods = std::vector<std::string>{"direct"};
+    cfg.subscription_connect_timeout_ms = 200;
+
+    update::SubitemUpdaterV2 updater = makeUpdater(cfg);
+    task::TaskStats st;
+    bool ok = updater.run(&st, nullptr);
+
+    ASSERT_FALSE(ok) << "the only subscription failed to fetch";
+    EXPECT_EQ(st.total, 1);
+    EXPECT_EQ(st.failed, 1);
+    EXPECT_EQ(st.skipped, 0);
+    ASSERT_EQ(st.failures.size(), 1u);
+    EXPECT_EQ(st.failures[0].id, "sub-fail");
+    EXPECT_EQ(st.failures[0].name, "失败订阅");
+}
+
+// 10. runSingle() 失败同样记录名称与 ID。
+TEST_F(TaskStatsExposureTest, RunSingleReportsFailedSubscriptionNameAndId) {
+    insertSub("sub-fail", "失败订阅", "http://127.0.0.1:1/fail", "", "0");
+
+    config::AppConfig cfg;
+    cfg.update_methods = std::vector<std::string>{"direct"};
+    cfg.subscription_connect_timeout_ms = 200;
+
+    update::SubitemUpdaterV2 updater = makeUpdater(cfg);
+    task::TaskStats st;
+    bool ok = updater.runSingle("sub-fail", &st, nullptr);
+
+    ASSERT_FALSE(ok);
+    EXPECT_EQ(st.total, 1);
+    EXPECT_EQ(st.failed, 1);
+    ASSERT_EQ(st.failures.size(), 1u);
+    EXPECT_EQ(st.failures[0].id, "sub-fail");
+    EXPECT_EQ(st.failures[0].name, "失败订阅");
 }

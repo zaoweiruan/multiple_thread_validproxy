@@ -38,6 +38,8 @@ struct TaskContext {
         stats.success += s.success;
         stats.failed += s.failed;
         stats.skipped += s.skipped;
+        stats.failures.insert(stats.failures.end(),
+                              s.failures.begin(), s.failures.end());
     }
 };
 

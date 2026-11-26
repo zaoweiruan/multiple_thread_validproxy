@@ -254,6 +254,7 @@ bool SubitemUpdaterV2::run(task::TaskStats* stats, std::string* updateMethods) {
     }
 
     int successCount = 0;
+    int skippedCount = 0;
     int attemptedCount = 0;
     std::vector<std::tuple<std::string, std::string, std::string>> failedSubs;
     int phaseIndex = 0;
@@ -397,6 +398,7 @@ bool SubitemUpdaterV2::run(task::TaskStats* stats, std::string* updateMethods) {
                 if (shouldSkipUpdate(sub)) {
                     Logger::write("INFO: Skipping sub " + sub.id + " (within update interval)", LogLevel::INFO);
                     setUpdateStepStatus(sub.id, UpdateStepStatus::SKIPPED);
+                    ++skippedCount;   // skipped, NOT failed (bugfix 2026-11-26)
                     continue;
                 }
                 Logger::write("[" + std::to_string(i + 1) + "/" + std::to_string(enabledSubs.size()) + "] " + methodLabel + ": " + sub.url, LogLevel::REPORT);
@@ -434,15 +436,32 @@ bool SubitemUpdaterV2::run(task::TaskStats* stats, std::string* updateMethods) {
     Logger::write("Update Summary", LogLevel::REPORT);
     Logger::write("Total subscriptions: " + std::to_string(totalSubs), LogLevel::REPORT);
     Logger::write("Update methods: " + methodsLog, LogLevel::REPORT);
-    Logger::write("Total - Success: " + std::to_string(successCount) + ", Failed: " + std::to_string(totalSubs - successCount), LogLevel::REPORT);
+    // Skipped (within update interval) is its own bucket: it is not a failure
+    // (bugfix 2026-11-26). failed = total - success - skipped.
+    const int failedCount = totalSubs - successCount - skippedCount;
+    Logger::write("Total - Success: " + std::to_string(successCount)
+                   + ", Failed: " + std::to_string(failedCount)
+                   + ", Skipped: " + std::to_string(skippedCount), LogLevel::REPORT);
 
     // Report stats at the existing Update Summary (task-report-hover Task 4).
     // Uses only the counts the summary already reports; never recomputes.
     if (stats) {
         stats->total = totalSubs;
         stats->success = successCount;
-        stats->failed = totalSubs - successCount;
-        stats->skipped = 0;
+        stats->skipped = skippedCount;
+        stats->failed = failedCount;
+        // Identities of failed subscriptions for the report (2026-11-26): the
+        // final breakdown already marks every genuinely failed row FAILED
+        // (retry-then-success rows are SUCCESS, skipped rows are SKIPPED).
+        stats->failures.clear();
+        for (const UpdateStepInfo& row : updateSteps_) {
+            if (row.subId == kDedupStepId) continue;
+            if (row.status != UpdateStepStatus::FAILED) continue;
+            task::TaskFailure failure;
+            failure.name = row.remarks;
+            failure.id = row.subId;
+            stats->failures.push_back(failure);
+        }
     }
 
     if (!failedSubs.empty()) {
@@ -521,6 +540,14 @@ bool SubitemUpdaterV2::runSingle(const std::string& subId, task::TaskStats* stat
 
     if (shouldSkipUpdate(sub)) {
         Logger::write("INFO: Skipping sub " + sub.id + " (within update interval)", LogLevel::INFO);
+        // Skipped, NOT failed (bugfix 2026-11-26).
+        if (stats) {
+            stats->total = 1;
+            stats->success = 0;
+            stats->failed = 0;
+            stats->skipped = 1;
+            stats->failures.clear();
+        }
         return true;
     }
 
@@ -548,11 +575,20 @@ bool SubitemUpdaterV2::runSingle(const std::string& subId, task::TaskStats* stat
     }
 
     // Single-subscription outcome (task-report-hover Task 4): one item total.
+    // A failure also records the subscription name + id for the report
+    // (2026-11-26).
     if (stats) {
         stats->total = 1;
         stats->success = result ? 1 : 0;
         stats->failed = result ? 0 : 1;
         stats->skipped = 0;
+        stats->failures.clear();
+        if (!result) {
+            task::TaskFailure failure;
+            failure.name = sub.remarks;
+            failure.id = sub.id;
+            stats->failures.push_back(failure);
+        }
     }
 
     return result;

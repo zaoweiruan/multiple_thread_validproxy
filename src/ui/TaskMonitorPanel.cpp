@@ -2,6 +2,7 @@
 #include "i18n/I18nWx.h"
 
 #include <wx/display.h>
+#include <wx/dcclient.h>
 #include <wx/popupwin.h>
 #include <wx/statline.h>
 
@@ -27,10 +28,15 @@ namespace {
 // wxID_HIGHEST == 6000 → 7505; the UiControlIds block uses +1500..+1504.
 const int kCtxViewReport = wxID_HIGHEST + 1505;
 
-// Fixed popup content size (upper bound; the popup is clamped into the work
-// area below, and the text control scrolls).
-const int kPopupWidth = 560;
-const int kPopupHeight = 420;
+// Report popup sizing (2026-11-26): the popup adapts to its content instead of
+// the former fixed 560x420. The computed text extent + padding is clamped to
+// [min, work-area percentage]; overlong content scrolls inside the text ctrl.
+const int kPopupPaddingX = 24;   // horizontal padding incl. text-ctrl border
+const int kPopupPaddingY = 28;   // vertical padding incl. text-ctrl border
+const int kPopupMinWidth = 360;
+const int kPopupMinHeight = 120;
+const int kPopupMaxWorkAreaPercentX = 90;
+const int kPopupMaxWorkAreaPercentY = 80;
 
 // Popup anchor offset from the trigger point (cursor / focused row).
 const int kPopupAnchorOffset = 8;
@@ -57,6 +63,32 @@ public:
                                                         wParam, lParam);
     }
 };
+
+// Measure a multiline text block with the text control's font: width = widest
+// line, height = line count * line height (empty lines still occupy a line).
+wxSize measureReportText(wxWindow* textCtrl, const wxString& content) {
+    wxClientDC dc(textCtrl);
+    dc.SetFont(textCtrl->GetFont());
+    int maxWidth = 0;
+    int lineHeight = dc.GetCharHeight();
+    int lineCount = 1;
+    std::size_t start = 0;
+    for (;;) {
+        const std::size_t newline = content.find('\n', start);
+        const wxString line = (newline == wxString::npos)
+                                  ? content.Mid(start)
+                                  : content.Mid(start, newline - start);
+        int w = 0;
+        int h = 0;
+        dc.GetTextExtent(line, &w, &h);
+        if (w > maxWidth) maxWidth = w;
+        if (h > lineHeight) lineHeight = h;
+        if (newline == wxString::npos) break;
+        ++lineCount;
+        start = newline + 1;
+    }
+    return wxSize(maxWidth, lineHeight * lineCount);
+}
 
 const char* statusToString(task::TaskStatus s) {
     switch (s) {
@@ -664,7 +696,6 @@ void TaskMonitorPanel::showReportPopup(const std::string& taskId, const wxPoint&
         wxBoxSizer* sizer = new wxBoxSizer(wxVERTICAL);
         sizer->Add(reportPopupText_, 1, wxEXPAND);
         reportPopup_->SetSizer(sizer);
-        reportPopup_->SetSize(kPopupWidth, kPopupHeight);
         reportPopup_->Bind(wxEVT_LEAVE_WINDOW, &TaskMonitorPanel::onListLeave, this);
     }
     // Identification for UI automation: the popup is located by TITLE
@@ -675,15 +706,14 @@ void TaskMonitorPanel::showReportPopup(const std::string& taskId, const wxPoint&
                                      { wxString::FromUTF8(taskId.c_str()) }));
     // UTF-8 → wxString so the report text (Chinese log lines) is never decoded
     // with the ANSI code page.
-    reportPopupText_->SetValue(wxString::FromUTF8(info.content.c_str()));
+    const wxString content = wxString::FromUTF8(info.content.c_str());
+    reportPopupText_->SetValue(content);
     popupTaskId_ = taskId;
 
-    // Position: anchor at the trigger point + offset, clamped into the work
-    // area. SetSize BEFORE Position so GetSize() drives the clamp (Position
-    // itself only knows the display geometry, not the work area).
+    // Size adapts to the content (2026-11-26): measured with the text ctrl's
+    // font, padded, then clamped to [min, work-area percentage]. Overlong
+    // reports keep the work-area cap and scroll inside the text ctrl.
     const wxPoint screenPt = pendingList_->ClientToScreen(pos);
-    wxPoint pt(screenPt.x + kPopupAnchorOffset, screenPt.y + kPopupAnchorOffset);
-    const wxSize sz = reportPopup_->GetSize();
     wxRect wa;
     const int displayNum = wxDisplay::GetFromPoint(screenPt);
     if (displayNum != wxNOT_FOUND) {
@@ -691,6 +721,24 @@ void TaskMonitorPanel::showReportPopup(const std::string& taskId, const wxPoint&
     } else {
         wa = wxDisplay(0u).GetClientArea();
     }
+    const wxSize textSize = measureReportText(reportPopupText_, content);
+    int width = textSize.GetWidth() + kPopupPaddingX;
+    int height = textSize.GetHeight() + kPopupPaddingY;
+    const int maxWidth = wa.GetWidth() * kPopupMaxWorkAreaPercentX / 100;
+    const int maxHeight = wa.GetHeight() * kPopupMaxWorkAreaPercentY / 100;
+    if (width > maxWidth) width = maxWidth;
+    if (height > maxHeight) height = maxHeight;
+    if (width < kPopupMinWidth) width = kPopupMinWidth;
+    if (height < kPopupMinHeight) height = kPopupMinHeight;
+    if (width > wa.GetWidth()) width = wa.GetWidth();
+    if (height > wa.GetHeight()) height = wa.GetHeight();
+    reportPopup_->SetSize(width, height);
+
+    // Position: anchor at the trigger point + offset, clamped into the work
+    // area. SetSize BEFORE Position so GetSize() drives the clamp (Position
+    // itself only knows the display geometry, not the work area).
+    wxPoint pt(screenPt.x + kPopupAnchorOffset, screenPt.y + kPopupAnchorOffset);
+    const wxSize sz = reportPopup_->GetSize();
     const int maxX = wa.GetRight() - sz.GetWidth();
     const int maxY = wa.GetBottom() - sz.GetHeight();
     if (pt.x > maxX) pt.x = maxX;

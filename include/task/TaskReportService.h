@@ -31,6 +31,14 @@ struct TaskReportInfo {
 // section, and `updateMethods` is emitted only when non-empty (positioned after
 // parentTaskId, before `---- statistics ----`).
 //
+// Format v3 (2026-11-26): horizontal layout — `type` + `targetId` share a line,
+// `status` + `durationMinutes` share a line, and all present timestamps share
+// one line; the statistics section is a single pipe-separated line
+// (`total: N | success: N | failed: N | skipped: N`). When
+// `stats.failures` is non-empty, a `---- failed subscriptions ----` section
+// follows the statistics with one `name (id)` entry per failed item (bare id
+// when the name is empty).
+//
 // Thread safety: a single std::mutex guards the index and the disk write.
 // `find` performs the lookup AND copies the content to `out` while holding the
 // lock, so no pointer escapes the lock; it never inserts an empty entry for a
