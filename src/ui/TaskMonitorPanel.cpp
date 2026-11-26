@@ -131,6 +131,10 @@ TaskMonitorPanel::TaskMonitorPanel(wxWindow* parent, AppController* controller)
     // clicks fire ITEM_RIGHT_CLICK *and* propagate WM_CONTEXTMENU, so binding
     // both events would double-popup the menu).
     pendingList_->Bind(wxEVT_CONTEXT_MENU, &TaskMonitorPanel::onListContextMenu, this);
+    // task-report-hover Task 6 (bugfix): explicit click-away dismissal for the
+    // report popup (see onPanelMouseDown). Bound on the PANEL so clicks anywhere
+    // in the task monitor area (blank space / list) are considered.
+    Bind(wxEVT_LEFT_DOWN, &TaskMonitorPanel::onPanelMouseDown, this);
     // Menu commands bind on the PANEL, not the list: wxMSW routes a popup's
     // WM_COMMAND to the window whose PopupMenu() call owned the track loop
     // (this->PopupMenu below → the panel's HWND). The same pattern as
@@ -541,11 +545,24 @@ void TaskMonitorPanel::onListMotion(wxMouseEvent& event) {
     const bool hitRow = hit >= 0 && hit < static_cast<long>(pendingIds_.size());
     if (!hitRow || rowKinds_[static_cast<std::size_t>(hit)] != RowFinished) {
         // Blank space / non-finished row: hide any open report popup.
+        suppressHoverId_.clear();  // the pointer left the dismissed row
         hideReportPopup();
         event.Skip();
         return;
     }
     const std::string& rowId = pendingIds_[static_cast<std::size_t>(hit)];
+    // A click-away dismissal is sticky for the row it dismissed: hiding the
+    // popup makes Windows synthesise a WM_MOUSEMOVE over the row, and without
+    // this guard the popup would re-open a few milliseconds after the user
+    // closed it (observed as the report popup refusing to close). Normal
+    // hover resumes once the pointer reaches another row or leaves the list.
+    if (!suppressHoverId_.empty()) {
+        if (rowId == suppressHoverId_) {
+            event.Skip();
+            return;
+        }
+        suppressHoverId_.clear();
+    }
     task::TaskReportInfo info;
     if (!controller_->findTaskReport(rowId, info)) {
         // Finished row without a published report: nothing to show.
@@ -559,6 +576,34 @@ void TaskMonitorPanel::onListMotion(wxMouseEvent& event) {
         || popupTaskId_ != rowId) {
         hoveredRow_ = hit;  // the popup now tracks this row (debounce + refresh)
         showReportPopup(rowId, pos);
+    }
+    event.Skip();
+}
+
+void TaskMonitorPanel::onPanelMouseDown(wxMouseEvent& event) {
+    // task-report-hover Task 6 (bugfix): explicit click-away dismissal for the
+    // hover report popup. The popup suppresses wx's native transient dismissal
+    // (WM_ACTIVATE -> DismissOnDeactivate) by design, so once shown the close
+    // relies on the mouse-leave chain; a left-down that lands OUTSIDE the
+    // popup rect must therefore dismiss it explicitly. Clicks inside the popup
+    // (read-only report text area) are not dismissals.
+    if (reportPopup_ != nullptr && reportPopup_->IsShown()) {
+        wxWindow* evtWin = static_cast<wxWindow*>(event.GetEventObject());
+        const wxPoint ptScreen =
+            (evtWin != nullptr) ? evtWin->ClientToScreen(event.GetPosition())
+                                : ClientToScreen(event.GetPosition());
+        const wxRect popupRect = reportPopup_->GetScreenRect();
+        const bool inside = ptScreen.x >= popupRect.GetLeft() &&
+                            ptScreen.x <= popupRect.GetRight() &&
+                            ptScreen.y >= popupRect.GetTop() &&
+                            ptScreen.y <= popupRect.GetBottom();
+        if (!inside) {
+            // Capture the dismissed row BEFORE hideReportPopup() clears
+            // popupTaskId_, so a spurious motion over the same row does not
+            // immediately re-open the popup.
+            suppressHoverId_ = popupTaskId_;
+            hideReportPopup();
+        }
     }
     event.Skip();
 }
@@ -594,6 +639,7 @@ void TaskMonitorPanel::onListLeave(wxMouseEvent& event) {
         event.Skip();
         return;
     }
+    suppressHoverId_.clear();  // pointer truly left the list/popup: hover resumes
     hideReportPopup();
     event.Skip();
 }

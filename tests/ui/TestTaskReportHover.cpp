@@ -289,4 +289,45 @@ TEST_CASE("Hover finished task row shows report popup", "[taskreporthover]") {
     const bool shows = popupChildShows(hPopup, "taskId: " + taskId, &childDetail);
     INFO("popup children:\n" << toUtf8(childDetail));
     REQUIRE(shows);
+
+    // ── task-report-hover Task 6 (bugfix): explicit click-away dismissal ──
+    // The popup suppresses wx's native transient dismissal (WM_ACTIVATE →
+    // DismissOnDeactivate) by design (wxPU_CONTAINS_CONTROLS ⇒
+    // MSWDismissUnfocusedPopup never dismisses), so closing an open report
+    // popup relies on the explicit paths: list leave / non-finished row /
+    // missing report / (new) click-away. Regression: a left-down that lands
+    // OUTSIDE the popup rect must dismiss it. Post WM_LBUTTONDOWN to the
+    // TaskMonitorPanel HWND (the panel owns the wxEVT_LEFT_DOWN binding) at
+    // client origin — the popup anchors below the hovered row, so the panel
+    // client origin is outside the popup rect and must trigger dismissal.
+    const HWND hPanel = reinterpret_cast<HWND>(::GetWindowLongPtr(hList, GWLP_HWNDPARENT));
+    REQUIRE(hPanel != nullptr);
+    INFO("task monitor panel hwnd=" << (void*)hPanel);
+    ::PostMessageW(hPanel, WM_LBUTTONDOWN, MK_LBUTTON, MAKELPARAM(0, 0));
+
+    // The panel is on the UI thread and the posted message is marshalled
+    // back to it, so the dismissal should land within a few event-loop turns.
+    bool popupDismissed = false;
+    const DWORD hideDeadline = ::GetTickCount() + 5000;
+    while (::GetTickCount() < hideDeadline) {
+        if (!::IsWindowVisible(hPopup)) { popupDismissed = true; break; }
+        ::Sleep(50);
+    }
+    INFO("report popup dismissed by outside click: " << popupDismissed);
+    REQUIRE(popupDismissed);
+
+    // ── The dismissal must be STICKY for the hovered row ─────────────────
+    // Hiding the popup makes Windows synthesise a WM_MOUSEMOVE over the row
+    // under the cursor; without the "suppress re-hover" guard the popup
+    // re-opens a few ms after the click (the original intermittent failure:
+    // the poll above saw it visible again). The cursor is still on the row
+    // here, so the popup must remain hidden.
+    bool stayedHidden = true;
+    const DWORD stableDeadline = ::GetTickCount() + 600;
+    while (::GetTickCount() < stableDeadline) {
+        if (::IsWindowVisible(hPopup)) { stayedHidden = false; break; }
+        ::Sleep(50);
+    }
+    INFO("report popup stayed hidden after click-away: " << stayedHidden);
+    REQUIRE(stayedHidden);
 }

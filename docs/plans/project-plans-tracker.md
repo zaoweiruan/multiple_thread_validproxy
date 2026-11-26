@@ -3,7 +3,7 @@ title: "docs: Project Plans Tracker — global plan index and progress tracker"
 type: docs
 status: maintained
 date: 2026-05-11
-updated: 2026-11-23
+updated: 2026-11-26
 ---
 
 # Project Plans Tracker
@@ -17,6 +17,7 @@ updated: 2026-11-23
 
 | 日期 | 类型 | 文档路径 | 说明 |
 |------|------|----------|------|
+| 2026-11-25 | bugfix | docs/bugfix/2026-11-25-Bugfix-TaskReportPopupClose-v1.0.md | **任务完成报告浮层点击外部关闭后立即重现** — 根因=浮层（`wxPU_CONTAINS_CONTROLS`）抑制原生失焦关闭，补点击外部路径后 `hideReportPopup()` 触发系统合成 `WM_MOUSEMOVE`，`onListMotion` 在指针未移动时重新弹出（埋点 `MDOWN inside=0 → HIDE shown=0 → 2~19ms MOTION SHOW`）；修复=Panel 级 `wxEVT_LEFT_DOWN` + 命中测试 + `suppressHoverId_`（对被关闭行抑制重开，移行/离开即清除）；回归=`[taskreporthover]` 新增点击外部关闭 + 600ms `stayedHidden`（RED 10 跑 2 失败 / GREEN 10/10）；门禁=`build-and-test.bat` EXIT 0（UI 17/17，`UI_FLOATINGWIDGET` Disabled）+ 非 UI 67/67；策略=业主裁决跳过 `UI_FLOATINGWIDGET`（`DISABLED TRUE`）+ ctest `--repeat until-pass:2` | ✅ completed |
 | 2026-11-25 | plan | docs/plans/2026-11-25-Plan-TaskReportFormat-v1.0.md | **任务完成报告格式 v2 实现计划** — 3 任务（T1 TaskFormat 墙钟 `yyyy-mm-dd hh:mm:ss`+`durationMinutes` 纯函数 / T2 报告格式重构原子（TaskReportService+TaskQueue+SubitemUpdaterV2+AppController 签名链）去日志摘录+`updateMethods` 字段 / T3 文档登记+全量门禁）；Spec `docs/specs/2026-11-25-Spec-TaskReportFormat-v1.0.md`；实现 commits 66a9748→d281cb8（Task 1-2 评审 PASS）+ Task 3 门禁；验证=Task 3 门禁：`build-and-test.bat` EXIT 0 ALL TESTS PASSED（UI 18/18，183.04s）+ 非 UI 单元 ctest 67/67（301.88s） | ✅ completed |
 | 2026-11-24 | plan | docs/plans/2026-11-24-Plan-TaskReportHover-v1.0.md | **任务完成报告+悬停显示 实现计划** — 7 任务（T1 TaskStats+addStats / T2 TaskReportService 格式化+落盘 report_<taskId>.txt+内存索引 / T3 TaskQueue workerLoop 作用域日志捕获+完成 sink 含 stats / T4 聚合操作 TaskStats* 出参 / T5 AppController 接线+addStats / T6 TaskMonitorPanel 悬停浮层 wxPopupTransientWindow 只读 ≤560×420 / T7 文档登记+全量门禁）；Spec `docs/specs/2026-11-24-Spec-TaskReportHover-v1.0.md`；实现 commits 04e454f→8be2e1b（Task 1-6 评审 PASS）；验证=Task 7 门禁：`build-and-test.bat` EXIT 0 ALL TESTS PASSED（UI 18/18，201.52s）+ 非 UI 单元 ctest 67/67（132.38s）+ 全量 ctest 83/85（2 UI flake 单跑复验通过） | ✅ completed |
 | 2026-11-23 | spec | docs/specs/2026-11-23-Spec-FreshDbAutoCloudSync-v1.0.md | **创建空库后自动从云端同步订阅 v1.0** — 用户诉求「当生成空库时，自动下载云端更新订阅」；owner 决策：同步失败（无凭据/网络/云端无 subscriptions.json）**静默降级仅记日志**、**GUI+CLI 都生效**；新增 `CloudSyncService::pullSubscriptionsInto(sqlite3*, remoteDir, loader)`（可注入凭据 loader seam 供单测确定性覆盖无凭据分支，不联网）；GUI `bootstrapDatabase` 加 `freshCreated` 输出（PromptCreate/PromptRebuild 创建成功置位）、`main` 打开库后若 `freshCreated` 拉取；CLI `openDatabase` 内部 `createdFresh` 局部标志拉取（15 个调用点零改动）；`Startup.Created`/`Startup.Rebuilt` 文案改为「将自动从云端同步订阅」；TDD `CloudSyncTest.PullSubscriptionsIntoSkipsWithoutCredentials`；验证=构建 1181/1181 EXIT 0 + `CloudSyncTest` 通过 + 全量 ctest **78/79 通过**（唯一失败 `XrayManagerStartupTest` 为既有环境性基线，非本次改动）；`gen-i18n -Check` 一致（650 条） | ✅ 已验证 |

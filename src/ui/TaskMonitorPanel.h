@@ -46,6 +46,12 @@ private:
     // dismissal of its own for wxPU_CONTAINS_CONTROLS).
     void onListMotion(wxMouseEvent& event);
     void onListLeave(wxMouseEvent& event);
+    // task-report-hover Task 6 (bugfix): explicit click-away dismissal for the
+    // report popup. The transient popup suppresses wx's native deactivation
+    // dismissal (WM_ACTIVATE -> DismissOnDeactivate) per design, so closing is
+    // otherwise driven only by the mouse-leave chain; a click elsewhere must
+    // still be able to close an open report popup.
+    void onPanelMouseDown(wxMouseEvent& event);
     void showReportPopup(const std::string& taskId, const wxPoint& pos);
     void hideReportPopup();
     // Context menu over the list (spec 2026-11-06 §3.3). Single entry point:
@@ -91,6 +97,13 @@ private:
     wxTextCtrl* reportPopupText_{nullptr};
     long hoveredRow_{-1};
     std::string popupTaskId_;
+    // task-report-hover Task 6 (bugfix): taskId whose report popup the user
+    // dismissed by clicking outside it. While the pointer stays on that same
+    // row, hover must NOT re-show the popup (hiding the popup generates a
+    // spurious WM_MOUSEMOVE over the row, which would otherwise re-open it
+    // immediately). Cleared as soon as the pointer moves to another row or
+    // leaves the list, restoring normal hover behaviour.
+    std::string suppressHoverId_;
 
     wxDECLARE_EVENT_TABLE();
 };

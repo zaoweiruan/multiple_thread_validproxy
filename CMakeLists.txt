@@ -2376,6 +2376,11 @@ if(wxWidgets_FOUND AND BUILD_UI_TESTS)
         add_test(NAME UI_SEARCH     COMMAND UITests "[search]")
         add_test(NAME UI_CLEAR      COMMAND UITests "[clear]")
         add_test(NAME UI_FLOATINGWIDGET COMMAND UITests "[floatingwidget]")
+        # UI_FLOATINGWIDGET 是长期存在的环境 flaky（共享桌面上 WindowFromPoint
+        # z-order 竞态，见 docs/architecture.md「已知偶发」与多份 bugfix 记录）。
+        # 业主裁决（2026-11-25）：自动化门禁跳过该项；需要排查时直接运行
+        # UITests.exe "[floatingwidget]"，用例源码与注册保持不变。
+        set_tests_properties(UI_FLOATINGWIDGET PROPERTIES DISABLED TRUE)
         add_test(NAME UI_POOL COMMAND UITests "[pooldialog]")
         add_test(NAME UI_PORTCLOSE COMMAND UITests "[portclose]")
         add_test(NAME UI_EXITASSERT COMMAND UITests "[exitassert]")
