@@ -3,12 +3,16 @@ cmake_minimum_required(VERSION 3.20)
 # ===== Toolchain selection (must run before project()) =====
 # VALIDPROXY_TOOLCHAIN selects the MinGW toolchain via a CMake toolchain file:
 #   -DVALIDPROXY_TOOLCHAIN=<tc>  or  $ENV{VALIDPROXY_TOOLCHAIN}=<tc>
-#   <tc> = clion | ucrt
-# Resolution order: -D cache value > $ENV{VALIDPROXY_TOOLCHAIN} > default "clion-msvcrt".
-#   clion : CLion bundled MinGW (E:/clion/bin/mingw)  GCC 15.2.0, MSVCRT
-#           (zero-risk baseline; wx/Catch2 from the vcpkg msvcrt tree)
-#   ucrt  : UCRT MinGW (E:/mingw64)                    GCC 16.2.0, UCRT
-#           (the GUI flash-crash fix toolchain; wx/Catch2 from temp/vcpkg-ucrt-root)
+#   <tc> = msvcrt-win32 | clion-msvcrt | mingw-ucrt
+# Resolution order: -D cache value > $ENV{VALIDPROXY_TOOLCHAIN} > default "msvcrt-win32".
+#   msvcrt-win32 (DEFAULT) : MinGW-Builds GCC 16.2.0, MSVCRT, win32 threads
+#           (D:/mingw64-win32-msvcrt). No libwinpthread dependency; `-static`
+#           produces a standalone EXE (only system DLLs). wx/Catch2 from the
+#           vcpkg x64-mingw-static tree; zero MinGW runtime DLLs at runtime.
+#   clion-msvcrt : CLion bundled MinGW (E:/clion/bin/mingw)  GCC 15.2.0, MSVCRT
+#           (posix threads; legacy baseline — still needs libwinpthread-1.dll).
+#   mingw-ucrt  : UCRT MinGW (E:/mingw64)                    GCC 16.2.0, UCRT
+#           (legacy UCRT path; wx/Catch2 from temp/vcpkg-ucrt-root).
 # Each toolchain file sets the compiler, the CRT label (VALIDPROXY_TC_CRT) and
 # per-toolchain dependency roots (VALIDPROXY_TC_WX_DIR / VALIDPROXY_TC_CATCH2_DIR).
 # Dependency policy (user directive 2026-11-13): wxWidgets = DYNAMIC; every
@@ -16,6 +20,10 @@ cmake_minimum_required(VERSION 3.20)
 # STATIC. cmake/AbiGuard.cmake (included after project()) FATALs if the compiler
 # CRT and the wx DLL CRT diverge, and warns on Catch2 major-version drift.
 #
+# Build caches (per CMakePresets.json): build-msvcrt-win32-debug / -release.
+# Run `cmake --preset debug` / `cmake --preset release` then
+# `cmake --build --preset debug|release`. Release ships fully static EXEs
+# in bin/ with no MinGW runtime DLLs. See docs/INDEX.md §9.1.
 # NOTE: switching VALIDPROXY_TOOLCHAIN changes CMAKE_TOOLCHAIN_FILE, so use a
 # FRESH build directory per toolchain (or delete CMakeCache.txt) — the cached
 # compiler of a previously-configured dir would otherwise win.
@@ -25,10 +33,14 @@ if(NOT DEFINED CMAKE_TOOLCHAIN_FILE OR "${CMAKE_TOOLCHAIN_FILE}" STREQUAL "")
         set(_VALIDPROXY_TC "${VALIDPROXY_TOOLCHAIN}")
     endif()
     if("${_VALIDPROXY_TC}" STREQUAL "")
-        set(_VALIDPROXY_TC "clion-msvcrt")
+        set(_VALIDPROXY_TC "msvcrt-win32")
     endif()
 
-    if(_VALIDPROXY_TC STREQUAL "clion-msvcrt")
+    if(_VALIDPROXY_TC STREQUAL "msvcrt-win32")
+        set(CMAKE_TOOLCHAIN_FILE
+            "${CMAKE_CURRENT_SOURCE_DIR}/cmake/toolchains/mingw-msvcrt-win32.cmake"
+            CACHE FILEPATH "CMake toolchain file (mingw-msvcrt-win32)" FORCE)
+    elseif(_VALIDPROXY_TC STREQUAL "clion-msvcrt")
         set(CMAKE_TOOLCHAIN_FILE
             "${CMAKE_CURRENT_SOURCE_DIR}/cmake/toolchains/mingw-clion.cmake"
             CACHE FILEPATH "CMake toolchain file (mingw-clion)" FORCE)
@@ -38,20 +50,51 @@ if(NOT DEFINED CMAKE_TOOLCHAIN_FILE OR "${CMAKE_TOOLCHAIN_FILE}" STREQUAL "")
             CACHE FILEPATH "CMake toolchain file (mingw-ucrt)" FORCE)
     else()
         message(FATAL_ERROR
-            "VALIDPROXY_TOOLCHAIN='${_VALIDPROXY_TC}' is unknown. Valid values: clion-msvcrt, mingw-ucrt.")
+            "VALIDPROXY_TOOLCHAIN='${_VALIDPROXY_TC}' is unknown. Valid values: msvcrt-win32, clion-msvcrt, mingw-ucrt.")
     endif()
     set(VALIDPROXY_TOOLCHAIN "${_VALIDPROXY_TC}" CACHE STRING
-        "selected MinGW toolchain (clion-msvcrt|mingw-ucrt)" FORCE)
+        "selected MinGW toolchain (msvcrt-win32|clion-msvcrt|mingw-ucrt)" FORCE)
     unset(_VALIDPROXY_TC)
 endif()
 
 
 project(multiple_thread_validproxy VERSION 1.6.2 LANGUAGES CXX)
 
+# Prebuilt vcpkg static archives (Boost.JSON, Catch2) were compiled against a
+# posix-threads MinGW and reference pthread_mutex_* symbols. msvcrt-win32 has
+# no libwinpthread, so provide a tiny Win32-critical-section shim on ALL
+# targets (harmless when the symbols are not actually referenced).
+if(VALIDPROXY_TOOLCHAIN STREQUAL "msvcrt-win32")
+    add_library(vp_pthread_shim STATIC src/platform/pthread_win32_shim.cpp)
+endif()
+
+if(VALIDPROXY_TOOLCHAIN STREQUAL "msvcrt-win32")
+    # Link the shim into EVERY executable: prebuilt vcpkg static archives
+    # (Boost.JSON / Catch2) reference pthread_mutex_* from their posix-threads
+    # build; win32-threads has no libwinpthread to satisfy them.
+    # Use a plain absolute-path string via `link_libraries` (NOT a target name
+    # and NOT an add_link_options flag): a target would break googletest's
+    # install export set, and a LINK_FLAGS entry lands BEFORE the objects on the
+    # command line so the linker discards it before seeing pthread refs.
+    # A path string is appended at the END of LINK_LIBRARIES for every target,
+    # including imported GTest/Catch2 consumers.
+    link_libraries("${CMAKE_BINARY_DIR}/libvp_pthread_shim.a")
+endif()
+
 # Partial static linking: link libgcc/libstdc++ into the exe so the release no
 # longer depends on libgcc_s_seh-1.dll / libstdc++-6.dll (only libwinpthread-1.dll
 # remains). Applies to every target (GUI, CLI, tests).
 add_link_options(-static-libgcc -static-libstdc++)
+# The default msvcrt-win32 toolchain has NO libwinpthread at all (win32 threads),
+# so link the SHIPPED exes fully statically: they import only KERNEL32, msvcrt
+# and other system DLLs. This is what makes the 30 MB standalone GUI / 10 MB
+# CLI possible and removes the last MinGW runtime DLL from the package. Test
+# targets keep the normal (dynamic libstdc++) link to stay ABI-compatible with
+# the prebuilt Catch2/GTest archives.
+set(VALIDPROXY_FULLY_STATIC_EXE FALSE)
+if(VALIDPROXY_TOOLCHAIN STREQUAL "msvcrt-win32")
+    set(VALIDPROXY_FULLY_STATIC_EXE TRUE)
+endif()
 
 # ===== Static wxWidgets option (release builds) =====
 # When ON, use the statically-built wxWidgets tree (x64-mingw-static) instead of
@@ -72,20 +115,23 @@ if(VALIDPROXY_STATIC_WX)
     set(wxWidgets_USE_STATIC ON CACHE BOOL "Link wxWidgets statically" FORCE)
     message(STATUS "[wx] using STATIC tree: ${WX_VCPKG_DIR}")
 
-    # ── Win7 SP1 runtime provisioning ───────────────────────────────────────
+    # Win7 SP1 runtime provisioning (legacy posix-threads toolchains only):
     # `-static-libgcc -static-libstdc++` still leaves libwinpthread-1.dll as a
-    # dynamic dependency, and the libwinpthread shipped by BOTH toolchains
-    # (E:\clion\bin\mingw 72 KB, E:\mingw64 56 KB) imports the UCRT API sets
-    # (`api-ms-win-crt-convert/heap/runtime/stdio/string/...`). Those DLLs do not
-    # exist on a plain Windows 7 SP1 without the Universal CRT update
-    # (KB2999226), so the app fails at load time with:
+    # dynamic dependency, and the libwinpthread shipped by BOTH legacy
+    # toolchains (E:\clion\bin\mingw 72 KB, E:\mingw64 56 KB) imports the UCRT
+    # API sets. Those DLLs do not exist on a plain Windows 7 SP1 without the
+    # Universal CRT update (KB2999226), so the app fails at load time with:
     #   "无法启动此程序，因为计算机中丢失 api-ms-win-crt-convert-l1-1-0.dll"
-    # `-static` is NOT an option here: this toolchain's libpthread.a is a UCRT
-    # build (references `__intrinsic_setjmpex`, only defined in libucrt*.a).
+    # The DEFAULT msvcrt-win32 toolchain uses win32 threads and needs NO
+    # libwinpthread at all (EXE is fully static, only system DLL imports), so
+    # this provisioning is skipped there. For the legacy toolchains -static is
+    # NOT an option: their libpthread.a is a UCRT build (references
+    # `__intrinsic_setjmpex`, only defined in libucrt*.a).
     # Fix: ship an MSVCRT-only libwinpthread next to the exe. Verified to export
     # every symbol the exe imports (incl. clock_gettime64 / nanosleep64 /
     # pthread_cond_timedwait64) and to import only KERNEL32 + msvcrt.
     # Override with -DVALIDPROXY_MSVCRT_WINPTHREAD_DLL=<path> if needed.
+    if(NOT VALIDPROXY_TOOLCHAIN STREQUAL "msvcrt-win32")
     set(VALIDPROXY_MSVCRT_WINPTHREAD_DLL
         "${CMAKE_SOURCE_DIR}/resources/win7/libwinpthread-1.dll"
         CACHE FILEPATH "MSVCRT-only libwinpthread-1.dll shipped with the Win7 package")
@@ -96,8 +142,8 @@ if(VALIDPROXY_STATIC_WX)
             "[win7] VALIDPROXY_MSVCRT_WINPTHREAD_DLL not found; the package will fall back "
             "to the toolchain's UCRT-based libwinpthread-1.dll and will NOT start on a "
             "Windows 7 SP1 without KB2999226. See scripts/check-win7-deps.ps1.")
-    endif()
-
+    endif()   # inner libwinpthread file check
+    endif()   # outer legacy posix-threads toolchains guard
     unset(_vp_vcpkg_root)
     unset(_vp_static_wx)
 endif()
@@ -315,13 +361,16 @@ check_ipo_supported(RESULT _vp_ipo_supported OUTPUT _vp_ipo_reason LANGUAGES CXX
 if(NOT MSVC AND CMAKE_BUILD_TYPE STREQUAL "Release")
     # Scheduling-only tune: no new instructions -> binary stays portable.
     add_compile_options(-mtune=native)
-    if(_vp_ipo_supported AND NOT ENABLE_SANITIZERS)
+    # LTO (GCC16 + prebuilt static wx/Catch2) produces discarded-section
+    # reference errors at link time; keep the proven plain Release path by
+    # default. Opt in explicitly with -DVALIDPROXY_LTO=ON when the whole
+    # dependency tree is rebuilt by the same compiler.
+    option(VALIDPROXY_LTO "Enable IPO/LTO in Release (needs same-compiler deps)" OFF)
+    if(VALIDPROXY_LTO AND NOT ENABLE_SANITIZERS)
         set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
         message(STATUS "[opt] Release: IPO/LTO enabled")
     else()
-        # Do not print _vp_ipo_reason: it embeds CMake's multi-line LTO probe
-        # output (harmless compiler errors from the feature test).
-        message(STATUS "[opt] Release: IPO/LTO not supported by this toolchain; skipping")
+        message(STATUS "[opt] Release: IPO/LTO disabled (default; -DVALIDPROXY_LTO=ON to opt in)")
     endif()
     # GC unused sections to shrink the exe. Symbols are kept on purpose:
     # CrashHandler/dbghelp stack traces need them, so no -s/--strip-* here.
@@ -582,6 +631,9 @@ add_executable(validproxy-cli
     src/main_cli.cpp
     ${CORE_SOURCES}
 )
+if(VALIDPROXY_FULLY_STATIC_EXE)
+    target_link_options(validproxy-cli PRIVATE -static)
+endif()
 
 target_link_libraries(validproxy-cli PRIVATE
     Threads::Threads
@@ -591,6 +643,9 @@ target_link_libraries(validproxy-cli PRIVATE
     -ldbghelp
     -lws2_32
 )
+if(TARGET vp_pthread_shim)
+    target_link_libraries(validproxy-cli PRIVATE vp_pthread_shim)
+endif()
 add_dependencies(validproxy-cli update_version_h)
 
 # Force CLI output to bin (override global setting for tests)
@@ -602,7 +657,7 @@ set_target_properties(validproxy-cli PROPERTIES
 
 # Deploy the MSVCRT-only libwinpthread next to the CLI (see the Win7 SP1 note in
 # the VALIDPROXY_STATIC_WX block: the toolchain's bundled DLL needs the UCRT).
-if(VALIDPROXY_STATIC_WX AND VALIDPROXY_MSVCRT_WINPTHREAD_DLL
+if(NOT VALIDPROXY_TOOLCHAIN STREQUAL "msvcrt-win32" AND VALIDPROXY_STATIC_WX AND VALIDPROXY_MSVCRT_WINPTHREAD_DLL
    AND EXISTS "${VALIDPROXY_MSVCRT_WINPTHREAD_DLL}")
     add_custom_command(TARGET validproxy-cli POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
@@ -619,7 +674,10 @@ endif()
 # Conditional for the same reason: a static-runtime toolchain (w64devkit)
 # has no such DLLs and the copy would fail POST_BUILD.
 get_filename_component(MINGW_RUNTIME_DIR "${CMAKE_CXX_COMPILER}" DIRECTORY)
-if(EXISTS "${MINGW_RUNTIME_DIR}/libstdc++-6.dll")
+# Runtime DLL copy is for legacy toolchains that dynamically import MinGW
+    # runtime DLLs. The msvcrt-win32 default links fully statically and needs
+    # none — skip the copy so bin/ contains only our shipped EXEs.
+    if(NOT VALIDPROXY_TOOLCHAIN STREQUAL "msvcrt-win32" AND EXISTS "${MINGW_RUNTIME_DIR}/libstdc++-6.dll")
     set(_mingw_runtime_dlls
         "${MINGW_RUNTIME_DIR}/libstdc++-6.dll"
         "${MINGW_RUNTIME_DIR}/libgcc_s_seh-1.dll")
@@ -729,6 +787,9 @@ if(wxWidgets_FOUND)
         ${CORE_SOURCES}
         ${UI_SOURCES}
     )
+    if(VALIDPROXY_FULLY_STATIC_EXE)
+        target_link_options(validproxy PRIVATE -static)
+    endif()
 
     target_link_libraries(validproxy PRIVATE
         Threads::Threads
@@ -738,11 +799,12 @@ if(wxWidgets_FOUND)
         -ldbghelp
         -lws2_32
     )
+
 add_dependencies(validproxy update_version_h)
 
     # Deploy the MSVCRT-only libwinpthread next to the GUI exe (Win7 SP1: the
     # toolchain's bundled libwinpthread-1.dll requires the UCRT api-sets).
-    if(VALIDPROXY_STATIC_WX AND VALIDPROXY_MSVCRT_WINPTHREAD_DLL
+    if(NOT VALIDPROXY_TOOLCHAIN STREQUAL "msvcrt-win32" AND VALIDPROXY_STATIC_WX AND VALIDPROXY_MSVCRT_WINPTHREAD_DLL
        AND EXISTS "${VALIDPROXY_MSVCRT_WINPTHREAD_DLL}")
         add_custom_command(TARGET validproxy POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
@@ -762,6 +824,9 @@ add_dependencies(validproxy update_version_h)
         wx::wxpropgrid
         wx::wxnet
     )
+    if(TARGET vp_pthread_shim)
+        target_link_libraries(validproxy PRIVATE vp_pthread_shim)
+    endif()
 
     # Add include directory for wx headers (dynamic variant headers)
     target_include_directories(validproxy PRIVATE "${WX_VCPKG_DIR}/include")
@@ -800,7 +865,10 @@ add_dependencies(validproxy update_version_h)
     # POST_BUILD on every GUI link. CLion's bundled MinGW DOES ship them
     # (dynamic runtime), so keep the copy exactly for that toolchain.
     get_filename_component(MINGW_RUNTIME_DIR "${CMAKE_CXX_COMPILER}" DIRECTORY)
-    if(EXISTS "${MINGW_RUNTIME_DIR}/libstdc++-6.dll")
+    # Runtime DLL copy is for legacy toolchains that dynamically import MinGW
+    # runtime DLLs. The msvcrt-win32 default links fully statically and needs
+    # none — skip the copy so bin/ contains only our shipped EXEs.
+    if(NOT VALIDPROXY_TOOLCHAIN STREQUAL "msvcrt-win32" AND EXISTS "${MINGW_RUNTIME_DIR}/libstdc++-6.dll")
         set(_mingw_runtime_dlls
             "${MINGW_RUNTIME_DIR}/libstdc++-6.dll"
             "${MINGW_RUNTIME_DIR}/libgcc_s_seh-1.dll")
@@ -2344,16 +2412,19 @@ if(wxWidgets_FOUND AND BUILD_UI_TESTS)
             tests/ui/TestLanguageMenu.cpp
         )
         add_executable(UITests ${UI_FRAMEWORK_SOURCES} ${UI_TEST_SOURCES})
-        # LTO would add a second variable to the already fragile Catch2
-        # double-libstdc++ link (see --allow-multiple-definition below); the UI
-        # tests do not need the perf. Keep them on the plain compile path.
-        set_property(TARGET UITests PROPERTY INTERPROCEDURAL_OPTIMIZATION FALSE)
+    # Static wx/Catch2 on msvcrt-win32 links the C++ runtime into the exe.
+    # GTest/UITests stay on their normal dynamic-libstdc++ link (no -static),
+    # matching how the prebuilt Catch2/GTest archives were compiled.
+    set_property(TARGET UITests PROPERTY INTERPROCEDURAL_OPTIMIZATION FALSE)
         target_include_directories(UITests PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}/tests/ui)
         target_link_libraries(UITests PRIVATE
             Catch2::Catch2
             uiautomationcore oleaut32 uuid
             user32 gdi32 gdiplus shell32 ws2_32 iphlpapi)
+        if(TARGET vp_pthread_shim)
+            target_link_libraries(UITests PRIVATE vp_pthread_shim)
+        endif()
 
         # Catch2 来自 vcpkg 预编译静态库；若它由另一版本 GCC 编出（本机为
         # E:/w64devkit GCC 14.2，而 clion-msvcrt 工具链是 GCC 15.2），两份
