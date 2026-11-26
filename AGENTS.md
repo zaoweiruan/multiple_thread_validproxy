@@ -169,8 +169,8 @@ CLion 工具名称、参数、已知限制和调试步骤以项目现有 CLion �
 | `ASAN` / `sanitizer` / `调试` / `debug` / `dump` / `cppcheck` / `覆盖率` / `coverage` / `稳定性` / `MiniDump` | — | 1. **优先按 §5.2 使用 CLion MCP（`xdebug_*` 断点调试 / `get_file_problems`）做定位**。<br>2. 优先引用 **§6.1** 获取构建/测试命令速查。<br>3. 深度工作流（ASAN 输出解读 / dump 分析 / Logger 调优）参考 `docs/project-knowledge.md`。 |
 | `计划` / `方案` / `制定计划` / `设计文档` / `design doc` / `spec` / `技术方案` | **writing-plans** | 1. 严格遵循产品/工程视角区分（PRD 与 Spec 隔离）。<br>2. 产出包含输入、输出、边界条件、前置条件的标准 Markdown。 |
 | `实现` / `编码` / `写代码` / `implement` | **test-driven-development** | 1. 强制要求在编写实现代码的同时，或之前，在 `tests/` 目录下提供 Google Test（`TEST_F`）测试用例。 |
-| `测试` / `test` / `单元测试` / `ctest` | **cmake-build** | 1. 执行 `cmake --build build` 编译。<br>2. 执行 `ctest --test-dir build -V` 运行全量测试。 |
-| `构建` / `编译` / `build` / `cmake` / `CI` | **cmake-build** | 1. 按 Debug 模式配置构建：`cmake -B build -G "Ninja" -DCMAKE_BUILD_TYPE=Debug`。<br>2. 并行编译：`cmake --build build --parallel 6`。 |
+| `测试` / `test` / `单元测试` / `ctest` | **cmake-build** | 1. 执行 `cmake --build --preset debug --parallel 6` 编译。<br>2. 执行 `ctest --test-dir build-msvcrt-win32-debug -V` 运行全量测试。 |
+| `构建` / `编译` / `build` / `cmake` / `CI` | **cmake-build** | 1. 按 Debug 模式配置构建：`cmake --preset debug`（Ninja，msvcrt-win32）。<br>2. 并行编译：`cmake --build --preset debug --parallel 6`。 |
 | `commit` / `提交` / `git` / `分支` / `branch` / `合并` / `merge` / `推送` / `push` / `PR` / `pull request` / `rebase` / `stash` | **git-master** | 1. 严格遵循该技能的分阶段工作流，确保原子提交和版本管理规范。 |
 | `代码审查` / `code review` / `代码评审` / `review` / `PR review` | **requesting-code-review** | 1. 在功能完成并验证测试通过后，提交代码审查。 |
 | `完成` / `complete` / `验证通过` / `verify` / `验证完成` | **verification-before-completion** | 1. 在声称任务完成前必须运行所需验证命令，确认输出后再声明完成。 |
@@ -187,14 +187,20 @@ CLion 工具名称、参数、已知限制和调试步骤以项目现有 CLion �
 PowerShell 基础命令（逐条执行并检查退出码；前一步失败时，不得把后续结果当作有效验收；若项目当前构建目录或测试注册方式不同，先核对 CMakePresets.json、CMake 配置和实际构建目录，再调整命令）：
 
 ```powershell
-cmake -B build -G "Ninja" -DCMAKE_BUILD_TYPE=Debug
-cmake --build build --parallel 6
-ctest --test-dir build -V
+cmake --preset debug
+cmake --build --preset debug --parallel 6
+ctest --test-dir build-msvcrt-win32-debug -V
 ```
 
-### 6.1.1 编译选项与工具链现状（2026-11-23 核验）
+> 2026-11-26 起默认工具链为 `msvcrt-win32`（win32 线程 + MSVCRT），构建目录固定为
+> `build-msvcrt-win32-debug` / `build-msvcrt-win32-release`（`CMakePresets.json` 已配置），
+> 上述旧 `build/` 路径不再存在。Release 用 `cmake --preset release` 配置，产物为
+> 全静态 EXE（仅系统 DLL，无 MinGW/wx 运行时 DLL），见 `docs/reference/2026-11-26-Reference-MsvcrtWin32DefaultToolchain-v1.0.md`。
 
-- Release 自动启用：`-mtune=native`（只调调度、不改指令集）、`-ffunction-sections -fdata-sections` + `-Wl,--gc-sections` 瘦身；IPO/LTO 由 `check_ipo_supported` 门控——E:\mingw64 GCC 16.2（ucrt 工具链）支持并启用，E:\clion\bin\mingw GCC 15.2（msvcrt 工具链）**无 LTO 插件**，自动跳过而不报错。
+### 6.1.1 编译选项与工具链现状（2026-11-26 核验）
+
+- 默认工具链 `msvcrt-win32`（MinGW-Builds GCC 16.2 / MSVCRT / win32 线程，`D:/mingw64-win32-msvcrt`）：GUI/CLI `-static` 全静态，导入表仅系统 DLL，无 MinGW/wx 运行时 DLL；测试目标保持动态 libstdc++ 以兼容预编译 Catch2/GTest。
+- Release 自动启用：`-mtune=native`（只调调度、不改指令集）、`-ffunction-sections -fdata-sections` + `-Wl,--gc-sections` 瘦身；IPO/LTO **默认关闭**（`VALIDPROXY_LTO=ON` 显式开启）——预编译静态 wx/Catch2 与 GCC 16.2 的 LTO 链接会出现 discarded-section 引用错误，故默认走已验证的稳定 Release 路径。
 - `-march=native` 默认关闭，须显式 `-DVALIDPROXY_MARCH_NATIVE=ON`；Win7 SP1 发布包（resources/win7）严禁开启。
 - 全局加 `-pipe`；检测到 ccache 时自动启用编译 launcher（本机尚未安装 ccache，装上即生效）。
 - Debug 标志未变（`-g -g3 -O0`）；禁止加 strip 类标志——CrashHandler/dbghelp 堆栈依赖符号。
