@@ -39,7 +39,13 @@
 | UI 门禁 | `scripts/build-and-test.bat` | EXIT 0 / ALL TESTS PASSED，17/17（234.13 s，config-guard OK） |
 | 工作区 | `git status` | 无未授权改动；旧 build 缓存已清理 |
 
-## 5. 备注
+## 6. 发布口径
+
+- 发布资产只有两个：`validproxy.exe` + `validproxy-cli.exe`，均为全静态 EXE。
+- **没有 zip / DLL 资产**：win32 线程 + `-static` 无需 libwinpthread，旧 `libwinpthread-1.dll` 不再是发布内容。
+- 发布流程与校验见 `docs/2026-11-17-Reference-ReleasePackaging-v1.0.md` v1.1 与 `scripts/package-win7-release.ps1`。
+
+## 7. 备注
 
 - `-DNDEBUG` Release 编译与 `-static` 链接组合在 LTO 关闭时稳定；如需恢复 LTO 必须重建全部依赖以保证同编译器 ABI。
 - 旧 `VALIDPROXY_STATIC_WX=ON` 的 Win7 libwinpthread 部署路径保留给 posix 线程工具链，msvcrt-win32 不触发。

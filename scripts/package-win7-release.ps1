@@ -1,107 +1,73 @@
 # scripts/package-win7-release.ps1
 #
-# 发布压缩包打包脚本（固定口径，后续一律遵照执行）
-#
-# 口径（见 docs/2026-11-17-Reference-ReleasePackaging-v1.0.md）：
-#   * 发布资产共 3 个：validproxy.exe、validproxy-cli.exe、validproxy-<ver>-win64.zip
-#   * 压缩包内 **只放 libwinpthread-1.dll**（MSVCRT 版 Win7 运行时），
-#     **不放** exe / validproxy-cli / 模板 / README / 图标 / config.json
+# 发布前校验脚本（固定口径，见 docs/2026-11-17-Reference-ReleasePackaging-v1.0.md v1.1）：
+#   * 发布资产固定为 2 个：validproxy.exe、validproxy-cli.exe（均为全静态 EXE）
+#   * msvcrt-win32 工具链（win32 线程 + -static）下 EXE 只导入系统 DLL，
+#     不再需要 libwinpthread-1.dll，因此 **不生成 zip 资产**。
 #
 # 用法：
-#   powershell -File scripts/package-win7-release.ps1                 # 版本取 git 最新 tag
-#   powershell -File scripts/package-win7-release.ps1 -Version 1.6.1
-#   powershell -File scripts/package-win7-release.ps1 -Version 1.6.1 -OutDir bin
-# 退出码：0 = 成功；1 = 校验失败；2 = 参数/环境问题。
+#   powershell -File scripts/package-win7-release.ps1
+# 退出码：0 = 校验通过（无 zip 生成）；1 = 产物存在运行时 DLL 依赖；2 = 参数/环境问题。
 
 param(
-    [string]$Version = "",
-    [string]$OutDir = "bin",
-    [string]$Dll = "",
     [string]$Objdump = ""
 )
 
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
+$binDir = Join-Path $repoRoot 'bin'
 
-# 期望的 MSVCRT 版 libwinpthread（与 resources/win7/README.md 一致）
-$ExpectedSha256 = 'B3AD954EC35305895E2370D0A1E3CA6A8203DB1D37C7C49CF5D06E72A5F0DB69'
-$DllEntryName = 'libwinpthread-1.dll'
-
-if ($Dll -eq "") { $Dll = Join-Path $repoRoot 'resources/win7/libwinpthread-1.dll' }
-if (-not (Test-Path -LiteralPath $Dll)) {
-    Write-Error "找不到 MSVCRT 版 libwinpthread: $Dll"
-    exit 2
+# ── 1. 确认两个 EXE 存在 ──────────────────────────────────────────────
+$exes = @(
+    (Join-Path $binDir 'validproxy.exe'),
+    (Join-Path $binDir 'validproxy-cli.exe')
+)
+foreach ($exe in $exes) {
+    if (-not (Test-Path -LiteralPath $exe)) {
+        Write-Error "找不到发布产物：$exe（请先执行 cmake --build --preset release --target validproxy validproxy-cli）"
+        exit 2
+    }
 }
 
-# ── 1. 版本号：参数 > git tag > 缺省 ────────────────────────────────
-if ($Version -eq "") {
-    try {
-        $tag = (git -C $repoRoot describe --tags --abbrev=0 2>$null)
-        if ($tag) { $Version = $tag.TrimStart('v', 'V') }
-    } catch { }
-}
-if ($Version -eq "") { $Version = '1.6.1' }
-
-# ── 2. DLL 校验：sha256 + 导入表 ────────────────────────────────────
-$sha = (Get-FileHash -LiteralPath $Dll -Algorithm SHA256).Hash
-if ($sha -ne $ExpectedSha256) {
-    Write-Error ("libwinpthread sha256 不符：`n  实际 $sha`n  期望 $ExpectedSha256`n请确认 resources/win7/README.md 的来源与替换流程。")
-    exit 1
-}
-
+# ── 2. 核验导入表：不得含任何 MinGW 运行时 DLL ────────────────────────
 if ($Objdump -eq "") {
-    foreach ($c in @("E:\mingw64\bin\objdump.exe", "E:\clion\bin\mingw\bin\objdump.exe")) {
+    foreach ($c in @("D:\mingw64-win32-msvcrt\bin\objdump.exe", "E:\mingw64\bin\objdump.exe", "E:\clion\bin\mingw\bin\objdump.exe")) {
         if (Test-Path -LiteralPath $c) { $Objdump = $c; break }
     }
 }
-if ($Objdump -ne "" -and (Test-Path -LiteralPath $Objdump)) {
+if ($Objdump -eq "" -or -not (Test-Path -LiteralPath $Objdump)) {
+    Write-Error "找不到 objdump.exe（可用 -Objdump <path> 指定）"
+    exit 2
+}
+
+$forbidden = @('libwinpthread', 'libstdc++-6', 'libgcc_s_', 'wxmsw', 'wxbase', 'api-ms-win-crt', 'ucrtbase')
+$failed = $false
+foreach ($exe in $exes) {
     $imports = @()
-    foreach ($line in (& $Objdump -p $Dll 2>&1)) {
+    foreach ($line in (& $Objdump -p $exe 2>&1)) {
         if ($line -match 'DLL Name:\s*(\S+)') { $imports += $Matches[1] }
     }
+    Write-Output ("[package] {0}: {1}" -f (Split-Path $exe -Leaf), ($imports -join ', '))
     foreach ($imp in $imports) {
-        if ($imp -match '^(api-ms-win-crt|ucrtbase)') {
-            Write-Error ("libwinpthread 依赖 UCRT（$imp），Win7 裸机不可用，拒绝打包。")
-            exit 1
+        foreach ($bad in $forbidden) {
+            if ($imp -like "*$bad*") {
+                Write-Error ("{0} 仍依赖运行时 DLL「{1}」，不符合全静态发布口径。" -f (Split-Path $exe -Leaf), $imp)
+                $failed = $true
+            }
         }
     }
-    Write-Output ("[package] imports: " + ($imports -join ', '))
+    if ($imports.Count -eq 0) {
+        Write-Error ("无法从 {0} 读取导入表（objdump 输出异常？）" -f (Split-Path $exe -Leaf))
+        $failed = $true
+    }
 }
+if ($failed) { exit 1 }
 
-# ── 3. 只放一个 DLL 的压缩包 ────────────────────────────────────────
-$outDirPath = Join-Path $repoRoot $OutDir
-if (-not (Test-Path -LiteralPath $outDirPath)) { New-Item -ItemType Directory -Force -Path $outDirPath | Out-Null }
-$zipPath = Join-Path $outDirPath ("validproxy-{0}-win64.zip" -f $Version)
-if (Test-Path -LiteralPath $zipPath) { Remove-Item -LiteralPath $zipPath -Force }
-
-Add-Type -AssemblyName System.IO.Compression
-Add-Type -AssemblyName System.IO.Compression.FileSystem
-$archive = [System.IO.Compression.ZipFile]::Open($zipPath, [System.IO.Compression.ZipArchiveMode]::Create)
-try {
-    # 条目固定为根目录下的 libwinpthread-1.dll，不带目录前缀
-    [void][System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
-        $archive, $Dll, $DllEntryName, [System.IO.Compression.CompressionLevel]::Optimal)
+# ── 3. 结果 ──────────────────────────────────────────────────────────
+foreach ($exe in $exes) {
+    $info = Get-Item -LiteralPath $exe
+    $sha = (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash
+    Write-Output ("[package] {0}: {1} bytes, sha256={2}" -f $info.Name, $info.Length, $sha)
 }
-finally {
-    $archive.Dispose()
-}
-
-# ── 4. 结果与自检 ──────────────────────────────────────────────────
-$zipInfo = Get-Item -LiteralPath $zipPath
-$zipSha = (Get-FileHash -LiteralPath $zipPath -Algorithm SHA256).Hash
-$check = [System.IO.Compression.ZipFile]::OpenRead($zipPath)
-$entries = @($check.Entries | ForEach-Object { $_.FullName })
-$check.Dispose()
-
-Write-Output ("[package] zip    : " + $zipPath)
-Write-Output ("[package] size   : " + $zipInfo.Length + " bytes")
-Write-Output ("[package] sha256 : " + $zipSha)
-Write-Output ("[package] entries: " + ($entries -join ', '))
-
-if ($entries.Count -ne 1 -or $entries[0] -ne $DllEntryName) {
-    Write-Error "压缩包条目不符规范（应只含 $DllEntryName）。"
-    exit 1
-}
-
-Write-Output "[package] OK — 压缩包内只含 $DllEntryName（规范见 docs/2026-11-17-Reference-ReleasePackaging-v1.0.md）"
+Write-Output "[package] OK — 两个全静态 EXE，无 MinGW 运行时 DLL，无需压缩包（规范见 docs/2026-11-17-Reference-ReleasePackaging-v1.0.md v1.1）"
 exit 0
